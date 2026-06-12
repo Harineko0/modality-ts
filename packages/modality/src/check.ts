@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkModel, type CheckResult, type PropertyVerdict } from "@modality/checker";
 import { canonicalJson, parseModelArtifact, type CheckReport, type Model, type ModelState, type Property } from "@modality/kernel";
-import { generateAbstractReplayTest } from "./codegen/replay-test.js";
+import { generateAbstractReplayTest, generateActionReplayTest } from "./codegen/replay-test.js";
 import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface CheckCommandOptions {
@@ -13,6 +13,7 @@ export interface CheckCommandOptions {
   overlayPath?: string;
   tracesDir?: string;
   replayTestsDir?: string;
+  actionReplayTestsDir?: string;
   statesPath?: string;
   now?: Date;
 }
@@ -40,11 +41,12 @@ export async function runCheckCommand(options: CheckCommandOptions): Promise<Che
   }
   const tracePaths = options.tracesDir ? await writeTraceArtifacts(check, options.tracesDir) : [];
   const replayTestPaths = options.replayTestsDir ? await writeReplayTestArtifacts(check, options.replayTestsDir, options.statesPath) : [];
+  const actionReplayTestPaths = options.actionReplayTestsDir ? await writeActionReplayTestArtifacts(check, options.actionReplayTestsDir) : [];
   return {
     check,
     report,
     exitCode: check.verdicts.some((verdict) => verdict.status === "violated" || verdict.status === "error") ? 2 : 0,
-    lines: [...renderCheckResult(check), ...tracePaths.map((path) => `trace=${path}`), ...replayTestPaths.map((path) => `replayTest=${path}`)]
+    lines: [...renderCheckResult(check), ...tracePaths.map((path) => `trace=${path}`), ...replayTestPaths.map((path) => `replayTest=${path}`), ...actionReplayTestPaths.map((path) => `actionReplayTest=${path}`)]
   };
 }
 
@@ -130,6 +132,19 @@ async function writeReplayTestArtifacts(check: CheckResult, replayTestsDir: stri
   for (const verdict of check.verdicts) {
     if (verdict.status !== "violated") continue;
     const artifact = generateAbstractReplayTest(verdict.property, verdict.trace, states);
+    const path = join(replayTestsDir, artifact.fileName);
+    await writeFile(path, artifact.source, "utf8");
+    paths.push(path);
+  }
+  return paths;
+}
+
+async function writeActionReplayTestArtifacts(check: CheckResult, replayTestsDir: string): Promise<string[]> {
+  await mkdir(replayTestsDir, { recursive: true });
+  const paths: string[] = [];
+  for (const verdict of check.verdicts) {
+    if (verdict.status !== "violated") continue;
+    const artifact = generateActionReplayTest(verdict.property, verdict.trace);
     const path = join(replayTestsDir, artifact.fileName);
     await writeFile(path, artifact.source, "utf8");
     paths.push(path);

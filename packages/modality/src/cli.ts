@@ -138,12 +138,14 @@ async function main(): Promise<void> {
   const overlayFlag = args.indexOf("--overlay");
   const tracesFlag = args.indexOf("--traces");
   const replayTestsFlag = args.indexOf("--replay-tests");
+  const actionReplayTestsFlag = args.indexOf("--action-replay-tests");
   const statesFlag = args.indexOf("--states");
   const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
   const tracesDir = tracesFlag >= 0 ? args[tracesFlag + 1] : undefined;
   const replayTestsDir = replayTestsFlag >= 0 ? args[replayTestsFlag + 1] : undefined;
+  const actionReplayTestsDir = actionReplayTestsFlag >= 0 ? args[actionReplayTestsFlag + 1] : undefined;
   const statesPath = statesFlag >= 0 ? args[statesFlag + 1] : undefined;
-  const positional = args.filter((arg, index) => index !== reportFlag && index !== reportFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1 && index !== tracesFlag && index !== tracesFlag + 1 && index !== replayTestsFlag && index !== replayTestsFlag + 1 && index !== statesFlag && index !== statesFlag + 1);
+  const positional = args.filter((arg, index) => index !== reportFlag && index !== reportFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1 && index !== tracesFlag && index !== tracesFlag + 1 && index !== replayTestsFlag && index !== replayTestsFlag + 1 && index !== actionReplayTestsFlag && index !== actionReplayTestsFlag + 1 && index !== statesFlag && index !== statesFlag + 1);
   const [modelPath, propsPath] = positional;
   const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
   if (!modelPath) throw new Error("Missing model.json path");
@@ -151,8 +153,9 @@ async function main(): Promise<void> {
   if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
   if (tracesFlag >= 0 && !tracesDir) throw new Error("Missing --traces path");
   if (replayTestsFlag >= 0 && !replayTestsDir) throw new Error("Missing --replay-tests path");
+  if (actionReplayTestsFlag >= 0 && !actionReplayTestsDir) throw new Error("Missing --action-replay-tests path");
   if (statesFlag >= 0 && !statesPath) throw new Error("Missing --states path");
-  const result = await runCheckCommand({ modelPath, propsPath, reportPath, overlayPath, tracesDir, replayTestsDir, statesPath });
+  const result = await runCheckCommand({ modelPath, propsPath, reportPath, overlayPath, tracesDir, replayTestsDir, actionReplayTestsDir, statesPath });
   for (const line of result.lines) console.log(line);
   process.exit(result.exitCode);
 }

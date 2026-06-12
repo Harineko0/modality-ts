@@ -43,6 +43,7 @@ describe("runCheckCommand", () => {
     const reportPath = join(dir, "report.json");
     const tracesDir = join(dir, "traces");
     const replayTestsDir = join(dir, "replay-tests");
+    const actionReplayTestsDir = join(dir, "action-replay-tests");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     const properties: Property[] = [
       { kind: "always", name: "flagStartsFalseOnly", predicate: (state) => state.flag === false },
@@ -69,7 +70,7 @@ describe("runCheckCommand", () => {
     );
     const statesPath = join(dir, "states.json");
     await writeFile(statesPath, JSON.stringify([{ "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false, payload: "tok1" }, { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: true, payload: "tok1" }]), "utf8");
-    const withProps = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, replayTestsDir, statesPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const withProps = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, replayTestsDir, actionReplayTestsDir, statesPath, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(withProps.exitCode).toBe(2);
     expect(withProps.lines).toContain("flagStartsFalseOnly: violated");
@@ -102,6 +103,9 @@ describe("runCheckCommand", () => {
     const replayTest = await readFile(join(replayTestsDir, "flagStartsFalseOnly.replay.test.ts"), "utf8");
     expect(replayTest).toContain('describe("replay flagStartsFalseOnly"');
     expect(replayTest).toContain('"transitionId":"setFlag"');
+    const actionReplayTest = await readFile(join(actionReplayTestsDir, "flagStartsFalseOnly.action.replay.test.ts"), "utf8");
+    expect(actionReplayTest).toContain("ActionReplayDriver");
+    expect(actionReplayTest).toContain('"transitionId":"setFlag"');
   });
 
   it("applies overlay artifacts before checking", async () => {
