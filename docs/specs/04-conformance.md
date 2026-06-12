@@ -52,6 +52,8 @@ final: assert observable projection of ¬P  (or P, for leadsToWithin suffixes: a
 
 **Stabilization barrier**: after each step, flush microtasks + advance fake timers by the template-known delays + `await waitFor(idle)` where idle = no parked-handler releases pending and React act queue empty. This is the replay-side mirror of macro-step semantics (Spec 01 §5).
 
+**Indexed-family steps**: a step belonging to an indexed event family (Spec 02 §4) resolves its positional locator (Spec 01 §6) against the concrete list rendered from the trace's own environment steps — the witness factory fixes list order, so "the *i*-th payment-method radio" is deterministic. A list shorter than the index at replay time is a divergence at that step.
+
 **Enabledness assertion**: before each click/submit step, the test asserts the target element exists and is not disabled — the model claimed the transition was enabled there, so an absent or disabled control is a *divergence at that step* (verdict `not-reproduced`, with the guard's extraction provenance in the report), not a test failure to debug. This closes the loop with guard extraction from `disabled` attributes and conditional rendering (Spec 02 §4, §11).
 
 ## 4. The observation problem (how the test reads app state)
