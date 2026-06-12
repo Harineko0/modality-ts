@@ -151,6 +151,25 @@ Why this and not the alternatives:
 - **Alloy-style assertions**: a second language, no editor support against app types, and relational quantification power that the abstracted state doesn't need.
 - The embedded form has a bonus: the same predicates can run as **dev-mode runtime assertions** in the real app, giving a second, cheap conformance signal in ordinary E2E runs.
 
+### Design principle: usability at the surface, standard semantics underneath
+
+When the two pull apart, **practical usability wins at the surface; standard modal logic governs underneath** — and the boundary between the layers is strict.
+
+Usability wins the surface for a reason beyond audience: notation standardity does not prevent misformalization. `G(guest → ¬pendingPOST)` is perfectly standard LTL and is exactly the *wrong* formalization of "a guest cannot trigger a submit" (the walkthrough's logout-while-in-flight trace falsifies it legally); what prevents the mistake is a combinator shaped like the developer's intent (`alwaysStep` + `step.enqueued`). Worse, LTL is state-based, so action properties need history-variable encodings that non-specialists get wrong *silently*. Precedents point the same way: TLA+ spread among engineers on the `□`/leads-to idioms rather than full LTL nesting, while Quickstrom's own reports name its full-LTL surface as the adoption bottleneck.
+
+Standardity still governs underneath because the failure mode of pure pragmatism is **semantic drift** — combinators meaning "whatever the checker happens to do," which makes verdicts unfalsifiable and destroys both the TLA+/SMV export and differential testing (Spec 03 §9), since cross-checking two checkers requires an independent definition of what the property means. Hence two standing rules:
+
+1. **The combinator set is closed.** No user-defined temporal operators, no free nesting of temporal combinators (predicates inside them are arbitrary TS; the temporal shell is fixed). Missing expressiveness is met by adding *one* well-defined combinator — as the walkthrough did with `alwaysStep` and `enabled` — never by opening the surface to raw LTL/CTL.
+2. **Every combinator has normative formal semantics over the LTS**, recorded in the table below; the exporter translation and the differential tests are checked against these definitions, not against the implementation.
+
+| Combinator | Normative semantics over `M = (S, S₀, A, →)` (stabilized states/edges) |
+|---|---|
+| `always(p)` | `G p` — `p` holds in every reachable state |
+| `alwaysStep(q)` | action invariant: `q(s, t, s′)` holds for every reachable edge `s →t→ s′` (the TLA `□[A]` tradition) |
+| `reachable(p)` | existential witness `EF p`; exhaustion without witness = "unreachable within bounds" (vacuity warning, not a pass) |
+| `enabled(t)` | state predicate: `guard_t(s) ∧ mounted_t(s)` — exact, since guards are structured IR |
+| `leadsToWithin(trig, goal, k)` | for every reachable edge satisfying `trig`: all continuations admitted by the scheduler constraint reach `goal` within budget `k` — deliberately *not* textbook LTL, so its full definition (budget accounting, scheduler constraint, deadlock case) is normative in Spec 03 §6 |
+
 **Expressible in v1:** state invariants (incl. route guards, mutual exclusion, cross-source consistency like "cache cleared when logged out"); **step invariants** (`alwaysStep` over `(pre, step, post)` edges) — required whenever the English property constrains *actions* ("cannot trigger", "must not clear") rather than states, which turned out to cover most action-flavored properties in practice; **enabledness** (`enabled(transitionId)` inside predicates — "X must remain possible"; sound because guards are structured IR); bounded response (`leadsToWithin`); and *reachability sanity checks* — vacuity detection matters, because an over-constrained model "verifies" everything. **Deferred:** unbounded liveness with fairness, past-time operators, hyperproperties.
 
 ## 5. State-space control
