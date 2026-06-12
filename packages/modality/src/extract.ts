@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { extractUseStateSkeleton } from "@modality/extraction";
 import { canonicalJson, parseModelArtifact, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
@@ -33,6 +34,7 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     schemaVersion: 1,
     id: "extracted-model",
     bounds: { maxDepth: 12, maxPending: 3, maxInternalSteps: 16 },
+    metadata: { sourceHashes: { [options.sourcePath]: sha256(source) } },
     vars: [...systemVars(route, options.effectApis ?? []), ...skeleton.vars],
     transitions: skeleton.transitions
   };
@@ -62,6 +64,10 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
       ...(options.reportPath ? [`report=${options.reportPath}`] : [])
     ]
   };
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 async function assertMatchesExpectedModel(model: Model, expectedModelPath: string): Promise<void> {

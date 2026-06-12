@@ -61,7 +61,7 @@ export function createCheckReport(model: Model, check: CheckResult, now: Date, o
     vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
     trustLedger: {
       bounds: model.bounds,
-      assumptions: [],
+      assumptions: sourceHashAssumptions(model),
       abstractions: model.vars
         .filter((decl) => decl.domain.kind === "tokens" || decl.domain.kind === "lengthCat")
         .map((decl) => `${decl.id}:${decl.domain.kind}`),
@@ -70,6 +70,12 @@ export function createCheckReport(model: Model, check: CheckResult, now: Date, o
       boundHits: check.boundHits
     }
   };
+}
+
+function sourceHashAssumptions(model: Model): string[] {
+  return Object.entries(model.metadata?.sourceHashes ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([file, hash]) => `sourceHash:${file}=${hash}`);
 }
 
 export function renderCheckResult(check: CheckResult): string[] {

@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   if (command !== "check" && command !== "ci" && command !== "conform" && command !== "export" && command !== "extract" && command !== "replay") {
     console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--expect-model expected.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
-    console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--conform-count 8]");
+    console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
     console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--report conform-report.json]");
@@ -22,6 +22,7 @@ async function main(): Promise<void> {
     const artifactsFlag = args.indexOf("--artifacts");
     const overlayFlag = args.indexOf("--overlay");
     const baselineFlag = args.indexOf("--baseline");
+    const sourceFlag = args.indexOf("--source");
     const conformWalksFlag = args.indexOf("--conform-walks");
     const conformCountFlag = args.indexOf("--conform-count");
     const conformDepthFlag = args.indexOf("--conform-depth");
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
     const artifactDir = artifactsFlag >= 0 ? args[artifactsFlag + 1] : undefined;
     const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
     const baselinePath = baselineFlag >= 0 ? args[baselineFlag + 1] : undefined;
+    const sourcePath = sourceFlag >= 0 ? args[sourceFlag + 1] : undefined;
     const conformWalksPath = conformWalksFlag >= 0 ? args[conformWalksFlag + 1] : undefined;
     const conformCount = conformCountFlag >= 0 && args[conformCountFlag + 1] ? Number(args[conformCountFlag + 1]) : undefined;
     const conformDepth = conformDepthFlag >= 0 && args[conformDepthFlag + 1] ? Number(args[conformDepthFlag + 1]) : undefined;
@@ -39,6 +41,7 @@ async function main(): Promise<void> {
       index !== artifactsFlag && index !== artifactsFlag + 1 &&
       index !== overlayFlag && index !== overlayFlag + 1 &&
       index !== baselineFlag && index !== baselineFlag + 1 &&
+      index !== sourceFlag && index !== sourceFlag + 1 &&
       index !== conformWalksFlag && index !== conformWalksFlag + 1 &&
       index !== conformCountFlag && index !== conformCountFlag + 1 &&
       index !== conformDepthFlag && index !== conformDepthFlag + 1 &&
@@ -50,8 +53,9 @@ async function main(): Promise<void> {
     if (!artifactDir) throw new Error("Missing --artifacts path");
     if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
     if (baselineFlag >= 0 && !baselinePath) throw new Error("Missing --baseline path");
+    if (sourceFlag >= 0 && !sourcePath) throw new Error("Missing --source path");
     if (conformWalksFlag >= 0 && !conformWalksPath) throw new Error("Missing --conform-walks path");
-    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, conformWalksPath, conformCount, conformDepth, conformSeed, minConformPassRate });
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, sourcePath, conformWalksPath, conformCount, conformDepth, conformSeed, minConformPassRate });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }

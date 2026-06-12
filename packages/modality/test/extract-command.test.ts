@@ -29,6 +29,7 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.lines[0]).toBe("extracted vars=1 transitions=1");
     expect(model.transitions.map((transition) => transition.id)).toEqual(["App.onClick.saveStatus"]);
+    expect(model.metadata?.sourceHashes?.[sourcePath]).toMatch(/^[a-f0-9]{64}$/);
     expect(report).toMatchObject({
       schemaVersion: 1,
       kind: "extraction-report",

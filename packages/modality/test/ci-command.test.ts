@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -121,6 +122,38 @@ describe("runCiCommand", () => {
     expect(result.lines).toContain("conform: total=2 reproduced=2 notReproduced=0 inconclusive=0");
   });
 
+  it("passes CI source freshness when model source hash matches", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const sourcePath = join(dir, "App.tsx");
+    const artifactDir = join(dir, ".modality");
+    const source = "export function App() { return null; }";
+    await writeFile(sourcePath, source, "utf8");
+    await writeFile(modelPath, JSON.stringify({ ...model(), metadata: { sourceHashes: { [sourcePath]: sha256(source) } } }), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, sourcePath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toContain("source-freshness=passed");
+  });
+
+  it("fails CI source freshness when model source hash is stale", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const sourcePath = join(dir, "App.tsx");
+    const artifactDir = join(dir, ".modality");
+    await writeFile(sourcePath, "export function App() { return null; }", "utf8");
+    await writeFile(modelPath, JSON.stringify({ ...model(), metadata: { sourceHashes: { [sourcePath]: "0".repeat(64) } } }), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, sourcePath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(6);
+    expect(result.lines).toContain("source-freshness=failed");
+    expect(result.lines.some((line) => line.startsWith(`source-stale: ${sourcePath} expected=`))).toBe(true);
+  });
+
   it("fails CI when conformance pass rate is below the configured threshold", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
@@ -154,3 +187,7 @@ describe("runCiCommand", () => {
     expect(result.lines).toContain("conform-min-pass-rate=1");
   });
 });
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}

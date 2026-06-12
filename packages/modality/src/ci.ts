@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CheckReport } from "@modality/kernel";
+import { parseModelArtifact, type CheckReport } from "@modality/kernel";
 import { runCheckCommand } from "./check.js";
 import { runConformCommand } from "./conform.js";
 
@@ -11,6 +12,7 @@ export interface CiCommandOptions {
   artifactDir: string;
   overlayPath?: string;
   baselinePath?: string;
+  sourcePath?: string;
   conformWalksPath?: string;
   conformCount?: number;
   conformDepth?: number;
@@ -43,11 +45,12 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
   const violationCount = check.check.verdicts.filter((verdict) => verdict.status === "violated").length;
   const errorCount = check.check.verdicts.filter((verdict) => verdict.status === "error").length;
   const trustRegressions = options.baselinePath ? await compareTrustLedger(options.baselinePath, check.report) : [];
+  const staleSource = options.sourcePath ? await checkSourceFreshness(options.modelPath, options.sourcePath) : [];
   const conform = await runOptionalConformance(options, now);
   const conformPassRate = conform?.report.metrics.passRate;
   const minConformPassRate = options.minConformPassRate ?? 1;
   const conformFailed = conformPassRate !== undefined && conformPassRate < minConformPassRate;
-  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : conformFailed ? 5 : 0;
+  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : conformFailed ? 5 : staleSource.length > 0 ? 6 : 0;
   return {
     exitCode,
     reportPath,
@@ -58,11 +61,24 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
       `determinism=${determinism.length === 0 ? "passed" : "failed"}`,
       ...determinism.map((failure) => `determinism-failure: ${failure}`),
       ...(options.baselinePath ? [`trust-regressions=${trustRegressions.length}`, ...trustRegressions.map((regression) => `trust-regression: ${regression}`)] : []),
+      ...(options.sourcePath ? [`source-freshness=${staleSource.length === 0 ? "passed" : "failed"}`, ...staleSource.map((failure) => `source-stale: ${failure}`)] : []),
       ...(conform ? [`conform-pass-rate=${conform.report.metrics.passRate}`, `conform-min-pass-rate=${minConformPassRate}`, ...conform.lines] : []),
       `report=${reportPath}`,
       `traces=${tracesDir}`
     ]
   };
+}
+
+async function checkSourceFreshness(modelPath: string, sourcePath: string): Promise<string[]> {
+  const model = parseModelArtifact(await readFile(modelPath, "utf8"));
+  const expected = model.metadata?.sourceHashes?.[sourcePath];
+  if (!expected) return [`missing source hash for ${sourcePath}`];
+  const actual = sha256(await readFile(sourcePath, "utf8"));
+  return actual === expected ? [] : [`${sourcePath} expected=${expected} actual=${actual}`];
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 async function runOptionalConformance(options: CiCommandOptions, now: Date) {

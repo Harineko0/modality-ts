@@ -99,6 +99,9 @@ export interface Model {
   vars: readonly StateVarDecl[];
   transitions: readonly Transition[];
   bounds: Bounds;
+  metadata?: {
+    sourceHashes?: Record<string, string>;
+  };
 }
 
 export type ModelState = Record<string, Value>;

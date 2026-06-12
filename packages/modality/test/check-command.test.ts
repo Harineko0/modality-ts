@@ -84,6 +84,7 @@ describe("runCheckCommand", () => {
       vacuityWarnings: [],
       trustLedger: {
         bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+        assumptions: [],
         abstractions: ["payload:tokens"],
         overApproxTransitions: ["setFlag"],
         boundHits: []
@@ -106,6 +107,18 @@ describe("runCheckCommand", () => {
     const actionReplayTest = await readFile(join(actionReplayTestsDir, "flagStartsFalseOnly.action.replay.test.ts"), "utf8");
     expect(actionReplayTest).toContain("ActionReplayDriver");
     expect(actionReplayTest).toContain('"transitionId":"setFlag"');
+  });
+
+  it("renders source hash metadata as trust-ledger assumptions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "report.json");
+    const sourcePath = join(dir, "App.tsx");
+    await writeFile(sourcePath, "export function App() { return null; }", "utf8");
+    await writeFile(modelPath, JSON.stringify({ ...model(), metadata: { sourceHashes: { [sourcePath]: "abc123" } } }), "utf8");
+
+    const result = await runCheckCommand({ modelPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.report.trustLedger.assumptions).toEqual([`sourceHash:${sourcePath}=abc123`]);
   });
 
   it("applies overlay artifacts before checking", async () => {
