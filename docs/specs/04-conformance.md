@@ -52,6 +52,8 @@ final: assert observable projection of ¬P  (or P, for leadsToWithin suffixes: a
 
 **Stabilization barrier**: after each step, flush microtasks + advance fake timers by the template-known delays + `await waitFor(idle)` where idle = no parked-handler releases pending and React act queue empty. This is the replay-side mirror of macro-step semantics (Spec 01 §5).
 
+**Enabledness assertion**: before each click/submit step, the test asserts the target element exists and is not disabled — the model claimed the transition was enabled there, so an absent or disabled control is a *divergence at that step* (verdict `not-reproduced`, with the guard's extraction provenance in the report), not a test failure to debug. This closes the loop with guard extraction from `disabled` attributes and conditional rendering (Spec 02 §4, §11).
+
 ## 4. The observation problem (how the test reads app state)
 
 The violated predicate is over *model* state; the test must evaluate its concrete counterpart. Observability differs by state source — this is a genuine hard point and the design is explicit about it:

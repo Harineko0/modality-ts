@@ -14,6 +14,8 @@ Detailed specifications for the difficult subsystems live in `docs/specs/`:
 - [`specs/04-conformance.md`](specs/04-conformance.md) — counterexample concretization, replay tests, and model–code conformance
 - [`specs/05-architecture.md`](specs/05-architecture.md) — software architecture: package layout, vertical slicing, and the state-source plugin contract
 
+A worked example applying the specs end-to-end to a small ToDo app — including how each property is formalized and two instructive counterexamples — is in [`examples/todo-walkthrough.md`](examples/todo-walkthrough.md). Several spec sections below were extended as a result of that exercise.
+
 ## 0. Summary of design decisions
 
 | Question | Decision |
@@ -115,7 +117,7 @@ Render-level effects (stale closures, batching artifacts, effect ordering relati
 
 ```ts
 // app.props.ts — type-checked against the extracted state type
-import { always, leadsToWithin, onEvent, reachable } from 'modality';
+import { always, alwaysStep, leadsToWithin, onEvent, reachable, enabled } from 'modality';
 import { M } from './app.model'; // generated state type
 
 export const authGuard = always(M, s =>
@@ -130,6 +132,17 @@ export const submitResolves = leadsToWithin(M,
   { budget: { environment: 3 } });
 
 export const checkoutReachable = reachable(M, s => s.route === '/checkout');
+
+// step invariant: constrains actions/edges, not states — "an unauthenticated
+// session can never *trigger* an order request" (the state-invariant version is
+// reachably wrong: logout while a request is in flight legally yields
+// guest ∧ pending — see examples/todo-walkthrough.md §4.1)
+export const guestCannotOrder = alwaysStep(M, (pre, step) =>
+  !(step.enqueued('POST /orders') && pre.session.kind !== 'authenticated'));
+
+// enabledness: "logout must remain possible in every error state"
+export const logoutAvailable = always(M, s =>
+  s.session.kind !== 'authenticated' || enabled(M, 'Header.logout')(s));
 ```
 
 Why this and not the alternatives:
@@ -138,7 +151,7 @@ Why this and not the alternatives:
 - **Alloy-style assertions**: a second language, no editor support against app types, and relational quantification power that the abstracted state doesn't need.
 - The embedded form has a bonus: the same predicates can run as **dev-mode runtime assertions** in the real app, giving a second, cheap conformance signal in ordinary E2E runs.
 
-**Expressible in v1:** state invariants (incl. route guards, mutual exclusion, cross-source consistency like "cache cleared when logged out"), bounded response (`leadsToWithin`), and *reachability sanity checks* — vacuity detection matters, because an over-constrained model "verifies" everything. **Deferred:** unbounded liveness with fairness, past-time operators, hyperproperties.
+**Expressible in v1:** state invariants (incl. route guards, mutual exclusion, cross-source consistency like "cache cleared when logged out"); **step invariants** (`alwaysStep` over `(pre, step, post)` edges) — required whenever the English property constrains *actions* ("cannot trigger", "must not clear") rather than states, which turned out to cover most action-flavored properties in practice; **enabledness** (`enabled(transitionId)` inside predicates — "X must remain possible"; sound because guards are structured IR); bounded response (`leadsToWithin`); and *reachability sanity checks* — vacuity detection matters, because an over-constrained model "verifies" everything. **Deferred:** unbounded liveness with fairness, past-time operators, hyperproperties.
 
 ## 5. State-space control
 
