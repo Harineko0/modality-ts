@@ -34,7 +34,8 @@ describe("runExtractCommand", () => {
       schemaVersion: 1,
       kind: "extraction-report",
       generatedAt: "2026-06-12T00:00:00.000Z",
-      handlers: [{ id: "App.onClick.saveStatus", classification: "exact", reasons: [] }]
+      handlers: [{ id: "App.onClick.saveStatus", classification: "exact", reasons: [] }],
+      coverage: { handlersTotal: 1, exactOrOverlay: 1, unextractable: 0, percentExactOrOverlay: 1 }
     });
 
     const check = checkModel(model, [
@@ -66,6 +67,7 @@ describe("runExtractCommand", () => {
     expect(report.handlers).toEqual([
       { id: "App.onClick", classification: "unextractable", reasons: ["Unextractable handler App.onClick"] }
     ]);
+    expect(report.coverage).toEqual({ handlersTotal: 1, exactOrOverlay: 0, unextractable: 1, percentExactOrOverlay: 0 });
   });
 
   it("applies overlay artifacts during extraction", async () => {

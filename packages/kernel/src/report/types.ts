@@ -68,6 +68,12 @@ export interface ExtractionReport {
     domainKind: string;
     provenance: "type-derived" | "default-token" | "template" | "system";
   }[];
+  coverage: {
+    handlersTotal: number;
+    exactOrOverlay: number;
+    unextractable: number;
+    percentExactOrOverlay: number;
+  };
   warnings: readonly string[];
 }
 

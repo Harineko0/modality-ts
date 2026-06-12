@@ -95,17 +95,26 @@ function createExtractionReport(sourcePath: string, model: Model, warnings: read
       classification: "unextractable" as const,
       reasons: [handler.reason]
     }));
+  const handlers = [...transitionHandlers, ...unextractableHandlers];
+  const exactOrOverlay = handlers.filter((handler) => handler.classification === "exact" || handler.classification === "overlay").length;
+  const unextractable = handlers.filter((handler) => handler.classification === "unextractable").length;
   return {
     schemaVersion: 1,
     kind: "extraction-report",
     generatedAt: now.toISOString(),
     sourceFiles: [sourcePath],
-    handlers: [...transitionHandlers, ...unextractableHandlers],
+    handlers,
     domains: model.vars.map((decl) => ({
       varId: decl.id,
       domainKind: decl.domain.kind,
       provenance: decl.origin === "system" ? "system" : decl.origin === "library-template" ? "template" : decl.domain.kind === "tokens" ? "default-token" : "type-derived"
     })),
+    coverage: {
+      handlersTotal: handlers.length,
+      exactOrOverlay,
+      unextractable,
+      percentExactOrOverlay: handlers.length === 0 ? 1 : exactOrOverlay / handlers.length
+    },
     warnings
   };
 }
