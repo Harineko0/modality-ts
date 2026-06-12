@@ -65,8 +65,8 @@ describe("TLA export", () => {
     expect(await readFile(outPath, "utf8")).toBe(result.source);
   });
 
-  it("fails on unsupported effects instead of emitting misleading TLA", () => {
-    const unsupported: Model = {
+  it("exports havoc as a finite-domain nondeterministic assignment", () => {
+    const overApprox: Model = {
       ...model(),
       transitions: [
         {
@@ -75,6 +75,11 @@ describe("TLA export", () => {
         }
       ]
     };
-    expect(() => generateTlaModule(unsupported)).toThrow("TLA export does not support effect kind havoc");
+    expect(generateTlaModule(overApprox, "HavocFixture")).toContain([
+      "setFlag ==",
+      "  ~(flag) /\\",
+      "  flag' \\in {FALSE, TRUE} /\\",
+      "  UNCHANGED <<sys_route>>"
+    ].join("\n"));
   });
 });

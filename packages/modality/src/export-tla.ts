@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { parseModelArtifact } from "@modality/kernel";
+import { enumerateDomain, parseModelArtifact } from "@modality/kernel";
 import type { EffectIR, ExprIR, Model, Transition, Value } from "@modality/kernel";
 
 export interface ExportTlaCommandOptions {
@@ -46,25 +46,30 @@ export function generateTlaModule(model: Model, moduleName = tlaModuleName(model
 }
 
 function tlaAction(model: Model, transition: Transition): string {
-  const assignments = effectAssignments(transition.effect);
+  const assignments = effectAssignments(model, transition.effect);
   const assigned = new Set(assignments.map((assignment) => assignment.var));
   const unchanged = model.vars.map((decl) => decl.id).filter((id) => !assigned.has(id));
   return [
     `${tlaName(transition.id)} ==`,
     indent([
       tlaExpr(transition.guard),
-      ...assignments.map((assignment) => `${tlaName(assignment.var)}' = ${tlaExpr(assignment.expr)}`),
+      ...assignments.map((assignment) => `${tlaName(assignment.var)}' ${assignment.operator} ${assignment.value}`),
       unchanged.length > 0 ? `UNCHANGED <<${unchanged.map(tlaName).join(", ")}>>` : undefined
     ].filter((line): line is string => Boolean(line)).join(" /\\\n"))
   ].join("\n");
 }
 
-function effectAssignments(effect: EffectIR): { var: string; expr: ExprIR }[] {
+function effectAssignments(model: Model, effect: EffectIR): { var: string; operator: "=" | "\\in"; value: string }[] {
   switch (effect.kind) {
     case "assign":
-      return [{ var: effect.var, expr: effect.expr }];
+      return [{ var: effect.var, operator: "=", value: tlaExpr(effect.expr) }];
+    case "havoc": {
+      const decl = model.vars.find((candidate) => candidate.id === effect.var);
+      if (!decl) throw new Error(`TLA export cannot havoc unknown var ${effect.var}`);
+      return [{ var: effect.var, operator: "\\in", value: tlaSet(enumerateDomain(decl.domain)) }];
+    }
     case "seq":
-      return effect.effects.flatMap(effectAssignments);
+      return effect.effects.flatMap((item) => effectAssignments(model, item));
     default:
       throw new Error(`TLA export does not support effect kind ${effect.kind}`);
   }
@@ -100,6 +105,10 @@ function tlaValue(value: Value): string {
   if (typeof value === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `<<${value.map(tlaValue).join(", ")}>>`;
   return `[${Object.entries(value).map(([key, item]) => `${tlaName(key)} |-> ${tlaValue(item)}`).join(", ")}]`;
+}
+
+function tlaSet(values: readonly Value[]): string {
+  return `{${values.map(tlaValue).join(", ")}}`;
 }
 
 function tlaName(value: string): string {
