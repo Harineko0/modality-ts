@@ -175,7 +175,7 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
-  it("extracts event target value input handlers as bounded over-approximations", () => {
+  it("extracts event target value input handlers as exact value-class transitions", () => {
     const result = extractUseStateSkeleton(
       `
       import { useState } from 'react';
@@ -187,15 +187,20 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" }
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions).toHaveLength(1);
-    expect(result.transitions[0]).toMatchObject({
-      id: "App.onChange.draft",
-      cls: "user",
-      label: { kind: "input", valueClass: "empty|nonEmpty" },
-      effect: { kind: "havoc", var: "local:App.draft" },
-      writes: ["local:App.draft"],
-      confidence: "over-approx"
-    });
+    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect, transition.confidence])).toEqual([
+      [
+        "App.onChange.draft.empty",
+        { kind: "input", valueClass: "empty", locator: { kind: "role", role: "textbox" } },
+        { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "empty" } },
+        "exact"
+      ],
+      [
+        "App.onChange.draft.nonEmpty",
+        { kind: "input", valueClass: "nonEmpty", locator: { kind: "role", role: "textbox" } },
+        { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "nonEmpty" } },
+        "exact"
+      ]
+    ]);
 
     const model: Model = {
       schemaVersion: 1,
@@ -215,7 +220,7 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
-  it("extracts Number(event.target.value) numeric input transforms", () => {
+  it("extracts Number(event.target.value) numeric input transforms as exact value-class transitions", () => {
     const result = extractUseStateSkeleton(
       `
       import { useState } from 'react';
@@ -232,12 +237,11 @@ describe("useState inventory", () => {
       domain: { kind: "boundedInt", min: 0, max: 2 },
       initial: 0
     });
-    expect(result.transitions[0]).toMatchObject({
-      id: "App.onChange.seats",
-      label: { kind: "input", valueClass: "0..2" },
-      effect: { kind: "havoc", var: "local:App.seats" },
-      confidence: "over-approx"
-    });
+    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect, transition.confidence])).toEqual([
+      ["App.onChange.seats.0", { kind: "input", valueClass: "0", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 0 } }, "exact"],
+      ["App.onChange.seats.1", { kind: "input", valueClass: "1", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 1 } }, "exact"],
+      ["App.onChange.seats.2", { kind: "input", valueClass: "2", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 2 } }, "exact"]
+    ]);
 
     const model: Model = {
       schemaVersion: 1,

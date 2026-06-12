@@ -240,17 +240,7 @@ function transitionsFromJsxAttribute(
   const setter = setters.get(call.expression.text);
   if (!setter) return [];
   if ((attr === "onChange" || attr === "onInput") && isInputValueExpression(call.arguments[0], handler.parameters[0])) {
-    return applyParsedGuard([{
-      id: `${component}.${attr}.${setter.stateName}`,
-      cls: "user",
-      label: { kind: "input", valueClass: valueClassForDomain(setter.domain), ...(locator ? { locator } : {}) },
-      source: [{ file: fileName, ...lineAndColumn(source, node) }],
-      guard: { kind: "lit", value: true },
-      effect: { kind: "havoc", var: setter.varId },
-      reads: [],
-      writes: [setter.varId],
-      confidence: "over-approx"
-    }], disabledGuard);
+    return applyParsedGuard(inputTransitions(source, fileName, node, attr, component, setter, locator), disabledGuard);
   }
   const value = literalValue(call.arguments[0]);
   if (value === undefined) return [];
@@ -265,6 +255,59 @@ function transitionsFromJsxAttribute(
     writes: [setter.varId],
     confidence: "exact"
   }], disabledGuard);
+}
+
+function inputTransitions(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  setter: SetterBinding,
+  locator: Locator | undefined
+): Transition[] {
+  const finite = finiteInputValues(setter.domain);
+  if (finite.length > 0) {
+    return finite.map(({ value, valueClass }) => ({
+      id: `${component}.${attr}.${setter.stateName}.${safeId(valueClass)}`,
+      cls: "user" as const,
+      label: { kind: "input" as const, valueClass, ...(locator ? { locator } : {}) },
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit" as const, value: true },
+      effect: { kind: "assign" as const, var: setter.varId, expr: { kind: "lit" as const, value } },
+      reads: [],
+      writes: [setter.varId],
+      confidence: "exact" as const
+    }));
+  }
+  return [{
+    id: `${component}.${attr}.${setter.stateName}`,
+    cls: "user",
+    label: { kind: "input", valueClass: valueClassForDomain(setter.domain), ...(locator ? { locator } : {}) },
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "havoc", var: setter.varId },
+    reads: [],
+    writes: [setter.varId],
+    confidence: "over-approx"
+  }];
+}
+
+function finiteInputValues(domain: AbstractDomain): { value: Value; valueClass: string }[] {
+  if (domain.kind === "enum") return domain.values.map((value) => ({ value, valueClass: value }));
+  if (domain.kind === "boundedInt") {
+    return Array.from({ length: domain.max - domain.min + 1 }, (_, index) => {
+      const value = domain.min + index;
+      return { value, valueClass: String(value) };
+    });
+  }
+  if (domain.kind === "bool") {
+    return [
+      { value: false, valueClass: "false" },
+      { value: true, valueClass: "true" }
+    ];
+  }
+  return [];
 }
 
 function handlerExpression(expression: ts.Expression | undefined, handlers: Map<string, ExtractableHandler>): ExtractableHandler | undefined {
@@ -553,6 +596,10 @@ function valueClassForDomain(domain: AbstractDomain): string {
   if (domain.kind === "enum") return domain.values.join("|") || "enum";
   if (domain.kind === "boundedInt") return `${domain.min}..${domain.max}`;
   return domain.kind;
+}
+
+function safeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "_") || "value";
 }
 
 function literalValue(node: ts.Expression): Value | undefined {
