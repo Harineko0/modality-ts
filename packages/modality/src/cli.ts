@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   if (command !== "check" && command !== "ci" && command !== "conform" && command !== "extract" && command !== "replay") {
     console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
-    console.log("       modality ci <model.json> [props.ts] --artifacts .modality");
+    console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
     process.exit(command ? 1 : 0);
@@ -18,14 +18,17 @@ async function main(): Promise<void> {
   if (command === "ci") {
     const artifactsFlag = args.indexOf("--artifacts");
     const overlayFlag = args.indexOf("--overlay");
+    const baselineFlag = args.indexOf("--baseline");
     const artifactDir = artifactsFlag >= 0 ? args[artifactsFlag + 1] : undefined;
     const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
-    const positional = args.filter((arg, index) => index !== artifactsFlag && index !== artifactsFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1);
+    const baselinePath = baselineFlag >= 0 ? args[baselineFlag + 1] : undefined;
+    const positional = args.filter((arg, index) => index !== artifactsFlag && index !== artifactsFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1 && index !== baselineFlag && index !== baselineFlag + 1);
     const [modelPath, propsPath] = positional;
     if (!modelPath) throw new Error("Missing model.json path");
     if (!artifactDir) throw new Error("Missing --artifacts path");
     if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
-    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath });
+    if (baselineFlag >= 0 && !baselinePath) throw new Error("Missing --baseline path");
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }

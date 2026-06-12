@@ -1,5 +1,6 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { CheckReport } from "@modality/kernel";
 import { runCheckCommand } from "./check.js";
 
 export interface CiCommandOptions {
@@ -7,6 +8,7 @@ export interface CiCommandOptions {
   propsPath?: string;
   artifactDir: string;
   overlayPath?: string;
+  baselinePath?: string;
   now?: Date;
 }
 
@@ -31,7 +33,8 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
   });
   const violationCount = check.check.verdicts.filter((verdict) => verdict.status === "violated").length;
   const errorCount = check.check.verdicts.filter((verdict) => verdict.status === "error").length;
-  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : 0;
+  const trustRegressions = options.baselinePath ? await compareTrustLedger(options.baselinePath, check.report) : [];
+  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : 0;
   return {
     exitCode,
     reportPath,
@@ -39,8 +42,29 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
     lines: [
       `ci: ${exitCode === 0 ? "passed" : "failed"}`,
       `violations=${violationCount} errors=${errorCount}`,
+      ...(options.baselinePath ? [`trust-regressions=${trustRegressions.length}`, ...trustRegressions.map((regression) => `trust-regression: ${regression}`)] : []),
       `report=${reportPath}`,
       `traces=${tracesDir}`
     ]
   };
+}
+
+async function compareTrustLedger(baselinePath: string, current: CheckReport): Promise<string[]> {
+  const baseline = JSON.parse(await readFile(baselinePath, "utf8")) as CheckReport;
+  if (baseline.kind !== "check-report") return [`baseline is not a check report: ${baselinePath}`];
+  return [
+    ...increases("manualTransitions", baseline.trustLedger.manualTransitions, current.trustLedger.manualTransitions),
+    ...increases("overApproxTransitions", baseline.trustLedger.overApproxTransitions, current.trustLedger.overApproxTransitions),
+    ...increases("boundHits", baseline.trustLedger.boundHits, current.trustLedger.boundHits),
+    ...increases("vacuityWarnings", baseline.vacuityWarnings, current.vacuityWarnings)
+  ];
+}
+
+function increases(label: string, baselineValues: readonly string[], currentValues: readonly string[]): string[] {
+  const baseline = new Set(baselineValues);
+  const added = currentValues.filter((value) => !baseline.has(value)).sort();
+  const countIncreased = currentValues.length > baselineValues.length;
+  if (added.length === 0 && !countIncreased) return [];
+  const detail = added.length > 0 ? ` new=${added.join(",")}` : "";
+  return [`${label} ${baselineValues.length}->${currentValues.length}${detail}`];
 }

@@ -69,4 +69,38 @@ describe("runCiCommand", () => {
     expect(result.exitCode).toBe(0);
     expect(result.lines[0]).toBe("ci: passed");
   });
+
+  it("fails when trust ledger regresses against a baseline report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const baselinePath = join(dir, "baseline-report.json");
+    const artifactDir = join(dir, ".modality");
+    const current = model();
+    current.transitions = [{ ...current.transitions[0]!, confidence: "manual" }];
+    await writeFile(modelPath, JSON.stringify(current), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+    await writeFile(baselinePath, JSON.stringify({
+      schemaVersion: 1,
+      kind: "check-report",
+      modelId: "ci-fixture",
+      generatedAt: "2026-06-11T00:00:00.000Z",
+      verdicts: [],
+      stats: { states: 0, edges: 0, depth: 0 },
+      vacuityWarnings: [],
+      trustLedger: {
+        bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+        assumptions: [],
+        abstractions: [],
+        manualTransitions: [],
+        overApproxTransitions: [],
+        boundHits: []
+      }
+    }), "utf8");
+
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, baselinePath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(3);
+    expect(result.lines).toContain("trust-regressions=1");
+    expect(result.lines).toContain("trust-regression: manualTransitions 0->1 new=setFlag");
+  });
 });
