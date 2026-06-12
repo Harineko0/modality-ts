@@ -37,3 +37,17 @@ export interface CheckReport {
   };
   trustLedger: ReportTrustLedger;
 }
+
+export type ReplayVerdictStatus = "reproduced" | "not-reproduced" | "inconclusive";
+
+export interface ReplayReport {
+  schemaVersion: 1;
+  kind: "replay-report";
+  generatedAt: string;
+  verdict: {
+    status: ReplayVerdictStatus;
+    stepsRun: number;
+    divergenceStep?: number;
+    reason?: string;
+  };
+}
