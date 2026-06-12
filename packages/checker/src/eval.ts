@@ -1,4 +1,4 @@
-import { enumerateDomain } from "@modality/kernel";
+import { enumerateDomain, initialValues, UNMOUNTED } from "@modality/kernel";
 import type { EffectIR, ExprIR, Model, ModelState, Transition, Value } from "@modality/kernel";
 
 export interface PendingOp {
@@ -99,12 +99,28 @@ function navigate(model: Model, state: ModelState, effect: Extract<EffectIR, { k
   if (effect.mode === "back") {
     const previous = history[history.length - 1];
     if (typeof previous !== "string") return [state];
-    return [{ ...state, "sys:route": previous, "sys:history": history.slice(0, -1) }];
+    return [resetRouteLocals(model, { ...state, "sys:route": previous, "sys:history": history.slice(0, -1) }, route)];
   }
   const to = effect.to ? evalExpr(model, state, effect.to) : undefined;
   if (typeof to !== "string") return [state];
   const nextHistory = effect.mode === "push" && typeof route === "string" ? [...history, route] : history;
-  return [{ ...state, "sys:route": to, "sys:history": nextHistory }];
+  return [resetRouteLocals(model, { ...state, "sys:route": to, "sys:history": nextHistory }, route)];
+}
+
+export function normalizeInitialRouteLocals(model: Model, state: ModelState): ModelState {
+  return resetRouteLocals(model, state, undefined);
+}
+
+function resetRouteLocals(model: Model, state: ModelState, previousRoute: Value | undefined): ModelState {
+  const currentRoute = state["sys:route"];
+  if (previousRoute === currentRoute) return state;
+  let next = state;
+  for (const decl of model.vars) {
+    if (decl.scope.kind !== "route-local") continue;
+    const value = decl.scope.route === currentRoute ? initialValues(decl.domain, decl.initial)[0] : UNMOUNTED;
+    next = { ...next, [decl.id]: value };
+  }
+  return next;
 }
 
 function readPath(value: Value | undefined, path: readonly string[]): Value {

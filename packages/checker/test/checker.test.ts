@@ -4,6 +4,7 @@ import { always, alwaysStep, leadsToWithin, reachable, reachableFrom, type Model
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;
+const twoRoutes = { kind: "enum", values: ["/a", "/b"] } as const;
 const pendingOp = {
   kind: "record",
   fields: {
@@ -202,5 +203,63 @@ describe("checker", () => {
     const full = checkModel(m, props);
     expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(full.verdicts.map((v) => [v.property, v.status]));
     expect(sliceModel(m, ["done", "draft"]).vars.map((decl) => decl.id)).not.toContain("unrelated");
+  });
+
+  it("resets route-local state on remount and disables off-route local transitions", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local",
+      bounds: { maxDepth: 5, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "local:A.draft", domain: { kind: "enum", values: ["empty", "nonEmpty"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: "empty" }
+      ],
+      transitions: [
+        {
+          id: "typeDraft",
+          cls: "user",
+          label: { kind: "input", valueClass: "nonEmpty" },
+          source: [],
+          guard: { kind: "eq", args: [read("local:A.draft"), lit("empty")] },
+          effect: { kind: "assign", var: "local:A.draft", expr: lit("nonEmpty") },
+          reads: ["local:A.draft"],
+          writes: ["local:A.draft"],
+          confidence: "exact"
+        },
+        {
+          id: "goB",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        },
+        {
+          id: "back",
+          cls: "nav",
+          label: { kind: "navigate", mode: "back" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "back" },
+          reads: ["sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        }
+      ]
+    };
+    const result = checkModel(m, [
+      reachable(m, (s) => s["sys:route"] === "/b" && s["local:A.draft"] === "__modality_unmounted__", { name: "localUnmountsOnB" }),
+      always(m, (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"), { name: "cannotTypeWhileUnmounted" }),
+      alwaysStep(m, (pre, step, post) => step.transition.id !== "back" || pre["sys:route"] !== "/b" || post["local:A.draft"] === "empty", { name: "backRemountResetsDraft" })
+    ]);
+    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict.status]));
+    expect(byName.get("localUnmountsOnB")).toBe("reachable");
+    expect(byName.get("cannotTypeWhileUnmounted")).toBe("verified-within-bounds");
+    expect(byName.get("backRemountResetsDraft")).toBe("verified-within-bounds");
   });
 });

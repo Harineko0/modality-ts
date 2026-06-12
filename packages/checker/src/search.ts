@@ -1,6 +1,6 @@
 import { canonicalState, initialValues, validateModel } from "@modality/kernel";
 import type { Model, ModelState, Property, StepFacts, Trace, TraceStep, Transition, Value } from "@modality/kernel";
-import { applyEffect, guardHolds, readPending } from "./eval.js";
+import { applyEffect, guardHolds, normalizeInitialRouteLocals, readPending } from "./eval.js";
 import type { PendingOp } from "./eval.js";
 
 export type PropertyVerdict =
@@ -164,13 +164,13 @@ function initialStates(model: Model): ModelState[] {
   return model.vars.reduce<ModelState[]>((states, decl) => {
     const initials = initialValues(decl.domain, decl.initial);
     return states.flatMap((state) => initials.map((value) => ({ ...state, [decl.id]: value })));
-  }, [{}]);
+  }, [{}]).map((state) => normalizeInitialRouteLocals(model, state));
 }
 
 function enabledTransitions(model: Model, state: ModelState): Transition[] {
   return [...model.transitions]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .filter((transition) => transition.cls !== "internal" && guardHolds(model, transition, state));
+    .filter((transition) => transition.cls !== "internal" && routeLocalMounted(model, transition, state) && guardHolds(model, transition, state));
 }
 
 function stabilize(model: Model, state: ModelState): ModelState[] {
@@ -379,7 +379,7 @@ function compareStates(model: Model): (a: ModelState, b: ModelState) => number {
 
 function installEnabledHook(model: Model): void {
   (globalThis as unknown as { __modalityEvalGuard: (transition: Transition, state: ModelState) => boolean }).__modalityEvalGuard = (transition, state) =>
-    model.transitions.includes(transition) && guardHolds(model, transition, state);
+    model.transitions.includes(transition) && routeLocalMounted(model, transition, state) && guardHolds(model, transition, state);
 }
 
 function vacuityWarnings(model: Model, states: Map<string, ModelState>, enabledTransitionIds: Set<string>): string[] {
@@ -397,4 +397,15 @@ function vacuityWarnings(model: Model, states: Map<string, ModelState>, enabledT
     }
   }
   return warnings.sort();
+}
+
+function routeLocalMounted(model: Model, transition: Transition, state: ModelState): boolean {
+  const currentRoute = state["sys:route"];
+  const touched = new Set([...transition.reads, ...transition.writes]);
+  for (const decl of model.vars) {
+    if (decl.scope.kind === "route-local" && touched.has(decl.id) && decl.scope.route !== currentRoute) {
+      return false;
+    }
+  }
+  return true;
 }
