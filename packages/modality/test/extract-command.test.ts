@@ -108,6 +108,51 @@ describe("runExtractCommand", () => {
     expect(report.handlers).toEqual([{ id: "App.onClick.saveStatus", classification: "overlay", reasons: [] }]);
   });
 
+  it("compares extracted output against a golden model snapshot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const goldenPath = join(dir, "golden-model.json");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [draft, setDraft] = useState<'empty' | 'nonEmpty'>('empty');
+        return <input data-testid="draft" onChange={e => setDraft(e.target.value)} />;
+      }
+      `,
+      "utf8"
+    );
+    await runExtractCommand({ sourcePath, modelPath: goldenPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const result = await runExtractCommand({ sourcePath, modelPath, expectModelPath: goldenPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.lines).toContain(`expectedModel=${goldenPath}`);
+  });
+
+  it("fails when extracted output differs from the golden model snapshot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const goldenPath = join(dir, "golden-model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <button onClick={() => setSaveStatus('posting')}>Save</button>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      goldenPath,
+      JSON.stringify({ schemaVersion: 1, id: "wrong", bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 1 }, vars: [], transitions: [] }),
+      "utf8"
+    );
+    await expect(runExtractCommand({ sourcePath, modelPath, expectModelPath: goldenPath })).rejects.toThrow("Extracted model differs from expected snapshot");
+  });
+
   it("fails extraction on orphan overlay entries", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");

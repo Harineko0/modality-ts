@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { extractUseStateSkeleton } from "@modality/extraction";
-import { canonicalJson, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
+import { canonicalJson, parseModelArtifact, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
 import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface ExtractCommandOptions {
@@ -11,6 +11,7 @@ export interface ExtractCommandOptions {
   route?: string;
   effectApis?: readonly string[];
   overlayPath?: string;
+  expectModelPath?: string;
   now?: Date;
 }
 
@@ -47,6 +48,9 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     await mkdir(dirname(options.reportPath), { recursive: true });
     await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
   }
+  if (options.expectModelPath) {
+    await assertMatchesExpectedModel(model, options.expectModelPath);
+  }
   return {
     model,
     report,
@@ -54,9 +58,19 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
       `extracted vars=${skeleton.vars.length} transitions=${skeleton.transitions.length}`,
       `model=${options.modelPath}`,
       ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
+      ...(options.expectModelPath ? [`expectedModel=${options.expectModelPath}`] : []),
       ...(options.reportPath ? [`report=${options.reportPath}`] : [])
     ]
   };
+}
+
+async function assertMatchesExpectedModel(model: Model, expectedModelPath: string): Promise<void> {
+  const expected = parseModelArtifact(await readFile(expectedModelPath, "utf8"));
+  const actualText = canonicalJson(model);
+  const expectedText = canonicalJson(expected);
+  if (actualText !== expectedText) {
+    throw new Error(`Extracted model differs from expected snapshot ${expectedModelPath}`);
+  }
 }
 
 function createExtractionReport(sourcePath: string, model: Model, warnings: readonly string[], now: Date): ExtractionReport {
