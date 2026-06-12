@@ -135,6 +135,46 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
+  it("extracts event target value input handlers as bounded over-approximations", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [draft, setDraft] = useState<'empty' | 'nonEmpty'>('empty');
+        return <input onChange={e => setDraft(e.target.value)} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onChange.draft",
+      cls: "user",
+      label: { kind: "input", valueClass: "empty|nonEmpty" },
+      effect: { kind: "havoc", var: "local:App.draft" },
+      writes: ["local:App.draft"],
+      confidence: "over-approx"
+    });
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "input-extracted-skeleton",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      reachable(model, (state) => state["local:App.draft"] === "nonEmpty", { name: "nonEmptyReachable", reads: ["local:App.draft"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
   it("splits simple async handlers into enqueue and resolve transitions", () => {
     const result = extractUseStateSkeleton(
       `

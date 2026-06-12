@@ -22,6 +22,13 @@ export interface ExtractedModelSkeleton extends UseStateExtractionResult {
   transitions: Transition[];
 }
 
+interface SetterBinding {
+  varId: string;
+  component: string;
+  stateName: string;
+  domain: AbstractDomain;
+}
+
 export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
@@ -59,7 +66,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
   const effectApis = new Set(options.effectApis ?? []);
-  const setters = new Map<string, { varId: string; component: string; stateName: string }>();
+  const setters = new Map<string, SetterBinding>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const nextComponent = componentNameFor(node) ?? componentName;
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseStateCall(node.initializer)) {
@@ -77,7 +84,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
           initial: initialValueForUseState(node.initializer, domain)
         });
         if (setterName && ts.isBindingElement(setterName) && ts.isIdentifier(setterName.name)) {
-          setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text });
+          setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text, domain });
         }
       } else {
         warnings.push({ message: "Unsupported useState binding pattern", ...lineAndColumn(source, node) });
@@ -191,7 +198,7 @@ function transitionsFromJsxAttribute(
   source: ts.SourceFile,
   fileName: string,
   node: ts.JsxAttribute,
-  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  setters: Map<string, SetterBinding>,
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
@@ -213,6 +220,19 @@ function transitionsFromJsxAttribute(
   if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
   if (!setter) return [];
+  if ((attr === "onChange" || attr === "onInput") && isEventTargetValue(call.arguments[0], expression.parameters[0])) {
+    return applyParsedGuard([{
+      id: `${component}.${attr}.${setter.stateName}`,
+      cls: "user",
+      label: { kind: "input", valueClass: valueClassForDomain(setter.domain) },
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit", value: true },
+      effect: { kind: "havoc", var: setter.varId },
+      reads: [],
+      writes: [setter.varId],
+      confidence: "over-approx"
+    }], disabledGuard);
+  }
   const value = literalValue(call.arguments[0]);
   if (value === undefined) return [];
   return applyParsedGuard([{
@@ -233,7 +253,7 @@ function transitionsFromAsyncHandler(
   fileName: string,
   attr: string,
   expression: ts.ArrowFunction,
-  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  setters: Map<string, SetterBinding>,
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>
@@ -311,7 +331,7 @@ function applyParsedGuard(transitions: Transition[], parsed: ParsedGuard | undef
 
 function disabledGuardFor(
   eventAttribute: ts.JsxAttribute,
-  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
   source: ts.SourceFile,
   component: string
@@ -332,7 +352,7 @@ function disabledGuardFor(
 
 function jsxAttributeBoolean(
   attribute: ts.JsxAttribute,
-  setters: Map<string, { varId: string; component: string; stateName: string }>
+  setters: Map<string, SetterBinding>
 ): ParsedGuard | undefined {
   if (!attribute.initializer) return { expr: { kind: "lit", value: true }, reads: [] };
   if (ts.isStringLiteral(attribute.initializer)) return { expr: { kind: "lit", value: attribute.initializer.text === "true" }, reads: [] };
@@ -342,7 +362,7 @@ function jsxAttributeBoolean(
 
 function parseGuardExpression(
   expression: ts.Expression,
-  setters: Map<string, { varId: string; component: string; stateName: string }>
+  setters: Map<string, SetterBinding>
 ): ParsedGuard | undefined {
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
@@ -362,7 +382,7 @@ function parseGuardExpression(
 
 function parseBinaryGuardExpression(
   expression: ts.BinaryExpression,
-  setters: Map<string, { varId: string; component: string; stateName: string }>
+  setters: Map<string, SetterBinding>
 ): ParsedGuard | undefined {
   if (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || expression.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
     const left = parseGuardExpression(expression.left, setters);
@@ -395,7 +415,7 @@ function parseBinaryGuardExpression(
 
 function parseGuardOperand(
   expression: ts.Expression,
-  setters: Map<string, { varId: string; component: string; stateName: string }>
+  setters: Map<string, SetterBinding>
 ): ParsedGuard | undefined {
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
@@ -407,7 +427,7 @@ function parseGuardOperand(
   return parseGuardExpression(expression, setters);
 }
 
-function stateVarForName(name: string, setters: Map<string, { varId: string; component: string; stateName: string }>): string | undefined {
+function stateVarForName(name: string, setters: Map<string, SetterBinding>): string | undefined {
   return [...setters.values()].find((setter) => setter.stateName === name)?.varId;
 }
 
@@ -422,13 +442,39 @@ function isTrueLiteral(expr: ExprIR): boolean {
 }
 
 function isEventAttribute(name: string): boolean {
-  return name === "onClick" || name === "onSubmit" || name === "onChange";
+  return name === "onClick" || name === "onSubmit" || name === "onChange" || name === "onInput";
 }
 
 function labelForEvent(name: string): Transition["label"] {
   if (name === "onSubmit") return { kind: "submit" };
-  if (name === "onChange") return { kind: "input", valueClass: "literal" };
+  if (name === "onChange" || name === "onInput") return { kind: "input", valueClass: "literal" };
   return { kind: "click" };
+}
+
+function isEventTargetValue(node: ts.Expression, parameter: ts.ParameterDeclaration | undefined): boolean {
+  if (!parameter || !ts.isIdentifier(parameter.name)) return false;
+  const path = propertyAccessPath(node);
+  if (!path) return false;
+  return (
+    path.length === 3 &&
+    path[0] === parameter.name.text &&
+    (path[1] === "target" || path[1] === "currentTarget") &&
+    path[2] === "value"
+  );
+}
+
+function propertyAccessPath(node: ts.Expression): string[] | undefined {
+  if (ts.isIdentifier(node)) return [node.text];
+  if (ts.isPropertyAccessExpression(node)) {
+    const base = propertyAccessPath(node.expression);
+    return base ? [...base, node.name.text] : undefined;
+  }
+  return undefined;
+}
+
+function valueClassForDomain(domain: AbstractDomain): string {
+  if (domain.kind === "enum") return domain.values.join("|") || "enum";
+  return domain.kind;
 }
 
 function literalValue(node: ts.Expression): Value | undefined {
