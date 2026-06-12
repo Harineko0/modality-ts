@@ -70,3 +70,23 @@ export interface ExtractionReport {
   }[];
   warnings: readonly string[];
 }
+
+export interface ConformReport {
+  schemaVersion: 1;
+  kind: "conform-report";
+  generatedAt: string;
+  walks: readonly {
+    id: string;
+    status: ReplayVerdictStatus;
+    stepsRun: number;
+    divergenceStep?: number;
+    reason?: string;
+  }[];
+  metrics: {
+    total: number;
+    reproduced: number;
+    notReproduced: number;
+    inconclusive: number;
+    passRate: number;
+  };
+}

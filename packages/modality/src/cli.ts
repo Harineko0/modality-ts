@@ -1,15 +1,27 @@
 #!/usr/bin/env node
 import { runCheckCommand } from "./check.js";
+import { runConformCommand } from "./conform.js";
 import { runExtractCommand } from "./extract.js";
 import { runReplayCommand } from "./replay.js";
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
-  if (command !== "check" && command !== "extract" && command !== "replay") {
+  if (command !== "check" && command !== "conform" && command !== "extract" && command !== "replay") {
     console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
+    console.log("       modality conform <walks.json> [--report conform-report.json]");
     process.exit(command ? 1 : 0);
+  }
+  if (command === "conform") {
+    const reportFlag = args.indexOf("--report");
+    const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
+    const walksPath = args.find((arg, index) => !arg.startsWith("--") && index !== reportFlag + 1);
+    if (!walksPath) throw new Error("Missing walks.json path");
+    if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
+    const result = await runConformCommand({ walksPath, reportPath });
+    for (const line of result.lines) console.log(line);
+    process.exit(result.exitCode);
   }
   if (command === "extract") {
     const outFlag = args.indexOf("--out");
