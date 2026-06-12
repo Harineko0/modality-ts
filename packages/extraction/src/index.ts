@@ -84,7 +84,11 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
-      transitions.push(...transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}));
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {});
+      transitions.push(...extracted);
+      if (extracted.length === 0) {
+        warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
+      }
     }
     ts.forEachChild(node, (child) => visit(child, nextComponent));
   };

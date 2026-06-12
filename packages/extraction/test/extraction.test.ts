@@ -142,4 +142,20 @@ describe("useState inventory", () => {
       ["failedReachable", "reachable"]
     ]);
   });
+
+  it("reports unsupported event handlers instead of silently dropping them", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        const save = () => setSaveStatus(computeStatus());
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.transitions).toEqual([]);
+    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable handler App.onClick");
+  });
 });

@@ -41,4 +41,26 @@ describe("runExtractCommand", () => {
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
+
+  it("surfaces unextractable handlers in the extraction report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        const save = () => setSaveStatus(computeStatus());
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      "utf8"
+    );
+    await runExtractCommand({ sourcePath, modelPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(report.warnings).toContain("Unextractable handler App.onClick");
+  });
 });
