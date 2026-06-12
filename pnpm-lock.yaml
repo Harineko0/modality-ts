@@ -59,6 +59,12 @@ importers:
         specifier: workspace:*
         version: link:../kernel
 
+  packages/runtime:
+    dependencies:
+      '@modality/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
   packages/sources/swr:
     dependencies:
       '@modality/kernel':
