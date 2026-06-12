@@ -171,6 +171,18 @@ export function sliceModel(model: Model, propertyReads: readonly string[]): Mode
   return { ...model, vars, transitions };
 }
 
+export function modelInitialStates(model: Model): ModelState[] {
+  return initialStates(model).flatMap((state) => stabilize(model, state)).sort(compareStates(model));
+}
+
+export function modelSuccessors(model: Model, pre: ModelState): TraceStep[] {
+  return enabledTransitions(model, pre).flatMap((transition) =>
+    applyEffect(model, pre, transition.effect).flatMap((rawPost) =>
+      stabilize(model, rawPost).map((post) => makeTraceStep(pre, post, transition))
+    )
+  );
+}
+
 function initialStates(model: Model): ModelState[] {
   return model.vars.reduce<ModelState[]>((states, decl) => {
     const initials = initialValues(decl.domain, decl.initial);

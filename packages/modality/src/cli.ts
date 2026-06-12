@@ -13,6 +13,7 @@ async function main(): Promise<void> {
     console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
+    console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--report conform-report.json]");
     process.exit(command ? 1 : 0);
   }
   if (command === "ci") {
@@ -34,11 +35,31 @@ async function main(): Promise<void> {
   }
   if (command === "conform") {
     const reportFlag = args.indexOf("--report");
+    const modelFlag = args.indexOf("--model");
+    const walksFlag = args.indexOf("--walks");
+    const countFlag = args.indexOf("--count");
+    const depthFlag = args.indexOf("--depth");
+    const seedFlag = args.indexOf("--seed");
     const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
-    const walksPath = args.find((arg, index) => !arg.startsWith("--") && index !== reportFlag + 1);
-    if (!walksPath) throw new Error("Missing walks.json path");
+    const modelPath = modelFlag >= 0 ? args[modelFlag + 1] : undefined;
+    const flaggedWalksPath = walksFlag >= 0 ? args[walksFlag + 1] : undefined;
+    const walkCount = countFlag >= 0 && args[countFlag + 1] ? Number(args[countFlag + 1]) : undefined;
+    const depth = depthFlag >= 0 && args[depthFlag + 1] ? Number(args[depthFlag + 1]) : undefined;
+    const seed = seedFlag >= 0 && args[seedFlag + 1] ? Number(args[seedFlag + 1]) : undefined;
+    const walksPath = flaggedWalksPath ?? args.find((arg, index) =>
+      !arg.startsWith("--") &&
+      index !== reportFlag + 1 &&
+      index !== modelFlag + 1 &&
+      index !== walksFlag + 1 &&
+      index !== countFlag + 1 &&
+      index !== depthFlag + 1 &&
+      index !== seedFlag + 1
+    );
+    if (!walksPath && !modelPath) throw new Error("Missing walks.json path or --model path");
     if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
-    const result = await runConformCommand({ walksPath, reportPath });
+    if (modelFlag >= 0 && !modelPath) throw new Error("Missing --model path");
+    if (walksFlag >= 0 && !flaggedWalksPath) throw new Error("Missing --walks path");
+    const result = await runConformCommand({ walksPath, modelPath, reportPath, walkCount, depth, seed });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }
