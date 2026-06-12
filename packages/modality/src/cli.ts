@@ -14,14 +14,17 @@ async function main(): Promise<void> {
   if (command === "extract") {
     const outFlag = args.indexOf("--out");
     const reportFlag = args.indexOf("--report");
+    const overlayFlag = args.indexOf("--overlay");
     const effectApiFlags = args.flatMap((arg, index) => (arg === "--effect-api" && args[index + 1] ? [args[index + 1]!] : []));
-    const sourcePath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== reportFlag + 1 && args[index - 1] !== "--effect-api");
+    const sourcePath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== reportFlag + 1 && index !== overlayFlag + 1 && args[index - 1] !== "--effect-api");
     const modelPath = outFlag >= 0 ? args[outFlag + 1] : undefined;
     const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
+    const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
     if (!sourcePath) throw new Error("Missing source.tsx path");
     if (!modelPath) throw new Error("Missing --out path");
     if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
-    const result = await runExtractCommand({ sourcePath, modelPath, reportPath, effectApis: effectApiFlags });
+    if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
+    const result = await runExtractCommand({ sourcePath, modelPath, reportPath, overlayPath, effectApis: effectApiFlags });
     for (const line of result.lines) console.log(line);
     process.exit(0);
   }
@@ -39,12 +42,15 @@ async function main(): Promise<void> {
     process.exit(result.exitCode);
   }
   const reportFlag = args.indexOf("--report");
+  const overlayFlag = args.indexOf("--overlay");
   const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
-  const positional = reportFlag >= 0 ? args.slice(0, reportFlag) : args;
+  const positional = args.filter((arg, index) => index !== reportFlag && index !== reportFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1);
   const [modelPath, propsPath] = positional;
+  const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
   if (!modelPath) throw new Error("Missing model.json path");
   if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
-  const result = await runCheckCommand({ modelPath, propsPath, reportPath });
+  if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
+  const result = await runCheckCommand({ modelPath, propsPath, reportPath, overlayPath });
   for (const line of result.lines) console.log(line);
   process.exit(result.exitCode);
 }

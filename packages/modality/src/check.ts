@@ -3,11 +3,13 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkModel, type CheckResult, type PropertyVerdict } from "@modality/checker";
 import { canonicalJson, type CheckReport, type Model, type Property } from "@modality/kernel";
+import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface CheckCommandOptions {
   modelPath: string;
   propsPath?: string;
   reportPath?: string;
+  overlayPath?: string;
   now?: Date;
 }
 
@@ -19,10 +21,15 @@ export interface CheckCommandResult {
 }
 
 export async function runCheckCommand(options: CheckCommandOptions): Promise<CheckCommandResult> {
-  const model = JSON.parse(await readFile(options.modelPath, "utf8")) as Model;
+  const loadedModel = JSON.parse(await readFile(options.modelPath, "utf8")) as Model;
+  const overlay = await loadAndApplyOverlay(loadedModel, options.overlayPath);
+  if (overlay.errors.length > 0) {
+    throw new Error(`Overlay merge failed: ${overlay.errors.join("; ")}`);
+  }
+  const model = overlay.model;
   const properties = await loadProperties(model, options.propsPath);
   const check = checkModel(model, properties);
-  const report = createCheckReport(model, check, options.now ?? new Date());
+  const report = createCheckReport(model, check, options.now ?? new Date(), overlay.warnings);
   if (options.reportPath) {
     await mkdir(dirname(options.reportPath), { recursive: true });
     await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
@@ -35,7 +42,7 @@ export async function runCheckCommand(options: CheckCommandOptions): Promise<Che
   };
 }
 
-export function createCheckReport(model: Model, check: CheckResult, now: Date): CheckReport {
+export function createCheckReport(model: Model, check: CheckResult, now: Date, overlayWarnings: readonly string[] = []): CheckReport {
   return {
     schemaVersion: 1,
     kind: "check-report",
@@ -43,7 +50,7 @@ export function createCheckReport(model: Model, check: CheckResult, now: Date): 
     generatedAt: now.toISOString(),
     verdicts: check.verdicts.map(reportVerdict),
     stats: check.stats,
-    vacuityWarnings: check.vacuityWarnings,
+    vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
     trustLedger: {
       bounds: model.bounds,
       assumptions: [],

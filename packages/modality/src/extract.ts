@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { extractUseStateSkeleton } from "@modality/extraction";
 import { canonicalJson, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
+import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface ExtractCommandOptions {
   sourcePath: string;
@@ -9,6 +10,7 @@ export interface ExtractCommandOptions {
   reportPath?: string;
   route?: string;
   effectApis?: readonly string[];
+  overlayPath?: string;
   now?: Date;
 }
 
@@ -26,14 +28,19 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     fileName: options.sourcePath,
     effectApis: options.effectApis ?? []
   });
-  const model: Model = {
+  const extractedModel: Model = {
     schemaVersion: 1,
     id: "extracted-model",
     bounds: { maxDepth: 12, maxPending: 3, maxInternalSteps: 16 },
     vars: [...systemVars(route, options.effectApis ?? []), ...skeleton.vars],
     transitions: skeleton.transitions
   };
-  const report = createExtractionReport(options.sourcePath, model, skeleton.warnings.map((warning) => warning.message), options.now ?? new Date());
+  const overlay = await loadAndApplyOverlay(extractedModel, options.overlayPath);
+  if (overlay.errors.length > 0) {
+    throw new Error(`Overlay merge failed: ${overlay.errors.join("; ")}`);
+  }
+  const model = overlay.model;
+  const report = createExtractionReport(options.sourcePath, model, [...skeleton.warnings.map((warning) => warning.message), ...overlay.warnings], options.now ?? new Date());
   await mkdir(dirname(options.modelPath), { recursive: true });
   await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
   if (options.reportPath) {
@@ -46,6 +53,7 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     lines: [
       `extracted vars=${skeleton.vars.length} transitions=${skeleton.transitions.length}`,
       `model=${options.modelPath}`,
+      ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
       ...(options.reportPath ? [`report=${options.reportPath}`] : [])
     ]
   };

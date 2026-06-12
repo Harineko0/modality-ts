@@ -87,4 +87,37 @@ describe("runCheckCommand", () => {
       ["flagCanBecomeTrue", "reachable"]
     ]);
   });
+
+  it("applies overlay artifacts before checking", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const overlayPath = join(dir, "overlay.json");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+    await writeFile(
+      overlayPath,
+      JSON.stringify({
+        transitions: [
+          {
+            id: "setFlag",
+            cls: "user",
+            label: { kind: "click", text: "Noop" },
+            source: [],
+            guard: { kind: "lit", value: true },
+            effect: { kind: "assign", var: "flag", expr: { kind: "lit", value: false } },
+            reads: [],
+            writes: ["flag"],
+            confidence: "exact"
+          }
+        ]
+      }),
+      "utf8"
+    );
+    const result = await runCheckCommand({ modelPath, propsPath, overlayPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(result.check.verdicts[0]?.status).toBe("vacuous-warning");
+    expect(report.trustLedger.manualTransitions).toEqual(["setFlag"]);
+  });
 });

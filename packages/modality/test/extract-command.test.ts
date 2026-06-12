@@ -63,4 +63,58 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.warnings).toContain("Unextractable handler App.onClick");
   });
+
+  it("applies overlay artifacts during extraction", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    const overlayPath = join(dir, "overlay.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <button onClick={() => setSaveStatus('posting')}>Save</button>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      overlayPath,
+      JSON.stringify({
+        transitions: [
+          {
+            id: "App.onClick.saveStatus",
+            cls: "user",
+            label: { kind: "click", text: "Overlay save" },
+            source: [],
+            guard: { kind: "lit", value: true },
+            effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "idle" } },
+            reads: [],
+            writes: ["local:App.saveStatus"],
+            confidence: "exact"
+          }
+        ]
+      }),
+      "utf8"
+    );
+    await runExtractCommand({ sourcePath, modelPath, reportPath, overlayPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const model = JSON.parse(await readFile(modelPath, "utf8"));
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(model.transitions[0]).toMatchObject({ id: "App.onClick.saveStatus", confidence: "manual" });
+    expect(report.warnings).toContain("Overlay overrides exact transition App.onClick.saveStatus");
+    expect(report.handlers).toEqual([{ id: "App.onClick.saveStatus", classification: "overlay", reasons: [] }]);
+  });
+
+  it("fails extraction on orphan overlay entries", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const overlayPath = join(dir, "overlay.json");
+    await writeFile(sourcePath, "export function App() { return null; }", "utf8");
+    await writeFile(overlayPath, JSON.stringify({ transitions: [{ id: "missing", cls: "user", label: { kind: "click" }, source: [], guard: { kind: "lit", value: true }, effect: { kind: "seq", effects: [] }, reads: [], writes: [], confidence: "exact" }] }), "utf8");
+    await expect(runExtractCommand({ sourcePath, modelPath, overlayPath })).rejects.toThrow("Overlay transition missing does not match an extracted transition");
+  });
 });
