@@ -1,0 +1,14 @@
+{
+  "name": "@modality/checker",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/kernel": "workspace:*"
+  }
+}

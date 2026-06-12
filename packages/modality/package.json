@@ -1,0 +1,15 @@
+{
+  "name": "modality",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "modality": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/checker": "workspace:*",
+    "@modality/kernel": "workspace:*"
+  }
+}

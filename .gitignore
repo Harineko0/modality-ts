@@ -1,2 +1,5 @@
 *.jar
 .kiri/
+node_modules/
+dist/
+*.tsbuildinfo
