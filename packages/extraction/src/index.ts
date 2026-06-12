@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { AbstractDomain, StateVarDecl, Transition, Value } from "@modality/kernel";
+import type { AbstractDomain, ExprIR, StateVarDecl, Transition, Value } from "@modality/kernel";
 
 export interface UseStateExtractionOptions {
   route?: string;
@@ -84,7 +84,8 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {});
+      const guard = disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous");
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard);
       transitions.push(...extracted);
       if (extracted.length === 0) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -193,7 +194,8 @@ function transitionsFromJsxAttribute(
   setters: Map<string, { varId: string; component: string; stateName: string }>,
   component: string,
   effectApis: Set<string>,
-  asyncOutcomes: Record<string, { success: Value; error?: Value }>
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  disabledGuard: ParsedGuard | undefined
 ): Transition[] {
   if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
@@ -201,7 +203,7 @@ function transitionsFromJsxAttribute(
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
   const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, expression, setters, component, effectApis, asyncOutcomes);
-  if (asyncTransitions.length > 0) return asyncTransitions;
+  if (asyncTransitions.length > 0) return applyParsedGuard(asyncTransitions, disabledGuard);
   const body = expression.body;
   const call = ts.isCallExpression(body)
     ? body
@@ -213,7 +215,7 @@ function transitionsFromJsxAttribute(
   if (!setter) return [];
   const value = literalValue(call.arguments[0]);
   if (value === undefined) return [];
-  return [{
+  return applyParsedGuard([{
     id: `${component}.${attr}.${setter.stateName}`,
     cls: "user",
     label: labelForEvent(attr),
@@ -223,7 +225,7 @@ function transitionsFromJsxAttribute(
     reads: [],
     writes: [setter.varId],
     confidence: "exact"
-  }];
+  }], disabledGuard);
 }
 
 function transitionsFromAsyncHandler(
@@ -291,6 +293,132 @@ function transitionsFromAsyncHandler(
     });
   }
   return transitions.map((transition) => ({ ...transition, writes: [...new Set(transition.writes)] }));
+}
+
+interface ParsedGuard {
+  expr: ExprIR;
+  reads: string[];
+}
+
+function applyParsedGuard(transitions: Transition[], parsed: ParsedGuard | undefined): Transition[] {
+  if (!parsed) return transitions;
+  return transitions.map((transition) => ({
+    ...transition,
+    guard: andGuard(parsed.expr, transition.guard),
+    reads: [...new Set([...transition.reads, ...parsed.reads])]
+  }));
+}
+
+function disabledGuardFor(
+  eventAttribute: ts.JsxAttribute,
+  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  warnings: ExtractionWarning[],
+  source: ts.SourceFile,
+  component: string
+): ParsedGuard | undefined {
+  const attrs = eventAttribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const disabled = attrs.properties.find((property): property is ts.JsxAttribute =>
+    ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && (property.name.text === "disabled" || property.name.text === "aria-disabled")
+  );
+  if (!disabled) return undefined;
+  const parsed = jsxAttributeBoolean(disabled, setters);
+  if (!parsed) {
+    warnings.push({ message: `Unsupported disabled guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, disabled) });
+    return undefined;
+  }
+  return { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads };
+}
+
+function jsxAttributeBoolean(
+  attribute: ts.JsxAttribute,
+  setters: Map<string, { varId: string; component: string; stateName: string }>
+): ParsedGuard | undefined {
+  if (!attribute.initializer) return { expr: { kind: "lit", value: true }, reads: [] };
+  if (ts.isStringLiteral(attribute.initializer)) return { expr: { kind: "lit", value: attribute.initializer.text === "true" }, reads: [] };
+  if (!ts.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) return undefined;
+  return parseGuardExpression(attribute.initializer.expression, setters);
+}
+
+function parseGuardExpression(
+  expression: ts.Expression,
+  setters: Map<string, { varId: string; component: string; stateName: string }>
+): ParsedGuard | undefined {
+  if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
+  if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
+  if (ts.isIdentifier(expression)) {
+    const stateVar = stateVarForName(expression.text, setters);
+    if (!stateVar) return undefined;
+    return { expr: { kind: "read", var: stateVar }, reads: [stateVar] };
+  }
+  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
+    const parsed = parseGuardExpression(expression.operand, setters);
+    return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
+  }
+  if (ts.isParenthesizedExpression(expression)) return parseGuardExpression(expression.expression, setters);
+  if (ts.isBinaryExpression(expression)) return parseBinaryGuardExpression(expression, setters);
+  return undefined;
+}
+
+function parseBinaryGuardExpression(
+  expression: ts.BinaryExpression,
+  setters: Map<string, { varId: string; component: string; stateName: string }>
+): ParsedGuard | undefined {
+  if (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || expression.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+    const left = parseGuardExpression(expression.left, setters);
+    const right = parseGuardExpression(expression.right, setters);
+    if (!left || !right) return undefined;
+    return {
+      expr: { kind: expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? "and" : "or", args: [left.expr, right.expr] },
+      reads: [...new Set([...left.reads, ...right.reads])]
+    };
+  }
+  if (
+    expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+    expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+    expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+    expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+  ) {
+    const left = parseGuardOperand(expression.left, setters);
+    const right = parseGuardOperand(expression.right, setters);
+    if (!left || !right) return undefined;
+    return {
+      expr: {
+        kind: expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken || expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken ? "neq" : "eq",
+        args: [left.expr, right.expr]
+      },
+      reads: [...new Set([...left.reads, ...right.reads])]
+    };
+  }
+  return undefined;
+}
+
+function parseGuardOperand(
+  expression: ts.Expression,
+  setters: Map<string, { varId: string; component: string; stateName: string }>
+): ParsedGuard | undefined {
+  const value = literalValue(expression);
+  if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
+  if (ts.isIdentifier(expression)) {
+    const stateVar = stateVarForName(expression.text, setters);
+    if (!stateVar) return undefined;
+    return { expr: { kind: "read", var: stateVar }, reads: [stateVar] };
+  }
+  return parseGuardExpression(expression, setters);
+}
+
+function stateVarForName(name: string, setters: Map<string, { varId: string; component: string; stateName: string }>): string | undefined {
+  return [...setters.values()].find((setter) => setter.stateName === name)?.varId;
+}
+
+function andGuard(left: ExprIR, right: ExprIR): ExprIR {
+  if (isTrueLiteral(left)) return right;
+  if (isTrueLiteral(right)) return left;
+  return { kind: "and", args: [left, right] };
+}
+
+function isTrueLiteral(expr: ExprIR): boolean {
+  return expr.kind === "lit" && expr.value === true;
 }
 
 function isEventAttribute(name: string): boolean {

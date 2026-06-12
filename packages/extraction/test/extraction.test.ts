@@ -1,7 +1,7 @@
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "../../checker/src/index.js";
-import { reachable, type Model } from "@modality/kernel";
+import { always, reachable, type Model } from "@modality/kernel";
 import { extractUseStateSkeleton, extractUseStateVars, inferDomainFromTypeNode } from "../src/index.js";
 
 function typeNode(source: string): ts.TypeNode {
@@ -94,6 +94,45 @@ describe("useState inventory", () => {
       reachable(model, (state) => state["local:App.saveStatus"] === "posting", { name: "postingReachable", reads: ["local:App.saveStatus"] })
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("turns JSX disabled attributes into transition guards", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('posting');
+        return <button disabled={saveStatus === 'posting'} onClick={() => setSaveStatus('idle')}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      guard: {
+        kind: "not",
+        args: [{ kind: "eq", args: [{ kind: "read", var: "local:App.saveStatus" }, { kind: "lit", value: "posting" }] }]
+      },
+      reads: ["local:App.saveStatus"]
+    });
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "disabled-guard-skeleton",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      always(model, (state) => state["local:App.saveStatus"] !== "idle", { name: "idleNotReachable", reads: ["local:App.saveStatus"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
   it("splits simple async handlers into enqueue and resolve transitions", () => {
