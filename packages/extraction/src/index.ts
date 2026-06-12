@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { AbstractDomain, StateVarDecl, Value } from "@modality/kernel";
+import type { AbstractDomain, StateVarDecl, Transition, Value } from "@modality/kernel";
 
 export interface UseStateExtractionOptions {
   route?: string;
@@ -14,6 +14,10 @@ export interface ExtractionWarning {
 export interface UseStateExtractionResult {
   vars: StateVarDecl[];
   warnings: ExtractionWarning[];
+}
+
+export interface ExtractedModelSkeleton extends UseStateExtractionResult {
+  transitions: Transition[];
 }
 
 export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
@@ -42,32 +46,48 @@ export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): Abstract
 }
 
 export function extractUseStateVars(sourceText: string, options: UseStateExtractionOptions = {}): UseStateExtractionResult {
+  return extractUseStateSkeleton(sourceText, options);
+}
+
+export function extractUseStateSkeleton(sourceText: string, options: UseStateExtractionOptions = {}): ExtractedModelSkeleton {
   const fileName = options.fileName ?? "App.tsx";
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const vars: StateVarDecl[] = [];
+  const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
+  const setters = new Map<string, { varId: string; component: string; stateName: string }>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const nextComponent = componentNameFor(node) ?? componentName;
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseStateCall(node.initializer)) {
       const stateName = node.name.elements[0];
+      const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const domain = inferUseStateDomain(node.initializer);
+        const component = nextComponent ?? "Anonymous";
+        const varId = `local:${component}.${stateName.name.text}`;
         vars.push({
-          id: `local:${nextComponent ?? "Anonymous"}.${stateName.name.text}`,
+          id: varId,
           domain,
           origin: { file: fileName, ...lineAndColumn(source, node) },
           scope: { kind: "route-local", route },
           initial: initialValueForUseState(node.initializer, domain)
         });
+        if (setterName && ts.isBindingElement(setterName) && ts.isIdentifier(setterName.name)) {
+          setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text });
+        }
       } else {
         warnings.push({ message: "Unsupported useState binding pattern", ...lineAndColumn(source, node) });
       }
     }
+    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
+      const transition = transitionFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous");
+      if (transition) transitions.push(transition);
+    }
     ts.forEachChild(node, (child) => visit(child, nextComponent));
   };
   visit(source, undefined);
-  return { vars, warnings };
+  return { vars, transitions, warnings };
 }
 
 function inferUseStateDomain(call: ts.CallExpression): AbstractDomain {
@@ -158,6 +178,61 @@ function domainFromTypeReference(node: ts.TypeReferenceNode): AbstractDomain {
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
+}
+
+function transitionFromJsxAttribute(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  component: string
+): Transition | undefined {
+  if (!node.initializer) return undefined;
+  const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+  if (!expression || !ts.isArrowFunction(expression)) return undefined;
+  const body = expression.body;
+  const call = ts.isCallExpression(body)
+    ? body
+    : ts.isBlock(body) && body.statements.length === 1 && ts.isExpressionStatement(body.statements[0]) && ts.isCallExpression(body.statements[0].expression)
+      ? body.statements[0].expression
+      : undefined;
+  if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return undefined;
+  const setter = setters.get(call.expression.text);
+  if (!setter) return undefined;
+  const value = literalValue(call.arguments[0]);
+  if (value === undefined) return undefined;
+  if (!ts.isIdentifier(node.name)) return undefined;
+  const attr = node.name.text;
+  return {
+    id: `${component}.${attr}.${setter.stateName}`,
+    cls: "user",
+    label: labelForEvent(attr),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "assign", var: setter.varId, expr: { kind: "lit", value } },
+    reads: [],
+    writes: [setter.varId],
+    confidence: "exact"
+  };
+}
+
+function isEventAttribute(name: string): boolean {
+  return name === "onClick" || name === "onSubmit" || name === "onChange";
+}
+
+function labelForEvent(name: string): Transition["label"] {
+  if (name === "onSubmit") return { kind: "submit" };
+  if (name === "onChange") return { kind: "input", valueClass: "literal" };
+  return { kind: "click" };
+}
+
+function literalValue(node: ts.Expression): Value | undefined {
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (node.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isStringLiteral(node)) return node.text;
+  if (ts.isNumericLiteral(node)) return Number(node.text);
+  return undefined;
 }
 
 function componentNameFor(node: ts.Node): string | undefined {
