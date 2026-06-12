@@ -63,7 +63,7 @@ describe("useState inventory", () => {
       import { useState } from 'react';
       export function App() {
         const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
-        return <button onClick={() => setSaveStatus('posting')}>Save</button>;
+        return <button data-testid="save-button" onClick={() => setSaveStatus('posting')}>Save</button>;
       }
       `,
       { route: "/", fileName: "App.tsx" }
@@ -72,6 +72,7 @@ describe("useState inventory", () => {
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
       cls: "user",
+      label: { kind: "click", locator: { kind: "testId", value: "save-button" } },
       effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
       reads: [],
       writes: ["local:App.saveStatus"],
@@ -94,6 +95,23 @@ describe("useState inventory", () => {
       reachable(model, (state) => state["local:App.saveStatus"] === "posting", { name: "postingReachable", reads: ["local:App.saveStatus"] })
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("falls back to role/name locators for replayable events", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <button onClick={() => setSaveStatus('posting')}>Save now</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.transitions[0]?.label).toEqual({
+      kind: "click",
+      locator: { kind: "role", role: "button", name: "Save now" }
+    });
   });
 
   it("turns JSX disabled attributes into transition guards", () => {

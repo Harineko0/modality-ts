@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { AbstractDomain, ExprIR, StateVarDecl, Transition, Value } from "@modality/kernel";
+import type { AbstractDomain, ExprIR, Locator, StateVarDecl, Transition, Value } from "@modality/kernel";
 
 export interface UseStateExtractionOptions {
   route?: string;
@@ -209,7 +209,8 @@ function transitionsFromJsxAttribute(
   if (!expression || !ts.isArrowFunction(expression)) return [];
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
-  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, expression, setters, component, effectApis, asyncOutcomes);
+  const locator = locatorForEventAttribute(node);
+  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, expression, setters, component, effectApis, asyncOutcomes, locator);
   if (asyncTransitions.length > 0) return applyParsedGuard(asyncTransitions, disabledGuard);
   const body = expression.body;
   const call = ts.isCallExpression(body)
@@ -224,7 +225,7 @@ function transitionsFromJsxAttribute(
     return applyParsedGuard([{
       id: `${component}.${attr}.${setter.stateName}`,
       cls: "user",
-      label: { kind: "input", valueClass: valueClassForDomain(setter.domain) },
+      label: { kind: "input", valueClass: valueClassForDomain(setter.domain), ...(locator ? { locator } : {}) },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit", value: true },
       effect: { kind: "havoc", var: setter.varId },
@@ -238,7 +239,7 @@ function transitionsFromJsxAttribute(
   return applyParsedGuard([{
     id: `${component}.${attr}.${setter.stateName}`,
     cls: "user",
-    label: labelForEvent(attr),
+    label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: { kind: "lit", value: true },
     effect: { kind: "assign", var: setter.varId, expr: { kind: "lit", value } },
@@ -256,7 +257,8 @@ function transitionsFromAsyncHandler(
   setters: Map<string, SetterBinding>,
   component: string,
   effectApis: Set<string>,
-  asyncOutcomes: Record<string, { success: Value; error?: Value }>
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  locator: Locator | undefined
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
   const statements = expression.body.statements;
@@ -279,7 +281,7 @@ function transitionsFromAsyncHandler(
   const enqueue: Transition = {
     id: `${baseId}.start`,
     cls: "user",
-    label: labelForEvent(attr),
+    label: labelForEvent(attr, locator),
     source: sourceAnchor,
     guard: { kind: "lit", value: true },
     effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op, continuation: `${baseId}.cont`, args: {} }] },
@@ -445,10 +447,51 @@ function isEventAttribute(name: string): boolean {
   return name === "onClick" || name === "onSubmit" || name === "onChange" || name === "onInput";
 }
 
-function labelForEvent(name: string): Transition["label"] {
-  if (name === "onSubmit") return { kind: "submit" };
-  if (name === "onChange" || name === "onInput") return { kind: "input", valueClass: "literal" };
-  return { kind: "click" };
+function labelForEvent(name: string, locator?: Locator): Transition["label"] {
+  if (name === "onSubmit") return { kind: "submit", ...(locator ? { locator } : {}) };
+  if (name === "onChange" || name === "onInput") return { kind: "input", valueClass: "literal", ...(locator ? { locator } : {}) };
+  return { kind: "click", ...(locator ? { locator } : {}) };
+}
+
+function locatorForEventAttribute(attribute: ts.JsxAttribute): Locator | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const testId = stringAttribute(attrs, "data-testid");
+  if (testId) return { kind: "testId", value: testId };
+  const element = attrs.parent;
+  const role = stringAttribute(attrs, "role") ?? inferredRole(element);
+  if (!role) return undefined;
+  const name = stringAttribute(attrs, "aria-label") ?? simpleElementText(element);
+  return name ? { kind: "role", role, name } : { kind: "role", role };
+}
+
+function stringAttribute(attrs: ts.JsxAttributes, name: string): string | undefined {
+  const attr = attrs.properties.find((property): property is ts.JsxAttribute =>
+    ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && property.name.text === name
+  );
+  if (!attr?.initializer || !ts.isStringLiteral(attr.initializer)) return undefined;
+  return attr.initializer.text;
+}
+
+function inferredRole(node: ts.Node): string | undefined {
+  if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) return undefined;
+  const tag = node.tagName.getText();
+  if (tag === "button") return "button";
+  if (tag === "form") return "form";
+  if (tag === "input") return "textbox";
+  if (tag === "select") return "combobox";
+  if (tag === "textarea") return "textbox";
+  return undefined;
+}
+
+function simpleElementText(node: ts.Node): string | undefined {
+  if (!ts.isJsxOpeningElement(node) || !ts.isJsxElement(node.parent)) return undefined;
+  const text = node.parent.children
+    .filter(ts.isJsxText)
+    .map((child) => child.getText().replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+  return text || undefined;
 }
 
 function isEventTargetValue(node: ts.Expression, parameter: ts.ParameterDeclaration | undefined): boolean {
