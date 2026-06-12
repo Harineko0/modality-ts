@@ -9,11 +9,12 @@ export interface ValidationResult {
 export function validateModel(model: Model): ValidationResult {
   const errors: string[] = [];
   const varIds = new Set(model.vars.map((v) => v.id));
+  const varsById = new Map(model.vars.map((v) => [v.id, v]));
   if (model.schemaVersion !== 1) errors.push(`Unsupported model schemaVersion ${model.schemaVersion}`);
   pushDuplicates(errors, "state var", model.vars.map((v) => v.id));
   pushDuplicates(errors, "transition", model.transitions.map((t) => t.id));
   for (const decl of model.vars) validateDecl(errors, decl);
-  for (const transition of model.transitions) validateTransition(errors, transition, varIds);
+  for (const transition of model.transitions) validateTransition(errors, transition, varIds, varsById);
   return { ok: errors.length === 0, errors };
 }
 
@@ -81,7 +82,7 @@ export function initialValues(domain: AbstractDomain, initial: Value | readonly 
   return domain.kind === "boundedList" ? [initial as Value] : Array.isArray(initial) ? initial : [initial];
 }
 
-function validateTransition(errors: string[], transition: Transition, varIds: Set<string>): void {
+function validateTransition(errors: string[], transition: Transition, varIds: Set<string>, varsById: Map<string, StateVarDecl>): void {
   const declaredReads = new Set(transition.reads);
   const declaredWrites = new Set(transition.writes);
   for (const id of [...transition.reads, ...transition.writes]) {
@@ -96,6 +97,7 @@ function validateTransition(errors: string[], transition: Transition, varIds: Se
   for (const write of effectWrites(transition.effect)) {
     if (!declaredWrites.has(write)) errors.push(`${transition.id}: effect writes ${write} but writes does not declare it`);
   }
+  validateEffectValues(errors, transition.id, transition.effect, varsById);
 }
 
 function pushDuplicates(errors: string[], kind: string, ids: readonly string[]): void {
@@ -159,6 +161,35 @@ function walkExpr(expr: ExprIR, visit: (expr: ExprIR) => void): void {
       break;
     default:
       break;
+  }
+}
+
+function validateEffectValues(errors: string[], transitionId: string, effect: EffectIR, varsById: Map<string, StateVarDecl>): void {
+  walkEffect(effect, (effectNode) => {
+    switch (effectNode.kind) {
+      case "assign":
+        validateAssignedExpr(errors, transitionId, effectNode.var, effectNode.expr, varsById);
+        break;
+      case "choose":
+        for (const expr of effectNode.among) validateAssignedExpr(errors, transitionId, effectNode.var, expr, varsById);
+        break;
+      case "havoc":
+        if (!varsById.has(effectNode.var)) errors.push(`${transitionId}: havoc targets unknown var ${effectNode.var}`);
+        break;
+      default:
+        break;
+    }
+  });
+}
+
+function validateAssignedExpr(errors: string[], transitionId: string, varId: string, expr: ExprIR, varsById: Map<string, StateVarDecl>): void {
+  const decl = varsById.get(varId);
+  if (!decl) {
+    errors.push(`${transitionId}: assignment targets unknown var ${varId}`);
+    return;
+  }
+  if (expr.kind === "lit" && !validateValue(decl.domain, expr.value)) {
+    errors.push(`${transitionId}: invalid assignment to ${varId}: ${JSON.stringify(expr.value)}`);
   }
 }
 

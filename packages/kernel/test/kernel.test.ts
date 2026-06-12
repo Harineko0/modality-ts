@@ -112,6 +112,32 @@ describe("validator", () => {
     expect(errors).toContain("effect writes flag");
   });
 
+  it("rejects invalid structured write values and targets", () => {
+    const model = baseModel();
+    const badLiteral: Model = {
+      ...model,
+      transitions: [
+        {
+          ...model.transitions[0]!,
+          effect: { kind: "assign", var: "flag", expr: { kind: "lit", value: "yes" } }
+        }
+      ]
+    };
+    expect(validateModel(badLiteral).errors.join("\n")).toContain("invalid assignment to flag");
+
+    const badHavoc: Model = {
+      ...model,
+      transitions: [
+        {
+          ...model.transitions[0]!,
+          effect: { kind: "havoc", var: "missing" },
+          writes: ["flag"]
+        }
+      ]
+    };
+    expect(validateModel(badHavoc).errors.join("\n")).toContain("havoc targets unknown var missing");
+  });
+
   it("rejects malformed tagged domains", () => {
     const model = baseModel();
     const broken: Model = {
