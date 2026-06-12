@@ -298,6 +298,46 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
+  it("extracts simple useEffect setter bodies as internal transitions", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [auth, setAuth] = useState<'guest' | 'user'>('guest');
+        const [screen, setScreen] = useState<'home' | 'checkout'>('checkout');
+        useEffect(() => {
+          setScreen('home');
+        }, [auth]);
+        return <button onClick={() => setAuth('user')}>Login</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions.map((transition) => [transition.id, transition.cls, transition.triggeredBy])).toContainEqual([
+      "App.useEffect.screen",
+      "internal",
+      ["local:App.auth"]
+    ]);
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "effect-extracted-skeleton",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      always(model, (state) => state["local:App.screen"] === "home", { name: "effectStabilizesScreen", reads: ["local:App.screen"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+  });
+
   it("splits simple async handlers into enqueue and resolve transitions", () => {
     const result = extractUseStateSkeleton(
       `

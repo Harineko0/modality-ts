@@ -107,6 +107,13 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
       }
     }
+    if (ts.isCallExpression(node) && isUseEffectCall(node)) {
+      const extracted = transitionsFromUseEffect(source, fileName, node, setters, nextComponent ?? "Anonymous");
+      transitions.push(...extracted);
+      if (extracted.length === 0 && useEffectWritesModeledState(node, setters)) {
+        warnings.push({ message: `Unextractable effect ${nextComponent ?? "Anonymous"}.useEffect`, ...lineAndColumn(source, node) });
+      }
+    }
     ts.forEachChild(node, (child) => visit(child, nextComponent));
   };
   visit(source, undefined);
@@ -207,6 +214,10 @@ function domainFromTypeReference(node: ts.TypeReferenceNode): AbstractDomain {
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
+}
+
+function isUseEffectCall(node: ts.CallExpression): boolean {
+  return ts.isIdentifier(node.expression) && node.expression.text === "useEffect";
 }
 
 function isExtractableHandler(node: ts.Expression): node is ExtractableHandler {
@@ -386,6 +397,51 @@ function transitionsFromAsyncHandler(
     });
   }
   return transitions.map((transition) => ({ ...transition, writes: [...new Set(transition.writes)] }));
+}
+
+function transitionsFromUseEffect(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+  component: string
+): Transition[] {
+  const callback = node.arguments[0];
+  if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) || !ts.isBlock(callback.body)) return [];
+  const effects = callback.body.statements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
+  if (effects.length === 0) return [];
+  const deps = dependencyReads(node.arguments[1], setters);
+  const guards: ExprIR[] = effects.map((effect) => ({ kind: "neq", args: [{ kind: "read", var: effect.var }, effect.expr] }));
+  const guard = guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!);
+  return [{
+    id: `${component}.useEffect.${effects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
+    cls: "internal",
+    label: { kind: "internal", text: `${component}.useEffect` },
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard,
+    effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
+    reads: [...new Set([...deps, ...effects.map((effect) => effect.var)])],
+    writes: [...new Set(effects.map((effect) => effect.var))],
+    confidence: "exact",
+    triggeredBy: deps
+  }];
+}
+
+function dependencyReads(node: ts.Expression | undefined, setters: Map<string, SetterBinding>): string[] {
+  if (!node || !ts.isArrayLiteralExpression(node)) {
+    return [...new Set([...setters.values()].map((setter) => setter.varId))];
+  }
+  return [...new Set(node.elements.flatMap((element) => ts.isIdentifier(element) ? [stateVarForName(element.text, setters)].filter((id): id is string => Boolean(id)) : []))];
+}
+
+function useEffectWritesModeledState(node: ts.CallExpression, setters: Map<string, SetterBinding>): boolean {
+  let writes = false;
+  const visit = (candidate: ts.Node): void => {
+    if (ts.isCallExpression(candidate) && ts.isIdentifier(candidate.expression) && setters.has(candidate.expression.text)) writes = true;
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return writes;
 }
 
 interface ParsedGuard {
