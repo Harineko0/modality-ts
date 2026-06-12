@@ -147,15 +147,15 @@ function resolveGet(suffix: string, data: "0" | "1" | null) {
 
 function todoProperties(model: Model): Property[] {
   return [
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.auth === "guest"), { name: "guestCannotSubmit" }),
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.draft === "empty"), { name: "emptyDraftCannotSubmit" }),
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.saveStatus === "posting"), { name: "noSubmitWhilePosting" }),
-    alwaysStep(model, (pre, step, post) => !step.resolved("POST_TODO", "error") || (post.draft === pre.draft && post.saveStatus === "failed"), { name: "failedPostKeepsDraft" }),
-    alwaysStep(model, (_pre, step, post) => !step.resolved("POST_TODO", "success") || (post.draft === "empty" && post.saveStatus === "idle"), { name: "successResets" }),
-    always(model, (s) => !(s.auth === "user" && s.todosError === true) || enabled(model, "App.logout")(s), { name: "logoutAvailableDuringGetError" }),
-    reachable(model, (s) => s.auth === "user" && (s.todosData === "1" || s.todosData === "many"), { name: "loadedTodosReachable" }),
-    always(model, (s) => postCount(s) <= 1, { name: "naiveNoDoubleSubmitInvariant" }),
-    alwaysStep(model, (pre, step, post) => !(step.resolved("POST_TODO", "success") && pre.saveStatus !== "posting") || post.draft === pre.draft, { name: "staleCompletionIsInert" })
+    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.auth === "guest"), { name: "guestCannotSubmit", reads: ["auth", "sys:pending"] }),
+    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.draft === "empty"), { name: "emptyDraftCannotSubmit", reads: ["draft", "sys:pending"] }),
+    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.saveStatus === "posting"), { name: "noSubmitWhilePosting", reads: ["saveStatus", "sys:pending"] }),
+    alwaysStep(model, (pre, step, post) => !step.resolved("POST_TODO", "error") || (post.draft === pre.draft && post.saveStatus === "failed"), { name: "failedPostKeepsDraft", reads: ["draft", "saveStatus", "sys:pending"] }),
+    alwaysStep(model, (_pre, step, post) => !step.resolved("POST_TODO", "success") || (post.draft === "empty" && post.saveStatus === "idle"), { name: "successResets", reads: ["draft", "saveStatus", "sys:pending"] }),
+    always(model, (s) => !(s.auth === "user" && s.todosError === true) || enabled(model, "App.logout")(s), { name: "logoutAvailableDuringGetError", reads: ["auth", "todosError"] }),
+    reachable(model, (s) => s.auth === "user" && (s.todosData === "1" || s.todosData === "many"), { name: "loadedTodosReachable", reads: ["auth", "todosData"] }),
+    always(model, (s) => postCount(s) <= 1, { name: "naiveNoDoubleSubmitInvariant", reads: ["sys:pending"] }),
+    alwaysStep(model, (pre, step, post) => !(step.resolved("POST_TODO", "success") && pre.saveStatus !== "posting") || post.draft === pre.draft, { name: "staleCompletionIsInert", reads: ["saveStatus", "draft", "sys:pending"] })
   ];
 }
 
@@ -210,6 +210,15 @@ describe("hand-written ToDo IR", () => {
     const first = checkModel(model, todoProperties(model));
     const second = checkModel(model, todoProperties(model));
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+
+  it("keeps ToDo verdicts stable with slicing enabled", () => {
+    const model = todoModel();
+    const full = checkModel(model, todoProperties(model));
+    const sliced = checkModel(model, todoProperties(model), { slicing: true });
+    expect(sliced.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual(
+      full.verdicts.map((verdict) => [verdict.property, verdict.status])
+    );
   });
 });
 

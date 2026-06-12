@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkModel } from "../src/index.js";
+import { checkModel, sliceModel } from "../src/index.js";
 import { always, alwaysStep, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "@modality/kernel";
 
 const bool = { kind: "bool" } as const;
@@ -143,5 +143,37 @@ describe("checker", () => {
     const [verdict] = checkModel(broken, [always(broken, () => true, { name: "p" })]).verdicts;
     expect(verdict.status).toBe("error");
     expect(verdict.status === "error" ? verdict.message : "").toContain("writes auth");
+  });
+
+  it("checks properties on conservative slices when reads are declared", () => {
+    const m: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        { id: "unrelated", domain: { kind: "enum", values: ["cold", "hot"] }, origin: "system", scope: { kind: "global" }, initial: "cold" }
+      ],
+      transitions: [
+        ...model().transitions,
+        {
+          id: "heat",
+          cls: "user",
+          label: { kind: "click", text: "Heat" },
+          source: [],
+          guard: { kind: "eq", args: [read("unrelated"), lit("cold")] },
+          effect: { kind: "assign", var: "unrelated", expr: lit("hot") },
+          reads: ["unrelated"],
+          writes: ["unrelated"],
+          confidence: "exact"
+        }
+      ]
+    };
+    const props: Property[] = [
+      always(m, (s) => !(s.done === true && s.draft === "empty"), { name: "badDoneInvariant", reads: ["done", "draft"] }),
+      reachable(m, (s) => s.done === true, { name: "doneReachable", reads: ["done"] })
+    ];
+    const sliced = checkModel(m, props, { slicing: true });
+    const full = checkModel(m, props);
+    expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(full.verdicts.map((v) => [v.property, v.status]));
+    expect(sliceModel(m, ["done", "draft"]).vars.map((decl) => decl.id)).not.toContain("unrelated");
   });
 });

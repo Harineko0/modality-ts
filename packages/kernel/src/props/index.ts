@@ -11,36 +11,41 @@ export interface StepFacts {
 export type StatePredicate = (state: ModelState) => boolean;
 export type StepPredicate = (pre: ModelState, step: StepFacts, post: ModelState) => boolean;
 
+export interface PropertyOptions {
+  name?: string;
+  reads?: readonly string[];
+}
+
 export type Property =
-  | { kind: "always"; name: string; predicate: StatePredicate }
-  | { kind: "alwaysStep"; name: string; predicate: StepPredicate }
-  | { kind: "reachable"; name: string; predicate: StatePredicate }
-  | { kind: "leadsToWithin"; name: string; trigger: (step: StepFacts) => boolean; goal: StatePredicate; budget: { steps?: number; environment?: number }; allowUserEvents?: boolean }
-  | { kind: "reachableFrom"; name: string; when: StatePredicate; goal: StatePredicate };
+  | { kind: "always"; name: string; predicate: StatePredicate; reads?: readonly string[] }
+  | { kind: "alwaysStep"; name: string; predicate: StepPredicate; reads?: readonly string[] }
+  | { kind: "reachable"; name: string; predicate: StatePredicate; reads?: readonly string[] }
+  | { kind: "leadsToWithin"; name: string; trigger: (step: StepFacts) => boolean; goal: StatePredicate; budget: { steps?: number; environment?: number }; allowUserEvents?: boolean; reads?: readonly string[] }
+  | { kind: "reachableFrom"; name: string; when: StatePredicate; goal: StatePredicate; reads?: readonly string[] };
 
-export function always(_model: Model, predicate: StatePredicate, options: { name?: string } = {}): Property {
-  return { kind: "always", name: options.name ?? "always", predicate };
+export function always(_model: Model, predicate: StatePredicate, options: PropertyOptions = {}): Property {
+  return { kind: "always", name: options.name ?? "always", predicate, reads: options.reads };
 }
 
-export function alwaysStep(_model: Model, predicate: StepPredicate, options: { name?: string } = {}): Property {
-  return { kind: "alwaysStep", name: options.name ?? "alwaysStep", predicate };
+export function alwaysStep(_model: Model, predicate: StepPredicate, options: PropertyOptions = {}): Property {
+  return { kind: "alwaysStep", name: options.name ?? "alwaysStep", predicate, reads: options.reads };
 }
 
-export function reachable(_model: Model, predicate: StatePredicate, options: { name?: string } = {}): Property {
-  return { kind: "reachable", name: options.name ?? "reachable", predicate };
+export function reachable(_model: Model, predicate: StatePredicate, options: PropertyOptions = {}): Property {
+  return { kind: "reachable", name: options.name ?? "reachable", predicate, reads: options.reads };
 }
 
 export function leadsToWithin(
   _model: Model,
   trigger: (step: StepFacts) => boolean,
   goal: StatePredicate,
-  options: { name?: string; budget: { steps?: number; environment?: number }; allowUserEvents?: boolean }
+  options: PropertyOptions & { budget: { steps?: number; environment?: number }; allowUserEvents?: boolean }
 ): Property {
-  return { kind: "leadsToWithin", name: options.name ?? "leadsToWithin", trigger, goal, budget: options.budget, allowUserEvents: options.allowUserEvents };
+  return { kind: "leadsToWithin", name: options.name ?? "leadsToWithin", trigger, goal, budget: options.budget, allowUserEvents: options.allowUserEvents, reads: options.reads };
 }
 
-export function reachableFrom(_model: Model, when: StatePredicate, goal: StatePredicate, options: { name?: string } = {}): Property {
-  return { kind: "reachableFrom", name: options.name ?? "reachableFrom", when, goal };
+export function reachableFrom(_model: Model, when: StatePredicate, goal: StatePredicate, options: PropertyOptions = {}): Property {
+  return { kind: "reachableFrom", name: options.name ?? "reachableFrom", when, goal, reads: options.reads };
 }
 
 export function enabled(model: Model, transitionId: string): StatePredicate {

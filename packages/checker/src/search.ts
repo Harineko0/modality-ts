@@ -15,6 +15,10 @@ export interface CheckResult {
   stats: { states: number; edges: number; depth: number };
 }
 
+export interface CheckOptions {
+  slicing?: boolean;
+}
+
 interface Parent {
   parent: string | null;
   transition: Transition | null;
@@ -31,7 +35,14 @@ interface Edge {
   step: StepFacts;
 }
 
-export function checkModel(model: Model, properties: readonly Property[]): CheckResult {
+export function checkModel(model: Model, properties: readonly Property[], options: CheckOptions = {}): CheckResult {
+  if (options.slicing && properties.length > 0 && properties.every((property) => property.reads !== undefined)) {
+    return checkModelSliced(model, properties);
+  }
+  return checkModelCore(model, properties);
+}
+
+function checkModelCore(model: Model, properties: readonly Property[]): CheckResult {
   const validation = validateModel(model);
   if (!validation.ok) {
     return {
@@ -91,6 +102,53 @@ export function checkModel(model: Model, properties: readonly Property[]): Check
     verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "verified-within-bounds", property: property.name }),
     stats: { states: parents.size, edges: edgeCount, depth }
   };
+}
+
+function checkModelSliced(model: Model, properties: readonly Property[]): CheckResult {
+  const groups = new Map<string, { model: Model; properties: Property[] }>();
+  for (const property of properties) {
+    const slice = sliceModel(model, property.reads ?? []);
+    const key = slice.vars.map((decl) => decl.id).join("\0");
+    const group = groups.get(key);
+    if (group) group.properties.push(property);
+    else groups.set(key, { model: slice, properties: [property] });
+  }
+  const verdicts = new Map<string, PropertyVerdict>();
+  let states = 0;
+  let edges = 0;
+  let depth = 0;
+  for (const group of groups.values()) {
+    const result = checkModelCore(group.model, group.properties);
+    for (const verdict of result.verdicts) verdicts.set(verdict.property, verdict);
+    states += result.stats.states;
+    edges += result.stats.edges;
+    depth = Math.max(depth, result.stats.depth);
+  }
+  return {
+    verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "error", property: property.name, message: "missing sliced verdict" }),
+    stats: { states, edges, depth }
+  };
+}
+
+export function sliceModel(model: Model, propertyReads: readonly string[]): Model {
+  const systemVars = new Set(model.vars.filter((decl) => decl.id.startsWith("sys:")).map((decl) => decl.id));
+  const needed = new Set([...systemVars, ...propertyReads]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const transition of model.transitions) {
+      if (!transition.writes.some((write) => needed.has(write))) continue;
+      for (const id of [...transition.reads, ...transition.writes]) {
+        if (!needed.has(id)) {
+          needed.add(id);
+          changed = true;
+        }
+      }
+    }
+  }
+  const vars = model.vars.filter((decl) => needed.has(decl.id));
+  const transitions = model.transitions.filter((transition) => transition.writes.some((write) => needed.has(write)) || transition.reads.some((read) => needed.has(read)));
+  return { ...model, vars, transitions };
 }
 
 function initialStates(model: Model): ModelState[] {
