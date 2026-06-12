@@ -106,4 +106,51 @@ describe("runCiCommand", () => {
     expect(result.lines).toContain("trust-regressions=1");
     expect(result.lines).toContain("trust-regression: manualTransitions 0->1 new=setFlag");
   });
+
+  it("runs generated conformance walks as part of CI", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const artifactDir = join(dir, ".modality");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, conformCount: 2, conformDepth: 2, conformSeed: 7, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toContain("conform-pass-rate=1");
+    expect(result.lines).toContain("conform: total=2 reproduced=2 notReproduced=0 inconclusive=0");
+  });
+
+  it("fails CI when conformance pass rate is below the configured threshold", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const walksPath = join(dir, "walks.json");
+    const artifactDir = join(dir, ".modality");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(propsPath, `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`, "utf8");
+    await writeFile(walksPath, JSON.stringify([
+      {
+        id: "diverged",
+        trace: {
+          steps: [{
+            transitionId: "setFlag",
+            label: { kind: "click", text: "Set flag" },
+            pre: { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false },
+            post: { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: true },
+            diff: { flag: { before: false, after: true } }
+          }]
+        },
+        states: [
+          { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false },
+          { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false }
+        ]
+      }
+    ]), "utf8");
+
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, conformWalksPath: walksPath, minConformPassRate: 1, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(5);
+    expect(result.lines).toContain("conform-pass-rate=0");
+    expect(result.lines).toContain("conform-min-pass-rate=1");
+  });
 });

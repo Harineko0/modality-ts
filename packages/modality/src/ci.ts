@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CheckReport } from "@modality/kernel";
 import { runCheckCommand } from "./check.js";
+import { runConformCommand } from "./conform.js";
 
 export interface CiCommandOptions {
   modelPath: string;
@@ -10,6 +11,11 @@ export interface CiCommandOptions {
   artifactDir: string;
   overlayPath?: string;
   baselinePath?: string;
+  conformWalksPath?: string;
+  conformCount?: number;
+  conformDepth?: number;
+  conformSeed?: number;
+  minConformPassRate?: number;
   now?: Date;
 }
 
@@ -37,7 +43,11 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
   const violationCount = check.check.verdicts.filter((verdict) => verdict.status === "violated").length;
   const errorCount = check.check.verdicts.filter((verdict) => verdict.status === "error").length;
   const trustRegressions = options.baselinePath ? await compareTrustLedger(options.baselinePath, check.report) : [];
-  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : 0;
+  const conform = await runOptionalConformance(options, now);
+  const conformPassRate = conform?.report.metrics.passRate;
+  const minConformPassRate = options.minConformPassRate ?? 1;
+  const conformFailed = conformPassRate !== undefined && conformPassRate < minConformPassRate;
+  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : conformFailed ? 5 : 0;
   return {
     exitCode,
     reportPath,
@@ -48,10 +58,23 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
       `determinism=${determinism.length === 0 ? "passed" : "failed"}`,
       ...determinism.map((failure) => `determinism-failure: ${failure}`),
       ...(options.baselinePath ? [`trust-regressions=${trustRegressions.length}`, ...trustRegressions.map((regression) => `trust-regression: ${regression}`)] : []),
+      ...(conform ? [`conform-pass-rate=${conform.report.metrics.passRate}`, `conform-min-pass-rate=${minConformPassRate}`, ...conform.lines] : []),
       `report=${reportPath}`,
       `traces=${tracesDir}`
     ]
   };
+}
+
+async function runOptionalConformance(options: CiCommandOptions, now: Date) {
+  if (!options.conformWalksPath && options.conformCount === undefined) return undefined;
+  return runConformCommand({
+    walksPath: options.conformWalksPath,
+    modelPath: options.conformWalksPath ? undefined : options.modelPath,
+    walkCount: options.conformCount,
+    depth: options.conformDepth,
+    seed: options.conformSeed,
+    now
+  });
 }
 
 async function checkDeterminism(options: CiCommandOptions, now: Date, reportPath: string, tracesDir: string): Promise<string[]> {
