@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkModel, type CheckResult, type PropertyVerdict } from "@modality/checker";
-import { canonicalJson, type CheckReport, type Model, type Property } from "@modality/kernel";
+import { canonicalJson, parseModelArtifact, type CheckReport, type Model, type Property } from "@modality/kernel";
 import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface CheckCommandOptions {
@@ -22,7 +22,7 @@ export interface CheckCommandResult {
 }
 
 export async function runCheckCommand(options: CheckCommandOptions): Promise<CheckCommandResult> {
-  const loadedModel = JSON.parse(await readFile(options.modelPath, "utf8")) as Model;
+  const loadedModel = parseModelArtifact(await readFile(options.modelPath, "utf8"));
   const overlay = await loadAndApplyOverlay(loadedModel, options.overlayPath);
   if (overlay.errors.length > 0) {
     throw new Error(`Overlay merge failed: ${overlay.errors.join("; ")}`);

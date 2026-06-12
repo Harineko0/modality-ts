@@ -131,4 +131,11 @@ describe("runCheckCommand", () => {
     expect(result.check.verdicts[0]?.status).toBe("vacuous-warning");
     expect(report.trustLedger.manualTransitions).toEqual(["setFlag"]);
   });
+
+  it("rejects unsupported model artifact versions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    await writeFile(modelPath, JSON.stringify({ schemaVersion: 2, id: "future", vars: [], transitions: [], bounds: {} }), "utf8");
+    await expect(runCheckCommand({ modelPath })).rejects.toThrow("unsupported model schemaVersion 2");
+  });
 });

@@ -54,4 +54,13 @@ describe("runReplayCommand", () => {
       reason: 'postcondition mismatch: auth: expected "user", got "guest"'
     });
   });
+
+  it("rejects malformed trace artifacts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-replay-"));
+    const tracePath = join(dir, "trace.json");
+    const statesPath = join(dir, "states.json");
+    await writeFile(tracePath, JSON.stringify({ steps: [{ transitionId: "bad", pre: {} }] }), "utf8");
+    await writeFile(statesPath, JSON.stringify([{ auth: "guest" }]), "utf8");
+    await expect(runReplayCommand({ tracePath, statesPath })).rejects.toThrow("trace step 1 is malformed");
+  });
 });

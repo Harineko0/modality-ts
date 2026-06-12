@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { replayTrace, StateSequenceDriver } from "@modality/harness";
-import { canonicalJson, type ModelState, type ReplayReport, type Trace } from "@modality/kernel";
+import { canonicalJson, parseTraceArtifact, type ModelState, type ReplayReport } from "@modality/kernel";
 
 export interface ReplayCommandOptions {
   tracePath: string;
@@ -17,7 +17,7 @@ export interface ReplayCommandResult {
 }
 
 export async function runReplayCommand(options: ReplayCommandOptions): Promise<ReplayCommandResult> {
-  const trace = JSON.parse(await readFile(options.tracePath, "utf8")) as Trace;
+  const trace = parseTraceArtifact(await readFile(options.tracePath, "utf8"));
   const states = JSON.parse(await readFile(options.statesPath, "utf8")) as ModelState[];
   const verdict = await replayTrace(trace, new StateSequenceDriver(states));
   const report: ReplayReport = {

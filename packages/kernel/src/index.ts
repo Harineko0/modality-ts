@@ -6,3 +6,4 @@ export * from "./props/index.js";
 export * from "./trace/types.js";
 export * from "./report/types.js";
 export * from "./overlay/index.js";
+export * from "./artifacts/index.js";
