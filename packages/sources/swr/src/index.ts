@@ -6,6 +6,8 @@ export interface SwrTemplateOptions {
   op: string;
   payloadDomain: AbstractDomain;
   activeWhen?: ExprIR;
+  revalidateOnFocus?: boolean;
+  mutate?: boolean;
   sourceFile?: string;
 }
 
@@ -22,6 +24,8 @@ export interface SwrKeyWindowTemplateOptions {
   entries: readonly SwrKeyWindowEntry[];
   windowSize?: number;
   activeWhen?: ExprIR;
+  revalidateOnFocus?: boolean;
+  mutate?: boolean;
   sourceFile?: string;
 }
 
@@ -60,6 +64,8 @@ export function createSwrTemplate(options: SwrTemplateOptions): TemplateFragment
       writes: [validatingVar, "sys:pending"],
       confidence: "exact"
     },
+    ...(options.revalidateOnFocus ? [fetchTransition(options, active, source, "focus")] : []),
+    ...(options.mutate ? mutateTransitions(options, active, source, dataVar, validatingVar, errorVar) : []),
     ...successTransitions(options),
     {
       id: `swr:${options.id}:resolve:error`,
@@ -105,6 +111,60 @@ export function createSwrTemplate(options: SwrTemplateOptions): TemplateFragment
   }
 }
 
+function fetchTransition(
+  options: SwrTemplateOptions,
+  active: ExprIR,
+  source: Transition["source"],
+  trigger: "timer" | "focus"
+): Transition {
+  const validatingVar = swrVarId(options.id, "isValidating");
+  return {
+    id: trigger === "timer" ? `swr:${options.id}:fetch` : `swr:${options.id}:focus-revalidate`,
+    cls: "library",
+    label: trigger === "timer" ? { kind: "timer", key: options.id } : { kind: "focus-revalidate", key: options.id },
+    source,
+    guard: active,
+    effect: {
+      kind: "seq",
+      effects: [
+        { kind: "assign", var: validatingVar, expr: lit(true) },
+        { kind: "enqueue", op: options.op, continuation: `swr:${options.id}:resolve`, args: {} }
+      ]
+    },
+    reads: [...exprReadList(active)],
+    writes: [validatingVar, "sys:pending"],
+    confidence: "exact"
+  };
+}
+
+function mutateTransitions(
+  options: SwrTemplateOptions,
+  active: ExprIR,
+  source: Transition["source"],
+  dataVar: string,
+  validatingVar: string,
+  errorVar: string
+): Transition[] {
+  return enumerateDomain(options.payloadDomain).map((value, index) => ({
+    id: `swr:${options.id}:mutate:${index}`,
+    cls: "library" as const,
+    label: { kind: "internal" as const, text: `mutate ${options.id}:${index}` },
+    source,
+    guard: active,
+    effect: {
+      kind: "seq" as const,
+      effects: [
+        { kind: "assign" as const, var: dataVar, expr: lit(value) },
+        { kind: "assign" as const, var: validatingVar, expr: lit(false) },
+        { kind: "assign" as const, var: errorVar, expr: lit(false) }
+      ]
+    },
+    reads: [...exprReadList(active)],
+    writes: [dataVar, validatingVar, errorVar],
+    confidence: "exact" as const
+  }));
+}
+
 export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions): TemplateFragment {
   const windowSize = options.windowSize ?? 2;
   const entries = options.entries.slice(0, windowSize);
@@ -114,6 +174,8 @@ export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions)
       op: entry.op ?? `${options.op}:${entry.id}`,
       payloadDomain: options.payloadDomain,
       activeWhen: combineActive(options.activeWhen, entry.activeWhen),
+      revalidateOnFocus: options.revalidateOnFocus,
+      mutate: options.mutate,
       sourceFile: options.sourceFile
     })
   );

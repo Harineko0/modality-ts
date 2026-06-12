@@ -76,6 +76,37 @@ describe("SWR template", () => {
     expect(template.transitions[0]?.reads).toEqual(["session"]);
   });
 
+  it("models opt-in focus revalidation and mutate API effects", () => {
+    const template = createSwrTemplate({
+      id: "todos",
+      op: "GET_TODOS",
+      payloadDomain: { kind: "lengthCat" },
+      activeWhen: { kind: "eq", args: [{ kind: "read", var: "auth" }, { kind: "lit", value: "user" }] },
+      revalidateOnFocus: true,
+      mutate: true
+    });
+    expect(template.transitions.map((transition) => [transition.id, transition.label.kind])).toContainEqual(["swr:todos:focus-revalidate", "focus-revalidate"]);
+    expect(template.transitions.map((transition) => transition.id)).toContain("swr:todos:mutate:2");
+
+    const focus = template.transitions.find((transition) => transition.id === "swr:todos:focus-revalidate");
+    expect(focus).toMatchObject({
+      cls: "library",
+      writes: ["swr:todos:isValidating", "sys:pending"]
+    });
+    const mutateMany = template.transitions.find((transition) => transition.id === "swr:todos:mutate:2");
+    expect(mutateMany).toMatchObject({
+      cls: "library",
+      effect: {
+        kind: "seq",
+        effects: [
+          { kind: "assign", var: "swr:todos:data", expr: { kind: "lit", value: "many" } },
+          { kind: "assign", var: "swr:todos:isValidating", expr: { kind: "lit", value: false } },
+          { kind: "assign", var: "swr:todos:error", expr: { kind: "lit", value: false } }
+        ]
+      }
+    });
+  });
+
   it("instantiates isolated entries for a bounded key window", () => {
     const template = createSwrKeyWindowTemplate({
       id: "quote",
@@ -111,5 +142,18 @@ describe("SWR template", () => {
     };
     expect(swrWindowView(state, "quote", "basic").loadedSome).toBe(true);
     expect(swrWindowView(state, "quote", "pro").loadedSome).toBe(false);
+  });
+
+  it("keeps key-window mutate transitions isolated per entry", () => {
+    const template = createSwrKeyWindowTemplate({
+      id: "quote",
+      op: "GET_QUOTE",
+      payloadDomain: { kind: "lengthCat" },
+      entries: [{ id: "basic" }, { id: "pro" }],
+      mutate: true
+    });
+    const basicMutate = template.transitions.find((transition) => transition.id === "swr:quote:basic:mutate:2");
+    expect(basicMutate?.writes).toEqual(["swr:quote:basic:data", "swr:quote:basic:isValidating", "swr:quote:basic:error"]);
+    expect(basicMutate?.writes).not.toContain("swr:quote:pro:data");
   });
 });
