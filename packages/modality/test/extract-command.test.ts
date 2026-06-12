@@ -62,6 +62,9 @@ describe("runExtractCommand", () => {
     await runExtractCommand({ sourcePath, modelPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.warnings).toContain("Unextractable handler App.onClick");
+    expect(report.handlers).toEqual([
+      { id: "App.onClick", classification: "unextractable", reasons: ["Unextractable handler App.onClick"] }
+    ]);
   });
 
   it("applies overlay artifacts during extraction", async () => {

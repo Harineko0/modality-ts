@@ -74,16 +74,27 @@ async function assertMatchesExpectedModel(model: Model, expectedModelPath: strin
 }
 
 function createExtractionReport(sourcePath: string, model: Model, warnings: readonly string[], now: Date): ExtractionReport {
+  const transitionHandlers = model.transitions.map((transition) => ({
+    id: transition.id,
+    classification: transition.confidence === "manual" ? "overlay" as const : transition.confidence,
+    reasons: [] as string[]
+  }));
+  const transitionIds = new Set(transitionHandlers.map((handler) => handler.id));
+  const unextractableHandlers = warnings
+    .map(unextractableHandlerFromWarning)
+    .filter((handler): handler is { id: string; reason: string } => Boolean(handler))
+    .filter((handler) => !transitionIds.has(handler.id))
+    .map((handler) => ({
+      id: handler.id,
+      classification: "unextractable" as const,
+      reasons: [handler.reason]
+    }));
   return {
     schemaVersion: 1,
     kind: "extraction-report",
     generatedAt: now.toISOString(),
     sourceFiles: [sourcePath],
-    handlers: model.transitions.map((transition) => ({
-      id: transition.id,
-      classification: transition.confidence === "manual" ? "overlay" : transition.confidence,
-      reasons: []
-    })),
+    handlers: [...transitionHandlers, ...unextractableHandlers],
     domains: model.vars.map((decl) => ({
       varId: decl.id,
       domainKind: decl.domain.kind,
@@ -91,6 +102,11 @@ function createExtractionReport(sourcePath: string, model: Model, warnings: read
     })),
     warnings
   };
+}
+
+function unextractableHandlerFromWarning(warning: string): { id: string; reason: string } | undefined {
+  const match = /^Unextractable handler (.+)$/.exec(warning);
+  return match?.[1] ? { id: match[1], reason: warning } : undefined;
 }
 
 function systemVars(route: string, effectApis: readonly string[]): StateVarDecl[] {
