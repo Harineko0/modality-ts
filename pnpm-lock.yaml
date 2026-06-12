@@ -36,6 +36,12 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/harness:
+    dependencies:
+      '@modality/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
   packages/kernel: {}
 
   packages/modality:
