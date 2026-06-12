@@ -252,7 +252,11 @@ function transitionsFromJsxAttribute(
       : undefined;
   if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
-  if (!setter) return [];
+  if (!setter) {
+    const escaped = escapedSetters(call, setters);
+    if (escaped.length === 0) return [];
+    return applyParsedGuard(escapedSetterTransitions(source, fileName, node, attr, component, escaped, locator), disabledGuard);
+  }
   if ((attr === "onChange" || attr === "onInput") && isInputValueExpression(call.arguments[0], handler.parameters[0])) {
     return applyParsedGuard(inputTransitions(source, fileName, node, attr, component, setter, locator), disabledGuard);
   }
@@ -269,6 +273,35 @@ function transitionsFromJsxAttribute(
     writes: [setter.varId],
     confidence: "exact"
   }], disabledGuard);
+}
+
+function escapedSetters(call: ts.CallExpression, setters: Map<string, SetterBinding>): SetterBinding[] {
+  return call.arguments
+    .filter(ts.isIdentifier)
+    .map((arg) => setters.get(arg.text))
+    .filter((setter): setter is SetterBinding => Boolean(setter));
+}
+
+function escapedSetterTransitions(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  setters: readonly SetterBinding[],
+  locator: Locator | undefined
+): Transition[] {
+  return setters.map((setter) => ({
+    id: `${component}.${attr}.${setter.stateName}.escaped`,
+    cls: "user" as const,
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit" as const, value: true },
+    effect: { kind: "havoc" as const, var: setter.varId },
+    reads: [],
+    writes: [setter.varId],
+    confidence: "over-approx" as const
+  }));
 }
 
 function inputTransitions(
