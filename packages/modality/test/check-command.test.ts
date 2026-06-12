@@ -42,6 +42,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const reportPath = join(dir, "report.json");
     const tracesDir = join(dir, "traces");
+    const replayTestsDir = join(dir, "replay-tests");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     const properties: Property[] = [
       { kind: "always", name: "flagStartsFalseOnly", predicate: (state) => state.flag === false },
@@ -66,7 +67,9 @@ describe("runCheckCommand", () => {
       ];`,
       "utf8"
     );
-    const withProps = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, now: new Date("2026-06-12T00:00:00.000Z") });
+    const statesPath = join(dir, "states.json");
+    await writeFile(statesPath, JSON.stringify([{ "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false, payload: "tok1" }, { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: true, payload: "tok1" }]), "utf8");
+    const withProps = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, replayTestsDir, statesPath, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(withProps.exitCode).toBe(2);
     expect(withProps.lines).toContain("flagStartsFalseOnly: violated");
@@ -93,10 +96,11 @@ describe("runCheckCommand", () => {
     expect(JSON.parse(await readFile(violatedTracePath, "utf8")).steps.map((step: { transitionId: string }) => step.transitionId)).toEqual(["setFlag"]);
     expect(JSON.parse(await readFile(reachableTracePath, "utf8")).steps.map((step: { transitionId: string }) => step.transitionId)).toEqual(["setFlag"]);
 
-    const statesPath = join(dir, "states.json");
-    await writeFile(statesPath, JSON.stringify([{ "sys:route": "/", "sys:history": [], "sys:pending": [], flag: false, payload: "tok1" }, { "sys:route": "/", "sys:history": [], "sys:pending": [], flag: true, payload: "tok1" }]), "utf8");
     const replay = await runReplayCommand({ tracePath: violatedTracePath, statesPath, now: new Date("2026-06-12T00:00:00.000Z") });
     expect(replay.report.verdict.status).toBe("reproduced");
+    const replayTest = await readFile(join(replayTestsDir, "flagStartsFalseOnly.replay.test.ts"), "utf8");
+    expect(replayTest).toContain('describe("replay flagStartsFalseOnly"');
+    expect(replayTest).toContain('"transitionId":"setFlag"');
   });
 
   it("applies overlay artifacts before checking", async () => {
