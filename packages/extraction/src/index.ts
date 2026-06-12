@@ -4,6 +4,8 @@ import type { AbstractDomain, StateVarDecl, Transition, Value } from "@modality/
 export interface UseStateExtractionOptions {
   route?: string;
   fileName?: string;
+  effectApis?: readonly string[];
+  asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
 }
 
 export interface ExtractionWarning {
@@ -56,6 +58,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
+  const effectApis = new Set(options.effectApis ?? []);
   const setters = new Map<string, { varId: string; component: string; stateName: string }>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const nextComponent = componentNameFor(node) ?? componentName;
@@ -81,8 +84,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
-      const transition = transitionFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous");
-      if (transition) transitions.push(transition);
+      transitions.push(...transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}));
     }
     ts.forEachChild(node, (child) => visit(child, nextComponent));
   };
@@ -180,30 +182,34 @@ function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
 }
 
-function transitionFromJsxAttribute(
+function transitionsFromJsxAttribute(
   source: ts.SourceFile,
   fileName: string,
   node: ts.JsxAttribute,
   setters: Map<string, { varId: string; component: string; stateName: string }>,
-  component: string
-): Transition | undefined {
-  if (!node.initializer) return undefined;
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>
+): Transition[] {
+  if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
-  if (!expression || !ts.isArrowFunction(expression)) return undefined;
+  if (!expression || !ts.isArrowFunction(expression)) return [];
+  if (!ts.isIdentifier(node.name)) return [];
+  const attr = node.name.text;
+  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, expression, setters, component, effectApis, asyncOutcomes);
+  if (asyncTransitions.length > 0) return asyncTransitions;
   const body = expression.body;
   const call = ts.isCallExpression(body)
     ? body
     : ts.isBlock(body) && body.statements.length === 1 && ts.isExpressionStatement(body.statements[0]) && ts.isCallExpression(body.statements[0].expression)
       ? body.statements[0].expression
       : undefined;
-  if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return undefined;
+  if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
-  if (!setter) return undefined;
+  if (!setter) return [];
   const value = literalValue(call.arguments[0]);
-  if (value === undefined) return undefined;
-  if (!ts.isIdentifier(node.name)) return undefined;
-  const attr = node.name.text;
-  return {
+  if (value === undefined) return [];
+  return [{
     id: `${component}.${attr}.${setter.stateName}`,
     cls: "user",
     label: labelForEvent(attr),
@@ -213,7 +219,74 @@ function transitionFromJsxAttribute(
     reads: [],
     writes: [setter.varId],
     confidence: "exact"
+  }];
+}
+
+function transitionsFromAsyncHandler(
+  source: ts.SourceFile,
+  fileName: string,
+  attr: string,
+  expression: ts.ArrowFunction,
+  setters: Map<string, { varId: string; component: string; stateName: string }>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>
+): Transition[] {
+  if (!ts.isBlock(expression.body)) return [];
+  const statements = expression.body.statements;
+  const tryStatement = statements.find(ts.isTryStatement);
+  const preStatements = tryStatement ? statements.slice(0, statements.indexOf(tryStatement)) : statements;
+  const awaitStatement = tryStatement
+    ? tryStatement.tryBlock.statements.find((statement) => expressionStatementAwait(statement, effectApis))
+    : statements.find((statement) => expressionStatementAwait(statement, effectApis));
+  if (!awaitStatement) return [];
+  const op = awaitedOp(awaitStatement, effectApis);
+  if (!op) return [];
+  const preEffects = preStatements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
+  const successStatements = tryStatement ? tryStatement.tryBlock.statements.slice(tryStatement.tryBlock.statements.indexOf(awaitStatement) + 1) : statements.slice(statements.indexOf(awaitStatement) + 1);
+  const successEffects = successStatements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
+  const catchEffects = tryStatement?.catchClause?.block.statements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect)) ?? [];
+  if (successEffects.length === 0 && catchEffects.length === 0) return [];
+  const writes = [...new Set([...preEffects, ...successEffects, ...catchEffects].map((effect) => effect.var))];
+  const baseId = `${component}.${attr}.${op}`;
+  const sourceAnchor = [{ file: fileName, ...lineAndColumn(source, expression) }];
+  const enqueue: Transition = {
+    id: `${baseId}.start`,
+    cls: "user",
+    label: labelForEvent(attr),
+    source: sourceAnchor,
+    guard: { kind: "lit", value: true },
+    effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op, continuation: `${baseId}.cont`, args: {} }] },
+    reads: [],
+    writes: [...new Set([...preEffects.map((effect) => effect.var), "sys:pending"])],
+    confidence: "exact"
   };
+  const success: Transition = {
+    id: `${baseId}.success`,
+    cls: "env",
+    label: { kind: "resolve", op, outcome: "success" },
+    source: sourceAnchor,
+    guard: pendingIs(op),
+    effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...successEffects] },
+    reads: ["sys:pending"],
+    writes: ["sys:pending", ...successEffects.map((effect) => effect.var)],
+    confidence: "exact"
+  };
+  const transitions = [enqueue, success];
+  if (catchEffects.length > 0 || asyncOutcomes[op]?.error !== undefined) {
+    transitions.push({
+      id: `${baseId}.error`,
+      cls: "env",
+      label: { kind: "resolve", op, outcome: "error" },
+      source: sourceAnchor,
+      guard: pendingIs(op),
+      effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...catchEffects] },
+      reads: ["sys:pending"],
+      writes: ["sys:pending", ...catchEffects.map((effect) => effect.var)],
+      confidence: "exact"
+    });
+  }
+  return transitions.map((transition) => ({ ...transition, writes: [...new Set(transition.writes)] }));
 }
 
 function isEventAttribute(name: string): boolean {
@@ -233,6 +306,38 @@ function literalValue(node: ts.Expression): Value | undefined {
   if (ts.isStringLiteral(node)) return node.text;
   if (ts.isNumericLiteral(node)) return Number(node.text);
   return undefined;
+}
+
+function setterAssignEffect(statement: ts.Statement, setters: Map<string, { varId: string }>): Extract<Transition["effect"], { kind: "assign" }> | undefined {
+  if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return undefined;
+  const call = statement.expression;
+  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 1) return undefined;
+  const setter = setters.get(call.expression.text);
+  const value = literalValue(call.arguments[0]);
+  if (!setter || value === undefined) return undefined;
+  return { kind: "assign", var: setter.varId, expr: { kind: "lit", value } };
+}
+
+function expressionStatementAwait(statement: ts.Statement, effectApis: Set<string>): boolean {
+  return Boolean(awaitedOp(statement, effectApis));
+}
+
+function awaitedOp(statement: ts.Statement, effectApis: Set<string>): string | undefined {
+  if (!ts.isExpressionStatement(statement)) return undefined;
+  const expression = statement.expression;
+  if (!ts.isAwaitExpression(expression) || !ts.isCallExpression(expression.expression)) return undefined;
+  const name = callName(expression.expression.expression);
+  return name && effectApis.has(name) ? name : undefined;
+}
+
+function callName(expression: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isPropertyAccessExpression(expression)) return `${callName(expression.expression) ?? expression.expression.getText()}.${expression.name.text}`;
+  return undefined;
+}
+
+function pendingIs(op: string): Transition["guard"] {
+  return { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: op }] };
 }
 
 function componentNameFor(node: ts.Node): string | undefined {

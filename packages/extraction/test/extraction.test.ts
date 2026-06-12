@@ -95,4 +95,51 @@ describe("useState inventory", () => {
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
+
+  it("splits simple async handlers into enqueue and resolve transitions", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting' | 'failed'>('idle');
+        return <button onClick={async () => {
+          setSaveStatus('posting');
+          try {
+            await api.saveTodo();
+            setSaveStatus('idle');
+          } catch {
+            setSaveStatus('failed');
+          }
+        }}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] }
+    );
+    expect(result.transitions.map((transition) => [transition.id, transition.cls, transition.writes])).toEqual([
+      ["App.onClick.api.saveTodo.start", "user", ["local:App.saveStatus", "sys:pending"]],
+      ["App.onClick.api.saveTodo.success", "env", ["sys:pending", "local:App.saveStatus"]],
+      ["App.onClick.api.saveTodo.error", "env", ["sys:pending", "local:App.saveStatus"]]
+    ]);
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "async-extracted-skeleton",
+      bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["api.saveTodo"] }, continuation: { kind: "enum", values: ["App.onClick.api.saveTodo.cont"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      reachable(model, (state) => state["local:App.saveStatus"] === "posting", { name: "postingReachable", reads: ["local:App.saveStatus"] }),
+      reachable(model, (state) => state["local:App.saveStatus"] === "failed", { name: "failedReachable", reads: ["local:App.saveStatus"] })
+    ]);
+    expect(check.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
+      ["postingReachable", "reachable"],
+      ["failedReachable", "reachable"]
+    ]);
+  });
 });
