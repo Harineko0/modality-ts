@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { extractUseStateSkeleton } from "@modality/extraction";
-import { canonicalJson, parseModelArtifact, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
+import { canonicalJson, parseModelArtifact, type EffectIR, type ExtractionReport, type Model, type StateVarDecl } from "@modality/kernel";
 import { loadAndApplyOverlay } from "./overlay.js";
 
 export interface ExtractCommandOptions {
@@ -30,12 +30,13 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     fileName: options.sourcePath,
     effectApis: options.effectApis ?? []
   });
+  const routes = [route, ...navigatedRoutes(skeleton.transitions.map((transition) => transition.effect))];
   const extractedModel: Model = {
     schemaVersion: 1,
     id: "extracted-model",
     bounds: { maxDepth: 12, maxPending: 3, maxInternalSteps: 16 },
     metadata: { sourceHashes: { [options.sourcePath]: sha256(source) } },
-    vars: [...systemVars(route, options.effectApis ?? []), ...skeleton.vars],
+    vars: [...systemVars(routes, options.effectApis ?? []), ...skeleton.vars],
     transitions: skeleton.transitions
   };
   const overlay = await loadAndApplyOverlay(extractedModel, options.overlayPath);
@@ -124,8 +125,25 @@ function unextractableHandlerFromWarning(warning: string): { id: string; reason:
   return match?.[1] ? { id: match[1], reason: warning } : undefined;
 }
 
-function systemVars(route: string, effectApis: readonly string[]): StateVarDecl[] {
-  const routeDomain = { kind: "enum" as const, values: [route] };
+function navigatedRoutes(effects: readonly EffectIR[]): string[] {
+  const routes = new Set<string>();
+  const visit = (effect: EffectIR): void => {
+    if (effect.kind === "navigate" && effect.to?.kind === "lit" && typeof effect.to.value === "string") {
+      routes.add(effect.to.value);
+    }
+    if (effect.kind === "seq") effect.effects.forEach(visit);
+    if (effect.kind === "if") {
+      visit(effect.then);
+      visit(effect.else);
+    }
+  };
+  effects.forEach(visit);
+  return [...routes].sort();
+}
+
+function systemVars(routes: readonly string[], effectApis: readonly string[]): StateVarDecl[] {
+  const routeDomain = { kind: "enum" as const, values: [...new Set(routes)] };
+  const route = routes[0] ?? "/";
   const opValues = effectApis.length > 0 ? [...effectApis] : ["noop"];
   const continuationValues = effectApis.length > 0 ? effectApis.flatMap((op) => [`App.onClick.${op}.cont`, `App.onSubmit.${op}.cont`, `App.onChange.${op}.cont`]) : ["noop"];
   return [

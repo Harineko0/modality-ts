@@ -136,6 +136,28 @@ describe("useState inventory", () => {
     });
   });
 
+  it("extracts simple router navigation handlers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      export function App() {
+        return <button onClick={() => router.push('/checkout')}>Checkout</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.navigate._checkout",
+      cls: "nav",
+      label: { kind: "navigate", mode: "push", to: "/checkout" },
+      effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/checkout" } },
+      reads: ["sys:route", "sys:history"],
+      writes: ["sys:route", "sys:history"],
+      confidence: "exact"
+    });
+  });
+
   it("turns JSX disabled attributes into transition guards", () => {
     const result = extractUseStateSkeleton(
       `

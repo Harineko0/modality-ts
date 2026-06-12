@@ -250,7 +250,10 @@ function transitionsFromJsxAttribute(
     : ts.isBlock(body) && body.statements.length === 1 && ts.isExpressionStatement(body.statements[0]) && ts.isCallExpression(body.statements[0].expression)
       ? body.statements[0].expression
       : undefined;
-  if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
+  if (!call) return [];
+  const navigation = navigationTransition(source, fileName, node, attr, component, call, locator);
+  if (navigation) return applyParsedGuard([navigation], disabledGuard);
+  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
   if (!setter) {
     const escaped = escapedSetters(call, setters);
@@ -273,6 +276,57 @@ function transitionsFromJsxAttribute(
     writes: [setter.varId],
     confidence: "exact"
   }], disabledGuard);
+}
+
+function navigationTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  call: ts.CallExpression,
+  locator: Locator | undefined
+): Transition | undefined {
+  const navigation = navigationCall(call);
+  if (!navigation) return undefined;
+  const routeId = navigation.to ? safeId(navigation.to) : "back";
+  return {
+    id: `${component}.${attr}.navigate.${routeId}`,
+    cls: "nav",
+    label: {
+      kind: "navigate",
+      mode: navigation.mode === "replace" ? "push" : navigation.mode,
+      ...(navigation.to ? { to: navigation.to } : {})
+    },
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: {
+      kind: "navigate",
+      mode: navigation.mode,
+      ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {})
+    },
+    reads: navigation.mode === "push" || navigation.mode === "back" ? ["sys:route", "sys:history"] : ["sys:history"],
+    writes: ["sys:route", "sys:history"],
+    confidence: "exact"
+  };
+}
+
+function navigationCall(call: ts.CallExpression): { mode: "push" | "replace" | "back"; to?: string } | undefined {
+  const name = callName(call.expression);
+  if (!name) return undefined;
+  if (name === "navigate" && call.arguments.length === 1) {
+    const to = literalValue(call.arguments[0]);
+    return typeof to === "string" ? { mode: "push", to } : undefined;
+  }
+  if ((name.endsWith(".push") || name.endsWith(".replace")) && call.arguments.length === 1) {
+    const to = literalValue(call.arguments[0]);
+    if (typeof to !== "string") return undefined;
+    return { mode: name.endsWith(".replace") ? "replace" : "push", to };
+  }
+  if (name.endsWith(".back") && call.arguments.length === 0) {
+    return { mode: "back" };
+  }
+  return undefined;
 }
 
 function escapedSetters(call: ts.CallExpression, setters: Map<string, SetterBinding>): SetterBinding[] {

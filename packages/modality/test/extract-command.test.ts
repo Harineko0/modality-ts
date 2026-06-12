@@ -70,6 +70,33 @@ describe("runExtractCommand", () => {
     expect(report.coverage).toEqual({ handlersTotal: 1, exactOrOverlay: 0, unextractable: 1, percentExactOrOverlay: 0 });
   });
 
+  it("includes extracted navigation targets in the route domain", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      export function App() {
+        return <button onClick={() => navigate('/checkout')}>Checkout</button>;
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.vars.find((decl) => decl.id === "sys:route")?.domain).toEqual({ kind: "enum", values: ["/", "/checkout"] });
+    expect(result.model.transitions[0]).toMatchObject({
+      id: "App.onClick.navigate._checkout",
+      effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/checkout" } }
+    });
+
+    const check = checkModel(result.model, [
+      reachable(result.model, (state) => state["sys:route"] === "/checkout", { name: "checkoutReachable", reads: ["sys:route"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
   it("applies overlay artifacts during extraction", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
