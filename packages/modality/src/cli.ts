@@ -2,18 +2,20 @@
 import { runCheckCommand } from "./check.js";
 import { runCiCommand } from "./ci.js";
 import { runConformCommand } from "./conform.js";
+import { runExportTlaCommand } from "./export-tla.js";
 import { runExtractCommand } from "./extract.js";
 import { runReplayCommand } from "./replay.js";
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
-  if (command !== "check" && command !== "ci" && command !== "conform" && command !== "extract" && command !== "replay") {
+  if (command !== "check" && command !== "ci" && command !== "conform" && command !== "export" && command !== "extract" && command !== "replay") {
     console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--expect-model expected.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
     console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--conform-count 8]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
     console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--report conform-report.json]");
+    console.log("       modality export <model.json> --format tla --out model.tla");
     process.exit(command ? 1 : 0);
   }
   if (command === "ci") {
@@ -82,6 +84,22 @@ async function main(): Promise<void> {
     const result = await runConformCommand({ walksPath, modelPath, reportPath, walkCount, depth, seed });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
+  }
+  if (command === "export") {
+    const outFlag = args.indexOf("--out");
+    const formatFlag = args.indexOf("--format");
+    const moduleFlag = args.indexOf("--module");
+    const outPath = outFlag >= 0 ? args[outFlag + 1] : undefined;
+    const format = formatFlag >= 0 ? args[formatFlag + 1] : "tla";
+    const moduleName = moduleFlag >= 0 ? args[moduleFlag + 1] : undefined;
+    const modelPath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== formatFlag + 1 && index !== moduleFlag + 1);
+    if (!modelPath) throw new Error("Missing model.json path");
+    if (!outPath) throw new Error("Missing --out path");
+    if (format !== "tla") throw new Error(`Unsupported export format ${format}`);
+    if (moduleFlag >= 0 && !moduleName) throw new Error("Missing --module path");
+    const result = await runExportTlaCommand({ modelPath, outPath, moduleName });
+    for (const line of result.lines) console.log(line);
+    process.exit(0);
   }
   if (command === "extract") {
     const outFlag = args.indexOf("--out");
