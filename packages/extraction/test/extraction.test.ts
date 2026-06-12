@@ -175,6 +175,43 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
+  it("turns conditional rendering into transition guards", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [canSave, setCanSave] = useState<boolean>(false);
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <>{canSave && <button onClick={() => setSaveStatus('posting')}>Save</button>}</>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      guard: { kind: "read", var: "local:App.canSave" },
+      reads: ["local:App.canSave"]
+    });
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "conditional-render-skeleton",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      always(model, (state) => state["local:App.saveStatus"] !== "posting", { name: "postingNotReachable", reads: ["local:App.saveStatus"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+  });
+
   it("extracts event target value input handlers as exact value-class transitions", () => {
     const result = extractUseStateSkeleton(
       `

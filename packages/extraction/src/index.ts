@@ -97,7 +97,10 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
-      const guard = disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous");
+      const guard = combineParsedGuards([
+        renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous"),
+        disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous")
+      ]);
       const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard);
       transitions.push(...extracted);
       if (extracted.length === 0) {
@@ -397,6 +400,72 @@ function applyParsedGuard(transitions: Transition[], parsed: ParsedGuard | undef
     guard: andGuard(parsed.expr, transition.guard),
     reads: [...new Set([...transition.reads, ...parsed.reads])]
   }));
+}
+
+function combineParsedGuards(guards: readonly (ParsedGuard | undefined)[]): ParsedGuard | undefined {
+  const parsed = guards.filter((guard): guard is ParsedGuard => Boolean(guard));
+  if (parsed.length === 0) return undefined;
+  return {
+    expr: parsed.map((guard) => guard.expr).reduce(andGuard),
+    reads: [...new Set(parsed.flatMap((guard) => guard.reads))]
+  };
+}
+
+function renderGuardFor(
+  eventAttribute: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  warnings: ExtractionWarning[],
+  source: ts.SourceFile,
+  component: string
+): ParsedGuard | undefined {
+  const element = jsxElementForAttribute(eventAttribute);
+  if (!element) return undefined;
+  let current: ts.Node = element;
+  while (current.parent) {
+    const parent = current.parent;
+    if (
+      ts.isBinaryExpression(parent) &&
+      parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      parent.right === current
+    ) {
+      const parsed = parseGuardExpression(parent.left, setters);
+      if (!parsed) {
+        warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.left) });
+        return undefined;
+      }
+      return parsed;
+    }
+    if (ts.isConditionalExpression(parent) && parent.whenTrue === current) {
+      const parsed = parseGuardExpression(parent.condition, setters);
+      if (!parsed) {
+        warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
+        return undefined;
+      }
+      return parsed;
+    }
+    if (ts.isConditionalExpression(parent) && parent.whenFalse === current) {
+      const parsed = parseGuardExpression(parent.condition, setters);
+      if (!parsed) {
+        warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
+        return undefined;
+      }
+      return { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads };
+    }
+    if (ts.isParenthesizedExpression(parent) || ts.isJsxExpression(parent)) {
+      current = parent;
+      continue;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function jsxElementForAttribute(attribute: ts.JsxAttribute): ts.JsxElement | ts.JsxSelfClosingElement | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const element = attrs.parent;
+  if (ts.isJsxOpeningElement(element) && ts.isJsxElement(element.parent)) return element.parent;
+  return ts.isJsxSelfClosingElement(element) ? element : undefined;
 }
 
 function disabledGuardFor(
