@@ -12,6 +12,7 @@ Detailed specifications for the difficult subsystems live in `docs/specs/`:
 - [`specs/02-extraction.md`](specs/02-extraction.md) — the algorithm for converting TypeScript code into the IR
 - [`specs/03-checker.md`](specs/03-checker.md) — the custom TypeScript explicit-state model checker
 - [`specs/04-conformance.md`](specs/04-conformance.md) — counterexample concretization, replay tests, and model–code conformance
+- [`specs/05-architecture.md`](specs/05-architecture.md) — software architecture: package layout, vertical slicing, and the state-source plugin contract
 
 ## 0. Summary of design decisions
 
