@@ -1,17 +1,33 @@
 #!/usr/bin/env node
 import { runCheckCommand } from "./check.js";
+import { runCiCommand } from "./ci.js";
 import { runConformCommand } from "./conform.js";
 import { runExtractCommand } from "./extract.js";
 import { runReplayCommand } from "./replay.js";
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
-  if (command !== "check" && command !== "conform" && command !== "extract" && command !== "replay") {
+  if (command !== "check" && command !== "ci" && command !== "conform" && command !== "extract" && command !== "replay") {
     console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
+    console.log("       modality ci <model.json> [props.ts] --artifacts .modality");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
     process.exit(command ? 1 : 0);
+  }
+  if (command === "ci") {
+    const artifactsFlag = args.indexOf("--artifacts");
+    const overlayFlag = args.indexOf("--overlay");
+    const artifactDir = artifactsFlag >= 0 ? args[artifactsFlag + 1] : undefined;
+    const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
+    const positional = args.filter((arg, index) => index !== artifactsFlag && index !== artifactsFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1);
+    const [modelPath, propsPath] = positional;
+    if (!modelPath) throw new Error("Missing model.json path");
+    if (!artifactDir) throw new Error("Missing --artifacts path");
+    if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath });
+    for (const line of result.lines) console.log(line);
+    process.exit(result.exitCode);
   }
   if (command === "conform") {
     const reportFlag = args.indexOf("--report");
