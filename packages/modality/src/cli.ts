@@ -55,14 +55,17 @@ async function main(): Promise<void> {
   }
   const reportFlag = args.indexOf("--report");
   const overlayFlag = args.indexOf("--overlay");
+  const tracesFlag = args.indexOf("--traces");
   const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
-  const positional = args.filter((arg, index) => index !== reportFlag && index !== reportFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1);
+  const tracesDir = tracesFlag >= 0 ? args[tracesFlag + 1] : undefined;
+  const positional = args.filter((arg, index) => index !== reportFlag && index !== reportFlag + 1 && index !== overlayFlag && index !== overlayFlag + 1 && index !== tracesFlag && index !== tracesFlag + 1);
   const [modelPath, propsPath] = positional;
   const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
   if (!modelPath) throw new Error("Missing model.json path");
   if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
   if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
-  const result = await runCheckCommand({ modelPath, propsPath, reportPath, overlayPath });
+  if (tracesFlag >= 0 && !tracesDir) throw new Error("Missing --traces path");
+  const result = await runCheckCommand({ modelPath, propsPath, reportPath, overlayPath, tracesDir });
   for (const line of result.lines) console.log(line);
   process.exit(result.exitCode);
 }

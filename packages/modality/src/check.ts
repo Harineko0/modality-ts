@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkModel, type CheckResult, type PropertyVerdict } from "@modality/checker";
 import { canonicalJson, type CheckReport, type Model, type Property } from "@modality/kernel";
@@ -10,6 +10,7 @@ export interface CheckCommandOptions {
   propsPath?: string;
   reportPath?: string;
   overlayPath?: string;
+  tracesDir?: string;
   now?: Date;
 }
 
@@ -34,11 +35,12 @@ export async function runCheckCommand(options: CheckCommandOptions): Promise<Che
     await mkdir(dirname(options.reportPath), { recursive: true });
     await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
   }
+  const tracePaths = options.tracesDir ? await writeTraceArtifacts(check, options.tracesDir) : [];
   return {
     check,
     report,
     exitCode: check.verdicts.some((verdict) => verdict.status === "violated" || verdict.status === "error") ? 2 : 0,
-    lines: renderCheckResult(check)
+    lines: [...renderCheckResult(check), ...tracePaths.map((path) => `trace=${path}`)]
   };
 }
 
@@ -98,4 +100,20 @@ function reportVerdict(verdict: PropertyVerdict): CheckReport["verdicts"][number
     return { property: verdict.property, status: verdict.status, message: verdict.message };
   }
   return { property: verdict.property, status: verdict.status };
+}
+
+async function writeTraceArtifacts(check: CheckResult, tracesDir: string): Promise<string[]> {
+  await mkdir(tracesDir, { recursive: true });
+  const paths: string[] = [];
+  for (const verdict of check.verdicts) {
+    if (verdict.status !== "violated" && verdict.status !== "reachable") continue;
+    const path = join(tracesDir, `${safeFileName(verdict.property)}.${verdict.status}.trace.json`);
+    await writeFile(path, `${canonicalJson(verdict.trace)}\n`, "utf8");
+    paths.push(path);
+  }
+  return paths;
+}
+
+function safeFileName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
 }
