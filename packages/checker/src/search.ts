@@ -214,6 +214,10 @@ function finalizeProperties(
     }
     if (property.kind === "leadsToWithin") {
       const triggerEdges = edges.filter((edge) => property.trigger(edge.step));
+      if (triggerEdges.length === 0) {
+        verdicts.set(property.name, { status: "vacuous-warning", property: property.name, message: "Trigger never fired within bounds" });
+        continue;
+      }
       const failure = triggerEdges.find((edge) => !goalWithin(model, property, edge.post, edges));
       if (failure) {
         verdicts.set(property.name, {
@@ -228,20 +232,20 @@ function finalizeProperties(
 
 function goalWithin(model: Model, property: Extract<Property, { kind: "leadsToWithin" }>, start: ModelState, graphEdges: readonly Edge[]): boolean {
   const maxSteps = property.budget.steps ?? property.budget.environment ?? 0;
-  const queue: Array<{ state: ModelState; depth: number }> = [{ state: start, depth: 0 }];
-  const seen = new Set<string>();
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const canon = canonicalState(model, current.state);
-    if (property.goal(current.state)) return true;
-    if (current.depth >= maxSteps) return false;
-    if (seen.has(`${canon}:${current.depth}`)) continue;
-    seen.add(`${canon}:${current.depth}`);
+  const memo = new Map<string, boolean>();
+  const visit = (state: ModelState, depth: number): boolean => {
+    if (property.goal(state)) return true;
+    if (depth >= maxSteps) return false;
+    const canon = canonicalState(model, state);
+    const key = `${canon}:${depth}`;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
     const successors = graphEdges.filter((edge) => edge.preCanon === canon && (property.allowUserEvents || edge.transition.cls === "env" || edge.transition.cls === "library"));
-    if (successors.length === 0) return false;
-    for (const edge of successors) queue.push({ state: edge.post, depth: current.depth + 1 });
-  }
-  return false;
+    const ok = successors.length > 0 && successors.every((edge) => visit(edge.post, depth + 1));
+    memo.set(key, ok);
+    return ok;
+  };
+  return visit(start, 0);
 }
 
 function traceTo(parents: Map<string, Parent>, canon: string): Trace {
