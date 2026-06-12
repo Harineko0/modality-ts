@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Trace } from "@modality/kernel";
-import { replayTrace, StateSequenceDriver } from "../src/index.js";
+import { ActionReplayDriver, dispatchReplayStep, replayTrace, StateSequenceDriver } from "../src/index.js";
 
 const trace: Trace = {
   steps: [
@@ -50,5 +50,35 @@ describe("replayTrace", () => {
   it("classifies driver failures as inconclusive", async () => {
     const verdict = await replayTrace(trace, new StateSequenceDriver([{ auth: "guest" }, { auth: "user" }], 1));
     expect(verdict).toEqual({ status: "inconclusive", stepsRun: 0, reason: "driver failed at step 1" });
+  });
+
+  it("dispatches event labels to a concrete replay actor", async () => {
+    const calls: string[] = [];
+    await dispatchReplayStep({
+      transitionId: "edit",
+      label: { kind: "input", locator: { kind: "testId", value: "draft" }, valueClass: "nonEmpty" },
+      pre: {},
+      post: {},
+      diff: {}
+    }, {
+      input: (locator, value, valueClass) => calls.push(`input:${locator.kind}:${value}:${valueClass}`),
+      stabilize: () => calls.push("stabilize")
+    }, { inputValues: { nonEmpty: "Buy milk" } });
+    expect(calls).toEqual(["input:testId:Buy milk:nonEmpty", "stabilize"]);
+  });
+
+  it("classifies missing concrete locators as inconclusive", async () => {
+    const actionTrace: Trace = {
+      steps: [{
+        transitionId: "save",
+        label: { kind: "click" },
+        pre: { draft: "nonEmpty" },
+        post: { draft: "nonEmpty", status: "posting" },
+        diff: { status: { before: undefined, after: "posting" } }
+      }]
+    };
+    let state = { draft: "nonEmpty" };
+    const verdict = await replayTrace(actionTrace, new ActionReplayDriver({}, () => state));
+    expect(verdict).toEqual({ status: "inconclusive", stepsRun: 0, reason: "Missing locator for click step save" });
   });
 });
