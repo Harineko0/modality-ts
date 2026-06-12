@@ -13,6 +13,7 @@ Detailed specifications for the difficult subsystems live in `docs/specs/`:
 - [`specs/03-checker.md`](specs/03-checker.md) — the custom TypeScript explicit-state model checker
 - [`specs/04-conformance.md`](specs/04-conformance.md) — counterexample concretization, replay tests, and model–code conformance
 - [`specs/05-architecture.md`](specs/05-architecture.md) — software architecture: package layout, vertical slicing, and the state-source plugin contract
+- [`implement.md`](implement.md) — implementation flow and per-phase verification gates
 
 Two worked examples apply the specs end-to-end and drive their refinement: [`examples/todo-walkthrough.md`](examples/todo-walkthrough.md) (a small ToDo app; introduced step invariants and `enabled`) and [`examples/checkout-walkthrough.md`](examples/checkout-walkthrough.md) (a multi-step checkout with 52 properties; introduced relational list data, multi-parameter cache keys, op-argument snapshots, and conditional reachability). Several spec sections below were extended as a result of these exercises.
 
