@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Trace } from "@modality/kernel";
-import { ActionReplayDriver, dispatchReplayStep, replayTrace, StateSequenceDriver } from "../src/index.js";
+import { ActionReplayDriver, dispatchReplayStep, inputWitness, replayTrace, StateSequenceDriver, witnessValue } from "../src/index.js";
 
 const trace: Trace = {
   steps: [
@@ -67,6 +67,20 @@ describe("replayTrace", () => {
     expect(calls).toEqual(["input:testId:Buy milk:nonEmpty", "stabilize"]);
   });
 
+  it("uses default input witnesses when no override is supplied", async () => {
+    const calls: string[] = [];
+    await dispatchReplayStep({
+      transitionId: "edit",
+      label: { kind: "input", locator: { kind: "testId", value: "draft" }, valueClass: "empty|nonEmpty" },
+      pre: {},
+      post: {},
+      diff: {}
+    }, {
+      input: (_locator, value, valueClass) => calls.push(`${value}:${valueClass}`)
+    });
+    expect(calls).toEqual(["modality:empty|nonEmpty"]);
+  });
+
   it("classifies missing concrete locators as inconclusive", async () => {
     const actionTrace: Trace = {
       steps: [{
@@ -80,5 +94,31 @@ describe("replayTrace", () => {
     let state = { draft: "nonEmpty" };
     const verdict = await replayTrace(actionTrace, new ActionReplayDriver({}, () => state));
     expect(verdict).toEqual({ status: "inconclusive", stepsRun: 0, reason: "Missing locator for click step save" });
+  });
+
+  it("creates deterministic concrete witnesses for abstract domains", () => {
+    expect(witnessValue({ kind: "lengthCat" }, "many")).toEqual(["item1", "item2", "item3"]);
+    expect(witnessValue({ kind: "tokens", count: 2 }, "tok2", { tokenWitnesses: { tok2: { id: 2 } } })).toEqual({ id: 2 });
+    expect(witnessValue({
+      kind: "record",
+      fields: {
+        items: { kind: "lengthCat" },
+        status: { kind: "enum", values: ["idle", "done"] }
+      }
+    }, { items: "1", status: "done" })).toEqual({ items: ["item1"], status: "done" });
+    expect(witnessValue({
+      kind: "tagged",
+      tag: "kind",
+      variants: {
+        guest: { kind: "record", fields: {} },
+        user: { kind: "record", fields: { name: { kind: "tokens", count: 1, names: ["u1"] } } }
+      }
+    }, { kind: "user", name: "u1" }, { tokenWitnesses: { u1: "Ada" } })).toEqual({ kind: "user", name: "Ada" });
+  });
+
+  it("provides stable default input witnesses", () => {
+    expect(inputWitness("empty")).toBe("");
+    expect(inputWitness("nonEmpty")).toBe("modality");
+    expect(inputWitness("empty|nonEmpty")).toBe("modality");
   });
 });

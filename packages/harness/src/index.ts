@@ -1,4 +1,4 @@
-import type { Locator, ModelState, Trace, TraceStep } from "@modality/kernel";
+import type { AbstractDomain, Locator, ModelState, Trace, TraceStep, Value } from "@modality/kernel";
 
 export type ReplayVerdict =
   | { status: "reproduced"; stepsRun: number }
@@ -29,6 +29,11 @@ export interface ReplayActor {
 export interface ActionReplayDriverOptions {
   inputValues?: Record<string, string>;
   assertViolation?: () => Promise<boolean> | boolean;
+}
+
+export interface WitnessOptions {
+  tokenWitnesses?: Record<string, Value>;
+  elementWitness?: Value;
 }
 
 export async function replayTrace(trace: Trace, driver: ReplayDriver, options: ReplayOptions = {}): Promise<ReplayVerdict> {
@@ -101,7 +106,7 @@ export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, op
       break;
     case "input":
       if (!label.locator) throw new Error(`Missing locator for input step ${step.transitionId}`);
-      await callActor("input", actor.input, label.locator, options.inputValues?.[label.valueClass] ?? label.valueClass, label.valueClass);
+      await callActor("input", actor.input, label.locator, options.inputValues?.[label.valueClass] ?? inputWitness(label.valueClass), label.valueClass);
       break;
     case "navigate":
       await callActor("navigate", actor.navigate, label.mode, label.to);
@@ -124,6 +129,77 @@ export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, op
 async function callActor<TArgs extends unknown[]>(name: string, fn: ((...args: TArgs) => Promise<void> | void) | undefined, ...args: TArgs): Promise<void> {
   if (!fn) throw new Error(`Replay actor does not support ${name}`);
   await fn(...args);
+}
+
+export function witnessValue(domain: AbstractDomain, value?: Value, options: WitnessOptions = {}): Value {
+  if (value !== undefined && value !== null) {
+    if (domain.kind === "lengthCat") return witnessLengthCat(value);
+    if (domain.kind === "tokens" && typeof value === "string") return options.tokenWitnesses?.[value] ?? value;
+    if (domain.kind === "option") return witnessValue(domain.inner, value, options);
+    if (domain.kind === "record" && isRecord(value)) return witnessRecord(domain.fields, value, options);
+    if (domain.kind === "tagged" && isRecord(value) && typeof value[domain.tag] === "string") {
+      const variant = domain.variants[value[domain.tag] as string];
+      return variant ? { ...(witnessValue(variant, value, options) as object), [domain.tag]: value[domain.tag] } : value;
+    }
+    if (domain.kind === "boundedList" && Array.isArray(value)) return value.map((item) => witnessValue(domain.inner, item, options));
+    return value;
+  }
+  switch (domain.kind) {
+    case "bool":
+      return false;
+    case "enum":
+      return domain.values[0] ?? "";
+    case "boundedInt":
+      return domain.min;
+    case "option":
+      return null;
+    case "record":
+      return witnessRecord(domain.fields, undefined, options);
+    case "tagged": {
+      const [tagValue, variant] = Object.entries(domain.variants)[0] ?? ["unknown", { kind: "record", fields: {} } as const];
+      return { ...(witnessValue(variant, undefined, options) as object), [domain.tag]: tagValue };
+    }
+    case "tokens": {
+      const token = domain.names?.[0] ?? "tok1";
+      return options.tokenWitnesses?.[token] ?? token;
+    }
+    case "lengthCat":
+      return [];
+    case "boundedList":
+      return [];
+  }
+}
+
+export function inputWitness(valueClass: string): string {
+  switch (valueClass) {
+    case "empty":
+    case "0":
+      return "";
+    case "nonEmpty":
+    case "1":
+    case "many":
+    case "valid":
+      return "modality";
+    case "invalid":
+      return "!";
+    default:
+      return valueClass.includes("|") ? inputWitness(valueClass.split("|").find((part) => part !== "empty") ?? valueClass.split("|")[0]!) : valueClass;
+  }
+}
+
+function witnessLengthCat(value: Value): Value {
+  if (value === "0") return [];
+  if (value === "1") return ["item1"];
+  if (value === "many") return ["item1", "item2", "item3"];
+  return value;
+}
+
+function witnessRecord(fields: Record<string, AbstractDomain>, value: Record<string, Value> | undefined, options: WitnessOptions): Value {
+  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, witnessValue(field, value?.[key], options)]));
+}
+
+function isRecord(value: Value): value is Record<string, Value> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function defaultCompareState(expected: ModelState, actual: ModelState): string | undefined {
