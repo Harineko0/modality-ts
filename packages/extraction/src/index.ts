@@ -137,7 +137,8 @@ function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain
 function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   const lit = node.literal;
   if (lit.kind === ts.SyntaxKind.TrueKeyword || lit.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
-  if (ts.isStringLiteral(lit) || ts.isNumericLiteral(lit)) return { kind: "enum", values: [lit.text] };
+  if (ts.isStringLiteral(lit)) return { kind: "enum", values: [lit.text] };
+  if (ts.isNumericLiteral(lit)) return { kind: "boundedInt", min: Number(lit.text), max: Number(lit.text) };
   if (lit.kind === ts.SyntaxKind.NullKeyword) return { kind: "option", inner: { kind: "tokens", count: 1 } };
   return { kind: "tokens", count: 1 };
 }
@@ -148,11 +149,16 @@ function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
     return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0]) };
   }
   const literalValues: string[] = [];
+  const numericValues: number[] = [];
   for (const part of node.types) {
     if (!ts.isLiteralTypeNode(part)) return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
     const lit = part.literal;
-    if (ts.isStringLiteral(lit) || ts.isNumericLiteral(lit)) literalValues.push(lit.text);
+    if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
+    else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
     else return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
+  }
+  if (numericValues.length === node.types.length) {
+    return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
   }
   return { kind: "enum", values: literalValues };
 }
@@ -233,7 +239,7 @@ function transitionsFromJsxAttribute(
   if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
   if (!setter) return [];
-  if ((attr === "onChange" || attr === "onInput") && isEventTargetValue(call.arguments[0], handler.parameters[0])) {
+  if ((attr === "onChange" || attr === "onInput") && isInputValueExpression(call.arguments[0], handler.parameters[0])) {
     return applyParsedGuard([{
       id: `${component}.${attr}.${setter.stateName}`,
       cls: "user",
@@ -525,6 +531,15 @@ function isEventTargetValue(node: ts.Expression, parameter: ts.ParameterDeclarat
   );
 }
 
+function isInputValueExpression(node: ts.Expression, parameter: ts.ParameterDeclaration | undefined): boolean {
+  if (isEventTargetValue(node, parameter)) return true;
+  return ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "Number" &&
+    node.arguments.length === 1 &&
+    isEventTargetValue(node.arguments[0], parameter);
+}
+
 function propertyAccessPath(node: ts.Expression): string[] | undefined {
   if (ts.isIdentifier(node)) return [node.text];
   if (ts.isPropertyAccessExpression(node)) {
@@ -536,6 +551,7 @@ function propertyAccessPath(node: ts.Expression): string[] | undefined {
 
 function valueClassForDomain(domain: AbstractDomain): string {
   if (domain.kind === "enum") return domain.values.join("|") || "enum";
+  if (domain.kind === "boundedInt") return `${domain.min}..${domain.max}`;
   return domain.kind;
 }
 

@@ -15,6 +15,7 @@ describe("domain inference", () => {
   it("maps finite TypeScript types to finite abstract domains", () => {
     expect(inferDomainFromTypeNode(typeNode("boolean"))).toEqual({ kind: "bool" });
     expect(inferDomainFromTypeNode(typeNode("'idle' | 'posting' | 'failed'"))).toEqual({ kind: "enum", values: ["idle", "posting", "failed"] });
+    expect(inferDomainFromTypeNode(typeNode("0 | 1 | 2"))).toEqual({ kind: "boundedInt", min: 0, max: 2 });
     expect(inferDomainFromTypeNode(typeNode("'user' | null"))).toEqual({ kind: "option", inner: { kind: "enum", values: ["user"] } });
     expect(inferDomainFromTypeNode(typeNode("string[]"))).toEqual({ kind: "lengthCat" });
     expect(inferDomainFromTypeNode(typeNode("{ ok: boolean; status: 'idle' | 'done' }"))).toEqual({
@@ -210,6 +211,48 @@ describe("useState inventory", () => {
     };
     const check = checkModel(model, [
       reachable(model, (state) => state["local:App.draft"] === "nonEmpty", { name: "nonEmptyReachable", reads: ["local:App.draft"] })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("extracts Number(event.target.value) numeric input transforms", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [seats, setSeats] = useState<0 | 1 | 2>(0);
+        return <input onChange={e => setSeats(Number(e.target.value))} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.vars[0]).toMatchObject({
+      id: "local:App.seats",
+      domain: { kind: "boundedInt", min: 0, max: 2 },
+      initial: 0
+    });
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onChange.seats",
+      label: { kind: "input", valueClass: "0..2" },
+      effect: { kind: "havoc", var: "local:App.seats" },
+      confidence: "over-approx"
+    });
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "numeric-input-extracted-skeleton",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        ...result.vars
+      ],
+      transitions: result.transitions
+    };
+    const check = checkModel(model, [
+      reachable(model, (state) => state["local:App.seats"] === 2, { name: "twoSeatsReachable", reads: ["local:App.seats"] })
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
