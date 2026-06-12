@@ -27,6 +27,46 @@ export function generateAbstractReplayTest(property: string, trace: Trace, state
   };
 }
 
+export function generateActionReplayTest(property: string, trace: Trace): ReplayTestArtifact {
+  const safeName = safeFileName(property);
+  return {
+    fileName: `${safeName}.action.replay.test.ts`,
+    source: [
+      `import { describe, expect, it } from "vitest";`,
+      `import { ActionReplayDriver, replayTrace, type ReplayActor } from "@modality/harness";`,
+      `import type { ModelState } from "@modality/kernel";`,
+      ``,
+      `const trace = ${canonicalJson(trace)};`,
+      ``,
+      `function createActor(): { actor: ReplayActor; observe: () => ModelState } {`,
+      `  const state: ModelState = trace.steps[0]?.pre ?? {};`,
+      `  return {`,
+      `    actor: {`,
+      `      click: async () => {},`,
+      `      submit: async () => {},`,
+      `      input: async () => {},`,
+      `      navigate: async () => {},`,
+      `      resolve: async () => {},`,
+      `      focusRevalidate: async () => {},`,
+      `      timer: async () => {},`,
+      `      stabilize: async () => {}`,
+      `    },`,
+      `    observe: () => state`,
+      `  };`,
+      `}`,
+      ``,
+      `describe(${JSON.stringify(`replay ${property}`)}, () => {`,
+      `  it("drives the app through the model trace", async () => {`,
+      `    const { actor, observe } = createActor();`,
+      `    const verdict = await replayTrace(trace, new ActionReplayDriver(actor, observe));`,
+      `    expect(verdict.status).not.toBe("inconclusive");`,
+      `  });`,
+      `});`,
+      ``
+    ].join("\n")
+  };
+}
+
 export function safeFileName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
 }
