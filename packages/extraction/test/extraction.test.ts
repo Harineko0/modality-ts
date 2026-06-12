@@ -114,6 +114,27 @@ describe("useState inventory", () => {
     });
   });
 
+  it("resolves simple local handler identifiers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        const save = () => setSaveStatus('posting');
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.saveStatus",
+      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      confidence: "exact"
+    });
+  });
+
   it("turns JSX disabled attributes into transition guards", () => {
     const result = extractUseStateSkeleton(
       `

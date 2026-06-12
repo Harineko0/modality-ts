@@ -29,6 +29,8 @@ interface SetterBinding {
   domain: AbstractDomain;
 }
 
+type ExtractableHandler = ts.ArrowFunction | ts.FunctionExpression;
+
 export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
@@ -67,8 +69,12 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const route = options.route ?? "/";
   const effectApis = new Set(options.effectApis ?? []);
   const setters = new Map<string, SetterBinding>();
+  const handlers = new Map<string, ExtractableHandler>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const nextComponent = componentNameFor(node) ?? componentName;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isExtractableHandler(node.initializer)) {
+      handlers.set(node.name.text, node.initializer);
+    }
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseStateCall(node.initializer)) {
       const stateName = node.name.elements[0];
       const setterName = node.name.elements[1];
@@ -92,7 +98,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
       const guard = disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous");
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard);
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard);
       transitions.push(...extracted);
       if (extracted.length === 0) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -194,11 +200,16 @@ function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
 }
 
+function isExtractableHandler(node: ts.Expression): node is ExtractableHandler {
+  return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+}
+
 function transitionsFromJsxAttribute(
   source: ts.SourceFile,
   fileName: string,
   node: ts.JsxAttribute,
   setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
@@ -206,13 +217,14 @@ function transitionsFromJsxAttribute(
 ): Transition[] {
   if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
-  if (!expression || !ts.isArrowFunction(expression)) return [];
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
-  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, expression, setters, component, effectApis, asyncOutcomes, locator);
+  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, handler, setters, component, effectApis, asyncOutcomes, locator);
   if (asyncTransitions.length > 0) return applyParsedGuard(asyncTransitions, disabledGuard);
-  const body = expression.body;
+  const body = handler.body;
   const call = ts.isCallExpression(body)
     ? body
     : ts.isBlock(body) && body.statements.length === 1 && ts.isExpressionStatement(body.statements[0]) && ts.isCallExpression(body.statements[0].expression)
@@ -221,7 +233,7 @@ function transitionsFromJsxAttribute(
   if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
   const setter = setters.get(call.expression.text);
   if (!setter) return [];
-  if ((attr === "onChange" || attr === "onInput") && isEventTargetValue(call.arguments[0], expression.parameters[0])) {
+  if ((attr === "onChange" || attr === "onInput") && isEventTargetValue(call.arguments[0], handler.parameters[0])) {
     return applyParsedGuard([{
       id: `${component}.${attr}.${setter.stateName}`,
       cls: "user",
@@ -249,11 +261,18 @@ function transitionsFromJsxAttribute(
   }], disabledGuard);
 }
 
+function handlerExpression(expression: ts.Expression | undefined, handlers: Map<string, ExtractableHandler>): ExtractableHandler | undefined {
+  if (!expression) return undefined;
+  if (isExtractableHandler(expression)) return expression;
+  if (ts.isIdentifier(expression)) return handlers.get(expression.text);
+  return undefined;
+}
+
 function transitionsFromAsyncHandler(
   source: ts.SourceFile,
   fileName: string,
   attr: string,
-  expression: ts.ArrowFunction,
+  expression: ExtractableHandler,
   setters: Map<string, SetterBinding>,
   component: string,
   effectApis: Set<string>,
