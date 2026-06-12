@@ -38,6 +38,12 @@ importers:
         specifier: workspace:*
         version: link:../kernel
 
+  packages/sources/swr:
+    dependencies:
+      '@modality/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+
 packages:
 
   '@emnapi/core@1.10.0':

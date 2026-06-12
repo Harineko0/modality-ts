@@ -102,3 +102,8 @@ export interface Model {
 }
 
 export type ModelState = Record<string, Value>;
+
+export interface TemplateFragment {
+  vars: readonly StateVarDecl[];
+  transitions: readonly Transition[];
+}
