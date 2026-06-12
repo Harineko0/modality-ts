@@ -52,3 +52,21 @@ export interface ReplayReport {
     reason?: string;
   };
 }
+
+export interface ExtractionReport {
+  schemaVersion: 1;
+  kind: "extraction-report";
+  generatedAt: string;
+  sourceFiles: readonly string[];
+  handlers: readonly {
+    id: string;
+    classification: "exact" | "over-approx" | "unextractable" | "overlay";
+    reasons: readonly string[];
+  }[];
+  domains: readonly {
+    varId: string;
+    domainKind: string;
+    provenance: "type-derived" | "default-token" | "template" | "system";
+  }[];
+  warnings: readonly string[];
+}

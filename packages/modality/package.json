@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@modality/checker": "workspace:*",
+    "@modality/extraction": "workspace:*",
     "@modality/harness": "workspace:*",
     "@modality/kernel": "workspace:*"
   }

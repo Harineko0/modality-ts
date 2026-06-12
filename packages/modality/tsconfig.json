@@ -5,6 +5,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "references": [{ "path": "../kernel" }, { "path": "../checker" }, { "path": "../harness" }],
+  "references": [{ "path": "../kernel" }, { "path": "../checker" }, { "path": "../extraction" }, { "path": "../harness" }],
   "include": ["src/**/*.ts"]
 }

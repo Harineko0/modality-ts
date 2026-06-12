@@ -1,13 +1,29 @@
 #!/usr/bin/env node
 import { runCheckCommand } from "./check.js";
+import { runExtractCommand } from "./extract.js";
 import { runReplayCommand } from "./replay.js";
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
-  if (command !== "check" && command !== "replay") {
+  if (command !== "check" && command !== "extract" && command !== "replay") {
+    console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--effect-api name]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
     console.log("       modality replay <trace.json> --states states.json [--report report.json]");
     process.exit(command ? 1 : 0);
+  }
+  if (command === "extract") {
+    const outFlag = args.indexOf("--out");
+    const reportFlag = args.indexOf("--report");
+    const effectApiFlags = args.flatMap((arg, index) => (arg === "--effect-api" && args[index + 1] ? [args[index + 1]!] : []));
+    const sourcePath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== reportFlag + 1 && args[index - 1] !== "--effect-api");
+    const modelPath = outFlag >= 0 ? args[outFlag + 1] : undefined;
+    const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
+    if (!sourcePath) throw new Error("Missing source.tsx path");
+    if (!modelPath) throw new Error("Missing --out path");
+    if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
+    const result = await runExtractCommand({ sourcePath, modelPath, reportPath, effectApis: effectApiFlags });
+    for (const line of result.lines) console.log(line);
+    process.exit(0);
   }
   if (command === "replay") {
     const reportFlag = args.indexOf("--report");

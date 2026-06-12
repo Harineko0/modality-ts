@@ -49,6 +49,9 @@ importers:
       '@modality/checker':
         specifier: workspace:*
         version: link:../checker
+      '@modality/extraction':
+        specifier: workspace:*
+        version: link:../extraction
       '@modality/harness':
         specifier: workspace:*
         version: link:../harness
