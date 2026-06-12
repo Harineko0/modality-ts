@@ -1,4 +1,5 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CheckReport } from "@modality/kernel";
 import { runCheckCommand } from "./check.js";
@@ -23,18 +24,20 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
   await mkdir(options.artifactDir, { recursive: true });
   const reportPath = join(options.artifactDir, "report.json");
   const tracesDir = join(options.artifactDir, "traces");
+  const now = options.now ?? new Date();
   const check = await runCheckCommand({
     modelPath: options.modelPath,
     propsPath: options.propsPath,
     overlayPath: options.overlayPath,
     reportPath,
     tracesDir,
-    now: options.now
+    now
   });
+  const determinism = await checkDeterminism(options, now, reportPath, tracesDir);
   const violationCount = check.check.verdicts.filter((verdict) => verdict.status === "violated").length;
   const errorCount = check.check.verdicts.filter((verdict) => verdict.status === "error").length;
   const trustRegressions = options.baselinePath ? await compareTrustLedger(options.baselinePath, check.report) : [];
-  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : 0;
+  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : 0;
   return {
     exitCode,
     reportPath,
@@ -42,11 +45,64 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
     lines: [
       `ci: ${exitCode === 0 ? "passed" : "failed"}`,
       `violations=${violationCount} errors=${errorCount}`,
+      `determinism=${determinism.length === 0 ? "passed" : "failed"}`,
+      ...determinism.map((failure) => `determinism-failure: ${failure}`),
       ...(options.baselinePath ? [`trust-regressions=${trustRegressions.length}`, ...trustRegressions.map((regression) => `trust-regression: ${regression}`)] : []),
       `report=${reportPath}`,
       `traces=${tracesDir}`
     ]
   };
+}
+
+async function checkDeterminism(options: CiCommandOptions, now: Date, reportPath: string, tracesDir: string): Promise<string[]> {
+  const dir = await mkdtemp(join(tmpdir(), "modality-ci-determinism-"));
+  try {
+    const secondReportPath = join(dir, "report.json");
+    const secondTracesDir = join(dir, "traces");
+    await runCheckCommand({
+      modelPath: options.modelPath,
+      propsPath: options.propsPath,
+      overlayPath: options.overlayPath,
+      reportPath: secondReportPath,
+      tracesDir: secondTracesDir,
+      now
+    });
+    return [
+      ...(await sameFile(reportPath, secondReportPath) ? [] : ["report.json differed between runs"]),
+      ...(await compareTraceDirs(tracesDir, secondTracesDir))
+    ];
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function sameFile(leftPath: string, rightPath: string): Promise<boolean> {
+  const [left, right] = await Promise.all([readFile(leftPath, "utf8"), readFile(rightPath, "utf8")]);
+  return left === right;
+}
+
+async function compareTraceDirs(leftDir: string, rightDir: string): Promise<string[]> {
+  const [leftNames, rightNames] = await Promise.all([sortedDirEntries(leftDir), sortedDirEntries(rightDir)]);
+  const failures: string[] = [];
+  if (leftNames.join("\0") !== rightNames.join("\0")) {
+    failures.push(`trace set differed: ${leftNames.join(",")} != ${rightNames.join(",")}`);
+    return failures;
+  }
+  for (const name of leftNames) {
+    if (!(await sameFile(join(leftDir, name), join(rightDir, name)))) {
+      failures.push(`trace differed: ${name}`);
+    }
+  }
+  return failures;
+}
+
+async function sortedDirEntries(dir: string): Promise<string[]> {
+  try {
+    return (await readdir(dir)).sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 async function compareTrustLedger(baselinePath: string, current: CheckReport): Promise<string[]> {

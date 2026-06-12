@@ -48,6 +48,7 @@ describe("runCiCommand", () => {
     expect(result.lines).toEqual([
       "ci: failed",
       "violations=1 errors=0",
+      "determinism=passed",
       `report=${join(artifactDir, "report.json")}`,
       `traces=${join(artifactDir, "traces")}`
     ]);
@@ -68,6 +69,7 @@ describe("runCiCommand", () => {
     const result = await runCiCommand({ modelPath, propsPath, artifactDir, now: new Date("2026-06-12T00:00:00.000Z") });
     expect(result.exitCode).toBe(0);
     expect(result.lines[0]).toBe("ci: passed");
+    expect(result.lines).toContain("determinism=passed");
   });
 
   it("fails when trust ledger regresses against a baseline report", async () => {
@@ -100,6 +102,7 @@ describe("runCiCommand", () => {
 
     const result = await runCiCommand({ modelPath, propsPath, artifactDir, baselinePath, now: new Date("2026-06-12T00:00:00.000Z") });
     expect(result.exitCode).toBe(3);
+    expect(result.lines).toContain("determinism=passed");
     expect(result.lines).toContain("trust-regressions=1");
     expect(result.lines).toContain("trust-regression: manualTransitions 0->1 new=setFlag");
   });
