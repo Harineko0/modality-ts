@@ -84,7 +84,8 @@ describe("runCheckCommand", () => {
       trustLedger: {
         bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
         abstractions: ["payload:tokens"],
-        overApproxTransitions: ["setFlag"]
+        overApproxTransitions: ["setFlag"],
+        boundHits: []
       }
     });
     expect(report.verdicts.map((verdict: { property: string; status: string }) => [verdict.property, verdict.status])).toEqual([

@@ -65,7 +65,7 @@ export function createCheckReport(model: Model, check: CheckResult, now: Date, o
         .map((decl) => `${decl.id}:${decl.domain.kind}`),
       manualTransitions: model.transitions.filter((transition) => transition.confidence === "manual").map((transition) => transition.id),
       overApproxTransitions: model.transitions.filter((transition) => transition.confidence === "over-approx").map((transition) => transition.id),
-      boundHits: []
+      boundHits: check.boundHits
     }
   };
 }

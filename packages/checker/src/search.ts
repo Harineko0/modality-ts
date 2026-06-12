@@ -14,6 +14,7 @@ export interface CheckResult {
   verdicts: PropertyVerdict[];
   stats: { states: number; edges: number; depth: number };
   vacuityWarnings: string[];
+  boundHits: string[];
 }
 
 export interface CheckOptions {
@@ -49,7 +50,8 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
     return {
       verdicts: properties.map((property) => ({ status: "error", property: property.name, message: validation.errors.join("; ") })),
       stats: { states: 0, edges: 0, depth: 0 },
-      vacuityWarnings: []
+      vacuityWarnings: [],
+      boundHits: []
     };
   }
 
@@ -58,6 +60,7 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
   const states = new Map<string, ModelState>();
   const edges: Edge[] = [];
   const enabledTransitionIds = new Set<string>();
+  const boundHits = new Set<string>();
   let frontier = initialStates(model);
   frontier = frontier.flatMap((state) => stabilize(model, state));
   frontier.sort(compareStates(model));
@@ -81,7 +84,11 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
       const enabled = enabledTransitions(model, pre);
       for (const transition of enabled) {
         enabledTransitionIds.add(transition.id);
-        for (const rawPost of applyEffect(model, pre, transition.effect)) {
+        const rawPosts = applyEffect(model, pre, transition.effect);
+        if (rawPosts.length === 0 && effectContainsEnqueue(transition.effect)) {
+          boundHits.add(`pending cap saturated at ${transition.id}`);
+        }
+        for (const rawPost of rawPosts) {
           for (const post of stabilize(model, rawPost)) {
             edgeCount += 1;
             const postCanon = canonicalState(model, post);
@@ -106,7 +113,8 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
   return {
     verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "verified-within-bounds", property: property.name }),
     stats: { states: parents.size, edges: edgeCount, depth },
-    vacuityWarnings: vacuityWarnings(model, states, enabledTransitionIds)
+    vacuityWarnings: vacuityWarnings(model, states, enabledTransitionIds),
+    boundHits: [...boundHits].sort()
   };
 }
 
@@ -124,10 +132,12 @@ function checkModelSliced(model: Model, properties: readonly Property[]): CheckR
   let edges = 0;
   let depth = 0;
   const vacuity = new Set<string>();
+  const boundHits = new Set<string>();
   for (const group of groups.values()) {
     const result = checkModelCore(group.model, group.properties);
     for (const verdict of result.verdicts) verdicts.set(verdict.property, verdict);
     for (const warning of result.vacuityWarnings) vacuity.add(warning);
+    for (const hit of result.boundHits) boundHits.add(hit);
     states += result.stats.states;
     edges += result.stats.edges;
     depth = Math.max(depth, result.stats.depth);
@@ -135,7 +145,8 @@ function checkModelSliced(model: Model, properties: readonly Property[]): CheckR
   return {
     verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "error", property: property.name, message: "missing sliced verdict" }),
     stats: { states, edges, depth },
-    vacuityWarnings: [...vacuity].sort()
+    vacuityWarnings: [...vacuity].sort(),
+    boundHits: [...boundHits].sort()
   };
 }
 
@@ -397,6 +408,13 @@ function vacuityWarnings(model: Model, states: Map<string, ModelState>, enabledT
     }
   }
   return warnings.sort();
+}
+
+function effectContainsEnqueue(effect: Transition["effect"]): boolean {
+  if (effect.kind === "enqueue") return true;
+  if (effect.kind === "seq") return effect.effects.some(effectContainsEnqueue);
+  if (effect.kind === "if") return effectContainsEnqueue(effect.then) || effectContainsEnqueue(effect.else);
+  return false;
 }
 
 function routeLocalMounted(model: Model, transition: Transition, state: ModelState): boolean {

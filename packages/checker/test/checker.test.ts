@@ -262,4 +262,26 @@ describe("checker", () => {
     expect(byName.get("cannotTypeWhileUnmounted")).toBe("verified-within-bounds");
     expect(byName.get("backRemountResetsDraft")).toBe("verified-within-bounds");
   });
+
+  it("reports pending-cap bound hits", () => {
+    const m: Model = {
+      ...model(),
+      bounds: { ...model().bounds, maxPending: 1 },
+      transitions: [
+        {
+          id: "spam",
+          cls: "user",
+          label: { kind: "click", text: "Spam" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} },
+          reads: [],
+          writes: ["sys:pending"],
+          confidence: "exact"
+        }
+      ]
+    };
+    const result = checkModel(m, [reachable(m, (s) => Array.isArray(s["sys:pending"]) && s["sys:pending"].length === 1, { name: "onePendingReachable" })]);
+    expect(result.boundHits).toContain("pending cap saturated at spam");
+  });
 });
