@@ -13,6 +13,7 @@ export type PropertyVerdict =
 export interface CheckResult {
   verdicts: PropertyVerdict[];
   stats: { states: number; edges: number; depth: number };
+  vacuityWarnings: string[];
 }
 
 export interface CheckOptions {
@@ -47,7 +48,8 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
   if (!validation.ok) {
     return {
       verdicts: properties.map((property) => ({ status: "error", property: property.name, message: validation.errors.join("; ") })),
-      stats: { states: 0, edges: 0, depth: 0 }
+      stats: { states: 0, edges: 0, depth: 0 },
+      vacuityWarnings: []
     };
   }
 
@@ -55,6 +57,7 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
   const parents = new Map<string, Parent>();
   const states = new Map<string, ModelState>();
   const edges: Edge[] = [];
+  const enabledTransitionIds = new Set<string>();
   let frontier = initialStates(model);
   frontier = frontier.flatMap((state) => stabilize(model, state));
   frontier.sort(compareStates(model));
@@ -75,7 +78,9 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
     const next: ModelState[] = [];
     for (const pre of frontier) {
       const preCanon = canonicalState(model, pre);
-      for (const transition of enabledTransitions(model, pre)) {
+      const enabled = enabledTransitions(model, pre);
+      for (const transition of enabled) {
+        enabledTransitionIds.add(transition.id);
         for (const rawPost of applyEffect(model, pre, transition.effect)) {
           for (const post of stabilize(model, rawPost)) {
             edgeCount += 1;
@@ -100,7 +105,8 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
   finalizeProperties(model, properties, parents, states, edges, verdicts);
   return {
     verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "verified-within-bounds", property: property.name }),
-    stats: { states: parents.size, edges: edgeCount, depth }
+    stats: { states: parents.size, edges: edgeCount, depth },
+    vacuityWarnings: vacuityWarnings(model, states, enabledTransitionIds)
   };
 }
 
@@ -117,16 +123,19 @@ function checkModelSliced(model: Model, properties: readonly Property[]): CheckR
   let states = 0;
   let edges = 0;
   let depth = 0;
+  const vacuity = new Set<string>();
   for (const group of groups.values()) {
     const result = checkModelCore(group.model, group.properties);
     for (const verdict of result.verdicts) verdicts.set(verdict.property, verdict);
+    for (const warning of result.vacuityWarnings) vacuity.add(warning);
     states += result.stats.states;
     edges += result.stats.edges;
     depth = Math.max(depth, result.stats.depth);
   }
   return {
     verdicts: properties.map((property) => verdicts.get(property.name) ?? { status: "error", property: property.name, message: "missing sliced verdict" }),
-    stats: { states, edges, depth }
+    stats: { states, edges, depth },
+    vacuityWarnings: [...vacuity].sort()
   };
 }
 
@@ -371,4 +380,21 @@ function compareStates(model: Model): (a: ModelState, b: ModelState) => number {
 function installEnabledHook(model: Model): void {
   (globalThis as unknown as { __modalityEvalGuard: (transition: Transition, state: ModelState) => boolean }).__modalityEvalGuard = (transition, state) =>
     model.transitions.includes(transition) && guardHolds(model, transition, state);
+}
+
+function vacuityWarnings(model: Model, states: Map<string, ModelState>, enabledTransitionIds: Set<string>): string[] {
+  const warnings: string[] = [];
+  for (const transition of model.transitions) {
+    if (transition.cls !== "internal" && !enabledTransitionIds.has(transition.id)) {
+      warnings.push(`transition never enabled: ${transition.id}`);
+    }
+  }
+  for (const decl of model.vars) {
+    if (decl.domain.kind !== "enum") continue;
+    const inhabited = new Set([...states.values()].map((state) => state[decl.id]).filter((value): value is string => typeof value === "string"));
+    for (const value of decl.domain.values) {
+      if (!inhabited.has(value)) warnings.push(`enum value never inhabited: ${decl.id}=${value}`);
+    }
+  }
+  return warnings.sort();
 }

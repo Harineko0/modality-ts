@@ -75,6 +75,7 @@ describe("runCheckCommand", () => {
       modelId: "cli-fixture",
       generatedAt: "2026-06-12T00:00:00.000Z",
       stats: { states: 2, edges: 1, depth: 2 },
+      vacuityWarnings: [],
       trustLedger: {
         bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
         abstractions: ["payload:tokens"],

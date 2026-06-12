@@ -43,6 +43,7 @@ export function createCheckReport(model: Model, check: CheckResult, now: Date): 
     generatedAt: now.toISOString(),
     verdicts: check.verdicts.map(reportVerdict),
     stats: check.stats,
+    vacuityWarnings: check.vacuityWarnings,
     trustLedger: {
       bounds: model.bounds,
       assumptions: [],

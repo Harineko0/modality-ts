@@ -35,6 +35,7 @@ export interface CheckReport {
     edges: number;
     depth: number;
   };
+  vacuityWarnings: readonly string[];
   trustLedger: ReportTrustLedger;
 }
 

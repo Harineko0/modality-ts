@@ -145,6 +145,33 @@ describe("checker", () => {
     expect(verdict.status === "error" ? verdict.message : "").toContain("writes auth");
   });
 
+  it("reports run-level vacuity warnings", () => {
+    const m: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        { id: "neverMode", domain: { kind: "enum", values: ["seen", "missing"] }, origin: "system", scope: { kind: "global" }, initial: "seen" }
+      ],
+      transitions: [
+        ...model().transitions,
+        {
+          id: "neverEnabled",
+          cls: "user",
+          label: { kind: "click", text: "Never" },
+          source: [],
+          guard: { kind: "eq", args: [read("neverMode"), lit("missing")] },
+          effect: { kind: "assign", var: "neverMode", expr: lit("seen") },
+          reads: ["neverMode"],
+          writes: ["neverMode"],
+          confidence: "exact"
+        }
+      ]
+    };
+    const result = checkModel(m, []);
+    expect(result.vacuityWarnings).toContain("transition never enabled: neverEnabled");
+    expect(result.vacuityWarnings).toContain("enum value never inhabited: neverMode=missing");
+  });
+
   it("checks properties on conservative slices when reads are declared", () => {
     const m: Model = {
       ...model(),
