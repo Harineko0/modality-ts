@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "../../../checker/src/index.js";
 import { always, reachable, type Model } from "@modality/kernel";
-import { createSwrTemplate, swrVarId, swrView } from "../src/index.js";
+import { createSwrKeyWindowTemplate, createSwrTemplate, swrVarId, swrView, swrWindowView } from "../src/index.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -74,5 +74,42 @@ describe("SWR template", () => {
     expect(template.vars.map((decl) => decl.id)).toEqual(["swr:user:data", "swr:user:isValidating", "swr:user:error"]);
     expect(template.transitions[0]?.id).toBe("swr:user:fetch");
     expect(template.transitions[0]?.reads).toEqual(["session"]);
+  });
+
+  it("instantiates isolated entries for a bounded key window", () => {
+    const template = createSwrKeyWindowTemplate({
+      id: "quote",
+      op: "GET_QUOTE",
+      payloadDomain: { kind: "lengthCat" },
+      entries: [
+        { id: "basic", activeWhen: { kind: "eq", args: [{ kind: "read", var: "plan" }, { kind: "lit", value: "basic" }] } },
+        { id: "pro", activeWhen: { kind: "eq", args: [{ kind: "read", var: "plan" }, { kind: "lit", value: "pro" }] } },
+        { id: "enterprise", activeWhen: { kind: "eq", args: [{ kind: "read", var: "plan" }, { kind: "lit", value: "enterprise" }] } }
+      ],
+      windowSize: 2
+    });
+    expect(template.vars.map((decl) => decl.id)).toEqual([
+      "swr:quote:basic:data",
+      "swr:quote:basic:isValidating",
+      "swr:quote:basic:error",
+      "swr:quote:pro:data",
+      "swr:quote:pro:isValidating",
+      "swr:quote:pro:error"
+    ]);
+    expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:enterprise:fetch");
+    const basicSuccess = template.transitions.find((transition) => transition.id === "swr:quote:basic:resolve:success:2");
+    expect(basicSuccess?.writes).toContain("swr:quote:basic:data");
+    expect(basicSuccess?.writes).not.toContain("swr:quote:pro:data");
+
+    const state = {
+      "swr:quote:basic:data": "many",
+      "swr:quote:basic:isValidating": false,
+      "swr:quote:basic:error": false,
+      "swr:quote:pro:data": null,
+      "swr:quote:pro:isValidating": false,
+      "swr:quote:pro:error": false
+    };
+    expect(swrWindowView(state, "quote", "basic").loadedSome).toBe(true);
+    expect(swrWindowView(state, "quote", "pro").loadedSome).toBe(false);
   });
 });

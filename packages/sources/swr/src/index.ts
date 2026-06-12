@@ -9,6 +9,22 @@ export interface SwrTemplateOptions {
   sourceFile?: string;
 }
 
+export interface SwrKeyWindowEntry {
+  id: string;
+  op?: string;
+  activeWhen?: ExprIR;
+}
+
+export interface SwrKeyWindowTemplateOptions {
+  id: string;
+  op: string;
+  payloadDomain: AbstractDomain;
+  entries: readonly SwrKeyWindowEntry[];
+  windowSize?: number;
+  activeWhen?: ExprIR;
+  sourceFile?: string;
+}
+
 export interface SwrView {
   active: boolean;
   data: Value | null;
@@ -89,6 +105,24 @@ export function createSwrTemplate(options: SwrTemplateOptions): TemplateFragment
   }
 }
 
+export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions): TemplateFragment {
+  const windowSize = options.windowSize ?? 2;
+  const entries = options.entries.slice(0, windowSize);
+  const fragments = entries.map((entry) =>
+    createSwrTemplate({
+      id: swrWindowEntryId(options.id, entry.id),
+      op: entry.op ?? `${options.op}:${entry.id}`,
+      payloadDomain: options.payloadDomain,
+      activeWhen: combineActive(options.activeWhen, entry.activeWhen),
+      sourceFile: options.sourceFile
+    })
+  );
+  return {
+    vars: fragments.flatMap((fragment) => fragment.vars),
+    transitions: fragments.flatMap((fragment) => fragment.transitions)
+  };
+}
+
 export function swrVars(options: SwrTemplateOptions): StateVarDecl[] {
   return [
     { id: swrVarId(options.id, "data"), domain: { kind: "option", inner: options.payloadDomain }, origin: "library-template", scope: { kind: "global" }, initial: null },
@@ -112,8 +146,16 @@ export function swrView(state: ModelState, id: string, options: { active?: boole
   };
 }
 
+export function swrWindowView(state: ModelState, id: string, currentKey: string, options: { active?: boolean } = {}): SwrView {
+  return swrView(state, swrWindowEntryId(id, currentKey), options);
+}
+
 export function swrVarId(id: string, field: "data" | "isValidating" | "error"): string {
   return `swr:${id}:${field}`;
+}
+
+export function swrWindowEntryId(id: string, key: string): string {
+  return `${id}:${key}`;
 }
 
 function pendingIs(op: string): ExprIR {
@@ -122,6 +164,12 @@ function pendingIs(op: string): ExprIR {
 
 function lit(value: Value): ExprIR {
   return { kind: "lit", value };
+}
+
+function combineActive(global: ExprIR | undefined, local: ExprIR | undefined): ExprIR | undefined {
+  if (!global) return local;
+  if (!local) return global;
+  return { kind: "and", args: [global, local] };
 }
 
 function exprReadList(expr: ExprIR): string[] {
