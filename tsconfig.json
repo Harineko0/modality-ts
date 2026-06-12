@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/kernel" },
     { "path": "./packages/checker" },
+    { "path": "./packages/extraction" },
     { "path": "./packages/sources/swr" },
     { "path": "./packages/modality" }
   ]
