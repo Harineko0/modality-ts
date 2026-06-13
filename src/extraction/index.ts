@@ -81,6 +81,30 @@ function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
   };
 }
 
+function bindSetter(setters: Map<string, SetterBinding>, symbolName: string, setter: SetterBinding): void {
+  setters.set(scopedSetterKey(setter.component, symbolName), setter);
+  const current = setters.get(symbolName);
+  if (!current || current.varId === setter.varId) {
+    setters.set(symbolName, setter);
+    return;
+  }
+  setters.delete(symbolName);
+}
+
+function scopedSetterKey(component: string, symbolName: string): string {
+  return `${component}:${symbolName}`;
+}
+
+function settersForComponent(setters: ReadonlyMap<string, SetterBinding>, component: string | undefined): Map<string, SetterBinding> {
+  if (!component) return new Map(setters);
+  const scoped = new Map(setters);
+  for (const [key, setter] of setters) {
+    if (!key.startsWith(`${component}:`)) continue;
+    scoped.set(key.slice(component.length + 1), setter);
+  }
+  return scoped;
+}
+
 function discoverContextBindings(
   source: ts.SourceFile,
   fileName: string,
@@ -296,7 +320,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
     for (const channel of options.writeChannels) {
       const decl = options.stateVars.find((candidate) => candidate.id === channel.varId);
       if (!decl) continue;
-      setters.set(channel.symbolName, setterBindingFromDecl(decl));
+      bindSetter(setters, channel.symbolName, setterBindingFromDecl(decl));
     }
   }
   for (const decl of contextBindings.vars) {
@@ -354,7 +378,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
           });
         }
         if (setterName && ts.isBindingElement(setterName) && ts.isIdentifier(setterName.name)) {
-          if (!options.writeChannels) setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text, domain });
+          if (!options.writeChannels) bindSetter(setters, setterName.name.text, { varId, component, stateName: stateName.name.text, domain });
         }
       } else {
         warnings.push({ message: "Unsupported useState binding pattern", ...lineAndColumn(source, node) });
@@ -362,7 +386,8 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
     }
     const link = linkNavigationTransition(source, fileName, node, nextComponent ?? "Anonymous", routePatterns);
     if (link) transitions.push(link);
-    const refTaint = refSetterTaint(node, setters);
+    const scopedSetters = settersForComponent(setters, nextComponent);
+    const refTaint = refSetterTaint(node, scopedSetters);
     if (refTaint) {
       const key = `Global taint ${refTaint.varId}`;
       if (!globalTaints.has(key)) {
@@ -370,8 +395,8 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         warnings.push({ message: key, ...lineAndColumn(source, refTaint.node) });
       }
     }
-    transitions.push(...transitionsFromTimerCall(source, fileName, node, setters, nextComponent ?? "Anonymous"));
-    for (const timerTaint of timerSetterTaints(node, setters)) {
+    transitions.push(...transitionsFromTimerCall(source, fileName, node, scopedSetters, nextComponent ?? "Anonymous"));
+    for (const timerTaint of timerSetterTaints(node, scopedSetters)) {
       const key = `Global taint ${timerTaint.varId}`;
       if (!globalTaints.has(key)) {
         globalTaints.add(key);
@@ -379,7 +404,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isForwardablePropName(node.name.text) && !isIntrinsicJsxAttribute(node)) {
-      const extracted = transitionsFromComponentPropAttribute(source, fileName, node, setters, handlers, components, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, warnings);
+      const extracted = transitionsFromComponentPropAttribute(source, fileName, node, scopedSetters, handlers, components, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, warnings);
       transitions.push(...extracted);
       if (extracted.length === 0) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -389,7 +414,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       const listInfo = listRenderedHandlerInfo(node, vars, nextComponent ?? "Anonymous");
       if (listInfo) {
         if (listInfo.domain.kind === "boundedList") {
-          const extracted = transitionsFromBoundedListAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", {
+          const extracted = transitionsFromBoundedListAttribute(source, fileName, node, scopedSetters, handlers, nextComponent ?? "Anonymous", {
             varId: listInfo.varId,
             domain: listInfo.domain,
             itemName: listInfo.itemName
@@ -404,21 +429,21 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         ts.forEachChild(node, (child) => visit(child, nextComponent));
         return;
       }
-      const guardLocals = componentGuardLocalsFor(node, setters);
+      const guardLocals = componentGuardLocalsFor(node, scopedSetters);
       const guard = combineParsedGuards([
-        renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals),
-        disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals)
+        renderGuardFor(node, scopedSetters, warnings, source, nextComponent ?? "Anonymous", guardLocals),
+        disabledGuardFor(node, scopedSetters, warnings, source, nextComponent ?? "Anonymous", guardLocals)
       ]);
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, guard, routePatterns, contextBindings, warnings);
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, scopedSetters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, guard, routePatterns, contextBindings, warnings);
       transitions.push(...extracted);
-      if (extracted.length === 0 && !forwardsComponentProp(node, handlers, components.get(nextComponent ?? "")) && !handlerSchedulesModeledTimer(node, handlers, setters)) {
+      if (extracted.length === 0 && !forwardsComponentProp(node, handlers, components.get(nextComponent ?? "")) && !handlerSchedulesModeledTimer(node, handlers, scopedSetters)) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
       }
     }
     if (ts.isCallExpression(node) && isUseEffectCall(node)) {
-      const extracted = transitionsFromUseEffect(source, fileName, node, setters, nextComponent ?? "Anonymous");
+      const extracted = transitionsFromUseEffect(source, fileName, node, scopedSetters, nextComponent ?? "Anonymous");
       transitions.push(...extracted);
-      if (extracted.length === 0 && useEffectWritesModeledState(node, setters) && !providerComponents.has(nextComponent ?? "")) {
+      if (extracted.length === 0 && useEffectWritesModeledState(node, scopedSetters) && !providerComponents.has(nextComponent ?? "")) {
         warnings.push({ message: `Unextractable effect ${nextComponent ?? "Anonymous"}.useEffect`, ...lineAndColumn(source, node) });
       }
     }

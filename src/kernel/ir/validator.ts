@@ -256,9 +256,41 @@ function validateRouteLocalWrites(errors: string[], transition: Transition, actu
   if (routeLocalWrites.length === 0) return;
   const routes = [...new Set(routeLocalWrites.map((decl) => decl.scope.route))].sort();
   if (routes.length > 1) errors.push(`${transition.id}: writes route-local vars for multiple routes: ${routes.join(", ")}`);
-  if (actualWrites.has("sys:route") || actualWrites.has("sys:history")) {
-    errors.push(`${transition.id}: writes route-local vars while navigating`);
-  }
+  validateRouteLocalWriteOrder(errors, transition.id, transition.effect, varsById);
+}
+
+function validateRouteLocalWriteOrder(errors: string[], transitionId: string, effect: EffectIR, varsById: Map<string, StateVarDecl>): void {
+  const routeLocalWriteAfterNavigation = (node: EffectIR, afterNavigation: boolean): boolean => {
+    switch (node.kind) {
+      case "assign":
+      case "havoc":
+      case "choose":
+        if (afterNavigation && varsById.get(node.var)?.scope.kind === "route-local") {
+          errors.push(`${transitionId}: writes route-local vars after navigating`);
+        }
+        return afterNavigation;
+      case "opaque":
+        if (afterNavigation && node.ref.declaredWrites.some((id) => varsById.get(id)?.scope.kind === "route-local")) {
+          errors.push(`${transitionId}: writes route-local vars after navigating`);
+        }
+        return afterNavigation;
+      case "navigate":
+        return true;
+      case "if": {
+        const thenAfter = routeLocalWriteAfterNavigation(node.then, afterNavigation);
+        const elseAfter = routeLocalWriteAfterNavigation(node.else, afterNavigation);
+        return thenAfter || elseAfter;
+      }
+      case "seq": {
+        let current = afterNavigation;
+        for (const child of node.effects) current = routeLocalWriteAfterNavigation(child, current);
+        return current;
+      }
+      default:
+        return afterNavigation;
+    }
+  };
+  routeLocalWriteAfterNavigation(effect, false);
 }
 
 function validateEffectShape(errors: string[], transitionId: string, effect: EffectIR): void {

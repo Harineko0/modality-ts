@@ -529,10 +529,16 @@ describe("validator", () => {
   });
 
   it("rejects ambiguous route-local writes", () => {
+    const twoRoutes = { kind: "enum", values: ["/a", "/b"] } as const;
+    const systemVars = baseModel().vars.map((decl) => {
+      if (decl.id === "sys:route") return { ...decl, domain: twoRoutes, initial: "/a" };
+      if (decl.id === "sys:history" && decl.domain.kind === "boundedList") return { ...decl, domain: { ...decl.domain, inner: twoRoutes } };
+      return decl;
+    });
     const model: Model = {
       ...baseModel(),
       vars: [
-        ...baseModel().vars,
+        ...systemVars,
         { id: "local:A.draft", domain: { kind: "enum", values: ["empty", "set"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: "empty" },
         { id: "local:B.draft", domain: { kind: "enum", values: ["empty", "set"] }, origin: "system", scope: { kind: "route-local", route: "/b" }, initial: "empty" }
       ],
@@ -553,12 +559,12 @@ describe("validator", () => {
     };
     expect(validateModel(model).errors.join("\n")).toContain("writeTwoRoutes: writes route-local vars for multiple routes: /a, /b");
 
-    const navigating: Model = {
+    const writeThenNavigate: Model = {
       ...model,
       transitions: [
         {
           ...model.transitions[0]!,
-          id: "writeWhileNavigating",
+          id: "writeThenNavigate",
           effect: {
             kind: "seq",
             effects: [
@@ -571,7 +577,27 @@ describe("validator", () => {
         }
       ]
     };
-    expect(validateModel(navigating).errors.join("\n")).toContain("writeWhileNavigating: writes route-local vars while navigating");
+    expect(validateModel(writeThenNavigate).errors.join("\n")).not.toContain("writes route-local vars");
+
+    const navigateThenWrite: Model = {
+      ...model,
+      transitions: [
+        {
+          ...model.transitions[0]!,
+          id: "navigateThenWrite",
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "navigate", mode: "push", to: { kind: "lit", value: "/b" } },
+              { kind: "assign", var: "local:A.draft", expr: { kind: "lit", value: "set" } }
+            ]
+          },
+          reads: ["flag", "sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history", "local:A.draft"]
+        }
+      ]
+    };
+    expect(validateModel(navigateThenWrite).errors.join("\n")).toContain("navigateThenWrite: writes route-local vars after navigating");
   });
 
   it("rejects invalid internal triggeredBy dependencies", () => {

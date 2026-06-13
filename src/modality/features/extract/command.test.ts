@@ -1333,6 +1333,16 @@ describe("runExtractCommand", () => {
       "ImageDetail.onClick.POST /api/delete/:id.success",
       "ThemeToggle.onClick.theme"
     ]));
+    expect(result.model.transitions.find((transition) => transition.id === "ImageDetail.onClick.POST /api/delete/:id.start")?.writes).toEqual(expect.arrayContaining([
+      "local:ImageDetail.busy",
+      "local:ImageDetail.err"
+    ]));
+    expect(result.model.transitions.find((transition) => transition.id === "ImageDetail.onClick.POST /api/delete/:id.start")?.writes).not.toContain("local:UploadForm.busy");
+    expect(result.model.transitions.find((transition) => transition.id === "ImageDetail.onClick.POST /api/delete/:id.error")?.writes).toEqual(expect.arrayContaining([
+      "local:ImageDetail.busy",
+      "local:ImageDetail.err"
+    ]));
+    expect(result.model.transitions.find((transition) => transition.id === "ImageDetail.onClick.POST /api/delete/:id.error")?.writes).not.toContain("local:UploadForm.busy");
     expect(result.model.transitions.some((transition) => navigatesTo(transition.effect, "/i/:id"))).toBe(true);
     expect(result.report.sourceFiles).toEqual(expect.arrayContaining([
       join(appDir, "root.tsx"),
