@@ -58,6 +58,33 @@ describe("domains", () => {
     }
   });
 
+  it("enumerates large bounded lists without overflowing the stack", () => {
+    const pendingOp = {
+      kind: "record",
+      fields: {
+        opId: { kind: "enum", values: ["api.fetchQuote", "api.submitOrder"] },
+        continuation: { kind: "enum", values: [
+          "App.onChange.api.fetchQuote.cont",
+          "App.onChange.api.submitOrder.cont",
+          "App.onClick.api.fetchQuote.cont",
+          "App.onClick.api.submitOrder.cont",
+          "App.onSubmit.api.fetchQuote.cont",
+          "App.onSubmit.api.submitOrder.cont"
+        ] },
+        args: {
+          kind: "record",
+          fields: {
+            plan: { kind: "enum", values: ["none", "pro", "starter"] },
+            userId: { kind: "enum", values: ["none", "u1"] }
+          }
+        }
+      }
+    } satisfies AbstractDomain;
+
+    const values = enumerateDomain({ kind: "boundedList", inner: pendingOp, maxLen: 3 });
+    expect(values).toHaveLength(1 + 72 + 72 ** 2 + 72 ** 3);
+  });
+
   it("canonicalizes JSON and token names deterministically", () => {
     expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe('{"a":{"c":3,"d":2},"b":1}');
     const model: Model = {

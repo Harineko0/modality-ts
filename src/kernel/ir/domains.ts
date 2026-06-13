@@ -34,7 +34,9 @@ export function enumerateDomain(domain: AbstractDomain): Value[] {
       const itemValues = enumerateDomain(domain.inner);
       const lists: Value[] = [[]];
       for (let len = 1; len <= domain.maxLen; len += 1) {
-        lists.push(...cartesian(Array.from({ length: len }, () => itemValues)));
+        for (const list of cartesian(Array.from({ length: len }, () => itemValues))) {
+          lists.push(list);
+        }
       }
       return lists;
     }
