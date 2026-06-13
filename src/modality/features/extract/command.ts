@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -48,11 +48,11 @@ export interface ExtractCommandResult {
 }
 
 export async function runExtractCommand(options: ExtractCommandOptions): Promise<ExtractCommandResult> {
-  const config = await loadModalityConfig(options.configPath ?? await findNearestConfig(dirname(options.sourcePath)));
-  const source = await readFile(options.sourcePath, "utf8");
+  const project = await loadExtractionProject(options.sourcePath);
+  const config = await loadModalityConfig(options.configPath ?? await findNearestConfig(project.configStartDir));
   const route = options.route ?? config.route ?? "/";
   const appModelPath = options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
-  const packageJsonPath = options.packageJsonPath ?? config.packageJsonPath ?? await findNearestPackageJson(dirname(options.sourcePath));
+  const packageJsonPath = options.packageJsonPath ?? config.packageJsonPath ?? await findNearestPackageJson(project.configStartDir);
   const dependencies = await readPackageDependencies(packageJsonPath);
   const registry = createBuiltinModalityRegistry({
     dependencies,
@@ -60,27 +60,29 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     extraSourcePlugins: [...(config.plugins ?? []), ...(options.sourcePlugins ?? [])],
     routerPlugin: options.routerPlugin ?? config.routerPlugin
   });
-  const effectApis = uniqueStrings([...(config.effectApis ?? []), ...(options.effectApis ?? [])]);
+  const effectApis = uniqueStrings([...(config.effectApis ?? []), ...(options.effectApis ?? []), ...project.effectApis]);
   const bounds = { maxDepth: 12, maxPending: 3, maxInternalSteps: 16, ...(config.bounds ?? {}), ...(options.bounds ?? {}) };
-  const discoverySource = await sourceWithLocalImports(options.sourcePath, source);
   const pipeline = runExtractionPipeline({
-    sourceText: discoverySource,
-    fileName: options.sourcePath,
+    sourceText: project.sourceText,
+    fileName: project.entryFile,
     route,
     effectApis,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: registry.routerPlugin,
-    extractHandlers: (sourceText, handlerOptions) => extractUseStateSkeleton(sourceText, handlerOptions)
+    extractHandlers: (sourceText, handlerOptions) => extractUseStateSkeleton(sourceText, { ...handlerOptions, routePatterns: project.routes })
   });
   const transitions = [...pipeline.transitions];
-  const routeVars = pipeline.routeVars.length > 0 ? pipeline.routeVars : defaultRouteVars([route], { route, bounds: { maxHistory: 4 } });
+  const discoveredRoutes = uniqueStrings([route, ...project.routes, ...transitionNavigatedRoutes(transitions)]);
+  const routeVars = registry.routerPlugin
+    ? registry.routerPlugin.routeVars(discoveredRoutes, { route, bounds: { maxHistory: 4 } })
+    : defaultRouteVars(discoveredRoutes, { route, bounds: { maxHistory: 4 } });
   const templateVars = pipeline.templateFragments.flatMap((fragment) => fragment.vars);
   const stateVars = refineAssignedLiteralDomains([...pipeline.stateVars, ...templateVars], transitions);
   const extractedModel: Model = {
     schemaVersion: 1,
     id: "extracted-model",
     bounds,
-    metadata: { sourceHashes: { [options.sourcePath]: sha256(source) }, plugins: pluginProvenance(pipeline.plugins) },
+    metadata: { sourceHashes: sourceHashes(project.sources), plugins: pluginProvenance(pipeline.plugins) },
     vars: [...routeVars, ...pendingVars(effectApis, transitions, [...routeVars, ...stateVars], bounds.maxPending), ...stateVars],
     transitions
   };
@@ -103,7 +105,7 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
       extractionCaveats
     }
   };
-  const report = createExtractionReport(options.sourcePath, model, warnings, overlay.ignoredVars, options.now ?? new Date());
+  const report = createExtractionReport(project.sourceFiles, model, warnings, overlay.ignoredVars, options.now ?? new Date());
   await mkdir(dirname(options.modelPath), { recursive: true });
   await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
   await mkdir(dirname(appModelPath), { recursive: true });
@@ -132,35 +134,83 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
   };
 }
 
-async function sourceWithLocalImports(sourcePath: string, source: string): Promise<string> {
-  const seen = new Set<string>([resolve(sourcePath)]);
-  const chunks = [source];
-  const queue = localImportSpecifiers(source).map((specifier) => resolveImportPath(dirname(sourcePath), specifier)).filter((path): path is string => Boolean(path));
+interface ExtractionProject {
+  entryFile: string;
+  sourceText: string;
+  sourceFiles: string[];
+  sources: Array<{ path: string; text: string }>;
+  routes: string[];
+  effectApis: string[];
+  configStartDir: string;
+}
+
+interface TsConfigResolution {
+  baseUrl?: string;
+  paths: Array<{ prefix: string; suffix: string; targets: string[] }>;
+}
+
+async function loadExtractionProject(sourcePath: string): Promise<ExtractionProject> {
+  const resolved = resolve(sourcePath);
+  const info = await stat(resolved);
+  if (!info.isDirectory()) {
+    const source = await readFile(resolved, "utf8");
+    const tsconfig = await readTsConfigResolution(dirname(resolved));
+    const imported = await sourceWithLocalImports([{ path: resolved, text: source }], tsconfig);
+    return {
+      entryFile: resolved,
+      sourceText: imported.sources.map((entry) => entry.text).join("\n"),
+      sourceFiles: imported.sources.map((entry) => entry.path),
+      sources: imported.sources,
+      routes: [],
+      effectApis: fetchEffectApis(imported.sources.map((entry) => entry.text).join("\n")),
+      configStartDir: dirname(resolved)
+    };
+  }
+  const routesPath = join(resolved, "app", "routes.ts");
+  const routeEntries = parseReactRouterRoutes(await readFile(routesPath, "utf8"));
+  const rootPath = join(resolved, "app", "root.tsx");
+  const roots = await existingFiles([rootPath]);
+  const entries = [
+    ...await Promise.all(roots.map(async (path) => ({ path, text: await readFile(path, "utf8") }))),
+    ...await Promise.all(routeEntries.map(async (entry) => ({ path: resolve(dirname(routesPath), entry.file), text: await readFile(resolve(dirname(routesPath), entry.file), "utf8") })))
+  ];
+  const tsconfig = await readTsConfigResolution(resolved);
+  const imported = await sourceWithLocalImports(entries, tsconfig);
+  const sourceText = imported.sources.map((entry) => entry.text).join("\n");
+  return {
+    entryFile: routesPath,
+    sourceText,
+    sourceFiles: imported.sources.map((entry) => entry.path),
+    sources: imported.sources,
+    routes: uniqueStrings(routeEntries.map((entry) => entry.pattern)),
+    effectApis: fetchEffectApis(sourceText),
+    configStartDir: resolved
+  };
+}
+
+async function sourceWithLocalImports(entries: Array<{ path: string; text: string }>, tsconfig: TsConfigResolution): Promise<{ sources: Array<{ path: string; text: string }> }> {
+  const seen = new Set<string>();
+  const sources: Array<{ path: string; text: string }> = [];
+  const queue = [...entries];
   while (queue.length > 0) {
     const next = queue.shift()!;
-    const canonical = resolve(next);
+    const canonical = resolve(next.path);
     if (seen.has(canonical)) continue;
-    let text: string;
-    try {
-      text = await readFile(canonical, "utf8");
-    } catch {
-      continue;
-    }
     seen.add(canonical);
-    chunks.push(text);
-    for (const specifier of localImportSpecifiers(text)) {
-      const imported = resolveImportPath(dirname(canonical), specifier);
-      if (imported) queue.push(imported);
+    sources.push({ path: canonical, text: next.text });
+    for (const specifier of localImportSpecifiers(next.text)) {
+      const imported = await resolveImportPath(dirname(canonical), specifier, tsconfig);
+      if (imported) queue.push({ path: imported, text: await readFile(imported, "utf8") });
     }
   }
-  return chunks.join("\n");
+  return { sources };
 }
 
 function localImportSpecifiers(source: string): string[] {
   const specs: string[] = [];
   const parsed = tsCreateSourceFile(source);
   const visit = (node: import("typescript").Node): void => {
-    if (tsIsImportDeclaration(node) && tsIsStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text.startsWith(".")) {
+    if (tsIsImportDeclaration(node) && tsIsStringLiteral(node.moduleSpecifier) && isLocalImportSpecifier(node.moduleSpecifier.text)) {
       specs.push(node.moduleSpecifier.text);
     }
     tsForEachChild(node, visit);
@@ -185,12 +235,170 @@ function tsForEachChild(node: import("typescript").Node, cb: (node: import("type
   ts.forEachChild(node, cb);
 }
 
-function resolveImportPath(baseDir: string, specifier: string): string | undefined {
-  const base = resolve(baseDir, specifier);
+function isLocalImportSpecifier(specifier: string): boolean {
+  return specifier.startsWith(".") || specifier.startsWith("~/");
+}
+
+async function resolveImportPath(baseDir: string, specifier: string, tsconfig: TsConfigResolution): Promise<string | undefined> {
+  if (specifier.startsWith("./+types/") || specifier.startsWith("../+types/")) return undefined;
+  const bases = importBases(baseDir, specifier, tsconfig);
+  for (const base of bases) {
+    const resolved = await firstExistingModulePath(base);
+    if (resolved) return resolved;
+  }
+  return undefined;
+}
+
+function importBases(baseDir: string, specifier: string, tsconfig: TsConfigResolution): string[] {
+  if (specifier.startsWith(".")) return [resolve(baseDir, specifier)];
+  const matches = tsconfig.paths.flatMap((entry) => {
+    if (!specifier.startsWith(entry.prefix) || !specifier.endsWith(entry.suffix)) return [];
+    const star = specifier.slice(entry.prefix.length, specifier.length - entry.suffix.length);
+    return entry.targets.map((target) => resolve(target.replace("*", star)));
+  });
+  if (matches.length > 0) return matches;
+  return tsconfig.baseUrl ? [resolve(tsconfig.baseUrl, specifier)] : [];
+}
+
+async function firstExistingModulePath(base: string): Promise<string | undefined> {
   const candidates = /\.[cm]?[jt]sx?$/.test(base)
     ? [base]
     : [`${base}.ts`, `${base}.tsx`, `${base}.mts`, `${base}.cts`, join(base, "index.ts"), join(base, "index.tsx")];
-  return candidates[0];
+  for (const candidate of candidates) {
+    try {
+      const candidateStat = await stat(candidate);
+      if (candidateStat.isFile()) return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return undefined;
+}
+
+async function readTsConfigResolution(startDir: string): Promise<TsConfigResolution> {
+  const tsconfigPath = await findNearestTsConfig(startDir);
+  if (!tsconfigPath) return { paths: [] };
+  const parsed = JSON.parse(await readFile(tsconfigPath, "utf8")) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
+  const configDir = dirname(tsconfigPath);
+  const baseUrl = parsed.compilerOptions?.baseUrl ? resolve(configDir, parsed.compilerOptions.baseUrl) : configDir;
+  const paths = Object.entries(parsed.compilerOptions?.paths ?? {}).map(([key, targets]) => {
+    const star = key.indexOf("*");
+    const prefix = star >= 0 ? key.slice(0, star) : key;
+    const suffix = star >= 0 ? key.slice(star + 1) : "";
+    return { prefix, suffix, targets: targets.map((target) => resolve(baseUrl, target)) };
+  });
+  return { baseUrl, paths };
+}
+
+async function findNearestTsConfig(startDir: string): Promise<string | undefined> {
+  let dir = startDir;
+  while (true) {
+    const candidate = join(dir, "tsconfig.json");
+    try {
+      await readFile(candidate, "utf8");
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const parent = dirname(dir);
+    if (parent === dir || dir === parse(dir).root) return undefined;
+    dir = parent;
+  }
+}
+
+async function existingFiles(paths: readonly string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const path of paths) {
+    try {
+      const info = await stat(path);
+      if (info.isFile()) found.push(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return found;
+}
+
+function parseReactRouterRoutes(source: string): Array<{ pattern: string; file: string }> {
+  const routes: Array<{ pattern: string; file: string }> = [];
+  const parsed = tsCreateSourceFile(source);
+  const visit = (node: import("typescript").Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (node.expression.text === "index" && ts.isStringLiteral(node.arguments[0])) {
+        routes.push({ pattern: "/", file: node.arguments[0].text });
+      }
+      if (node.expression.text === "route" && ts.isStringLiteral(node.arguments[0]) && ts.isStringLiteral(node.arguments[1])) {
+        routes.push({ pattern: reactRouterPathPattern(node.arguments[0].text), file: node.arguments[1].text });
+      }
+    }
+    tsForEachChild(node, visit);
+  };
+  visit(parsed);
+  return routes;
+}
+
+function reactRouterPathPattern(pattern: string): string {
+  const normalized = pattern.startsWith("/") ? pattern : `/${pattern}`;
+  return normalized.replace(/\$([A-Za-z0-9_]+)/g, ":$1").replace(/\*$/, "*");
+}
+
+function sourceHashes(sources: readonly { path: string; text: string }[]): Record<string, string> {
+  return Object.fromEntries(sources.map((source) => [source.path, sha256(source.text)]));
+}
+
+function fetchEffectApis(sourceText: string): string[] {
+  const source = tsCreateSourceFile(sourceText);
+  const ops = new Set<string>();
+  const visit = (node: import("typescript").Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "fetch") {
+      const op = fetchOpId(node);
+      if (op) ops.add(op);
+    }
+    tsForEachChild(node, visit);
+  };
+  visit(source);
+  return [...ops].sort();
+}
+
+function fetchOpId(call: import("typescript").CallExpression): string | undefined {
+  const first = call.arguments[0];
+  if (!first) return undefined;
+  const path = fetchPathValue(first);
+  if (!path) return undefined;
+  const method = fetchMethodValue(call.arguments[1]) ?? "GET";
+  return `${method} ${path}`;
+}
+
+function fetchPathValue(expression: import("typescript").Expression): string | undefined {
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return normalizeFetchPath(expression.text);
+  if (ts.isTemplateExpression(expression)) {
+    let value = expression.head.text;
+    for (const span of expression.templateSpans) value += ":id" + span.literal.text;
+    return normalizeFetchPath(value);
+  }
+  return undefined;
+}
+
+function normalizeFetchPath(path: string): string {
+  return (path.startsWith("/") ? path : `/${path}`).replace(/\/:param(?=\/|$)/g, "/:id");
+}
+
+function fetchMethodValue(expression: import("typescript").Expression | undefined): string | undefined {
+  if (!expression || !ts.isObjectLiteralExpression(expression)) return undefined;
+  const method = expression.properties.find((property): property is import("typescript").PropertyAssignment =>
+    ts.isPropertyAssignment(property) && propertyName(property.name) === "method"
+  );
+  const value = method ? literalString(method.initializer) : undefined;
+  return value?.toUpperCase();
+}
+
+function literalString(expression: import("typescript").Expression): string | undefined {
+  return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression) ? expression.text : undefined;
+}
+
+function propertyName(name: import("typescript").PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return undefined;
 }
 
 async function readOverlaySpec(model: Model, overlayPath: string): Promise<OverlaySpec> {
@@ -273,7 +481,7 @@ async function assertMatchesExpectedModel(model: Model, expectedModelPath: strin
   }
 }
 
-function createExtractionReport(sourcePath: string, model: Model, warnings: readonly string[], ignoredVars: readonly string[], now: Date): ExtractionReport {
+function createExtractionReport(sourceFiles: readonly string[], model: Model, warnings: readonly string[], ignoredVars: readonly string[], now: Date): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
   const transitionHandlers = model.transitions.map((transition) => ({
     id: transition.id,
@@ -297,7 +505,7 @@ function createExtractionReport(sourcePath: string, model: Model, warnings: read
     schemaVersion: 1,
     kind: "extraction-report",
     generatedAt: now.toISOString(),
-    sourceFiles: [sourcePath],
+    sourceFiles,
     plugins: model.metadata?.plugins ?? [],
     handlers,
     globalTaints: caveats.globalTaints,
@@ -397,6 +605,20 @@ function firstSemverMajor(range: string): number | undefined {
 
 function pluginProvenance(plugins: ReturnType<typeof runExtractionPipeline>["plugins"]): NonNullable<Model["metadata"]>["plugins"] {
   return [...plugins.sources, ...(plugins.router ? [plugins.router] : [])].sort((left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id));
+}
+
+function transitionNavigatedRoutes(transitions: readonly Model["transitions"][number][]): string[] {
+  const routes = new Set<string>();
+  const visit = (effect: EffectIR): void => {
+    if (effect.kind === "navigate" && effect.to?.kind === "lit" && typeof effect.to.value === "string") routes.add(effect.to.value);
+    if (effect.kind === "seq") effect.effects.forEach(visit);
+    if (effect.kind === "if") {
+      visit(effect.then);
+      visit(effect.else);
+    }
+  };
+  transitions.forEach((transition) => visit(transition.effect));
+  return [...routes].sort();
 }
 
 function overApproxReasons(transition: Model["transitions"][number]): string[] {

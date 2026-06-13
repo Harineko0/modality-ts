@@ -9,6 +9,7 @@ export interface HandlerExtractionResult {
 export interface HandlerExtractorOptions {
   route: string;
   fileName: string;
+  routePatterns: readonly string[];
   effectApis: readonly string[];
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
@@ -20,6 +21,7 @@ export interface ExtractionPipelineOptions {
   sourceText: string;
   fileName: string;
   route: string;
+  routePatterns?: readonly string[];
   effectApis?: readonly string[];
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
@@ -91,6 +93,7 @@ export function runExtractionPipeline(options: ExtractionPipelineOptions): Extra
     route: options.route,
     fileName: options.fileName,
     effectApis: options.effectApis ?? [],
+    routePatterns: options.routePatterns ?? [],
     stateVars: [...stateVars, ...templateFragments.flatMap((fragment) => fragment.vars)],
     writeChannels,
     sourcePlugins,

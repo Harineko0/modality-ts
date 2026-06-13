@@ -9,6 +9,7 @@ export interface UseStateExtractionOptions {
   route?: string;
   fileName?: string;
   effectApis?: readonly string[];
+  routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
@@ -41,7 +42,7 @@ interface SetterCall {
   argument: ts.Expression;
 }
 
-type ExtractableHandler = ts.ArrowFunction | ts.FunctionExpression;
+type ExtractableHandler = ts.ArrowFunction | ts.FunctionExpression | (ts.FunctionDeclaration & { body: ts.Block });
 type ComponentDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
 type CustomHookDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
 type InternalTransition = Transition & { __stableIdKey?: string };
@@ -54,10 +55,19 @@ interface HookStateReturn {
   domain: AbstractDomain;
   initial: Value;
 }
+interface ContextBindings {
+  vars: StateVarDecl[];
+  setters: Map<string, SetterBinding>;
+  hookReturns: Map<string, Map<string, SetterBinding>>;
+}
 
 interface EffectSummary {
-  effect: Extract<EffectIR, { kind: "assign" | "havoc" }>;
+  effect: EffectIR;
   reads: string[];
+}
+
+function emptyContextBindings(): ContextBindings {
+  return { vars: [], setters: new Map(), hookReturns: new Map() };
 }
 
 function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
@@ -69,6 +79,167 @@ function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
     stateName: localMatch?.[2] ?? atomMatch?.[1] ?? decl.id,
     domain: decl.domain
   };
+}
+
+function discoverContextBindings(
+  source: ts.SourceFile,
+  fileName: string,
+  route: string,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>
+): ContextBindings {
+  const bindings = emptyContextBindings();
+  const providerValues = new Map<string, Map<string, SetterBinding>>();
+  const visitProvider = (node: ts.Node, componentName: string | undefined): void => {
+    const component = componentNameFor(node) ?? componentName;
+    const localSetters = new Map<string, SetterBinding>();
+    if ((ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) && component && node.body && ts.isBlock(node.body)) {
+      for (const statement of node.body.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (!ts.isArrayBindingPattern(declaration.name) || !declaration.initializer || !isUseStateCall(declaration.initializer)) continue;
+          const stateName = declaration.name.elements[0];
+          const setterName = declaration.name.elements[1];
+          if (!setterName || !ts.isBindingElement(stateName) || !ts.isIdentifier(stateName.name) || !ts.isBindingElement(setterName) || !ts.isIdentifier(setterName.name)) continue;
+          const domain = inferUseStateDomain(declaration.initializer, typeAliases);
+          const varId = `local:${component}.${stateName.name.text}`;
+          const setter = { varId, component, stateName: stateName.name.text, domain };
+          localSetters.set(setterName.name.text, setter);
+        }
+      }
+      for (const statement of node.body.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+          const setter = setterAliasBinding(declaration.initializer, localSetters);
+          if (setter) localSetters.set(declaration.name.text, setter);
+        }
+      }
+    }
+    if (component && localSetters.size > 0 && node.getText(source).includes(".Provider")) {
+      const fields = providerValueFields(node, localSetters);
+      if (fields.size > 0) {
+        providerValues.set(component, fields);
+        for (const setter of fields.values()) bindings.setters.set(setter.stateName, setter);
+      }
+    }
+    ts.forEachChild(node, (child) => visitProvider(child, component));
+  };
+  visitProvider(source, undefined);
+
+  const providerFieldMaps = [...providerValues.values()];
+  const visitHook = (node: ts.Node): void => {
+    const name = customHookDeclarationName(node);
+    if (name && (ts.isFunctionDeclaration(node) || (ts.isVariableDeclaration(node) && node.initializer && isExtractableHandler(node.initializer)))) {
+      const hook = ts.isFunctionDeclaration(node) ? node : node.initializer as CustomHookDecl;
+      if (hookUsesContext(hook) && providerFieldMaps.length > 0) {
+        const merged = new Map<string, SetterBinding>();
+        for (const map of providerFieldMaps) for (const [field, setter] of map) merged.set(field, setter);
+        bindings.hookReturns.set(name, merged);
+      }
+    }
+    ts.forEachChild(node, visitHook);
+  };
+  visitHook(source);
+  return bindings;
+}
+
+function providerValueFields(node: ts.Node, localSetters: ReadonlyMap<string, SetterBinding>): Map<string, SetterBinding> {
+  const fields = new Map<string, SetterBinding>();
+  const visit = (candidate: ts.Node): void => {
+    if (ts.isJsxAttribute(candidate) && ts.isIdentifier(candidate.name) && candidate.name.text === "value" && candidate.initializer && ts.isJsxExpression(candidate.initializer)) {
+      const value = providerValueObject(node, candidate.initializer.expression);
+      if (value) {
+        for (const property of value.properties) {
+          if (!ts.isShorthandPropertyAssignment(property) && !ts.isPropertyAssignment(property)) continue;
+          const name = ts.isShorthandPropertyAssignment(property) ? property.name.text : propertyName(property.name);
+          const expr = ts.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
+          if (!name || !ts.isIdentifier(expr)) continue;
+          const setter = localSetters.get(expr.text);
+          if (setter) fields.set(name, setter);
+        }
+      }
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return fields;
+}
+
+function setterAliasBinding(expression: ts.Expression, localSetters: ReadonlyMap<string, SetterBinding>): SetterBinding | undefined {
+  const callback = useCallbackFunction(expression);
+  if (!callback || callback.parameters.length !== 1 || !ts.isIdentifier(callback.parameters[0].name)) return undefined;
+  const parameter = callback.parameters[0].name.text;
+  const call = firstCallInFunction(callback);
+  if (!call || !ts.isIdentifier(call.expression) || call.arguments.length !== 1 || !ts.isIdentifier(call.arguments[0]) || call.arguments[0].text !== parameter) return undefined;
+  return localSetters.get(call.expression.text);
+}
+
+function useCallbackFunction(expression: ts.Expression): ExtractableHandler | undefined {
+  if (!ts.isCallExpression(expression) || !ts.isIdentifier(expression.expression) || expression.expression.text !== "useCallback") return undefined;
+  const first = expression.arguments[0];
+  return first && isExtractableHandler(first) ? first : undefined;
+}
+
+function firstCallInFunction(fn: ExtractableHandler): ts.CallExpression | undefined {
+  if (!ts.isBlock(fn.body)) return ts.isCallExpression(fn.body) ? fn.body : undefined;
+  for (const statement of fn.body.statements) {
+    if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) return statement.expression;
+  }
+  return undefined;
+}
+
+function providerValueObject(scope: ts.Node, expression: ts.Expression | undefined): ts.ObjectLiteralExpression | undefined {
+  if (!expression) return undefined;
+  if (ts.isObjectLiteralExpression(expression)) return expression;
+  if (!ts.isIdentifier(expression)) return undefined;
+  const declaration = variableDeclarationIn(scope, expression.text);
+  if (!declaration?.initializer || !ts.isCallExpression(declaration.initializer)) return undefined;
+  if (!ts.isIdentifier(declaration.initializer.expression) || declaration.initializer.expression.text !== "useMemo") return undefined;
+  const callback = declaration.initializer.arguments[0];
+  if (!callback || !isExtractableHandler(callback)) return undefined;
+  if (ts.isObjectLiteralExpression(callback.body)) return callback.body;
+  if (ts.isParenthesizedExpression(callback.body) && ts.isObjectLiteralExpression(callback.body.expression)) return callback.body.expression;
+  return undefined;
+}
+
+function variableDeclarationIn(scope: ts.Node, name: string): ts.VariableDeclaration | undefined {
+  let found: ts.VariableDeclaration | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
+function hookUsesContext(hook: CustomHookDecl): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useContext") {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(hook);
+  return found;
+}
+
+function bindContextHookObjectDeclaration(node: ts.Node, contextBindings: ContextBindings, setters: Map<string, SetterBinding>): void {
+  if (!ts.isVariableDeclaration(node) || !ts.isObjectBindingPattern(node.name) || !node.initializer || !ts.isCallExpression(node.initializer) || !ts.isIdentifier(node.initializer.expression)) return;
+  const hook = contextBindings.hookReturns.get(node.initializer.expression.text);
+  if (!hook) return;
+  for (const element of node.name.elements) {
+    if (!ts.isIdentifier(element.name)) continue;
+    const property = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : element.name.text;
+    const setter = hook.get(property);
+    if (setter) setters.set(element.name.text, setter);
+  }
 }
 
 export function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
@@ -108,12 +279,15 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
+  const routePatterns = options.routePatterns ?? [];
   const effectApis = new Set(options.effectApis ?? []);
   const sourcePlugins = options.sourcePlugins ?? [];
   const routerPlugin = options.routerPlugin;
   const setters = new Map<string, SetterBinding>();
+  const contextBindings = discoverContextBindings(source, fileName, route, typeAliases);
   const globalTaints = new Set<string>();
   const components = componentDeclarations(source);
+  const providerComponents = providerComponentNames(source);
   const customHooks = customHookDeclarations(source);
   const statefulListComponents = detectStatefulListComponents(source, components);
   const reportedStatefulListComponents = new Set<string>();
@@ -125,6 +299,10 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       setters.set(channel.symbolName, setterBindingFromDecl(decl));
     }
   }
+  for (const decl of contextBindings.vars) {
+    if (!vars.some((candidate) => candidate.id === decl.id)) vars.push(decl);
+  }
+  for (const [symbolName, setter] of contextBindings.setters) setters.set(symbolName, setter);
   const handlers = new Map<string, ExtractableHandler>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     if (!componentName && isCustomHookDeclaration(node)) return;
@@ -133,16 +311,20 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       const handler = extractableHandlerInitializer(node.initializer);
       if (handler) handlers.set(node.name.text, handler);
     }
+    if (ts.isFunctionDeclaration(node) && node.name && isExtractableHandler(node)) {
+      handlers.set(node.name.text, node);
+    }
     if (ts.isVariableDeclaration(node) && node.initializer && isUseReducerCall(node.initializer)) {
       warnings.push({ message: `Unsupported useReducer ${nextComponent ?? "Anonymous"}.useReducer`, ...lineAndColumn(source, node) });
     }
+    bindContextHookObjectDeclaration(node, contextBindings, setters);
     if (ts.isVariableDeclaration(node) && nextComponent && inlineCustomHookState(source, fileName, node, customHooks, vars, setters, nextComponent, route)) {
       return;
     }
     const customHook = calledCustomHook(node, new Set(customHooks.keys()));
     if (customHook && nextComponent) {
       const key = `${nextComponent}.${customHook}`;
-      if (!reportedCustomHooks.has(key)) {
+      if (!contextBindings.hookReturns.has(customHook) && !reportedCustomHooks.has(key)) {
         reportedCustomHooks.add(key);
         warnings.push({ message: `Unextractable custom hook ${key}`, ...lineAndColumn(source, node) });
       }
@@ -167,7 +349,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
             id: varId,
             domain,
             origin: { file: fileName, ...lineAndColumn(source, node) },
-            scope: { kind: "route-local", route },
+            scope: providerComponents.has(component) ? { kind: "global" } : { kind: "route-local", route },
             initial: initialValueForUseState(node.initializer, domain)
           });
         }
@@ -178,6 +360,8 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         warnings.push({ message: "Unsupported useState binding pattern", ...lineAndColumn(source, node) });
       }
     }
+    const link = linkNavigationTransition(source, fileName, node, nextComponent ?? "Anonymous", routePatterns);
+    if (link) transitions.push(link);
     const refTaint = refSetterTaint(node, setters);
     if (refTaint) {
       const key = `Global taint ${refTaint.varId}`;
@@ -225,7 +409,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals),
         disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals)
       ]);
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, guard, warnings);
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, guard, routePatterns, contextBindings, warnings);
       transitions.push(...extracted);
       if (extracted.length === 0 && !forwardsComponentProp(node, handlers, components.get(nextComponent ?? "")) && !handlerSchedulesModeledTimer(node, handlers, setters)) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -234,7 +418,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
     if (ts.isCallExpression(node) && isUseEffectCall(node)) {
       const extracted = transitionsFromUseEffect(source, fileName, node, setters, nextComponent ?? "Anonymous");
       transitions.push(...extracted);
-      if (extracted.length === 0 && useEffectWritesModeledState(node, setters)) {
+      if (extracted.length === 0 && useEffectWritesModeledState(node, setters) && !providerComponents.has(nextComponent ?? "")) {
         warnings.push({ message: `Unextractable effect ${nextComponent ?? "Anonymous"}.useEffect`, ...lineAndColumn(source, node) });
       }
     }
@@ -436,8 +620,8 @@ function isUseEffectCall(node: ts.CallExpression): boolean {
   return ts.isIdentifier(node.expression) && node.expression.text === "useEffect";
 }
 
-function isExtractableHandler(node: ts.Expression): node is ExtractableHandler {
-  return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+function isExtractableHandler(node: ts.Node): node is ExtractableHandler {
+  return ts.isArrowFunction(node) || ts.isFunctionExpression(node) || (ts.isFunctionDeclaration(node) && Boolean(node.body));
 }
 
 function extractableHandlerInitializer(node: ts.Expression): ExtractableHandler | undefined {
@@ -489,7 +673,7 @@ function transitionsFromTimerCall(
   const summaries = timerCallbackSummaries(callback, setters);
   if (!summaries || summaries.length === 0) return [];
   const effects = summaries.map((summary) => summary.effect);
-  const writes = uniqueStrings(effects.map((effect) => effect.var));
+  const writes = uniqueStrings(effects.flatMap(effectWriteVars));
   const suffix = writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") || "callback";
   return [{
     id: `${component}.${name}.${suffix}`,
@@ -558,6 +742,8 @@ function transitionsFromJsxAttribute(
   sourcePlugins: readonly StateSourcePlugin[],
   routerPlugin: RouterPlugin | undefined,
   disabledGuard: ParsedGuard | undefined,
+  routePatterns: readonly string[],
+  contextBindings: ContextBindings,
   warnings: ExtractionWarning[]
 ): Transition[] {
   if (!node.initializer) return [];
@@ -568,7 +754,7 @@ function transitionsFromJsxAttribute(
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
   return tagStableIdKey(
-    transitionsFromResolvedHandler(source, fileName, node, attr, handler, setters, handlers, component, effectApis, asyncOutcomes, sourcePlugins, routerPlugin, disabledGuard, locator, warnings),
+    transitionsFromResolvedHandler(source, fileName, node, attr, handler, setters, handlers, component, effectApis, asyncOutcomes, sourcePlugins, routerPlugin, disabledGuard, locator, routePatterns, contextBindings, warnings),
     handler
   );
 }
@@ -592,7 +778,7 @@ function transitionsFromComponentPropAttribute(
   if (!tag) return [];
   const callee = components.get(tag);
   if (!callee) return [];
-  const trigger = componentPropTrigger(source, callee, node.name.text, setters, warnings);
+  const trigger = componentPropTrigger(source, callee, node.name.text, setters, warnings) ?? transparentComponentPropTrigger(callee, node.name.text);
   if (!trigger) return [];
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
   const handler = handlerExpression(expression, handlers);
@@ -618,6 +804,8 @@ function transitionsFromComponentPropAttribute(
       routerPlugin,
       combineParsedGuards([trigger.guard, callerGuard]),
       trigger.locator,
+      [],
+      emptyContextBindings(),
       warnings
     ),
     handler
@@ -704,9 +892,11 @@ function transitionsFromResolvedHandler(
   routerPlugin: RouterPlugin | undefined,
   disabledGuard: ParsedGuard | undefined,
   locator: Locator | undefined,
+  routePatterns: readonly string[],
+  contextBindings: ContextBindings,
   warnings: ExtractionWarning[]
 ): Transition[] {
-  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, handler, setters, component, effectApis, asyncOutcomes, locator, warnings);
+  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, handler, setters, component, effectApis, asyncOutcomes, locator, routePatterns, warnings);
   if (asyncTransitions.length > 0) return applyParsedGuard(asyncTransitions, disabledGuard);
   const conditionalTransition = conditionalTransitionFromHandler(source, fileName, node, attr, handler, setters, component, locator);
   if (conditionalTransition) return applyParsedGuard([conditionalTransition], disabledGuard);
@@ -714,17 +904,19 @@ function transitionsFromResolvedHandler(
   if (loopTransitions.length > 0) return applyParsedGuard(loopTransitions, disabledGuard);
   const sequentialTransition = sequentialTransitionFromHandler(source, fileName, node, attr, handler, setters, handlers, component, locator);
   if (sequentialTransition) return applyParsedGuard([sequentialTransition], disabledGuard);
-  const summary = callSummaryFromHandler(handler, setters);
+  const summary = callSummaryFromHandler(handler, setters, componentScopeLocalsFor(node, setters, contextBindings));
   if (!summary) return [];
   const inlined = inlinedHelperCall(summary.call, handlers, setters);
   const inlinedCall = inlined?.call ?? summary.call;
   const locals = inlined?.locals ?? summary.locals;
-  const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator, routerPlugin);
+  const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator, routerPlugin, routePatterns);
   if (navigation) return applyParsedGuard([navigation], disabledGuard);
   const pluginWrite = pluginWriteTransition(source, fileName, node, attr, component, inlinedCall, setters, locals, sourcePlugins, locator);
   if (pluginWrite) return applyParsedGuard([pluginWrite], disabledGuard);
   const swrMutate = swrMutateTransition(source, fileName, node, attr, component, inlinedCall, locator);
   if (swrMutate) return applyParsedGuard([swrMutate], disabledGuard);
+  const noop = noopCallTransition(source, fileName, node, attr, component, inlinedCall, locator);
+  if (noop) return applyParsedGuard([noop], disabledGuard);
   const setterCall = setterCallFrom(inlinedCall, setters);
   if (!setterCall) {
     const escaped = escapedSetters(inlinedCall, setters, locals);
@@ -779,7 +971,7 @@ function sequentialTransitionFromHandler(
   }
   if (summaries.length <= 1) return undefined;
   const effects = summaries.map((summary) => summary.effect);
-  const writes = uniqueStrings(effects.map((effect) => effect.var));
+  const writes = uniqueStrings(effects.flatMap(effectWriteVars));
   return {
     id: `${component}.${attr}.${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq`,
     cls: "user",
@@ -1206,6 +1398,26 @@ function componentGuardLocalsFor(attribute: ts.JsxAttribute, setters: Map<string
   return locals;
 }
 
+function componentScopeLocalsFor(attribute: ts.JsxAttribute, setters: Map<string, SetterBinding>, contextBindings: ContextBindings): Map<string, BoundExpr> {
+  const body = enclosingFunctionBody(attribute);
+  if (!body) return new Map();
+  const locals = new Map<string, BoundExpr>();
+  for (const statement of body.statements) {
+    if (statement.pos > attribute.pos) break;
+    if (ts.isReturnStatement(statement)) break;
+    bindConstStatement(statement, setters, locals, true);
+    for (const declaration of variableDeclarations(statement)) {
+      bindContextHookObjectDeclaration(declaration, contextBindings, setters);
+    }
+  }
+  return locals;
+}
+
+function variableDeclarations(node: ts.Node): ts.VariableDeclaration[] {
+  if (!ts.isVariableStatement(node)) return [];
+  return [...node.declarationList.declarations];
+}
+
 function enclosingFunctionBody(node: ts.Node): ts.Block | undefined {
   let current: ts.Node | undefined = node;
   while (current) {
@@ -1324,6 +1536,34 @@ function swrMutateTransition(
   };
 }
 
+function noopCallTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  call: ts.CallExpression,
+  locator: Locator | undefined
+): Transition | undefined {
+  const name = callName(call.expression) ?? call.expression.getText(source);
+  if (!isKnownPureUiCall(name)) return undefined;
+  return {
+    id: `${component}.${attr}.${safeId(name)}.noop`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "seq", effects: [] },
+    reads: [],
+    writes: [],
+    confidence: "exact"
+  };
+}
+
+function isKnownPureUiCall(name: string): boolean {
+  return name.endsWith(".click") || name === "confirm" || name === "navigator.clipboard.writeText" || name.endsWith(".writeText");
+}
+
 function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>, partialBoolean = false): boolean {
   if (!ts.isVariableStatement(statement)) return false;
   if ((ts.getCombinedNodeFlags(statement.declarationList) & ts.NodeFlags.Const) === 0) return false;
@@ -1352,9 +1592,10 @@ function navigationTransition(
   component: string,
   call: ts.CallExpression,
   locator: Locator | undefined,
-  routerPlugin: RouterPlugin | undefined
+  routerPlugin: RouterPlugin | undefined,
+  routePatterns: readonly string[] = []
 ): Transition | undefined {
-  const navigation = navigationCall(call, routerPlugin);
+  const navigation = navigationCall(call, routerPlugin, routePatterns);
   if (!navigation) return undefined;
   const routeId = navigation.to ? safeId(navigation.to) : "back";
   return {
@@ -1378,17 +1619,17 @@ function navigationTransition(
   };
 }
 
-function navigationCall(call: ts.CallExpression, routerPlugin: RouterPlugin | undefined): { mode: "push" | "replace" | "back"; to?: string } | undefined {
+function navigationCall(call: ts.CallExpression, routerPlugin: RouterPlugin | undefined, routePatterns: readonly string[] = []): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   const name = callName(call.expression);
   if (!name) return undefined;
   const pluginNavigation = routerPlugin?.navigationCall(name, call.arguments.map(callArgumentValue));
   if (pluginNavigation && pluginNavigation !== "unsupported") return pluginNavigation;
   if (name === "navigate" && call.arguments.length === 1) {
-    const to = literalValue(call.arguments[0]);
+    const to = routeTargetValue(call.arguments[0], routePatterns);
     return typeof to === "string" ? { mode: "push", to } : undefined;
   }
   if ((name.endsWith(".push") || name.endsWith(".replace")) && call.arguments.length === 1) {
-    const to = literalValue(call.arguments[0]);
+    const to = routeTargetValue(call.arguments[0], routePatterns);
     if (typeof to !== "string") return undefined;
     return { mode: name.endsWith(".replace") ? "replace" : "push", to };
   }
@@ -1396,6 +1637,71 @@ function navigationCall(call: ts.CallExpression, routerPlugin: RouterPlugin | un
     return { mode: "back" };
   }
   return undefined;
+}
+
+function linkNavigationTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.Node,
+  component: string,
+  routePatterns: readonly string[]
+): Transition | undefined {
+  if ((!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) || node.tagName.getText(source) !== "Link") return undefined;
+  const toAttr = node.attributes.properties.find((property): property is ts.JsxAttribute =>
+    ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && property.name.text === "to"
+  );
+  if (!toAttr) return undefined;
+  const to = jsxRouteTarget(toAttr, routePatterns);
+  if (!to) return undefined;
+  return {
+    id: `${component}.Link.navigate.${safeId(to)}`,
+    cls: "nav",
+    label: { kind: "navigate", mode: "push", to },
+    source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: to } },
+    reads: ["sys:route", "sys:history"],
+    writes: ["sys:route", "sys:history"],
+    confidence: "exact"
+  };
+}
+
+function jsxRouteTarget(attribute: ts.JsxAttribute, routePatterns: readonly string[]): string | undefined {
+  if (!attribute.initializer) return undefined;
+  if (ts.isStringLiteral(attribute.initializer)) return normalizeRouteTarget(attribute.initializer.text, routePatterns);
+  if (!ts.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) return undefined;
+  return routeTargetValue(attribute.initializer.expression, routePatterns);
+}
+
+function routeTargetValue(expression: ts.Expression | undefined, routePatterns: readonly string[]): string | undefined {
+  if (!expression) return undefined;
+  const literal = literalValue(expression);
+  if (typeof literal === "string") return normalizeRouteTarget(literal, routePatterns);
+  if (ts.isNoSubstitutionTemplateLiteral(expression)) return normalizeRouteTarget(expression.text, routePatterns);
+  if (ts.isTemplateExpression(expression)) {
+    const pattern = templateRoutePattern(expression);
+    return pattern ? normalizeRouteTarget(pattern, routePatterns) : undefined;
+  }
+  return undefined;
+}
+
+function templateRoutePattern(expression: ts.TemplateExpression): string | undefined {
+  let value = expression.head.text;
+  for (const span of expression.templateSpans) value += ":param" + span.literal.text;
+  return value;
+}
+
+function normalizeRouteTarget(target: string, routePatterns: readonly string[]): string {
+  const slash = target.startsWith("/") ? target : `/${target}`;
+  const matched = routePatterns.find((pattern) => routePatternMatches(pattern, slash));
+  return matched ?? slash.replace(/\/:param(?=\/|$)/g, "/:id");
+}
+
+function routePatternMatches(pattern: string, target: string): boolean {
+  const left = pattern.replace(/^\/+/, "").split("/");
+  const right = target.replace(/^\/+/, "").split("/");
+  if (left.length !== right.length) return false;
+  return left.every((part, index) => part.startsWith(":") || part === "*" || part === right[index] || right[index] === ":param");
 }
 
 function escapedSetters(call: ts.CallExpression, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr> = new Map()): SetterBinding[] {
@@ -1761,6 +2067,25 @@ function componentPropTrigger(
   return trigger;
 }
 
+function transparentComponentPropTrigger(component: ComponentDecl, propName: string): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
+  if (!isForwardablePropName(propName) || !componentSpreadsPropsToElement(component)) return undefined;
+  return { attr: propName };
+}
+
+function componentSpreadsPropsToElement(component: ComponentDecl): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.attributes.properties.some(ts.isJsxSpreadAttribute)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return found;
+}
+
 function forwardsComponentProp(node: ts.JsxAttribute, handlers: Map<string, ExtractableHandler>, component: ComponentDecl | undefined): boolean {
   if (!component || !node.initializer) return false;
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
@@ -1911,6 +2236,7 @@ function transitionsFromAsyncHandler(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   locator: Locator | undefined,
+  routePatterns: readonly string[],
   warnings: ExtractionWarning[]
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
@@ -1938,13 +2264,15 @@ function transitionsFromAsyncHandler(
   const successSummaries = summarizeAsyncSegment(successStatements, setters);
   const catchSummaries = tryStatement?.catchClause ? summarizeAsyncSegment(tryStatement.catchClause.block.statements, setters) : [];
   const preEffects = preSummaries.map((summary) => summary.effect);
-  const successEffects = successSummaries.map((summary) => summary.effect);
-  const catchEffects = catchSummaries.map((summary) => summary.effect);
+  const finallySummaries = tryStatement?.finallyBlock ? summarizeAsyncSegment(tryStatement.finallyBlock.statements, setters) : [];
+  const finallyEffects = finallySummaries.map((summary) => summary.effect);
+  const successEffects = [...successSummaries.map((summary) => summary.effect), ...finallyEffects];
+  const catchEffects = [...catchSummaries.map((summary) => summary.effect), ...finallyEffects];
   const preReads = uniqueStrings([...preSummaries.flatMap((summary) => summary.reads), ...opArgs.reads]);
-  const successReads = uniqueStrings(successSummaries.flatMap((summary) => summary.reads));
-  const catchReads = uniqueStrings(catchSummaries.flatMap((summary) => summary.reads));
+  const successReads = uniqueStrings([...successSummaries.flatMap((summary) => summary.reads), ...finallySummaries.flatMap((summary) => summary.reads)]);
+  const catchReads = uniqueStrings([...catchSummaries.flatMap((summary) => summary.reads), ...finallySummaries.flatMap((summary) => summary.reads)]);
   if (successEffects.length === 0 && catchEffects.length === 0) return [];
-  const writes = [...new Set([...preEffects, ...successEffects, ...catchEffects].map((effect) => effect.var))];
+  const writes = uniqueStrings([...preEffects, ...successEffects, ...catchEffects].flatMap(effectWriteVars));
   const baseId = `${component}.${attr}.${op}`;
   for (const read of uniqueStrings([...successReads, ...catchReads])) {
     warnings.push({ message: `Stale-read risk ${baseId}:${read}`, ...lineAndColumn(source, awaitStatement) });
@@ -1958,7 +2286,7 @@ function transitionsFromAsyncHandler(
     guard: { kind: "lit", value: true },
     effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op, continuation: `${baseId}.cont`, args: opArgs.args }] },
     reads: preReads,
-    writes: [...new Set([...preEffects.map((effect) => effect.var), "sys:pending"])],
+    writes: uniqueStrings([...preEffects.flatMap(effectWriteVars), "sys:pending"]),
     confidence: confidenceForEffects(preEffects)
   };
   const success: Transition = {
@@ -1969,12 +2297,13 @@ function transitionsFromAsyncHandler(
     guard: pendingIs(op),
     effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...successEffects] },
     reads: uniqueStrings(["sys:pending", ...successReads]),
-    writes: ["sys:pending", ...successEffects.map((effect) => effect.var)],
+    writes: [...new Set(["sys:pending", ...successEffects.flatMap(effectWriteVars)])],
     confidence: confidenceForEffects(successEffects)
   };
-  const transitions = [enqueue, success];
+  const successNavigate = firstNavigationInStatements(successStatements, routePatterns);
+  const transitions = [enqueue, successNavigate ? appendEffect(success, navigationEffect(successNavigate)) : success];
   if (catchEffects.length > 0 || asyncOutcomes[op]?.error !== undefined) {
-    transitions.push({
+    const errorTransition: Transition = {
       id: `${baseId}.error`,
       cls: "env",
       label: { kind: "resolve", op, outcome: "error" },
@@ -1982,9 +2311,10 @@ function transitionsFromAsyncHandler(
       guard: pendingIs(op),
       effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...catchEffects] },
       reads: uniqueStrings(["sys:pending", ...catchReads]),
-      writes: ["sys:pending", ...catchEffects.map((effect) => effect.var)],
+      writes: [...new Set(["sys:pending", ...catchEffects.flatMap(effectWriteVars)])],
       confidence: confidenceForEffects(catchEffects)
-    });
+    };
+    transitions.push(errorTransition);
   } else {
     warnings.push({ message: `Unhandled rejection ${baseId}`, ...lineAndColumn(source, awaitStatement) });
   }
@@ -2046,7 +2376,7 @@ function transitionsFromSequentialAwait(
         guard: promiseAllGuard(promiseAllOps),
         effect: { kind: "seq", effects: [...promiseAllOps.map((_, index) => ({ kind: "dequeue" as const, index })).reverse(), ...tailEffects] },
         reads: uniqueStrings(["sys:pending", ...tailReads]),
-        writes: uniqueStrings(["sys:pending", ...tailEffects.map((effect) => effect.var)]),
+        writes: uniqueStrings(["sys:pending", ...tailEffects.flatMap(effectWriteVars)]),
         confidence: confidenceForEffects(tailEffects)
       }
     : {
@@ -2057,7 +2387,7 @@ function transitionsFromSequentialAwait(
         guard: pendingIs(secondOp!),
         effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...tailEffects] },
         reads: uniqueStrings(["sys:pending", ...tailReads]),
-        writes: uniqueStrings(["sys:pending", ...tailEffects.map((effect) => effect.var)]),
+        writes: uniqueStrings(["sys:pending", ...tailEffects.flatMap(effectWriteVars)]),
         confidence: confidenceForEffects(tailEffects)
       };
   const transitions: Transition[] = [
@@ -2069,7 +2399,7 @@ function transitionsFromSequentialAwait(
       guard: { kind: "lit", value: true },
       effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op: firstOp, continuation: `${firstBaseId}.cont`, args: {} }] },
       reads: preReads,
-      writes: uniqueStrings([...preEffects.map((effect) => effect.var), "sys:pending"]),
+      writes: uniqueStrings([...preEffects.flatMap(effectWriteVars), "sys:pending"]),
       confidence: confidenceForEffects(preEffects)
     },
     {
@@ -2080,7 +2410,7 @@ function transitionsFromSequentialAwait(
       guard: pendingIs(firstOp),
       effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...betweenEffects, ...secondEnqueueEffects] },
       reads: uniqueStrings(["sys:pending", ...betweenReads]),
-      writes: uniqueStrings(["sys:pending", ...betweenEffects.map((effect) => effect.var)]),
+      writes: uniqueStrings(["sys:pending", ...betweenEffects.flatMap(effectWriteVars)]),
       confidence: confidenceForEffects(betweenEffects)
     },
     secondSuccess
@@ -2181,14 +2511,14 @@ function transitionsFromUseEffect(
     const guards: ExprIR[] = assignEffects.map((effect) => ({ kind: "neq", args: [{ kind: "read", var: effect.var }, effect.expr] }));
     const guard = guards.length > 0 ? guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!) : { kind: "lit" as const, value: true };
     transitions.push({
-      id: `${component}.useEffect.${effects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
+      id: `${component}.useEffect.${effects.flatMap(effectWriteVars).map((varId) => varId.split(".").at(-1) ?? varId).join("_")}`,
       cls: "internal",
       label: { kind: "internal", text: `${component}.useEffect` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard,
       effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
-      reads: uniqueStrings([...deps, ...effectReads, ...effects.map((effect) => effect.var)]),
-      writes: [...new Set(effects.map((effect) => effect.var))],
+      reads: uniqueStrings([...deps, ...effectReads, ...effects.flatMap(effectWriteVars)]),
+      writes: uniqueStrings(effects.flatMap(effectWriteVars)),
       confidence: effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact",
       triggeredBy: deps
     });
@@ -2197,14 +2527,14 @@ function transitionsFromUseEffect(
     const cleanupEffects = cleanup.map((summary) => summary.effect);
     const cleanupReads = uniqueStrings(cleanup.flatMap((summary) => summary.reads));
     transitions.push({
-      id: `${component}.useEffect.cleanup.${cleanupEffects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
+      id: `${component}.useEffect.cleanup.${cleanupEffects.flatMap(effectWriteVars).map((varId) => varId.split(".").at(-1) ?? varId).join("_")}`,
       cls: "internal",
       label: { kind: "internal", text: `${component}.useEffect.cleanup` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit", value: true },
       effect: cleanupEffects.length === 1 ? cleanupEffects[0] : { kind: "seq", effects: cleanupEffects },
       reads: cleanupReads,
-      writes: [...new Set(cleanupEffects.map((effect) => effect.var))],
+      writes: uniqueStrings(cleanupEffects.flatMap(effectWriteVars)),
       confidence: "over-approx",
       triggeredBy: deps
     });
@@ -2654,7 +2984,7 @@ function containsAwaitedEffect(statements: readonly ts.Statement[], effectApis: 
       }
       if (insideAwait && ts.isCallExpression(node)) {
         const name = callName(node.expression);
-        if (name && effectApis.has(name)) {
+        if (name && effectApis.has(effectOpForCall(name, node))) {
           found = true;
           return;
         }
@@ -2671,11 +3001,96 @@ function awaitedOp(statement: ts.Statement, effectApis: Set<string>): string | u
 }
 
 function awaitedCall(statement: ts.Statement, effectApis: Set<string>): { op: string; call: ts.CallExpression } | undefined {
-  if (!ts.isExpressionStatement(statement)) return undefined;
-  const expression = statement.expression;
-  if (!ts.isAwaitExpression(expression) || !ts.isCallExpression(expression.expression)) return undefined;
-  const name = callName(expression.expression.expression);
-  return name && effectApis.has(name) ? { op: name, call: expression.expression } : undefined;
+  const awaitExpression = awaitedCallExpressionInStatement(statement);
+  if (!awaitExpression) return undefined;
+  const name = callName(awaitExpression.expression);
+  if (!name) return undefined;
+  const op = effectOpForCall(name, awaitExpression);
+  if (!effectApis.has(op)) return undefined;
+  return { op, call: awaitExpression };
+}
+
+function awaitedCallExpressionInStatement(statement: ts.Statement): ts.CallExpression | undefined {
+  if (ts.isExpressionStatement(statement) && ts.isAwaitExpression(statement.expression) && ts.isCallExpression(statement.expression.expression)) {
+    return statement.expression.expression;
+  }
+  if (ts.isVariableStatement(statement)) {
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        declaration.initializer &&
+        ts.isAwaitExpression(declaration.initializer) &&
+        ts.isCallExpression(declaration.initializer.expression) &&
+        callName(declaration.initializer.expression.expression) === "fetch"
+      ) {
+        return declaration.initializer.expression;
+      }
+    }
+  }
+  return undefined;
+}
+
+function effectOpForCall(name: string, call: ts.CallExpression): string {
+  if (name !== "fetch") return name;
+  const url = fetchUrl(call.arguments[0]);
+  const method = fetchMethod(call.arguments[1]) ?? "GET";
+  return url ? `${method} ${url}` : "fetch";
+}
+
+function fetchUrl(argument: ts.Expression | undefined): string | undefined {
+  if (!argument) return undefined;
+  if (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)) return normalizeFetchUrl(argument.text);
+  if (ts.isTemplateExpression(argument)) {
+    const pattern = templateRoutePattern(argument);
+    return pattern ? normalizeFetchUrl(pattern.replace(/\/:param(?=\/|$)/g, "/:id")) : undefined;
+  }
+  return undefined;
+}
+
+function normalizeFetchUrl(value: string): string {
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function fetchMethod(argument: ts.Expression | undefined): string | undefined {
+  if (!argument || !ts.isObjectLiteralExpression(argument)) return undefined;
+  const method = argument.properties.find((property): property is ts.PropertyAssignment =>
+    ts.isPropertyAssignment(property) && propertyName(property.name) === "method"
+  );
+  const value = method ? literalValue(method.initializer) : undefined;
+  return typeof value === "string" ? value.toUpperCase() : undefined;
+}
+
+function firstNavigationInStatements(statements: readonly ts.Statement[], routePatterns: readonly string[]): { mode: "push" | "replace" | "back"; to?: string } | undefined {
+  for (const statement of statements) {
+    let found: { mode: "push" | "replace" | "back"; to?: string } | undefined;
+    const visit = (node: ts.Node): void => {
+      if (found) return;
+      if (ts.isCallExpression(node)) found = navigationCall(node, undefined, routePatterns);
+      ts.forEachChild(node, visit);
+    };
+    visit(statement);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function navigationEffect(navigation: { mode: "push" | "replace" | "back"; to?: string }): EffectIR {
+  return {
+    kind: "navigate",
+    mode: navigation.mode,
+    ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {})
+  };
+}
+
+function appendEffect(transition: Transition, effect: EffectIR): Transition {
+  const current = transition.effect.kind === "seq" ? transition.effect.effects : [transition.effect];
+  const writes = uniqueStrings([...transition.writes, ...effectWriteVars(effect)]);
+  const reads = uniqueStrings([...transition.reads, ...(effect.kind === "navigate" ? ["sys:route", "sys:history"] : [])]);
+  return {
+    ...transition,
+    effect: { kind: "seq", effects: [...current, effect] },
+    reads,
+    writes
+  };
 }
 
 function effectCallArgs(call: ts.CallExpression, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>): { args: Record<string, ExprIR>; reads: string[] } {
@@ -2717,7 +3132,7 @@ function promiseAllAwaitOps(statement: ts.Statement, effectApis: Set<string>): s
 
 function callName(expression: ts.Expression): string | undefined {
   if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isPropertyAccessExpression(expression)) return `${callName(expression.expression) ?? expression.expression.getText()}.${expression.name.text}`;
+  if (ts.isPropertyAccessExpression(expression) || ts.isPropertyAccessChain(expression)) return `${callName(expression.expression) ?? expression.expression.getText()}.${expression.name.text}`;
   return undefined;
 }
 
@@ -2733,6 +3148,17 @@ function componentNameFor(node: ts.Node): string | undefined {
   if (ts.isFunctionDeclaration(node) && node.name && startsUppercase(node.name.text)) return node.name.text;
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && startsUppercase(node.name.text)) return node.name.text;
   return undefined;
+}
+
+function providerComponentNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    const name = componentNameFor(node);
+    if (name && node.getText(source).includes(".Provider")) names.add(name);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
 }
 
 function startsUppercase(value: string): boolean {

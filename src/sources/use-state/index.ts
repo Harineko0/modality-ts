@@ -22,6 +22,7 @@ export default useStateSource;
 export function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/"): SourceDecl[] {
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const typeAliases = typeAliasDeclarations(source);
+  const providerComponents = providerComponentNames(source);
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const component = componentNameFor(node) ?? componentName;
@@ -37,7 +38,7 @@ export function discoverUseState(sourceText: string, fileName = "App.tsx", route
           id: varId,
           domain,
           origin,
-          scope: { kind: "route-local", route },
+          scope: providerComponents.has(componentId) ? { kind: "global" } : { kind: "route-local", route },
           initial: initialValueForUseState(node.initializer, domain)
         };
         decls.push({
@@ -208,6 +209,17 @@ function componentNameFor(node: ts.Node): string | undefined {
   if (ts.isFunctionDeclaration(node) && node.name && startsUppercase(node.name.text)) return node.name.text;
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && startsUppercase(node.name.text)) return node.name.text;
   return undefined;
+}
+
+function providerComponentNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    const name = componentNameFor(node);
+    if (name && node.getText(source).includes(".Provider")) names.add(name);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
 }
 
 function startsUppercase(value: string): boolean {

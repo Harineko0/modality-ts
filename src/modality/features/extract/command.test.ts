@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/checker";
-import { reachable, type Model } from "modality-ts/kernel";
+import { reachable, type EffectIR, type Model } from "modality-ts/kernel";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {
@@ -660,6 +660,175 @@ describe("runExtractCommand", () => {
     expect(click?.reads).toEqual(["atom:authAtom", "swr:event_snapshot_userId:data"]);
   });
 
+  it("extracts a React Router v7 app directory with tsconfig imports, fetch flows, Button wrappers, and theme context", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-router-app-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    await mkdir(join(dir, "app", "components"), { recursive: true });
+    await mkdir(join(dir, "app", "lib"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "report.json");
+    await writeFile(join(dir, "package.json"), JSON.stringify({ dependencies: { react: "^18.0.0", "react-router": "^7.0.0" } }), "utf8");
+    await writeFile(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "~/*": ["./app/*"] } } }), "utf8");
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `
+      import { index, route } from '@react-router/dev/routes';
+      export default [
+        index('routes/home.tsx'),
+        route('i/:id', 'routes/image.tsx')
+      ];
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "app", "root.tsx"),
+      `
+      import { createContext, useContext, useState } from 'react';
+      import { Link } from 'react-router';
+      import { Button } from '~/components/Button';
+      type Theme = 'light' | 'dark' | 'system';
+      const ThemeContext = createContext(null);
+      export function ThemeProvider({ children }) {
+        const [theme, setTheme] = useState<Theme>('system');
+        const resolvedTheme = theme === 'system' ? 'light' : theme;
+        return <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>{children}</ThemeContext.Provider>;
+      }
+      export function useTheme() {
+        return useContext(ThemeContext);
+      }
+      export function TopBar() {
+        const { theme, setTheme } = useTheme();
+        return <header>
+          <Link to="/">Gallery</Link>
+          <Button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Theme</Button>
+        </header>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "app", "components", "Button.tsx"),
+      `
+      export function Button(props) {
+        return <button {...props} />;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "app", "components", "UploadForm.tsx"),
+      `
+      import { useState } from 'react';
+      import { useNavigate } from 'react-router';
+      import { Button } from './Button';
+      export function UploadForm() {
+        const navigate = useNavigate();
+        const [busy, setBusy] = useState(false);
+        const [error, setError] = useState<string | null>(null);
+        return <form onSubmit={async () => {
+          setBusy(true);
+          try {
+            const res = await fetch('/api/upload', { method: 'POST' });
+            setError(null);
+            navigate('/i/abc');
+          } catch (err) {
+            setError('upload');
+          } finally {
+            setBusy(false);
+          }
+        }}>
+          <Button type="submit" disabled={busy}>Upload</Button>
+        </form>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "app", "routes", "home.tsx"),
+      `
+      import { Link } from 'react-router';
+      import { TopBar } from '../root';
+      import { UploadForm } from '~/components/UploadForm';
+      export default function Home() {
+        return <main><TopBar /><UploadForm /><Link to="/i/example">Example</Link></main>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "app", "routes", "image.tsx"),
+      `
+      import { useState } from 'react';
+      import { useNavigate } from 'react-router';
+      import { Button } from '~/components/Button';
+      export default function ImageDetail() {
+        const navigate = useNavigate();
+        const [busy, setBusy] = useState(false);
+        const [error, setError] = useState<string | null>(null);
+        const id = 'abc';
+        return <section>
+          <Button onClick={async () => {
+            setBusy(true);
+            try {
+              const res = await fetch(\`/api/replace/\${id}\`, { method: 'POST' });
+              setError(null);
+            } catch (err) {
+              setError('replace');
+            } finally {
+              setBusy(false);
+            }
+          }}>Replace</Button>
+          <Button onClick={async () => {
+            try {
+              const res = await fetch(\`/api/delete/\${id}\`, { method: 'POST' });
+              navigate('/');
+            } catch (err) {
+              setError('delete');
+            }
+          }}>Delete</Button>
+        </section>;
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath: dir, modelPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    const ids = result.model.transitions.map((transition) => transition.id);
+    expect(result.report.sourceFiles.map((file) => file.replace(`${dir}/`, "")).sort()).toEqual([
+      "app/components/Button.tsx",
+      "app/components/UploadForm.tsx",
+      "app/root.tsx",
+      "app/routes/home.tsx",
+      "app/routes/image.tsx"
+    ]);
+    expect(result.model.vars.find((decl) => decl.id === "sys:route")?.domain).toEqual({ kind: "enum", values: ["/", "/i/:id"] });
+    expect(result.model.vars.find((decl) => decl.id === "local:UploadForm.busy")).toBeTruthy();
+    expect(result.model.vars.find((decl) => decl.id === "local:ThemeProvider.theme")).toMatchObject({
+      domain: { kind: "enum", values: ["light", "dark", "system"] },
+      scope: { kind: "global" }
+    });
+    expect(ids).toEqual(expect.arrayContaining([
+      "UploadForm.onSubmit.POST /api/upload.start",
+      "UploadForm.onSubmit.POST /api/upload.success",
+      "UploadForm.onSubmit.POST /api/upload.error",
+      "ImageDetail.onClick.POST /api/replace/:id.start",
+      "ImageDetail.onClick.POST /api/replace/:id.success",
+      "ImageDetail.onClick.POST /api/replace/:id.error",
+      "ImageDetail.onClick.POST /api/delete/:id.start",
+      "ImageDetail.onClick.POST /api/delete/:id.success",
+      "TopBar.onClick.theme",
+      "TopBar.Link.navigate._",
+      "Home.Link.navigate._i_id"
+    ]));
+    expect(result.model.transitions.find((transition) => transition.id === "UploadForm.onSubmit.POST /api/upload.success")?.writes).toEqual(
+      expect.arrayContaining(["local:UploadForm.busy", "local:UploadForm.error", "sys:route"])
+    );
+    expect(result.model.transitions.find((transition) => transition.id === "ImageDetail.onClick.POST /api/delete/:id.success")?.effect).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([{ kind: "navigate", mode: "push", to: { kind: "lit", value: "/" } }])
+    });
+  });
+
   it("explains over-approximate extracted handlers", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
@@ -987,4 +1156,196 @@ describe("runExtractCommand", () => {
       /overlay-drift: ignoreVar local:App\.debug has no match; nearest=local:App\.saveStatus\(\d+\)/
     );
   });
+
+  it("extracts a React Router v7 app directory with aliases, fetch flows, links, and context setters", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-rr7-"));
+    const appDir = join(dir, "app");
+    await mkdir(join(appDir, "routes"), { recursive: true });
+    await mkdir(join(appDir, "components", "ui"), { recursive: true });
+    await mkdir(join(appDir, "lib"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "report.json");
+    await writeFile(join(dir, "package.json"), JSON.stringify({ dependencies: { react: "^19.0.0", "react-router": "^7.1.1" } }), "utf8");
+    await writeFile(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "~/*": ["./app/*"] } } }), "utf8");
+    await writeFile(
+      join(appDir, "routes.ts"),
+      `
+      import { index, route } from "@react-router/dev/routes";
+      export default [
+        index("routes/home.tsx"),
+        route("i/:id", "routes/i.$id.tsx"),
+        route("api/upload", "routes/api.upload.ts"),
+        route("api/replace/:id", "routes/api.replace.$id.ts"),
+        route("api/delete/:id", "routes/api.delete.$id.ts"),
+      ];
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "root.tsx"),
+      `
+      import { Outlet } from "react-router";
+      import { ThemeProvider } from "~/lib/theme";
+      export default function App() {
+        return <ThemeProvider><Outlet /></ThemeProvider>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "lib", "theme.tsx"),
+      `
+      import { createContext, useContext, useState } from "react";
+      export type Theme = "light" | "dark" | "system";
+      const ThemeContext = createContext<{ theme: Theme; setTheme: (next: Theme) => void } | null>(null);
+      export function ThemeProvider({ children }: { children: React.ReactNode }) {
+        const [theme, setTheme] = useState<Theme>("system");
+        return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+      }
+      export function useTheme() {
+        const ctx = useContext(ThemeContext);
+        if (!ctx) throw new Error("missing provider");
+        return ctx;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "components", "ui", "button.tsx"),
+      `
+      export function Button(props: React.ComponentProps<"button">) {
+        return <button {...props} />;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "components", "top-bar.tsx"),
+      `
+      import { Link } from "react-router";
+      import { Button } from "~/components/ui/button";
+      import { useTheme, type Theme } from "~/lib/theme";
+      export function TopBar() {
+        return <><Link to="/">Home</Link><ThemeToggle /></>;
+      }
+      function ThemeToggle() {
+        const { theme, setTheme } = useTheme();
+        const next: Theme = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+        return <Button onClick={() => setTheme(next)}>Theme</Button>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "components", "upload-form.tsx"),
+      `
+      import { useRef, useState } from "react";
+      import { useNavigate } from "react-router";
+      import { Button } from "~/components/ui/button";
+      export function UploadForm() {
+        const navigate = useNavigate();
+        const inputRef = useRef<HTMLInputElement>(null);
+        const [busy, setBusy] = useState(false);
+        const [error, setError] = useState<string | null>(null);
+        async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          setBusy(true);
+          setError(null);
+          try {
+            const res = await fetch("/api/upload", { method: "POST", body: new FormData() });
+            if (!res.ok) throw new Error(await res.text());
+            const { id } = await res.json() as { id: string };
+            navigate(\`/i/\${id}\`);
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setBusy(false);
+          }
+        }
+        return <><input ref={inputRef} onChange={onChange} /><Button onClick={() => inputRef.current?.click()}>Upload</Button></>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "routes", "home.tsx"),
+      `
+      import { Link } from "react-router";
+      import { TopBar } from "~/components/top-bar";
+      import { UploadForm } from "~/components/upload-form";
+      export default function Home() {
+        return <><TopBar /><UploadForm /><Link to={\`/i/\${"abc"}\`}>Image</Link></>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(appDir, "routes", "i.$id.tsx"),
+      `
+      import { useState } from "react";
+      import { useNavigate } from "react-router";
+      import { Button } from "~/components/ui/button";
+      export default function ImageDetail() {
+        const navigate = useNavigate();
+        const image = { id: "abc" };
+        const [busy, setBusy] = useState(false);
+        const [err, setErr] = useState<string | null>(null);
+        async function onDelete() {
+          setBusy(true);
+          setErr(null);
+          try {
+            const res = await fetch(\`/api/delete/\${image.id}\`, { method: "POST" });
+            if (!res.ok) throw new Error(await res.text());
+            navigate("/");
+          } catch (e) {
+            setErr(String(e));
+            setBusy(false);
+          }
+        }
+        return <Button disabled={busy} onClick={onDelete}>Delete</Button>;
+      }
+      `,
+      "utf8"
+    );
+    await writeFile(join(appDir, "routes", "api.upload.ts"), "export async function action() {}", "utf8");
+    await writeFile(join(appDir, "routes", "api.replace.$id.ts"), "export async function action() {}", "utf8");
+    await writeFile(join(appDir, "routes", "api.delete.$id.ts"), "export async function action() {}", "utf8");
+
+    const result = await runExtractCommand({ sourcePath: dir, modelPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
+
+    expect(result.model.vars.find((decl) => decl.id === "sys:route")?.domain).toEqual({
+      kind: "enum",
+      values: ["/", "/api/delete/:id", "/api/replace/:id", "/api/upload", "/i/:id"]
+    });
+    expect(result.model.vars.map((decl) => decl.id)).toEqual(expect.arrayContaining([
+      "local:UploadForm.busy",
+      "local:UploadForm.error",
+      "local:ImageDetail.busy",
+      "local:ImageDetail.err",
+      "local:ThemeProvider.theme"
+    ]));
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(expect.arrayContaining([
+      "UploadForm.onChange.POST /api/upload.start",
+      "UploadForm.onChange.POST /api/upload.success",
+      "UploadForm.onChange.POST /api/upload.error",
+      "ImageDetail.onClick.POST /api/delete/:id.start",
+      "ImageDetail.onClick.POST /api/delete/:id.success",
+      "ThemeToggle.onClick.theme"
+    ]));
+    expect(result.model.transitions.some((transition) => navigatesTo(transition.effect, "/i/:id"))).toBe(true);
+    expect(result.report.sourceFiles).toEqual(expect.arrayContaining([
+      join(appDir, "root.tsx"),
+      join(appDir, "routes", "home.tsx"),
+      join(appDir, "components", "upload-form.tsx")
+    ]));
+    expect(result.report.coverage.exactOrOverlay).toBeGreaterThan(0);
+  });
 });
+
+function navigatesTo(effect: EffectIR, route: string): boolean {
+  if (effect.kind === "navigate") return effect.to?.kind === "lit" && effect.to.value === route;
+  if (effect.kind === "seq") return effect.effects.some((child) => navigatesTo(child, route));
+  if (effect.kind === "if") return navigatesTo(effect.then, route) || navigatesTo(effect.else, route);
+  return false;
+}
