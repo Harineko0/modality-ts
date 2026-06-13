@@ -250,7 +250,13 @@ function tlaName(value: string): string {
 }
 
 function tlaRead(base: string, path: readonly string[]): string {
-  return path.reduce((expr, segment) => (/^\d+$/.test(segment) ? `${expr}[${Number(segment) + 1}]` : `${expr}.${tlaName(segment)}`), base);
+  const [segment, ...rest] = path;
+  if (segment === undefined) return base;
+  if (/^\d+$/.test(segment)) {
+    const index = Number(segment) + 1;
+    return `(IF Len(${base}) >= ${index} THEN ${tlaRead(`${base}[${index}]`, rest)} ELSE "__modality_oob__")`;
+  }
+  return tlaRead(`${base}.${tlaName(segment)}`, rest);
 }
 
 function tlaPath(path: readonly string[]): string {
@@ -258,7 +264,9 @@ function tlaPath(path: readonly string[]): string {
 }
 
 function tlaRecord(fields: Record<string, string>): string {
-  return `[${Object.entries(fields).map(([key, item]) => `${tlaName(key)} |-> ${item}`).join(", ")}]`;
+  const entries = Object.entries(fields);
+  if (entries.length === 0) return `[__empty |-> TRUE]`;
+  return `[${entries.map(([key, item]) => `${tlaName(key)} |-> ${item}`).join(", ")}]`;
 }
 
 function tlaModuleName(value: string): string {

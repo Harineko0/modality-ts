@@ -9,6 +9,7 @@
     "build": "pnpm -r build",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
+    "phase7": "tsx tools/phase7-differential.ts",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },

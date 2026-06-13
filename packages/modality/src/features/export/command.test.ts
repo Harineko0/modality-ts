@@ -174,9 +174,29 @@ describe("TLA export", () => {
     const source = generateTlaModule(asyncModel, "AsyncFixture");
     expect(source).toContain("Len(sys_pending) < 1");
     expect(source).toContain("sys_pending' = Append(sys_pending, [opId |-> \"POST\", continuation |-> \"submit#1\", args |-> [flag |-> TRUE]])");
-    expect(source).toContain("(sys_pending[1].opId = \"POST\")");
+    expect(source).toContain("((IF Len(sys_pending) >= 1 THEN sys_pending[1].opId ELSE \"__modality_oob__\") = \"POST\")");
     expect(source).toContain("SubSeq(sys_pending, 1, 0) \\o SubSeq(sys_pending, 2, Len(sys_pending))");
-    expect(source).toContain("flag' = sys_pending[1].args.flag");
+    expect(source).toContain("flag' = (IF Len(sys_pending) >= 1 THEN sys_pending[1].args.flag ELSE \"__modality_oob__\")");
+  });
+
+  it("exports empty record values as a stable TLC record marker", () => {
+    const emptyArgs: Model = {
+      ...model(),
+      transitions: [
+        {
+          id: "submit",
+          cls: "user",
+          label: { kind: "submit", text: "Submit" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} },
+          reads: [],
+          writes: ["sys:pending"],
+          confidence: "exact"
+        }
+      ]
+    };
+    expect(generateTlaModule(emptyArgs, "EmptyArgsFixture")).toContain("args |-> [__empty |-> TRUE]");
   });
 
   it("exports branched and choice effects under the transition guard", () => {
