@@ -2,34 +2,32 @@
 
 ## Project Structure & Module Organization
 
-`modality-ts` is a single npm package with TypeScript modules for model-checking-based React testing. Core modules live under `src/`: `kernel` defines IR and shared types; `checker` implements search, encoding, monitors, traces, and slicing; `extraction`, `harness`, `runtime`, and `modality` provide extraction, replay, runtime helpers, and CLI features. Source adapters live in `src/sources/*` such as `swr`, `jotai`, `router`, and `use-state`. Tests live under root `test/`, with a small number of feature-slice tests beside implementation files. Example apps and property files are in `examples/*`. Specs are in `docs/`; read `docs/implement.md` and keep `docs/specs/05-architecture.md` aligned with code changes.
+`modality-ts` is a TypeScript ESM package for model-checking React state-transition behavior. Core library code lives in `src/`, organized by public areas: `kernel/`, `checker/`, `extraction/`, `harness/`, `runtime/`, `sources/`, and CLI entry points in `src/modality/`. Tests mirror those areas under `test/`, with Vitest files named `*.test.ts`. Example React apps and their `app.props.mjs` models live in `examples/`. Architecture and feature specs are in `docs/specs/`; keep these aligned with behavior changes.
 
 ## Build, Test, and Development Commands
 
-Always prefix shell commands with `rtk`.
+Use `pnpm install` to install dependencies. Important checks:
 
-- `rtk pnpm install`: install dependencies.
-- `rtk pnpm typecheck`: run TypeScript project-reference checks.
-- `rtk pnpm test`: run Vitest tests matching `test/**/*.test.ts` and colocated feature tests.
-- `rtk pnpm architecture`: validate package boundaries with dependency-cruiser.
-- `rtk pnpm build`: build all TypeScript project references.
-- `rtk pnpm demo`: run the demo acceptance test.
-- `rtk pnpm ci:examples`: verify example apps.
-- `rtk pnpm phase7`: run the TLA+ differential gate for checker/model changes.
-- `rtk pnpm clean`: remove generated build outputs.
+- `pnpm typecheck` or `pnpm build`: run `tsc -b`; `build` emits `dist/`.
+- `pnpm test`: run the full Vitest suite.
+- `pnpm demo`: run the demo acceptance test only.
+- `pnpm architecture`: validate dependency rules with dependency-cruiser.
+- `pnpm ci:examples`: run example-app integration checks.
+- `pnpm phase7`: run differential checks for checker semantics, model generation, or TLA+ parity changes.
+- `pnpm clean`: remove generated build output before a fresh build.
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript ES modules and follow the existing style: two-space indentation, double quotes, explicit exports through `src/index.ts`, and small feature modules. Prefer package aliases such as `modality-ts/kernel` over deep cross-package imports. Name tests `*.test.ts`; use fixture names such as `todo-hand-model.ts` and command modules under `src/features/<command>/`.
+Use strict TypeScript with NodeNext ESM imports. Keep modules small and colocated with their domain folder. Prefer exported interfaces and discriminated unions for IR and model shapes. Follow the existing style: two-space indentation, double quotes, semicolons, `camelCase` functions/variables, `PascalCase` types/interfaces, and kebab-case folders for source adapters such as `use-state`.
 
 ## Testing Guidelines
 
-Vitest is the primary test runner. Add or update tests for changes to IR validation, checker semantics, extraction, replay, reporting, CLI commands, or source adapters. Preserve deterministic behavior: checker outputs and traces should be stable across runs. For extraction or model changes, update golden expectations and walkthrough conformance together.
+Vitest is configured for `test/**/*.test.ts` and `src/**/*.test.ts`. Add focused tests next to the affected subsystem under `test/<area>/`. Update or add coverage when changing extraction, checking, replay, reporting, source adapters, or CLI behavior. For architecture-sensitive imports, run `pnpm architecture`; for semantics-sensitive work, also run `pnpm phase7`.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative summaries, for example `Prepare npm publishing`, `fix architecture`, and `Complete modality phase 7 differential gate`. Keep commits focused and mention the affected phase, package, or behavior when useful. Pull requests should describe user-visible behavior, include relevant command output, link issues when applicable, and update tests/docs for semantic changes. Do not commit generated artifacts, `.env` files, tokens, or credentials.
+Recent history uses short imperative subjects, often with an initial capital, for example `Fix CLI positional parsing` or `Restructure into root src and test directories`. Keep commits focused. Pull requests should describe user-visible behavior, list validation commands run, link related issues, and include screenshots only for example-app UI changes. Do not commit generated artifacts, local `.env` files, npm tokens, or `dist/`.
 
-## Security & Configuration Tips
+## Agent-Specific Instructions
 
-Publishing is handled by GitHub Actions using repository secrets; do not publish packages manually. Keep verification artifacts in ignored directories such as `.modality/`, and avoid exposing application data in traces or reports.
+When running shell commands in this repository, prefix commands with `rtk` where practical, for example `rtk pnpm test` or `rtk git diff`. Use raw commands only when debugging command filtering itself.
