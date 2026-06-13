@@ -2,8 +2,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { checkModel } from "@modality/checker";
-import { reachable, type Model } from "@modality/kernel";
+import { checkModel } from "@modality-ts/checker";
+import { reachable, type Model } from "@modality-ts/kernel";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {

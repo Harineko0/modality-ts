@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StateSourcePlugin } from "@modality/extraction/spi";
+import type { StateSourcePlugin } from "@modality-ts/extraction/spi";
 import { createBuiltinModalityRegistry, createModalityRegistry } from "../src/registry/index.js";
 
 function plugin(id: string): StateSourcePlugin {

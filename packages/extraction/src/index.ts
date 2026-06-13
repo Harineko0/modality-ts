@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { AbstractDomain, EffectIR, ExprIR, Locator, StateVarDecl, Transition, Value } from "@modality/kernel";
+import type { AbstractDomain, EffectIR, ExprIR, Locator, StateVarDecl, Transition, Value } from "@modality-ts/kernel";
 import type { WriteChannel } from "./spi/index.js";
 
 export * from "./pipeline/index.js";

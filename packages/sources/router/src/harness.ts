@@ -1,5 +1,5 @@
-import type { HarnessCtx, HarnessHooks, ObservedRead } from "@modality/extraction/spi";
-import type { Value } from "@modality/kernel";
+import type { HarnessCtx, HarnessHooks, ObservedRead } from "@modality-ts/extraction/spi";
+import type { Value } from "@modality-ts/kernel";
 
 export interface RouterHarnessHooks extends HarnessHooks {
   route: string;

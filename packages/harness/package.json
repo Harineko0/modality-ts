@@ -1,5 +1,5 @@
 {
-  "name": "@modality/harness",
+  "name": "@modality-ts/harness",
   "version": "0.0.0",
   "description": "Replay and conformance harness helpers for modality traces.",
   "license": "MIT",
@@ -27,6 +27,6 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@modality/kernel": "workspace:*"
+    "@modality-ts/kernel": "workspace:*"
   }
 }

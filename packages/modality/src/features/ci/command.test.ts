@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { Model } from "@modality/kernel";
+import type { Model } from "@modality-ts/kernel";
 import { runCiCommand } from "./index.js";
 
 const route = { kind: "enum", values: ["/"] } as const;

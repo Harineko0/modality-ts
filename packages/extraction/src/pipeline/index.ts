@@ -1,4 +1,4 @@
-import type { EffectIR, Model, PluginProvenance, StateVarDecl, TemplateFragment, Transition } from "@modality/kernel";
+import type { EffectIR, Model, PluginProvenance, StateVarDecl, TemplateFragment, Transition } from "@modality-ts/kernel";
 import type { StateSourcePlugin, RouterPlugin, WriteChannel } from "../spi/index.js";
 
 export interface HandlerExtractionResult {

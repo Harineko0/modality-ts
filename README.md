@@ -1,6 +1,6 @@
 # modality-ts
 
-[![npm version](https://img.shields.io/npm/v/modality.svg)](https://www.npmjs.com/package/modality)
+[![npm version](https://img.shields.io/npm/v/@modality-ts/modality.svg)](https://www.npmjs.com/package/@modality-ts/modality)
 [![CI](https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
@@ -12,7 +12,7 @@ It extracts a finite transition model from React + TypeScript code, checks devel
 ## Install
 
 ```bash
-npm install -g modality
+npm install -g @modality-ts/modality
 ```
 
 ## Usage

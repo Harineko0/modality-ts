@@ -1,4 +1,4 @@
-import type { AbstractDomain, Locator, ModelState, Trace, TraceStep, Value } from "@modality/kernel";
+import type { AbstractDomain, Locator, ModelState, Trace, TraceStep, Value } from "@modality-ts/kernel";
 
 export type ReplayVerdict =
   | { status: "reproduced"; stepsRun: number }

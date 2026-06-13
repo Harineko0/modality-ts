@@ -1,6 +1,6 @@
 import * as ts from "typescript";
-import type { StateSourcePlugin, SourceDecl, WriteChannel } from "@modality/extraction/spi";
-import type { AbstractDomain, SourceAnchor, StateVarDecl, Value } from "@modality/kernel";
+import type { StateSourcePlugin, SourceDecl, WriteChannel } from "@modality-ts/extraction/spi";
+import type { AbstractDomain, SourceAnchor, StateVarDecl, Value } from "@modality-ts/kernel";
 import * as harness from "./harness.js";
 
 export function useStateSource(): StateSourcePlugin {

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCheckReportArtifact, parseModelArtifact, type CheckReport } from "@modality/kernel";
+import { parseCheckReportArtifact, parseModelArtifact, type CheckReport } from "@modality-ts/kernel";
 import { runCheckCommand } from "../../check.js";
 import { runConformCommand } from "../../conform.js";
 

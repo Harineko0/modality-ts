@@ -1,5 +1,5 @@
 {
-  "name": "@modality/runtime",
+  "name": "@modality-ts/runtime",
   "version": "0.0.0",
   "description": "Lightweight runtime assertion helpers for modality properties.",
   "license": "MIT",
@@ -27,6 +27,6 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@modality/kernel": "workspace:*"
+    "@modality-ts/kernel": "workspace:*"
   }
 }

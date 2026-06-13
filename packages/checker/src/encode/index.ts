@@ -1,1 +1,1 @@
-export { canonicalState } from "@modality/kernel";
+export { canonicalState } from "@modality-ts/kernel";

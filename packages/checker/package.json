@@ -1,5 +1,5 @@
 {
-  "name": "@modality/checker",
+  "name": "@modality-ts/checker",
   "version": "0.0.0",
   "description": "Explicit-state model checker for modality IR models.",
   "license": "MIT",
@@ -27,6 +27,6 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@modality/kernel": "workspace:*"
+    "@modality-ts/kernel": "workspace:*"
   }
 }

@@ -7,11 +7,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@modality/kernel": new URL("./packages/kernel/src/index.ts", import.meta.url).pathname,
-      "@modality/checker": new URL("./packages/checker/src/index.ts", import.meta.url).pathname,
-      "@modality/extraction": new URL("./packages/extraction/src/index.ts", import.meta.url).pathname,
-      "@modality/harness": new URL("./packages/harness/src/index.ts", import.meta.url).pathname,
-      "@modality/source-swr": new URL("./packages/sources/swr/src/index.ts", import.meta.url).pathname
+      "@modality-ts/kernel": new URL("./packages/kernel/src/index.ts", import.meta.url).pathname,
+      "@modality-ts/checker": new URL("./packages/checker/src/index.ts", import.meta.url).pathname,
+      "@modality-ts/extraction": new URL("./packages/extraction/src/index.ts", import.meta.url).pathname,
+      "@modality-ts/harness": new URL("./packages/harness/src/index.ts", import.meta.url).pathname,
+      "@modality-ts/source-swr": new URL("./packages/sources/swr/src/index.ts", import.meta.url).pathname
     }
   }
 });

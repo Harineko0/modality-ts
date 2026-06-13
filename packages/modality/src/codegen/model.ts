@@ -1,8 +1,8 @@
-import { canonicalJson, type AbstractDomain, type Model, type StateVarDecl, type Value } from "@modality/kernel";
+import { canonicalJson, type AbstractDomain, type Model, type StateVarDecl, type Value } from "@modality-ts/kernel";
 
 export function emitAppModel(model: Model): string {
   return [
-    "import type { Model } from \"@modality/kernel\";",
+    "import type { Model } from \"@modality-ts/kernel\";",
     "",
     `export const M = ${canonicalJson(model)} as const satisfies Model;`,
     "",

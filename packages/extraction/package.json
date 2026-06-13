@@ -1,5 +1,5 @@
 {
-  "name": "@modality/extraction",
+  "name": "@modality-ts/extraction",
   "version": "0.0.0",
   "description": "React and TypeScript model extraction engine for modality.",
   "license": "MIT",
@@ -35,7 +35,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@modality/kernel": "workspace:*",
+    "@modality-ts/kernel": "workspace:*",
     "typescript": "^5.9.3"
   }
 }

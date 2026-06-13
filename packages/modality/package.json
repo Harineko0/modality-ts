@@ -1,5 +1,5 @@
 {
-  "name": "modality",
+  "name": "@modality-ts/modality",
   "version": "0.0.0",
   "description": "CLI for extracting, checking, replaying, and conforming modality models.",
   "license": "MIT",
@@ -24,13 +24,13 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@modality/checker": "workspace:*",
-    "@modality/extraction": "workspace:*",
-    "@modality/harness": "workspace:*",
-    "@modality/kernel": "workspace:*",
-    "@modality/source-jotai": "workspace:*",
-    "@modality/source-router": "workspace:*",
-    "@modality/source-swr": "workspace:*",
-    "@modality/source-use-state": "workspace:*"
+    "@modality-ts/checker": "workspace:*",
+    "@modality-ts/extraction": "workspace:*",
+    "@modality-ts/harness": "workspace:*",
+    "@modality-ts/kernel": "workspace:*",
+    "@modality-ts/source-jotai": "workspace:*",
+    "@modality-ts/source-router": "workspace:*",
+    "@modality-ts/source-swr": "workspace:*",
+    "@modality-ts/source-use-state": "workspace:*"
   }
 }

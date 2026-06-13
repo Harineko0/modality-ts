@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { checkModel, type CheckResult, type PropertyVerdict } from "@modality/checker";
-import { canonicalJson, parseModelArtifact, traceArtifact, type CheckReport, type DomainReportEntry, type Model, type Property, type StateVarDecl } from "@modality/kernel";
+import { checkModel, type CheckResult, type PropertyVerdict } from "@modality-ts/checker";
+import { canonicalJson, parseModelArtifact, traceArtifact, type CheckReport, type DomainReportEntry, type Model, type Property, type StateVarDecl } from "@modality-ts/kernel";
 import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../../codegen/replay-test.js";
 import { loadAndApplyOverlay } from "../../overlay.js";
 

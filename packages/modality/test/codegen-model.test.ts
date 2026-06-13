@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import type { Model } from "@modality/kernel";
+import type { Model } from "@modality-ts/kernel";
 import { emitAppModel } from "../src/codegen/model.js";
 
 describe("emitAppModel", () => {

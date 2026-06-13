@@ -1,4 +1,4 @@
-import type { ModelState, Property, Value } from "@modality/kernel/props";
+import type { ModelState, Property, Value } from "@modality-ts/kernel/props";
 
 export interface Observable<TContext = unknown> {
   var: string;

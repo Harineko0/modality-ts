@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { isAbsolute, resolve } from "node:path";
-import { enumerateDomain, initialValues, UNMOUNTED, validateValue } from "@modality/kernel";
-import type { EffectIR, ExprIR, Model, ModelState, OpaqueRef, Transition, Value } from "@modality/kernel";
+import { enumerateDomain, initialValues, UNMOUNTED, validateValue } from "@modality-ts/kernel";
+import type { EffectIR, ExprIR, Model, ModelState, OpaqueRef, Transition, Value } from "@modality-ts/kernel";
 
 export interface PendingOp {
   [key: string]: Value;

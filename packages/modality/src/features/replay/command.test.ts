@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { traceArtifact, type Trace } from "@modality/kernel";
+import { traceArtifact, type Trace } from "@modality-ts/kernel";
 import { runReplayCommand } from "../replay/index.js";
 
 const trace: Trace = {

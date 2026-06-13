@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { replayTrace, StateSequenceDriver, statesFromTrace, type ReplayVerdict } from "@modality/harness";
-import { modelInitialStates, modelSuccessors } from "@modality/checker";
-import { canonicalJson, parseModelArtifact, type ConformReport, type Model, type ModelState, type Trace, type TraceStep } from "@modality/kernel";
+import { replayTrace, StateSequenceDriver, statesFromTrace, type ReplayVerdict } from "@modality-ts/harness";
+import { modelInitialStates, modelSuccessors } from "@modality-ts/checker";
+import { canonicalJson, parseModelArtifact, type ConformReport, type Model, type ModelState, type Trace, type TraceStep } from "@modality-ts/kernel";
 
 export interface ConformWalkArtifact {
   id: string;

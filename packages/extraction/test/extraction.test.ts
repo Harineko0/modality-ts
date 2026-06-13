@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "../../checker/src/index.js";
-import { always, reachable, type Model } from "@modality/kernel";
+import { always, reachable, type Model } from "@modality-ts/kernel";
 import { extractUseStateSkeleton, extractUseStateVars } from "../src/index.js";
 
 describe("useState inventory", () => {

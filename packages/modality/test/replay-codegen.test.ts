@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Trace } from "@modality/kernel";
+import type { Trace } from "@modality-ts/kernel";
 import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../src/codegen/replay-test.js";
 
 const execFileAsync = promisify(execFile);

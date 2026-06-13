@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, type Model, type Property } from "@modality/kernel";
+import { canonicalJson, type Model, type Property } from "@modality-ts/kernel";
 import { runCheckCommand } from "./index.js";
 import { runReplayCommand } from "../../replay.js";
 

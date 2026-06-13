@@ -1,5 +1,5 @@
 {
-  "name": "@modality/source-router",
+  "name": "@modality-ts/source-router",
   "version": "0.0.0",
   "description": "React Router source plugin for modality extraction and replay.",
   "license": "MIT",
@@ -43,7 +43,7 @@
     }
   },
   "dependencies": {
-    "@modality/extraction": "workspace:*",
-    "@modality/kernel": "workspace:*"
+    "@modality-ts/extraction": "workspace:*",
+    "@modality-ts/kernel": "workspace:*"
   }
 }

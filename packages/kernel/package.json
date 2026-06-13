@@ -1,5 +1,5 @@
 {
-  "name": "@modality/kernel",
+  "name": "@modality-ts/kernel",
   "version": "0.0.0",
   "description": "Stable IR, property DSL, reports, and artifact schemas for modality.",
   "license": "MIT",

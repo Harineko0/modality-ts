@@ -17,7 +17,7 @@
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
     "phase7": "tsx tools/phase7-differential.ts",
-    "publish:npm": "pnpm -r --filter \"@modality/*\" --filter \"modality\" publish --access public --no-git-checks",
+    "publish:npm": "pnpm -r --filter \"@modality-ts/*\" publish --access public --no-git-checks",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },

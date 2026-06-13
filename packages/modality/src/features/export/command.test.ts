@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { Model } from "@modality/kernel";
+import type { Model } from "@modality-ts/kernel";
 import { generateTlaModule, runExportTlaCommand } from "./index.js";
 
 const route = { kind: "enum", values: ["/"] } as const;

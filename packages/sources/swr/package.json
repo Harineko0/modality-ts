@@ -1,5 +1,5 @@
 {
-  "name": "@modality/source-swr",
+  "name": "@modality-ts/source-swr",
   "version": "0.0.0",
   "description": "SWR state source plugin and template model for modality.",
   "license": "MIT",
@@ -39,8 +39,8 @@
     }
   },
   "dependencies": {
-    "@modality/extraction": "workspace:*",
-    "@modality/kernel": "workspace:*",
+    "@modality-ts/extraction": "workspace:*",
+    "@modality-ts/kernel": "workspace:*",
     "typescript": "^5.9.3"
   }
 }

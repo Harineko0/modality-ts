@@ -15,7 +15,7 @@ Three forces dominate, and the structure below is derived from them:
 ```
 modality-ts/
 ├── packages/
-│   ├── kernel/                  # @modality/kernel — the stable center (§3)
+│   ├── kernel/                  # @modality-ts/kernel — the stable center (§3)
 │   │   └── src/
 │   │       ├── ir/              #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
 │   │       ├── trace/           #   Trace, Step, EventLabel, verdicts
@@ -24,7 +24,7 @@ modality-ts/
 │   │       ├── report/          #   report + trust-ledger schemas (versioned)
 │   │       └── artifacts/       #   .modality/ artifact IO, schema versioning, model hashing
 │   │
-│   ├── checker/                 # @modality/checker — Spec 03; Node-only
+│   ├── checker/                 # @modality-ts/checker — Spec 03; Node-only
 │   │   └── src/
 │   │       ├── encode/          #   canonical encoders, token renaming
 │   │       ├── search/          #   BFS core, stabilization, enabledness
@@ -32,7 +32,7 @@ modality-ts/
 │   │       ├── slicing/         #   cone-of-influence, recording proxy
 │   │       └── traces/          #   parent map, reconstruction, hint passes
 │   │
-│   ├── extraction/              # @modality/extraction — Spec 02 engine; Node-only (ts-morph)
+│   ├── extraction/              # @modality-ts/extraction — Spec 02 engine; Node-only (ts-morph)
 │   │   └── src/
 │   │       ├── pipeline/        #   P0–P7 orchestration; owns phase ordering & fixpoints
 │   │       ├── tsq/             #   shared TS-analysis utilities (symbol resolution, JSX walk,
@@ -41,16 +41,16 @@ modality-ts/
 │   │       └── report/         #   extraction report assembly
 │   │
 │   ├── sources/                 # ★ vertical slices, axis 1: one package per state library (§5)
-│   │   ├── use-state/           # @modality/source-use-state
-│   │   ├── jotai/               # @modality/source-jotai      (peerDep: jotai)
-│   │   ├── swr/                 # @modality/source-swr        (peerDep: swr)
-│   │   └── router/              # @modality/source-router     (peerDep: react-router)
+│   │   ├── use-state/           # @modality-ts/source-use-state
+│   │   ├── jotai/               # @modality-ts/source-jotai      (peerDep: jotai)
+│   │   ├── swr/                 # @modality-ts/source-swr        (peerDep: swr)
+│   │   └── router/              # @modality-ts/source-router     (peerDep: react-router)
 │   │
-│   ├── harness/                 # @modality/harness — Spec 04 §3 runtime for generated tests;
+│   ├── harness/                 # @modality-ts/harness — Spec 04 §3 runtime for generated tests;
 │   │   └── src/                 # jsdom context (RTL, MSW gating, stabilization barrier,
 │   │                            # witness engine, observation registry)
 │   │
-│   ├── runtime/                 # @modality/runtime — Spec 04 §6 dev-build assertions;
+│   ├── runtime/                 # @modality-ts/runtime — Spec 04 §6 dev-build assertions;
 │   │   └── src/                 # browser context; tiny, zero deps, no kernel import —
 │   │                            # only the props/ DSL re-exported via a subpath
 │   │
@@ -78,7 +78,7 @@ The kernel is the only package every other package may depend on, so it is gover
 
 ## 4. The `StateSourcePlugin` contract (axis 1 extension point)
 
-Defined in `@modality/extraction/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
+Defined in `@modality-ts/extraction/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
 
 ```ts
 interface StateSourcePlugin {
@@ -159,7 +159,7 @@ Inside the `modality` package, each user capability is a self-contained slice:
 packages/modality/src/features/
 ├── extract/    # orchestrates extraction pipeline + registry → .modality/model.json,
 │               #   app.model.ts (via codegen/), extraction report; --explain-drift
-├── check/      # loads model + props → @modality/checker → traces, report rendering,
+├── check/      # loads model + props → @modality-ts/checker → traces, report rendering,
 │               #   replay-test emission (via codegen/)
 ├── replay/     # runs one generated test file, classifies the Spec 04 §1 verdict
 ├── conform/    # MBT walks (Spec 04 §5), per-transition pass-rate aggregation

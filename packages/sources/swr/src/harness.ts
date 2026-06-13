@@ -1,5 +1,5 @@
-import type { HarnessCtx, HarnessHooks, ObservedRead, WitnessFactory } from "@modality/extraction/spi";
-import type { AbstractDomain, ModelState, Value } from "@modality/kernel";
+import type { HarnessCtx, HarnessHooks, ObservedRead, WitnessFactory } from "@modality-ts/extraction/spi";
+import type { AbstractDomain, ModelState, Value } from "@modality-ts/kernel";
 
 export interface SwrHarnessHooks extends HarnessHooks {
   initialState: ModelState;

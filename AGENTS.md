@@ -20,7 +20,7 @@ Always prefix shell commands with `rtk`.
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript ES modules and follow the existing style: two-space indentation, double quotes, explicit exports through `src/index.ts`, and small feature modules. Prefer package aliases such as `@modality/kernel` over deep cross-package imports. Name tests `*.test.ts`; use fixture names such as `todo-hand-model.ts` and command modules under `src/features/<command>/`.
+Use TypeScript ES modules and follow the existing style: two-space indentation, double quotes, explicit exports through `src/index.ts`, and small feature modules. Prefer package aliases such as `@modality-ts/kernel` over deep cross-package imports. Name tests `*.test.ts`; use fixture names such as `todo-hand-model.ts` and command modules under `src/features/<command>/`.
 
 ## Testing Guidelines
 
