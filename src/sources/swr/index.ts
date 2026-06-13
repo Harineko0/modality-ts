@@ -27,6 +27,7 @@ export interface SwrKeyWindowTemplateOptions {
   entries: readonly SwrKeyWindowEntry[];
   currentKey?: string;
   windowSize?: number;
+  evictedSummary?: boolean;
   activeWhen?: ExprIR;
   revalidateOnFocus?: boolean;
   mutate?: boolean;
@@ -421,6 +422,8 @@ function mutateTransitions(
 export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions): TemplateFragment {
   const windowSize = options.windowSize ?? 2;
   const entries = selectKeyWindowEntries(options.entries, windowSize, options.currentKey);
+  const selectedIds = new Set(entries.map((entry) => entry.id));
+  const hasEvictedEntries = options.entries.some((entry) => !selectedIds.has(entry.id));
   const fragments = entries.map((entry) =>
     createSwrTemplate({
       id: swrWindowEntryId(options.id, entry.id),
@@ -432,8 +435,9 @@ export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions)
       sourceFile: options.sourceFile
     })
   );
+  const summaryVars = options.evictedSummary !== false && hasEvictedEntries ? swrEvictedSummaryVars(options.id, options.payloadDomain) : [];
   return {
-    vars: fragments.flatMap((fragment) => fragment.vars),
+    vars: [...fragments.flatMap((fragment) => fragment.vars), ...summaryVars],
     transitions: fragments.flatMap((fragment) => fragment.transitions)
   };
 }
@@ -458,6 +462,15 @@ export function swrVars(options: SwrTemplateOptions): StateVarDecl[] {
   ];
 }
 
+function swrEvictedSummaryVars(id: string, payloadDomain: AbstractDomain): StateVarDecl[] {
+  const summaryId = swrWindowEvictedSummaryId(id);
+  return [
+    { id: swrVarId(summaryId, "data"), domain: { kind: "option", inner: payloadDomain }, origin: "library-template", scope: { kind: "global" }, initial: [null, ...enumerateDomain(payloadDomain)] },
+    { id: swrVarId(summaryId, "isValidating"), domain: { kind: "bool" }, origin: "library-template", scope: { kind: "global" }, initial: false },
+    { id: swrVarId(summaryId, "error"), domain: { kind: "bool" }, origin: "library-template", scope: { kind: "global" }, initial: [false, true] }
+  ];
+}
+
 export function swrView(state: ModelState, id: string, options: { active?: boolean } = {}): SwrView {
   const data = state[swrVarId(id, "data")] ?? null;
   const error = state[swrVarId(id, "error")] === true;
@@ -474,7 +487,10 @@ export function swrView(state: ModelState, id: string, options: { active?: boole
 }
 
 export function swrWindowView(state: ModelState, id: string, currentKey: string, options: { active?: boolean } = {}): SwrView {
-  return swrView(state, swrWindowEntryId(id, currentKey), options);
+  const entryId = swrWindowEntryId(id, currentKey);
+  return Object.hasOwn(state, swrVarId(entryId, "data"))
+    ? swrView(state, entryId, options)
+    : swrView(state, swrWindowEvictedSummaryId(id), options);
 }
 
 export function swrVarId(id: string, field: "data" | "isValidating" | "error"): string {
@@ -483,6 +499,10 @@ export function swrVarId(id: string, field: "data" | "isValidating" | "error"): 
 
 export function swrWindowEntryId(id: string, key: string): string {
   return `${id}:${key}`;
+}
+
+export function swrWindowEvictedSummaryId(id: string): string {
+  return `${id}:evicted`;
 }
 
 function swrIdFromKey(key: string): string {

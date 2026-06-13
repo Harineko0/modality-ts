@@ -107,6 +107,29 @@ describe("jsdom replay", () => {
       reason: "No pending async resolution for api.submitOrder:success"
     });
   });
+
+  it("delivers queued response payload witnesses through deterministic replay", async () => {
+    const state = renderCheckoutFixture();
+    const replayAsync = createDeterministicReplayAsyncController();
+    replayAsync.registerResponse("api.submitOrder", "success", { status: "done" }, (payload) => {
+      state.status = typeof payload === "object" && payload !== null && !Array.isArray(payload) && payload.status === "done" ? "done" : "failed";
+      state.paint();
+    });
+
+    const verdict = await replayTrace(checkoutTrace({
+      afterSubmit: "submitting",
+      afterResolve: "done"
+    }), new ObservableActionReplayDriver(
+      createDomReplayActor({
+        resolve: replayAsync.resolve,
+        stabilize: async () => Promise.resolve()
+      }),
+      ["local:Checkout.status"],
+      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
+    ));
+
+    expect(verdict).toEqual({ status: "reproduced", stepsRun: 2 });
+  });
 });
 
 function renderCheckoutFixture(): { status: string; paint: () => void } {

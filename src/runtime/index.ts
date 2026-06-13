@@ -92,6 +92,12 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+class UnobservableReadError extends Error {
+  constructor(readonly varId: string) {
+    super(`unobservable read: ${varId}`);
+  }
+}
+
 export function evaluateObservableInvariants<TContext>(
   properties: readonly Property[],
   observables: readonly Observable<TContext>[],
@@ -112,14 +118,27 @@ export function evaluateObservableInvariants<TContext>(
       continue;
     }
     try {
-      if (!property.predicate(state)) {
+      if (!property.predicate(runtimeCheckedState(state, observableIds))) {
         violations.push({ property: property.name, message: "observable invariant failed" });
       }
     } catch (error) {
+      if (error instanceof UnobservableReadError) {
+        skipped.push({ property: property.name, reason: `unobservable reads: ${error.varId}` });
+        continue;
+      }
       violations.push({ property: property.name, message: error instanceof Error ? error.message : String(error) });
     }
   }
-  return { ok: violations.length === 0, state, violations, skipped };
+  return { ok: violations.length === 0 && skipped.length === 0, state, violations, skipped };
+}
+
+function runtimeCheckedState(state: ModelState, observableIds: ReadonlySet<string>): ModelState {
+  return new Proxy(state, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && !observableIds.has(key)) throw new UnobservableReadError(key);
+      return Reflect.get(target, key, receiver) as unknown;
+    }
+  });
 }
 
 export function assertObservableInvariantsOrThrow<TContext>(

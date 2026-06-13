@@ -62,6 +62,17 @@ describe("modality-ts/runtime observable assertions", () => {
     ).toThrow("flagTrue: observable invariant failed");
   });
 
+  it("skips predicates that touch unobserved vars at runtime", () => {
+    const result = evaluateObservableInvariants(
+      [always(model, (state) => state.flag === true && state.secret === "open", { name: "secretOpen", reads: ["flag"] })],
+      [observable("flag", (app: { flag: boolean }) => app.flag)],
+      { flag: true }
+    );
+    expect(result.ok).toBe(false);
+    expect(result.violations).toEqual([]);
+    expect(result.skipped).toEqual([{ property: "secretOpen", reason: "unobservable reads: secret" }]);
+  });
+
   it("subscribes to observable state changes and reports invariant results", () => {
     let snapshot = { auth: "guest", route: "/" };
     const listeners = new Set<() => void>();

@@ -180,7 +180,7 @@ function generatedAsyncAppHook(): string {
     `  form.addEventListener("submit", (event) => {`,
     `    event.preventDefault();`,
     `    status = "submitting";`,
-    `    replayAsync.registerResolve("api.submitOrder", "success", () => { status = "done"; paint(); });`,
+    `    replayAsync.registerResponse("api.submitOrder", "success", { status: "done" }, (payload) => { status = payload && typeof payload === "object" && !Array.isArray(payload) && payload.status === "done" ? "done" : "failed"; paint(); });`,
     `    paint();`,
     `  });`,
     `  form.append(submit, output);`,

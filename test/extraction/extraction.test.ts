@@ -1349,6 +1349,30 @@ describe("useState inventory", () => {
     });
   });
 
+  it("havocs modeled state when a setter alias escapes to an unanalyzed call", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <button onClick={() => {
+          const escapedSetter = setSaveStatus;
+          callExternal(escapedSetter);
+        }}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.saveStatus.escaped",
+      effect: { kind: "havoc", var: "local:App.saveStatus" },
+      writes: ["local:App.saveStatus"],
+      confidence: "over-approx"
+    });
+  });
+
   it("splits simple async handlers into enqueue and resolve transitions", () => {
     const result = extractUseStateSkeleton(
       `

@@ -48,6 +48,7 @@ type InternalTransition = Transition & { __stableIdKey?: string };
 interface BoundExpr {
   expr: ExprIR;
   reads: string[];
+  setter?: SetterBinding;
 }
 interface HookStateReturn {
   domain: AbstractDomain;
@@ -726,7 +727,7 @@ function transitionsFromResolvedHandler(
   if (swrMutate) return applyParsedGuard([swrMutate], disabledGuard);
   const setterCall = setterCallFrom(inlinedCall, setters);
   if (!setterCall) {
-    const escaped = escapedSetters(inlinedCall, setters);
+    const escaped = escapedSetters(inlinedCall, setters, locals);
     if (escaped.length === 0) return [];
     return applyParsedGuard(escapedSetterTransitions(source, fileName, node, attr, component, escaped, locator), disabledGuard);
   }
@@ -1328,7 +1329,8 @@ function bindConstStatement(statement: ts.Statement, setters: Map<string, Setter
   if ((ts.getCombinedNodeFlags(statement.declarationList) & ts.NodeFlags.Const) === 0) return false;
   for (const declaration of statement.declarationList.declarations) {
     if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return false;
-    const binding = valueExpr(declaration.initializer, setters, locals) ??
+    const setterAlias = ts.isIdentifier(declaration.initializer) ? setters.get(declaration.initializer.text) ?? locals.get(declaration.initializer.text)?.setter : undefined;
+    const binding: BoundExpr | undefined = setterAlias ? { expr: { kind: "lit", value: null }, reads: [], setter: setterAlias } : valueExpr(declaration.initializer, setters, locals) ??
       (partialBoolean ? parseConjunctiveGuardExpression(declaration.initializer, setters, locals) : booleanExpr(declaration.initializer, setters, locals));
     if (!binding) return false;
     locals.set(declaration.name.text, binding);
@@ -1396,10 +1398,10 @@ function navigationCall(call: ts.CallExpression, routerPlugin: RouterPlugin | un
   return undefined;
 }
 
-function escapedSetters(call: ts.CallExpression, setters: Map<string, SetterBinding>): SetterBinding[] {
+function escapedSetters(call: ts.CallExpression, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr> = new Map()): SetterBinding[] {
   return call.arguments
     .filter(ts.isIdentifier)
-    .map((arg) => setters.get(arg.text))
+    .map((arg) => setters.get(arg.text) ?? locals.get(arg.text)?.setter)
     .filter((setter): setter is SetterBinding => Boolean(setter));
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkModel, modelInitialStates, sliceModel } from "modality-ts/checker";
 import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "modality-ts/kernel";
+import { checkerOracleCorpus } from "./oracle-corpus.js";
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;
@@ -1116,4 +1117,28 @@ describe("checker", () => {
     expect(result.verdicts.slice(0, expected.length).every((verdict) => verdict.status === "reachable")).toBe(true);
     expect(result.verdicts.at(-1)).toMatchObject({ property: "oracleImpossible", status: "vacuous-warning" });
   });
+
+  it("runs reusable structured oracle corpus cases", () => {
+    for (const oracle of checkerOracleCorpus()) {
+      const reachability = [
+        ...oracle.reachable.map((expected, index) => reachable(oracle.model, (state) => partialStateMatches(state, expected), { name: `${oracle.name}:reachable:${index}` })),
+        ...oracle.unreachable.map((expected, index) => reachable(oracle.model, (state) => partialStateMatches(state, expected), { name: `${oracle.name}:unreachable:${index}` })),
+        leadsToWithin(
+          oracle.model,
+          (step) => step.enqueued(oracle.boundedResponse.triggerOp),
+          (state) => state[oracle.boundedResponse.goalVar] === "done",
+          { name: `${oracle.name}:bounded-response`, budget: oracle.boundedResponse.budget }
+        )
+      ];
+      const result = checkModel(oracle.model, reachability);
+      expect(result.stats, oracle.name).toEqual(oracle.stats);
+      expect(result.verdicts.slice(0, oracle.reachable.length).every((verdict) => verdict.status === "reachable"), oracle.name).toBe(true);
+      expect(result.verdicts.slice(oracle.reachable.length, oracle.reachable.length + oracle.unreachable.length).every((verdict) => verdict.status === "vacuous-warning"), oracle.name).toBe(true);
+      expect(result.verdicts.at(-1), oracle.name).toMatchObject({ status: oracle.boundedResponse.status });
+    }
+  });
 });
+
+function partialStateMatches(state: Record<string, unknown>, expected: Record<string, unknown>): boolean {
+  return Object.entries(expected).every(([key, value]) => JSON.stringify(state[key]) === JSON.stringify(value));
+}

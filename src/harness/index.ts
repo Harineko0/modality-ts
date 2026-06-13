@@ -44,6 +44,7 @@ export interface ModalityReplayHarness extends DomReplayActorOptions {
   sources?: readonly ObservationSource[];
   observedVars?: readonly string[];
   inputValues?: Record<string, string>;
+  replayAsync?: DeterministicReplayAsyncController;
   beforeStep?(context: ReplayStepHookContext): Promise<void> | void;
   afterStep?(context: ReplayStepHookContext): Promise<void> | void;
   assertViolation?: () => Promise<boolean> | boolean;
@@ -73,7 +74,9 @@ export interface WitnessOptions {
 
 export interface DeterministicReplayAsyncController {
   registerResolve(op: string, outcome: string, handler: () => Promise<void> | void): void;
+  registerResponse(op: string, outcome: string, payload: Value, handler?: (payload: Value) => Promise<void> | void): void;
   resolve(op: string, outcome: string): Promise<void>;
+  resolveResponse(op: string, outcome: string): Promise<Value>;
   pending(): readonly string[];
 }
 
@@ -268,22 +271,38 @@ export function createDomReplayActor(options: DomReplayActorOptions = {}): Repla
 }
 
 export function createDeterministicReplayAsyncController(): DeterministicReplayAsyncController {
-  const handlers = new Map<string, Array<() => Promise<void> | void>>();
+  interface QueuedResolution {
+    handler: () => Promise<void> | void;
+    payload?: Value;
+  }
+  const handlers = new Map<string, QueuedResolution[]>();
+  const take = (op: string, outcome: string): QueuedResolution => {
+    const key = asyncKey(op, outcome);
+    const queue = handlers.get(key) ?? [];
+    const resolution = queue.shift();
+    if (!resolution) {
+      throw new ReplayDivergenceError(`No pending async resolution for ${op}:${outcome}`);
+    }
+    if (queue.length === 0) handlers.delete(key);
+    else handlers.set(key, queue);
+    return resolution;
+  };
   return {
     registerResolve(op, outcome, handler) {
       const key = asyncKey(op, outcome);
-      handlers.set(key, [...(handlers.get(key) ?? []), handler]);
+      handlers.set(key, [...(handlers.get(key) ?? []), { handler }]);
+    },
+    registerResponse(op, outcome, payload, handler = () => undefined) {
+      const key = asyncKey(op, outcome);
+      handlers.set(key, [...(handlers.get(key) ?? []), { payload, handler: () => handler(payload) }]);
     },
     async resolve(op, outcome) {
-      const key = asyncKey(op, outcome);
-      const queue = handlers.get(key) ?? [];
-      const handler = queue.shift();
-      if (!handler) {
-        throw new ReplayDivergenceError(`No pending async resolution for ${op}:${outcome}`);
-      }
-      if (queue.length === 0) handlers.delete(key);
-      else handlers.set(key, queue);
-      await handler();
+      await take(op, outcome).handler();
+    },
+    async resolveResponse(op, outcome) {
+      const resolution = take(op, outcome);
+      await resolution.handler();
+      return resolution.payload ?? null;
     },
     pending() {
       return [...handlers.entries()].flatMap(([key, queue]) => queue.map(() => key)).sort();

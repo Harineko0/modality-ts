@@ -86,6 +86,7 @@ export function generateReplayHarness(): ReplayTestArtifact {
       `  return {`,
       `    document: globalThis.document,`,
       `    resolve: replayAsync.resolve,`,
+      `    replayAsync,`,
       `    stabilize: async () => Promise.resolve(),`,
       `    ...(appHarness ?? {})`,
       `  };`,

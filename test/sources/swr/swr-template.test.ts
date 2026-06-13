@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/checker";
 import { always, reachable, type Model } from "modality-ts/kernel";
-import { createSwrKeyWindowTemplate, createSwrTemplate, discoverSwrHooks, swrSource, swrVarId, swrView, swrWindowView } from "modality-ts/source-swr";
+import { createSwrKeyWindowTemplate, createSwrTemplate, discoverSwrHooks, swrSource, swrVarId, swrView, swrWindowEvictedSummaryId, swrWindowView } from "modality-ts/source-swr";
 import { observe, setup } from "../../../src/sources/swr/harness.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
@@ -213,7 +213,10 @@ describe("SWR template", () => {
       "swr:quote:basic:error",
       "swr:quote:pro:data",
       "swr:quote:pro:isValidating",
-      "swr:quote:pro:error"
+      "swr:quote:pro:error",
+      "swr:quote:evicted:data",
+      "swr:quote:evicted:isValidating",
+      "swr:quote:evicted:error"
     ]);
     expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:enterprise:fetch");
     const basicSuccess = template.transitions.find((transition) => transition.id === "swr:quote:basic:resolve:success:2");
@@ -252,7 +255,10 @@ describe("SWR template", () => {
       "swr:quote:pro:error",
       "swr:quote:enterprise:data",
       "swr:quote:enterprise:isValidating",
-      "swr:quote:enterprise:error"
+      "swr:quote:enterprise:error",
+      "swr:quote:evicted:data",
+      "swr:quote:evicted:isValidating",
+      "swr:quote:evicted:error"
     ]);
     expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:basic:fetch");
     expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:vip:fetch");
@@ -281,5 +287,36 @@ describe("SWR template", () => {
     const basicMutate = template.transitions.find((transition) => transition.id === "swr:quote:basic:mutate:2");
     expect(basicMutate?.writes).toEqual(["swr:quote:basic:data", "swr:quote:basic:isValidating", "swr:quote:basic:error"]);
     expect(basicMutate?.writes).not.toContain("swr:quote:pro:data");
+  });
+
+  it("adds an evicted summary entry for keys outside the bounded window", () => {
+    const template = createSwrKeyWindowTemplate({
+      id: "quote",
+      op: "GET_QUOTE",
+      payloadDomain: { kind: "lengthCat" },
+      entries: [{ id: "basic" }, { id: "pro" }, { id: "enterprise" }],
+      currentKey: "enterprise",
+      windowSize: 2
+    });
+    const evictedId = swrWindowEvictedSummaryId("quote");
+    expect(template.vars.map((decl) => [decl.id, decl.initial])).toEqual(expect.arrayContaining([
+      [`swr:${evictedId}:data`, [null, "0", "1", "many"]],
+      [`swr:${evictedId}:isValidating`, false],
+      [`swr:${evictedId}:error`, [false, true]]
+    ]));
+
+    const state = {
+      "swr:quote:pro:data": "0",
+      "swr:quote:pro:isValidating": false,
+      "swr:quote:pro:error": false,
+      "swr:quote:enterprise:data": null,
+      "swr:quote:enterprise:isValidating": false,
+      "swr:quote:enterprise:error": false,
+      "swr:quote:evicted:data": "many",
+      "swr:quote:evicted:isValidating": false,
+      "swr:quote:evicted:error": true
+    };
+    expect(swrWindowView(state, "quote", "basic")).toMatchObject({ data: "many", error: true, loadedSome: true });
+    expect(swrWindowView(state, "quote", "pro")).toMatchObject({ data: "0", error: false, loadedEmpty: true });
   });
 });
