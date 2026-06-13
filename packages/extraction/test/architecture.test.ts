@@ -110,10 +110,10 @@ describe("extraction architecture surface", () => {
     expect(result.routeVars.map((decl) => decl.id)).toEqual(["route:/", "route:/next"]);
   });
 
-  it("source packages publish separate harness entry points", () => {
-    for (const source of ["use-state", "jotai", "swr", "router"]) {
-      const packageJson = JSON.parse(readFileSync(resolve(testDir, `../../sources/${source}/package.json`), "utf8"));
-      expect(packageJson.exports["./harness"]).toBeTruthy();
+  it("root package exports source harness entry points", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(testDir, "../../../package.json"), "utf8"));
+    for (const source of ["source-use-state", "source-jotai", "source-swr", "source-router"]) {
+      expect(packageJson.exports[`./${source}/harness`]).toBeTruthy();
     }
   });
 });

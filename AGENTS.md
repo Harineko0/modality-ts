@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`modality-ts` is a pnpm TypeScript workspace for model-checking-based React testing. Core packages live under `packages/`: `kernel` defines IR and shared types; `checker` implements search, encoding, monitors, traces, and slicing; `extraction`, `harness`, `runtime`, and `modality` provide extraction, replay, runtime helpers, and CLI features. Source adapters live in `packages/sources/*` such as `swr`, `jotai`, `router`, and `use-state`. Tests are colocated in each package’s `test/` directory or as `*.test.ts` beside feature modules. Example apps and property files are in `examples/*`. Specs are in `docs/`; read `docs/implement.md` and keep `docs/specs/05-architecture.md` aligned with code changes.
+`modality-ts` is a single npm package with TypeScript project-reference modules for model-checking-based React testing. Core modules live under `packages/`: `kernel` defines IR and shared types; `checker` implements search, encoding, monitors, traces, and slicing; `extraction`, `harness`, `runtime`, and `modality` provide extraction, replay, runtime helpers, and CLI features. Source adapters live in `packages/sources/*` such as `swr`, `jotai`, `router`, and `use-state`. Tests are colocated in each module’s `test/` directory or as `*.test.ts` beside feature modules. Example apps and property files are in `examples/*`. Specs are in `docs/`; read `docs/implement.md` and keep `docs/specs/05-architecture.md` aligned with code changes.
 
 ## Build, Test, and Development Commands
 
@@ -12,7 +12,7 @@ Always prefix shell commands with `rtk`.
 - `rtk pnpm typecheck`: run TypeScript project-reference checks.
 - `rtk pnpm test`: run Vitest tests matching `packages/**/*.test.ts`.
 - `rtk pnpm architecture`: validate package boundaries with dependency-cruiser.
-- `rtk pnpm build`: build all workspace packages.
+- `rtk pnpm build`: build all TypeScript project references.
 - `rtk pnpm demo`: run the demo acceptance test.
 - `rtk pnpm ci:examples`: verify example apps.
 - `rtk pnpm phase7`: run the TLA+ differential gate for checker/model changes.
@@ -20,7 +20,7 @@ Always prefix shell commands with `rtk`.
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript ES modules and follow the existing style: two-space indentation, double quotes, explicit exports through `src/index.ts`, and small feature modules. Prefer package aliases such as `@modality-ts/kernel` over deep cross-package imports. Name tests `*.test.ts`; use fixture names such as `todo-hand-model.ts` and command modules under `src/features/<command>/`.
+Use TypeScript ES modules and follow the existing style: two-space indentation, double quotes, explicit exports through `src/index.ts`, and small feature modules. Prefer package aliases such as `modality-ts/kernel` over deep cross-package imports. Name tests `*.test.ts`; use fixture names such as `todo-hand-model.ts` and command modules under `src/features/<command>/`.
 
 ## Testing Guidelines
 

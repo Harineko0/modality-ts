@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Trace } from "@modality-ts/kernel";
+import type { Trace } from "modality-ts/kernel";
 import { ActionReplayDriver, createDomReplayActor, dispatchReplayStep, inputWitness, ObservableActionReplayDriver, observationSource, observeModelState, replayTrace, StateSequenceDriver, statesFromTrace, TraceBackedActionReplayDriver, witnessValue } from "../src/index.js";
 import * as jotaiHarness from "../../sources/jotai/src/harness.js";
 import * as routerHarness from "../../sources/router/src/harness.js";

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { replayTrace, StateSequenceDriver, statesFromTrace } from "@modality-ts/harness";
-import { canonicalJson, parseTraceArtifact, type ModelState, type ReplayReport } from "@modality-ts/kernel";
+import { replayTrace, StateSequenceDriver, statesFromTrace } from "modality-ts/harness";
+import { canonicalJson, parseTraceArtifact, type ModelState, type ReplayReport } from "modality-ts/kernel";
 
 export interface ReplayCommandOptions {
   tracePath: string;

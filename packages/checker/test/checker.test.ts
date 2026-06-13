@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkModel, modelInitialStates, sliceModel } from "../src/index.js";
-import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "@modality-ts/kernel";
+import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "modality-ts/kernel";
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;

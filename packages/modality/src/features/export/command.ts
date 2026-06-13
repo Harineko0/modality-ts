@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { enumerateDomain, initialValues, parseModelArtifact, validateModel } from "@modality-ts/kernel";
-import type { EffectIR, ExprIR, Model, Transition, Value } from "@modality-ts/kernel";
+import { enumerateDomain, initialValues, parseModelArtifact, validateModel } from "modality-ts/kernel";
+import type { EffectIR, ExprIR, Model, Transition, Value } from "modality-ts/kernel";
 
 export interface ExportTlaCommandOptions {
   modelPath: string;

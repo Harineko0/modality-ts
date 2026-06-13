@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "../../../checker/src/index.js";
-import { always, reachable, type Model } from "@modality-ts/kernel";
+import { always, reachable, type Model } from "modality-ts/kernel";
 import { createSwrKeyWindowTemplate, createSwrTemplate, discoverSwrHooks, swrSource, swrVarId, swrView, swrWindowView } from "../src/index.js";
 import { observe, setup } from "../src/harness.js";
 

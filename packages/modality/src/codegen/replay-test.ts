@@ -1,4 +1,4 @@
-import { canonicalJson, type Trace } from "@modality-ts/kernel";
+import { canonicalJson, type Trace } from "modality-ts/kernel";
 
 export interface ReplayTestArtifact {
   fileName: string;
@@ -11,7 +11,7 @@ export function generateAbstractReplayTest(property: string, trace: Trace): Repl
     fileName: `${safeName}.replay.test.ts`,
     source: [
       `import { describe, expect, it } from "vitest";`,
-      `import { replayTrace, StateSequenceDriver, statesFromTrace } from "@modality-ts/harness";`,
+      `import { replayTrace, StateSequenceDriver, statesFromTrace } from "modality-ts/harness";`,
       ``,
       `const trace = ${canonicalJson(trace)};`,
       ``,
@@ -35,8 +35,8 @@ export function generateActionReplayTest(property: string, trace: Trace): Replay
       ` * @vitest-environment jsdom`,
       ` */`,
       `import { describe, expect, it } from "vitest";`,
-      `import { createDomReplayActor, ObservableActionReplayDriver, replayTrace } from "@modality-ts/harness";`,
-      `import type { ModalityReplayHarness, ObservationSource } from "@modality-ts/harness";`,
+      `import { createDomReplayActor, ObservableActionReplayDriver, replayTrace } from "modality-ts/harness";`,
+      `import type { ModalityReplayHarness, ObservationSource } from "modality-ts/harness";`,
       `import { observeModalityReplay, renderModalityReplay } from "./modality.replay.harness.js";`,
       ``,
       `const trace = ${canonicalJson(trace)};`,
@@ -67,8 +67,8 @@ export function generateReplayHarness(): ReplayTestArtifact {
   return {
     fileName: "modality.replay.harness.ts",
     source: [
-      `import { observationSource, type ModalityReplayHarness, type ObservationSource } from "@modality-ts/harness";`,
-      `import type { Trace } from "@modality-ts/kernel";`,
+      `import { observationSource, type ModalityReplayHarness, type ObservationSource } from "modality-ts/harness";`,
+      `import type { Trace } from "modality-ts/kernel";`,
       ``,
       `declare global {`,
       `  var __modalityRenderReplayApp: ((trace: Trace) => Partial<ModalityReplayHarness> | Promise<Partial<ModalityReplayHarness>>) | undefined;`,

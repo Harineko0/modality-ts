@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
@@ -20,125 +24,10 @@ importers:
       tsx:
         specifier: ^4.20.6
         version: 4.22.4
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
       vitest:
         specifier: ^4.0.14
         version: 4.1.8(@types/node@24.13.2)(jsdom@29.1.1)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(tsx@4.22.4))
 
-  packages/checker:
-    dependencies:
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-
-  packages/extraction:
-    dependencies:
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/harness:
-    dependencies:
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-
-  packages/kernel: {}
-
-  packages/modality:
-    dependencies:
-      '@modality-ts/checker':
-        specifier: workspace:*
-        version: link:../checker
-      '@modality-ts/extraction':
-        specifier: workspace:*
-        version: link:../extraction
-      '@modality-ts/harness':
-        specifier: workspace:*
-        version: link:../harness
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-      '@modality-ts/source-jotai':
-        specifier: workspace:*
-        version: link:../sources/jotai
-      '@modality-ts/source-router':
-        specifier: workspace:*
-        version: link:../sources/router
-      '@modality-ts/source-swr':
-        specifier: workspace:*
-        version: link:../sources/swr
-      '@modality-ts/source-use-state':
-        specifier: workspace:*
-        version: link:../sources/use-state
-
-  packages/runtime:
-    dependencies:
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-
-  packages/sources/jotai:
-    dependencies:
-      '@modality-ts/extraction':
-        specifier: workspace:*
-        version: link:../../extraction
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      jotai:
-        specifier: '>=2'
-        version: 2.20.1(react@19.2.7)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/sources/router:
-    dependencies:
-      '@modality-ts/extraction':
-        specifier: workspace:*
-        version: link:../../extraction
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      react-router:
-        specifier: '>=6'
-        version: 7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      react-router-dom:
-        specifier: '>=6'
-        version: 7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-
-  packages/sources/swr:
-    dependencies:
-      '@modality-ts/extraction':
-        specifier: workspace:*
-        version: link:../../extraction
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      swr:
-        specifier: '>=2'
-        version: 2.4.1(react@19.2.7)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/sources/use-state:
-    dependencies:
-      '@modality-ts/extraction':
-        specifier: workspace:*
-        version: link:../../extraction
-      '@modality-ts/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
 packages:
 

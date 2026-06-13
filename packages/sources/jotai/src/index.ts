@@ -1,6 +1,6 @@
 import * as ts from "typescript";
-import type { SourceDecl, StateSourcePlugin, WriteChannel } from "@modality-ts/extraction/spi";
-import type { AbstractDomain, SourceAnchor, StateVarDecl, Value } from "@modality-ts/kernel";
+import type { SourceDecl, StateSourcePlugin, WriteChannel } from "modality-ts/extraction/spi";
+import type { AbstractDomain, SourceAnchor, StateVarDecl, Value } from "modality-ts/kernel";
 import * as harness from "./harness.js";
 
 export function jotaiSource(): StateSourcePlugin {

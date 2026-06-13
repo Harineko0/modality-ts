@@ -1,4 +1,4 @@
-import type { AbstractDomain, EffectIR, ExprIR, Locator, ModelState, SourceAnchor, StateVarDecl, TemplateFragment, Value } from "@modality-ts/kernel";
+import type { AbstractDomain, EffectIR, ExprIR, Locator, ModelState, SourceAnchor, StateVarDecl, TemplateFragment, Value } from "modality-ts/kernel";
 
 export interface SourceDecl {
   id: string;

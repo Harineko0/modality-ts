@@ -1,5 +1,5 @@
-import { canonicalState, initialValues, validateModel } from "@modality-ts/kernel";
-import type { EventLabel, Model, ModelState, Property, StepFacts, Trace, TraceStep, Transition, Value } from "@modality-ts/kernel";
+import { canonicalState, initialValues, validateModel } from "modality-ts/kernel";
+import type { EventLabel, Model, ModelState, Property, StepFacts, Trace, TraceStep, Transition, Value } from "modality-ts/kernel";
 import { applyEffect, guardHolds, normalizeInitialRouteLocals, readPending } from "./eval.js";
 import type { PendingOp } from "./eval.js";
 

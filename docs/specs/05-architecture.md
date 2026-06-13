@@ -1,4 +1,4 @@
-# Spec 05 — Software Architecture: Packages, Slices, and the Plugin Contract
+# Spec 05 — Software Architecture: Single Package, Slices, and the Plugin Contract
 
 Status: draft for review. Companion to `docs/design.md` and Specs 01–04.
 
@@ -7,15 +7,15 @@ Status: draft for review. Companion to `docs/design.md` and Specs 01–04.
 Three forces dominate, and the structure below is derived from them:
 
 1. **Two volatile axes, one stable core.** What changes over the tool's life: (a) supported state libraries (`useState`, Jotai, SWR today; Zustand, TanStack Query, `useReducer` tomorrow) and (b) user-facing capabilities (`extract`, `check`, `replay`, `conform` today; Playwright tier, AI suggestions tomorrow). What must *not* change casually: the IR, abstract domains, trace format, and report schemas — every subsystem communicates through them. Therefore: **vertical slices along both volatile axes; a small, schema-versioned kernel as the only coupling point.**
-2. **Three runtime contexts.** Extraction and checking run in Node; the replay harness runs inside the app's test environment (jsdom/Vitest); runtime assertions ship in the app's dev bundle. These have incompatible dependency budgets (ts-morph must never reach the browser; `jotai` must never be a dependency of the core). Package boundaries follow runtime contexts, not team convenience.
+2. **Three runtime contexts.** Extraction and checking run in Node; the replay harness runs inside the app's test environment (jsdom/Vitest); runtime assertions ship in the app's dev bundle. These have incompatible dependency budgets (TypeScript extraction must never reach the browser; optional app libraries such as `jotai` must never be a dependency of the core). Internal module boundaries follow runtime contexts, not team convenience.
 3. **The plugin contract must be real, not decorative.** "Flexible enough for future state libraries" fails in practice when built-in integrations use private hooks that external plugins can't. Hard rule: **the four built-in sources use exactly the public `StateSourcePlugin` contract** — they are the contract's permanent conformance suite.
 
-## 2. Repository layout (pnpm workspace)
+## 2. Repository layout (single npm package)
 
 ```
 modality-ts/
 ├── packages/
-│   ├── kernel/                  # @modality-ts/kernel — the stable center (§3)
+│   ├── kernel/                  # modality-ts/kernel — the stable center (§3)
 │   │   └── src/
 │   │       ├── ir/              #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
 │   │       ├── trace/           #   Trace, Step, EventLabel, verdicts
@@ -24,7 +24,7 @@ modality-ts/
 │   │       ├── report/          #   report + trust-ledger schemas (versioned)
 │   │       └── artifacts/       #   .modality/ artifact IO, schema versioning, model hashing
 │   │
-│   ├── checker/                 # @modality-ts/checker — Spec 03; Node-only
+│   ├── checker/                 # modality-ts/checker — Spec 03; Node-only
 │   │   └── src/
 │   │       ├── encode/          #   canonical encoders, token renaming
 │   │       ├── search/          #   BFS core, stabilization, enabledness
@@ -32,7 +32,7 @@ modality-ts/
 │   │       ├── slicing/         #   cone-of-influence, recording proxy
 │   │       └── traces/          #   parent map, reconstruction, hint passes
 │   │
-│   ├── extraction/              # @modality-ts/extraction — Spec 02 engine; Node-only (ts-morph)
+│   ├── extraction/              # modality-ts/extraction — Spec 02 engine; Node-only (ts-morph)
 │   │   └── src/
 │   │       ├── pipeline/        #   P0–P7 orchestration; owns phase ordering & fixpoints
 │   │       ├── tsq/             #   shared TS-analysis utilities (symbol resolution, JSX walk,
@@ -40,17 +40,17 @@ modality-ts/
 │   │       ├── spi/             #   ★ StateSourcePlugin + RouterPlugin interfaces (§4)
 │   │       └── report/         #   extraction report assembly
 │   │
-│   ├── sources/                 # ★ vertical slices, axis 1: one package per state library (§5)
-│   │   ├── use-state/           # @modality-ts/source-use-state
-│   │   ├── jotai/               # @modality-ts/source-jotai      (peerDep: jotai)
-│   │   ├── swr/                 # @modality-ts/source-swr        (peerDep: swr)
-│   │   └── router/              # @modality-ts/source-router     (peerDep: react-router)
+│   ├── sources/                 # ★ vertical slices, axis 1: one module per state library (§5)
+│   │   ├── use-state/           # modality-ts/source-use-state
+│   │   ├── jotai/               # modality-ts/source-jotai      (peerDep: jotai)
+│   │   ├── swr/                 # modality-ts/source-swr        (peerDep: swr)
+│   │   └── router/              # modality-ts/source-router     (peerDep: react-router)
 │   │
-│   ├── harness/                 # @modality-ts/harness — Spec 04 §3 runtime for generated tests;
+│   ├── harness/                 # modality-ts/harness — Spec 04 §3 runtime for generated tests;
 │   │   └── src/                 # jsdom context (RTL, MSW gating, stabilization barrier,
 │   │                            # witness engine, observation registry)
 │   │
-│   ├── runtime/                 # @modality-ts/runtime — Spec 04 §6 dev-build assertions;
+│   ├── runtime/                 # modality-ts/runtime — Spec 04 §6 dev-build assertions;
 │   │   └── src/                 # browser context; tiny, zero deps, no kernel import —
 │   │                            # only the props/ DSL re-exported via a subpath
 │   │
@@ -78,7 +78,7 @@ The kernel is the only package every other package may depend on, so it is gover
 
 ## 4. The `StateSourcePlugin` contract (axis 1 extension point)
 
-Defined in `@modality-ts/extraction/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
+Defined in `modality-ts/extraction/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
 
 ```ts
 interface StateSourcePlugin {
@@ -102,7 +102,7 @@ interface StateSourcePlugin {
   template?(decl: SourceDecl, options: ResolvedOptions): TemplateFragment;
                                                // library-behavior model (Spec 01 §9); vars +
                                                //     transitions in plain IR. SWR: yes; Jotai: no
-  // ── replay side (jsdom; exported from '<pkg>/harness' subpath) ──────────
+  // ── replay side (jsdom; exported from 'modality-ts/source-*/harness') ───
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;      // providers/store creation, handles for observation
     observe(varId: string, handles: HarnessHooks): ObservedRead | 'unobservable';
@@ -159,7 +159,7 @@ Inside the `modality` package, each user capability is a self-contained slice:
 packages/modality/src/features/
 ├── extract/    # orchestrates extraction pipeline + registry → .modality/model.json,
 │               #   app.model.ts (via codegen/), extraction report; --explain-drift
-├── check/      # loads model + props → @modality-ts/checker → traces, report rendering,
+├── check/      # loads model + props → modality-ts/checker → traces, report rendering,
 │               #   replay-test emission (via codegen/)
 ├── replay/     # runs one generated test file, classifies the Spec 04 §1 verdict
 ├── conform/    # MBT walks (Spec 04 §5), per-transition pass-rate aggregation

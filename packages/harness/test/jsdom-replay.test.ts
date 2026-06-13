@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { Trace } from "@modality-ts/kernel";
+import type { Trace } from "modality-ts/kernel";
 import { createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "../src/index.js";
 
 describe("jsdom replay", () => {

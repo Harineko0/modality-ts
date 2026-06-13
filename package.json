@@ -1,7 +1,6 @@
 {
   "name": "modality-ts",
   "version": "0.0.0",
-  "private": true,
   "description": "Model-checking-based testing tools for React state-transition bugs.",
   "license": "MIT",
   "repository": {
@@ -9,24 +8,129 @@
     "url": "git+https://github.com/Harineko0/modality-ts.git"
   },
   "type": "module",
+  "types": "./packages/modality/dist/cli.d.ts",
+  "files": [
+    "packages/**/dist/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "modality": "packages/modality/dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./packages/modality/dist/cli.d.ts",
+      "default": "./packages/modality/dist/cli.js"
+    },
+    "./check": {
+      "types": "./packages/modality/dist/check.d.ts",
+      "default": "./packages/modality/dist/check.js"
+    },
+    "./ci": {
+      "types": "./packages/modality/dist/ci.d.ts",
+      "default": "./packages/modality/dist/ci.js"
+    },
+    "./conform": {
+      "types": "./packages/modality/dist/conform.d.ts",
+      "default": "./packages/modality/dist/conform.js"
+    },
+    "./extract": {
+      "types": "./packages/modality/dist/extract.d.ts",
+      "default": "./packages/modality/dist/extract.js"
+    },
+    "./replay": {
+      "types": "./packages/modality/dist/replay.d.ts",
+      "default": "./packages/modality/dist/replay.js"
+    },
+    "./export-tla": {
+      "types": "./packages/modality/dist/export-tla.d.ts",
+      "default": "./packages/modality/dist/export-tla.js"
+    },
+    "./kernel": {
+      "types": "./packages/kernel/dist/index.d.ts",
+      "default": "./packages/kernel/dist/index.js"
+    },
+    "./kernel/props": {
+      "types": "./packages/kernel/dist/props/index.d.ts",
+      "default": "./packages/kernel/dist/props/index.js"
+    },
+    "./checker": {
+      "types": "./packages/checker/dist/index.d.ts",
+      "default": "./packages/checker/dist/index.js"
+    },
+    "./extraction": {
+      "types": "./packages/extraction/dist/index.d.ts",
+      "default": "./packages/extraction/dist/index.js"
+    },
+    "./extraction/pipeline": {
+      "types": "./packages/extraction/dist/pipeline/index.d.ts",
+      "default": "./packages/extraction/dist/pipeline/index.js"
+    },
+    "./extraction/spi": {
+      "types": "./packages/extraction/dist/spi/index.d.ts",
+      "default": "./packages/extraction/dist/spi/index.js"
+    },
+    "./harness": {
+      "types": "./packages/harness/dist/index.d.ts",
+      "default": "./packages/harness/dist/index.js"
+    },
+    "./runtime": {
+      "types": "./packages/runtime/dist/index.d.ts",
+      "default": "./packages/runtime/dist/index.js"
+    },
+    "./source-jotai": {
+      "types": "./packages/sources/jotai/dist/index.d.ts",
+      "default": "./packages/sources/jotai/dist/index.js"
+    },
+    "./source-jotai/harness": {
+      "types": "./packages/sources/jotai/dist/harness.d.ts",
+      "default": "./packages/sources/jotai/dist/harness.js"
+    },
+    "./source-router": {
+      "types": "./packages/sources/router/dist/index.d.ts",
+      "default": "./packages/sources/router/dist/index.js"
+    },
+    "./source-router/harness": {
+      "types": "./packages/sources/router/dist/harness.d.ts",
+      "default": "./packages/sources/router/dist/harness.js"
+    },
+    "./source-swr": {
+      "types": "./packages/sources/swr/dist/index.d.ts",
+      "default": "./packages/sources/swr/dist/index.js"
+    },
+    "./source-swr/harness": {
+      "types": "./packages/sources/swr/dist/harness.d.ts",
+      "default": "./packages/sources/swr/dist/harness.js"
+    },
+    "./source-use-state": {
+      "types": "./packages/sources/use-state/dist/index.d.ts",
+      "default": "./packages/sources/use-state/dist/index.js"
+    },
+    "./source-use-state/harness": {
+      "types": "./packages/sources/use-state/dist/harness.d.ts",
+      "default": "./packages/sources/use-state/dist/harness.js"
+    }
+  },
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "architecture": "depcruise --config tools/depcruise.config.cjs packages",
-    "build": "pnpm -r build",
-    "clean": "pnpm -r exec rm -rf dist tsconfig.tsbuildinfo",
+    "build": "tsc -b",
+    "clean": "rm -rf packages/*/dist packages/sources/*/dist packages/*/tsconfig.tsbuildinfo packages/sources/*/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
     "phase7": "tsx tools/phase7-differential.ts",
-    "publish:npm": "tsx tools/publish-npm.ts",
+    "publish:npm": "npm publish --access public",
     "test": "vitest run",
     "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "dependency-cruiser": "^17.4.3",
     "jsdom": "^29.1.1",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3",
     "vitest": "^4.0.14"
   }
 }

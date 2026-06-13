@@ -1,6 +1,6 @@
-import { canonicalJson, enumerateDomain } from "@modality-ts/kernel";
-import type { AbstractDomain, ExprIR, ModelState, StateVarDecl, TemplateFragment, Transition, Value } from "@modality-ts/kernel";
-import type { SourceDecl, StateSourcePlugin } from "@modality-ts/extraction/spi";
+import { canonicalJson, enumerateDomain } from "modality-ts/kernel";
+import type { AbstractDomain, ExprIR, ModelState, StateVarDecl, TemplateFragment, Transition, Value } from "modality-ts/kernel";
+import type { SourceDecl, StateSourcePlugin } from "modality-ts/extraction/spi";
 import * as ts from "typescript";
 import * as harness from "./harness.js";
 

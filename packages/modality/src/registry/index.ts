@@ -1,9 +1,9 @@
-import type { PluginProvenance } from "@modality-ts/kernel";
-import type { RouterPlugin, StateSourcePlugin } from "@modality-ts/extraction/spi";
-import { jotaiSource } from "@modality-ts/source-jotai";
-import { routerSource } from "@modality-ts/source-router";
-import { swrSource } from "@modality-ts/source-swr";
-import { useStateSource } from "@modality-ts/source-use-state";
+import type { PluginProvenance } from "modality-ts/kernel";
+import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extraction/spi";
+import { jotaiSource } from "modality-ts/source-jotai";
+import { routerSource } from "modality-ts/source-router";
+import { swrSource } from "modality-ts/source-swr";
+import { useStateSource } from "modality-ts/source-use-state";
 
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];

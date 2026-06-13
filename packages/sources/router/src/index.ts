@@ -1,5 +1,5 @@
-import type { RouterPlugin, ResolvedOptions } from "@modality-ts/extraction/spi";
-import type { AbstractDomain, StateVarDecl } from "@modality-ts/kernel";
+import type { RouterPlugin, ResolvedOptions } from "modality-ts/extraction/spi";
+import type { AbstractDomain, StateVarDecl } from "modality-ts/kernel";
 import * as harness from "./harness.js";
 
 export interface RouterSourceOptions {

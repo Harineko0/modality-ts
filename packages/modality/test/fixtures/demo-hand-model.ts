@@ -1,4 +1,4 @@
-import type { ExprIR, Model, Value } from "@modality-ts/kernel";
+import type { ExprIR, Model, Value } from "modality-ts/kernel";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
 const read = (id: string, path?: string[]): ExprIR => ({ kind: "read", var: id, path });
