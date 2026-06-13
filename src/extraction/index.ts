@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { effectReads, effectWrites, type AbstractDomain, type EffectIR, type ExprIR, type Locator, type StateVarDecl, type Transition, type Value } from "modality-ts/kernel";
+import { effectReads, effectWrites, validateValue, type AbstractDomain, type EffectIR, type ExprIR, type Locator, type StateVarDecl, type Transition, type Value } from "modality-ts/kernel";
 import type { CallSite, M0Ctx, RouterPlugin, StateSourcePlugin, WriteChannel } from "./spi/index.js";
 
 export * from "./pipeline/index.js";
@@ -515,18 +515,18 @@ function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain
   if (!initial) return firstValue(domain);
   const parsed = initialValueFromExpression(initial, domain);
   if (parsed !== undefined) return parsed;
-  if (initial.kind === ts.SyntaxKind.TrueKeyword) return true;
-  if (initial.kind === ts.SyntaxKind.FalseKeyword) return false;
-  if (ts.isStringLiteral(initial)) return initial.text;
-  if (ts.isNumericLiteral(initial)) return Number(initial.text);
-  if (initial.kind === ts.SyntaxKind.NullKeyword) return null;
-  if (ts.isArrayLiteralExpression(initial)) return initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many";
+  if (initial.kind === ts.SyntaxKind.TrueKeyword) return validInitialOrFirst(domain, true);
+  if (initial.kind === ts.SyntaxKind.FalseKeyword) return validInitialOrFirst(domain, false);
+  if (ts.isStringLiteral(initial)) return validInitialOrFirst(domain, initial.text);
+  if (ts.isNumericLiteral(initial)) return validInitialOrFirst(domain, Number(initial.text));
+  if (initial.kind === ts.SyntaxKind.NullKeyword) return validInitialOrFirst(domain, null);
+  if (ts.isArrayLiteralExpression(initial)) return validInitialOrFirst(domain, initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many");
   return firstValue(domain);
 }
 
 function initialValueFromExpression(expression: ts.Expression, domain: AbstractDomain): Value | undefined {
   const literal = literalValue(expression);
-  if (literal !== undefined) return literal;
+  if (literal !== undefined) return validateValue(domain, literal) ? literal : undefined;
   if (domain.kind === "option") return initialValueFromExpression(expression, domain.inner);
   if (domain.kind === "record" && ts.isObjectLiteralExpression(expression)) {
     const fields: Record<string, Value> = {};
@@ -539,6 +539,10 @@ function initialValueFromExpression(expression: ts.Expression, domain: AbstractD
     return fields;
   }
   return undefined;
+}
+
+function validInitialOrFirst(domain: AbstractDomain, value: Value): Value {
+  return validateValue(domain, value) ? value : firstValue(domain);
 }
 
 function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
@@ -2531,7 +2535,9 @@ function transitionsFromUseEffect(
   const effectReads = uniqueStrings(summaries.flatMap((summary) => summary.reads));
   const deps = dependencyReads(node.arguments[1], setters, effectReads);
   const effects = summaries.map((summary) => summary.effect);
-  if (effects.length > 0) {
+  const hasExplicitDependencyArray = Boolean(node.arguments[1] && ts.isArrayLiteralExpression(node.arguments[1]));
+  const hasUntriggeredHavocEffect = hasExplicitDependencyArray && deps.length === 0 && effects.some((effect) => effect.kind === "havoc");
+  if (effects.length > 0 && !hasUntriggeredHavocEffect) {
     const assignEffects = effects.filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => effect.kind === "assign");
     const guards: ExprIR[] = assignEffects.map((effect) => ({ kind: "neq", args: [{ kind: "read", var: effect.var }, effect.expr] }));
     const guard = guards.length > 0 ? guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!) : { kind: "lit" as const, value: true };

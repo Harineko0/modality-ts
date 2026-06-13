@@ -27,7 +27,7 @@ modality extract src/App.tsx --out .modality/model.json --effect-api api.placeOr
 ```
 
 4. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
-5. Write a property file that exports `properties()` and returns checks over model state.
+5. Write a property file that exports `properties()` and returns checks over model state. Avoid putting conditionals or branching logic in props.mjs files.
 6. Check the model and write reports/traces:
 
 ```bash

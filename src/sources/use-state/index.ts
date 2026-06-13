@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import type { StateSourcePlugin, SourceDecl, WriteChannel } from "modality-ts/extraction/spi";
-import type { AbstractDomain, SourceAnchor, StateVarDecl, Value } from "modality-ts/kernel";
+import { validateValue, type AbstractDomain, type SourceAnchor, type StateVarDecl, type Value } from "modality-ts/kernel";
 import * as harness from "./harness.js";
 
 export function useStateSource(): StateSourcePlugin {
@@ -114,13 +114,17 @@ function inferUseStateDomain(call: ts.CallExpression, typeAliases: ReadonlyMap<s
 function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain): Value {
   const initial = call.arguments[0];
   if (!initial) return firstValue(domain);
-  if (initial.kind === ts.SyntaxKind.TrueKeyword) return true;
-  if (initial.kind === ts.SyntaxKind.FalseKeyword) return false;
-  if (ts.isStringLiteral(initial)) return initial.text;
-  if (ts.isNumericLiteral(initial)) return Number(initial.text);
-  if (initial.kind === ts.SyntaxKind.NullKeyword) return null;
-  if (ts.isArrayLiteralExpression(initial)) return initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many";
+  if (initial.kind === ts.SyntaxKind.TrueKeyword) return validInitialOrFirst(domain, true);
+  if (initial.kind === ts.SyntaxKind.FalseKeyword) return validInitialOrFirst(domain, false);
+  if (ts.isStringLiteral(initial)) return validInitialOrFirst(domain, initial.text);
+  if (ts.isNumericLiteral(initial)) return validInitialOrFirst(domain, Number(initial.text));
+  if (initial.kind === ts.SyntaxKind.NullKeyword) return validInitialOrFirst(domain, null);
+  if (ts.isArrayLiteralExpression(initial)) return validInitialOrFirst(domain, initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many");
   return firstValue(domain);
+}
+
+function validInitialOrFirst(domain: AbstractDomain, value: Value): Value {
+  return validateValue(domain, value) ? value : firstValue(domain);
 }
 
 function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {

@@ -1281,6 +1281,25 @@ describe("useState inventory", () => {
     });
   });
 
+  it("skips havoc useEffect bodies that only depend on unmodeled explicit dependencies", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useEffect, useMemo, useState } from 'react';
+      export function App({ external }: { external: string }) {
+        const initialRange = useMemo(() => external, [external]);
+        const [range, setRange] = useState<string | null>(null);
+        useEffect(() => {
+          setRange(initialRange);
+        }, [initialRange]);
+        return range;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.transitions.some((transition) => transition.id === "App.useEffect.range")).toBe(false);
+    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable effect App.useEffect");
+  });
+
   it("models M0 useEffect cleanup writes as over-approx internal transitions", () => {
     const result = extractUseStateSkeleton(
       `

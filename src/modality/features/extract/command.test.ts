@@ -212,6 +212,39 @@ describe("runExtractCommand", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
+  it("normalizes unresolved typed useState literal initials to token representatives", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      const COLORS = ['red', 'gray'] as const;
+      type Color = typeof COLORS[number];
+      export function App() {
+        const [color] = useState<Color>('gray');
+        return color;
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const color = result.model.vars.find((decl) => decl.id === "local:App.color");
+    expect(color).toMatchObject({
+      domain: { kind: "tokens", count: 1 },
+      initial: "tok1"
+    });
+    const check = checkModel(result.model, [
+      reachable(result.model, (state) => state["local:App.color"] === "tok1", {
+        name: "tokenInitialReachable",
+        reads: ["local:App.color"]
+      })
+    ]);
+    expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
   it("includes Jotai atom declarations through the source plugin SPI", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
