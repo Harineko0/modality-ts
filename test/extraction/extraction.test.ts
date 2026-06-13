@@ -132,6 +132,85 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
+  it("expands static JSX maps and inlines props for Link navigation", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      import { BarChart3, LinkIcon, TagIcon } from 'icons';
+      const NAV_GROUPS = [
+        { items: [{ to: "/links", label: "Links", icon: LinkIcon }] },
+        { items: [{ to: "/analytics", label: "Analytics", icon: BarChart3 }] },
+        { items: [{ to: "/tags", label: "Tags", icon: TagIcon }] }
+      ] as const;
+      function SidebarLink({ item }: { item: { to: string; label: string; icon: unknown } }) {
+        return <Link to={item.to}>{item.label}</Link>;
+      }
+      export function App() {
+        return <nav>{NAV_GROUPS.map((group) => group.items.map((item) => <SidebarLink key={item.to} item={item} />))}</nav>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/links", "/analytics", "/tags"] }
+    );
+    expect(result.transitions.filter((transition) => transition.cls === "nav").map((transition) => transition.effect)).toEqual(expect.arrayContaining([
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/links" } },
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } },
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } }
+    ]));
+  });
+
+  it("normalizes query-string Link targets to route patterns", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      export function App({ id }: { id: string }) {
+        return <Link to={\`/analytics?linkId=\${id}\`}>Analytics</Link>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] }
+    );
+    expect(result.transitions.find((transition) => transition.id === "App.Link.navigate._analytics")).toMatchObject({
+      cls: "nav",
+      effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } }
+    });
+  });
+
+  it("models conditional Link targets as nondeterministic branch transitions", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      export function App({ admin }: { admin: boolean }) {
+        return <Link to={admin ? "/admin" : "/links"}>Go</Link>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/admin", "/links"] }
+    );
+    const nav = result.transitions.filter((transition) => transition.cls === "nav");
+    expect(nav.map((transition) => transition.effect)).toEqual(expect.arrayContaining([
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/admin" } },
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/links" } }
+    ]));
+    expect(nav.every((transition) => transition.confidence === "over-approx")).toBe(true);
+  });
+
+  it("over-approximates unmodeled Link targets across known route patterns", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      export function App({ target }: { target: string }) {
+        return <Link to={target}>Go</Link>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics", "/tags"] }
+    );
+    const nav = result.transitions.filter((transition) => transition.cls === "nav");
+    expect(nav.map((transition) => transition.effect)).toEqual(expect.arrayContaining([
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/" } },
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } },
+      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } }
+    ]));
+    expect(nav.every((transition) => transition.confidence === "over-approx")).toBe(true);
+  });
+
   it("summarizes handlers from externally supplied state vars and write channels", () => {
     const result = extractUseStateSkeleton(
       `
