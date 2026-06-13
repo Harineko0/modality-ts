@@ -117,6 +117,26 @@ describe("SWR template", () => {
     expect(fragment?.transitions[0]?.guard).toEqual({ kind: "read", var: "isLoggedIn" });
   });
 
+  it("extracts inverted conditional keys as inactive-branch guards", () => {
+    const source = `
+      import useSWR from 'swr';
+      export function App() {
+        useSWR(isPaused ? null : ['/api/search', query]);
+      }
+    `;
+    const decl = discoverSwrHooks(source, "App.tsx")[0];
+    expect(decl).toMatchObject({
+      id: "swr:api_search_query",
+      metadata: {
+        key: "/api/search:query",
+        activeWhen: { kind: "not", args: [{ kind: "read", var: "isPaused" }] }
+      }
+    });
+    const fragment = swrSource().template?.(decl!, { route: "/" });
+    expect(fragment?.transitions[0]?.guard).toEqual({ kind: "not", args: [{ kind: "read", var: "isPaused" }] });
+    expect(fragment?.transitions[0]?.reads).toEqual(["isPaused"]);
+  });
+
   it("models loading, success data, and stale-data retention on error", () => {
     const m = model();
     const result = checkModel(m, [
@@ -210,6 +230,44 @@ describe("SWR template", () => {
     };
     expect(swrWindowView(state, "quote", "basic").loadedSome).toBe(true);
     expect(swrWindowView(state, "quote", "pro").loadedSome).toBe(false);
+  });
+
+  it("keeps the current key and nearest previous keys in a bounded key window", () => {
+    const template = createSwrKeyWindowTemplate({
+      id: "quote",
+      op: "GET_QUOTE",
+      payloadDomain: { kind: "lengthCat" },
+      entries: [
+        { id: "basic" },
+        { id: "pro" },
+        { id: "enterprise" },
+        { id: "vip" }
+      ],
+      currentKey: "enterprise",
+      windowSize: 2
+    });
+    expect(template.vars.map((decl) => decl.id)).toEqual([
+      "swr:quote:pro:data",
+      "swr:quote:pro:isValidating",
+      "swr:quote:pro:error",
+      "swr:quote:enterprise:data",
+      "swr:quote:enterprise:isValidating",
+      "swr:quote:enterprise:error"
+    ]);
+    expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:basic:fetch");
+    expect(template.transitions.map((transition) => transition.id)).not.toContain("swr:quote:vip:fetch");
+
+    const state = {
+      "swr:quote:pro:data": "many",
+      "swr:quote:pro:isValidating": false,
+      "swr:quote:pro:error": false,
+      "swr:quote:enterprise:data": null,
+      "swr:quote:enterprise:isValidating": true,
+      "swr:quote:enterprise:error": false
+    };
+    expect(swrWindowView(state, "quote", "enterprise").isLoading).toBe(true);
+    expect(swrWindowView(state, "quote", "enterprise").loadedSome).toBe(false);
+    expect(swrWindowView(state, "quote", "pro").loadedSome).toBe(true);
   });
 
   it("keeps key-window mutate transitions isolated per entry", () => {

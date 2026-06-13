@@ -2,8 +2,9 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { Model } from "modality-ts/kernel";
-import { generateTlaModule, runExportTlaCommand } from "./index.js";
+import { checkModel } from "modality-ts/checker";
+import { canonicalState, reachable, type Model, type ModelState } from "modality-ts/kernel";
+import { generateTlaModule, generateTlaStructuredModel, runExportTlaCommand } from "./index.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -42,6 +43,122 @@ function model(): Model {
   };
 }
 
+function assuranceModel(): Model {
+  return {
+    ...model(),
+    id: "export-assurance",
+    bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+    vars: [
+      ...model().vars,
+      { id: "mode", domain: { kind: "enum", values: ["idle", "armed"] }, origin: "system", scope: { kind: "global" }, initial: "idle" },
+      { id: "seen", domain: { kind: "bool" }, origin: "system", scope: { kind: "global" }, initial: false }
+    ],
+    transitions: [
+      {
+        id: "arm",
+        cls: "user",
+        label: { kind: "click", text: "Arm" },
+        source: [],
+        guard: { kind: "eq", args: [{ kind: "read", var: "mode" }, { kind: "lit", value: "idle" }] },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "choose", var: "flag", among: [{ kind: "lit", value: true }, { kind: "lit", value: false }] },
+            { kind: "assign", var: "mode", expr: { kind: "lit", value: "armed" } }
+          ]
+        },
+        reads: ["mode"],
+        writes: ["flag", "mode"],
+        confidence: "exact"
+      },
+      {
+        id: "submit",
+        cls: "user",
+        label: { kind: "submit", text: "Submit" },
+        source: [],
+        guard: { kind: "and", args: [{ kind: "eq", args: [{ kind: "read", var: "mode" }, { kind: "lit", value: "armed" }] }, { kind: "read", var: "flag" }] },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "enqueue", op: "POST", continuation: "submit#1", args: { flag: { kind: "read", var: "flag" } } },
+            { kind: "assign", var: "seen", expr: { kind: "lit", value: true } }
+          ]
+        },
+        reads: ["mode", "flag"],
+        writes: ["sys:pending", "seen"],
+        confidence: "exact"
+      },
+      {
+        id: "resolve",
+        cls: "env",
+        label: { kind: "resolve", op: "POST", outcome: "success" },
+        source: [],
+        guard: { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: "POST" }] },
+        effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, { kind: "assign", var: "mode", expr: { kind: "lit", value: "idle" } }] },
+        reads: ["sys:pending"],
+        writes: ["sys:pending", "mode"],
+        confidence: "exact"
+      },
+      {
+        id: "scramble",
+        cls: "env",
+        label: { kind: "timer", key: "scramble" },
+        source: [],
+        guard: { kind: "eq", args: [{ kind: "read", var: "mode" }, { kind: "lit", value: "armed" }] },
+        effect: { kind: "havoc", var: "seen" },
+        reads: ["mode"],
+        writes: ["seen"],
+        confidence: "over-approx"
+      }
+    ]
+  };
+}
+
+function oracleReachableStates(m: Model): Set<string> {
+  const initial: ModelState = {
+    "sys:route": "/",
+    "sys:history": [],
+    "sys:pending": [],
+    flag: false,
+    mode: "idle",
+    seen: false
+  };
+  const seen = new Map<string, ModelState>([[canonicalState(m, initial), initial]]);
+  let frontier = [initial];
+  for (let depth = 0; depth < m.bounds.maxDepth; depth += 1) {
+    const next: ModelState[] = [];
+    for (const state of frontier) {
+      for (const post of oraclePosts(state)) {
+        const canon = canonicalState(m, post);
+        if (!seen.has(canon)) {
+          seen.set(canon, post);
+          next.push(post);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return new Set(seen.keys());
+}
+
+function oraclePosts(state: ModelState): ModelState[] {
+  const posts: ModelState[] = [];
+  const pending = state["sys:pending"] as { opId: string; continuation: string; args: { flag: boolean } }[];
+  if (state.mode === "idle") {
+    posts.push({ ...state, flag: true, mode: "armed" }, { ...state, flag: false, mode: "armed" });
+  }
+  if (state.mode === "armed" && state.flag === true && pending.length < 1) {
+    posts.push({ ...state, "sys:pending": [...pending, { opId: "POST", continuation: "submit#1", args: { flag: true } }], seen: true });
+  }
+  if (pending[0]?.opId === "POST") {
+    posts.push({ ...state, "sys:pending": pending.slice(1), mode: "idle" });
+  }
+  if (state.mode === "armed") {
+    posts.push({ ...state, seen: false }, { ...state, seen: true });
+  }
+  return posts;
+}
+
 describe("TLA export", () => {
   it("generates a small TLA module for structured assign transitions", () => {
     expect(generateTlaModule(model(), "ExportFixture")).toContain([
@@ -77,6 +194,54 @@ describe("TLA export", () => {
     const result = await runExportTlaCommand({ modelPath, outPath, moduleName: "ExportFixture" });
     expect(result.lines).toEqual([`export=${outPath}`, "format=tla"]);
     expect(await readFile(outPath, "utf8")).toBe(result.source);
+  });
+
+  it("cross-validates structured TLA export against a finite checker oracle", () => {
+    const m = assuranceModel();
+    const expectedReachable = oracleReachableStates(m);
+    const unreachable: ModelState = {
+      "sys:route": "/",
+      "sys:history": [],
+      "sys:pending": [],
+      flag: false,
+      mode: "idle",
+      seen: true
+    };
+    const result = checkModel(m, [
+      ...[...expectedReachable].map((canon, index) => reachable(m, (state) => canonicalState(m, state) === canon, { name: `oracleState${index}` })),
+      reachable(m, (state) => canonicalState(m, state) === canonicalState(m, unreachable), { name: "oracleExcludedState" })
+    ]);
+    expect(result.stats.states).toBe(expectedReachable.size);
+    expect(result.verdicts.slice(0, expectedReachable.size).every((verdict) => verdict.status === "reachable")).toBe(true);
+    expect(result.verdicts.at(-1)).toMatchObject({ property: "oracleExcludedState", status: "vacuous-warning" });
+
+    const structured = generateTlaStructuredModel(m, "AssuranceFixture");
+    expect(structured.init.map((item) => item.predicate)).toEqual([
+      "sys_route = \"/\"",
+      "sys_history = <<>>",
+      "sys_pending = <<>>",
+      "flag = FALSE",
+      "mode = \"idle\"",
+      "seen = FALSE"
+    ]);
+    expect(Object.fromEntries(structured.transitions.map((transition) => [transition.id, transition.branches.length]))).toEqual({
+      arm: 2,
+      submit: 1,
+      resolve: 1,
+      scramble: 1
+    });
+
+    const armBranches = structured.transitions.find((transition) => transition.id === "arm")?.branches ?? [];
+    expect(armBranches.map((branch) => branch.next.flag).sort()).toEqual(["FALSE", "TRUE"]);
+    expect(armBranches.every((branch) => branch.next.mode === "\"armed\"")).toBe(true);
+    const submit = structured.transitions.find((transition) => transition.id === "submit");
+    expect(submit?.guard).toBe("(mode = \"armed\") /\\ flag");
+    expect(submit?.branches[0]?.assumptions).toEqual(["(Len(sys_pending) < 1)"]);
+    expect(submit?.branches[0]?.next["sys:pending"]).toBe("Append(sys_pending, [opId |-> \"POST\", continuation |-> \"submit#1\", args |-> [flag |-> flag]])");
+    expect(submit?.branches[0]?.next.seen).toBe("TRUE");
+    const resolve = structured.transitions.find((transition) => transition.id === "resolve");
+    expect(resolve?.guard).toBe("((IF Len(sys_pending) >= 1 THEN sys_pending[1].opId ELSE \"__modality_oob__\") = \"POST\")");
+    expect(resolve?.branches[0]?.next["sys:pending"]).toBe("SubSeq(sys_pending, 1, 0) \\o SubSeq(sys_pending, 2, Len(sys_pending))");
   });
 
   it("exports havoc as a finite-domain nondeterministic assignment", () => {

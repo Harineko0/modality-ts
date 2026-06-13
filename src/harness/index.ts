@@ -15,6 +15,11 @@ export interface ReplayOptions {
   compareState?: (expected: ModelState, actual: ModelState) => string | undefined;
 }
 
+export interface ReplayStepHookContext {
+  step: TraceStep;
+  stepIndex: number;
+}
+
 export interface ReplayActor {
   click?(locator: Locator): Promise<void> | void;
   submit?(locator: Locator): Promise<void> | void;
@@ -37,11 +42,18 @@ export interface DomReplayActorOptions {
 
 export interface ModalityReplayHarness extends DomReplayActorOptions {
   sources?: readonly ObservationSource[];
+  observedVars?: readonly string[];
+  inputValues?: Record<string, string>;
+  beforeStep?(context: ReplayStepHookContext): Promise<void> | void;
+  afterStep?(context: ReplayStepHookContext): Promise<void> | void;
+  assertViolation?: () => Promise<boolean> | boolean;
 }
 
 export interface ActionReplayDriverOptions {
   inputValues?: Record<string, string>;
   assertViolation?: () => Promise<boolean> | boolean;
+  beforeStep?(context: ReplayStepHookContext): Promise<void> | void;
+  afterStep?(context: ReplayStepHookContext): Promise<void> | void;
 }
 
 export interface ObservationSource {
@@ -56,7 +68,20 @@ export interface ObservedModelState {
 
 export interface WitnessOptions {
   tokenWitnesses?: Record<string, Value>;
-  elementWitness?: Value;
+  elementWitness?: Value | ((index: number) => Value);
+}
+
+export interface DeterministicReplayAsyncController {
+  registerResolve(op: string, outcome: string, handler: () => Promise<void> | void): void;
+  resolve(op: string, outcome: string): Promise<void>;
+  pending(): readonly string[];
+}
+
+export class ReplayDivergenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplayDivergenceError";
+  }
 }
 
 export async function replayTrace(trace: Trace, driver: ReplayDriver, options: ReplayOptions = {}): Promise<ReplayVerdict> {
@@ -74,6 +99,9 @@ export async function replayTrace(trace: Trace, driver: ReplayDriver, options: R
     try {
       await driver.apply(step);
     } catch (error) {
+      if (error instanceof ReplayDivergenceError) {
+        return { status: "not-reproduced", stepsRun: index, divergenceStep: index + 1, reason: error.message };
+      }
       return { status: "inconclusive", stepsRun: index, reason: error instanceof Error ? error.message : String(error) };
     }
     let postState: ModelState;
@@ -113,6 +141,8 @@ export function statesFromTrace(trace: Trace): ModelState[] {
 }
 
 export class ActionReplayDriver implements ReplayDriver {
+  private stepIndex = 0;
+
   constructor(
     private readonly actor: ReplayActor,
     private readonly observe: () => ModelState,
@@ -124,7 +154,8 @@ export class ActionReplayDriver implements ReplayDriver {
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, this.options);
+    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.stepIndex });
+    this.stepIndex += 1;
   }
 
   async assertViolation(): Promise<boolean> {
@@ -133,6 +164,8 @@ export class ActionReplayDriver implements ReplayDriver {
 }
 
 export class ObservableActionReplayDriver implements ReplayDriver {
+  private stepIndex = 0;
+
   constructor(
     private readonly actor: ReplayActor,
     private readonly varIds: readonly string[],
@@ -149,7 +182,8 @@ export class ObservableActionReplayDriver implements ReplayDriver {
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, this.options);
+    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.stepIndex });
+    this.stepIndex += 1;
   }
 
   async assertViolation(): Promise<boolean> {
@@ -174,7 +208,7 @@ export class TraceBackedActionReplayDriver implements ReplayDriver {
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, this.options);
+    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.index });
     this.index = Math.min(this.index + 1, this.states.length - 1);
   }
 
@@ -233,6 +267,34 @@ export function createDomReplayActor(options: DomReplayActorOptions = {}): Repla
   };
 }
 
+export function createDeterministicReplayAsyncController(): DeterministicReplayAsyncController {
+  const handlers = new Map<string, Array<() => Promise<void> | void>>();
+  return {
+    registerResolve(op, outcome, handler) {
+      const key = asyncKey(op, outcome);
+      handlers.set(key, [...(handlers.get(key) ?? []), handler]);
+    },
+    async resolve(op, outcome) {
+      const key = asyncKey(op, outcome);
+      const queue = handlers.get(key) ?? [];
+      const handler = queue.shift();
+      if (!handler) {
+        throw new ReplayDivergenceError(`No pending async resolution for ${op}:${outcome}`);
+      }
+      if (queue.length === 0) handlers.delete(key);
+      else handlers.set(key, queue);
+      await handler();
+    },
+    pending() {
+      return [...handlers.entries()].flatMap(([key, queue]) => queue.map(() => key)).sort();
+    }
+  };
+}
+
+function asyncKey(op: string, outcome: string): string {
+  return `${op}:${outcome}`;
+}
+
 function firstObserved(varId: string, sources: readonly ObservationSource[]): { value: Value } | "unobservable" {
   for (const source of sources) {
     const observed = source.observe(varId);
@@ -244,7 +306,7 @@ function firstObserved(varId: string, sources: readonly ObservationSource[]): { 
 function locateOne(doc: Document, locator: Locator): HTMLElement {
   const matches = locateAll(doc, locator);
   const element = matches[0];
-  if (!element) throw new Error(`No element found for ${formatLocator(locator)}`);
+  if (!element) throw new ReplayDivergenceError(`No element found for ${formatLocator(locator)}`);
   return element;
 }
 
@@ -288,7 +350,7 @@ function elementName(element: HTMLElement): string {
 
 function assertEnabled(element: HTMLElement, locator: Locator): void {
   if ((element as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled || element.getAttribute("aria-disabled") === "true") {
-    throw new Error(`Element is disabled for ${formatLocator(locator)}`);
+    throw new ReplayDivergenceError(`Element is disabled for ${formatLocator(locator)}`);
   }
 }
 
@@ -310,7 +372,9 @@ function formatLocator(locator: Locator): string {
   return JSON.stringify(locator);
 }
 
-export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, options: ActionReplayDriverOptions = {}): Promise<void> {
+export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, options: ActionReplayDriverOptions & { stepIndex?: number } = {}): Promise<void> {
+  const stepIndex = options.stepIndex ?? 0;
+  await options.beforeStep?.({ step, stepIndex });
   const label = step.label;
   switch (label.kind) {
     case "click":
@@ -341,6 +405,7 @@ export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, op
       break;
   }
   await actor.stabilize?.();
+  await options.afterStep?.({ step, stepIndex });
 }
 
 async function callActor<TArgs extends unknown[]>(name: string, fn: ((...args: TArgs) => Promise<void> | void) | undefined, ...args: TArgs): Promise<void> {
@@ -350,7 +415,7 @@ async function callActor<TArgs extends unknown[]>(name: string, fn: ((...args: T
 
 export function witnessValue(domain: AbstractDomain, value?: Value, options: WitnessOptions = {}): Value {
   if (value !== undefined && value !== null) {
-    if (domain.kind === "lengthCat") return witnessLengthCat(value);
+    if (domain.kind === "lengthCat") return witnessLengthCat(value, options);
     if (domain.kind === "tokens" && typeof value === "string") return options.tokenWitnesses?.[value] ?? value;
     if (domain.kind === "option") return witnessValue(domain.inner, value, options);
     if (domain.kind === "record" && isRecord(value)) return witnessRecord(domain.fields, value, options);
@@ -404,10 +469,22 @@ export function inputWitness(valueClass: string): string {
   }
 }
 
-function witnessLengthCat(value: Value): Value {
+function witnessLengthCat(value: Value, options: WitnessOptions): Value {
   if (value === "0") return [];
-  if (value === "1") return ["item1"];
-  if (value === "many") return ["item1", "item2", "item3"];
+  if (value === "1") return [elementWitnessAt(options, 0)];
+  if (value === "many") return [0, 1, 2].map((index) => elementWitnessAt(options, index));
+  return value;
+}
+
+function elementWitnessAt(options: WitnessOptions, index: number): Value {
+  if (typeof options.elementWitness === "function") return options.elementWitness(index);
+  if (options.elementWitness !== undefined) return cloneValue(options.elementWitness);
+  return `item${index + 1}`;
+}
+
+function cloneValue(value: Value): Value {
+  if (Array.isArray(value)) return value.map((item) => cloneValue(item));
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneValue(item)]));
   return value;
 }
 

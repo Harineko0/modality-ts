@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPluginRegistry, extractionPipelinePhases, runExtractionPipeline, type StateSourcePlugin } from "modality-ts/extraction";
 import type { RouterPlugin } from "modality-ts/extraction/spi";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
+const srcDir = resolve(testDir, "../../src");
 
 function plugin(id: string): StateSourcePlugin {
   return {
@@ -113,7 +115,55 @@ describe("extraction architecture surface", () => {
   it("root package exports source harness entry points", () => {
     const packageJson = JSON.parse(readFileSync(resolve(testDir, "../../package.json"), "utf8"));
     for (const source of ["source-use-state", "source-jotai", "source-swr", "source-router"]) {
+      expect(packageJson.exports[`./${source}`]).toBeTruthy();
       expect(packageJson.exports[`./${source}/harness`]).toBeTruthy();
     }
   });
+
+  it("built-in source slices import extraction through the public SPI only", async () => {
+    const sourcesDir = resolve(srcDir, "sources");
+    const files = await sourceFiles(sourcesDir);
+    const violations: string[] = [];
+
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (specifier === "modality-ts/extraction" || specifier.startsWith("modality-ts/extraction/") && specifier !== "modality-ts/extraction/spi") {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+        if (specifier.startsWith("../../extraction") || specifier.startsWith("../extraction")) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps src/types limited to ambient declaration shims", async () => {
+    const typesDir = resolve(srcDir, "types");
+    const entries = await readdir(typesDir, { withFileTypes: true });
+    expect(entries.every((entry) => entry.isFile() && entry.name.endsWith(".d.ts"))).toBe(true);
+  });
 });
+
+async function sourceFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(entries.map(async (entry) => {
+    const path = resolve(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    if (entry.isFile() && path.endsWith(".ts")) return [path];
+    return [];
+  }));
+  return files.flat().sort();
+}
+
+function importSpecifiers(text: string): string[] {
+  return [...text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g)]
+    .map((match) => match[1] ?? match[2])
+    .filter((specifier): specifier is string => specifier !== undefined);
+}
+
+function relativeToSrc(path: string): string {
+  return path.slice(srcDir.length + 1);
+}

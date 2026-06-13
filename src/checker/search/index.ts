@@ -406,7 +406,7 @@ function finalizeProperties(
           verdicts.set(property.name, { status: "vacuous-warning", property: property.name, message: "Trigger never fired within bounds" });
           continue;
         }
-        const failure = triggerEdges.map((edge) => ({ edge, suffix: failingSuffixWithin(model, property, edge.post, edges) })).find((candidate) => candidate.suffix);
+        const failure = triggerEdges.map((edge) => ({ edge, suffix: failingSuffixWithin(model, property, edge.post) })).find((candidate) => candidate.suffix);
         if (failure) {
           verdicts.set(property.name, replayCheckedVerdict("violated", property.name, {
             steps: [
@@ -426,8 +426,7 @@ function finalizeProperties(
 function failingSuffixWithin(
   model: Model,
   property: Extract<Property, { kind: "leadsToWithin" }>,
-  start: ModelState,
-  graphEdges: readonly Edge[]
+  start: ModelState
 ): Edge[] | undefined {
   const maxSteps = property.budget.steps ?? property.budget.environment ?? 0;
   const memo = new Map<string, Edge[] | null>();
@@ -437,14 +436,14 @@ function failingSuffixWithin(
     const key = `${canon}:${depth}`;
     const cached = memo.get(key);
     if (cached !== undefined) return cached ?? undefined;
-    const successors = graphEdges.filter((edge) => edge.preCanon === canon && schedulerAllows(property, edge.transition));
-    if (successors.length === 0) {
+    if (depth >= maxSteps) {
       memo.set(key, []);
       return [];
     }
-    if (depth >= maxSteps) {
-      memo.set(key, [successors[0]!]);
-      return [successors[0]!];
+    const successors = schedulerSuccessors(model, property, state);
+    if (successors.length === 0) {
+      memo.set(key, []);
+      return [];
     }
     for (const edge of successors) {
       const suffix = visit(edge.post, depth + 1);
@@ -458,6 +457,26 @@ function failingSuffixWithin(
     return undefined;
   };
   return visit(start, 0);
+}
+
+function schedulerSuccessors(model: Model, property: Extract<Property, { kind: "leadsToWithin" }>, pre: ModelState): Edge[] {
+  const preCanon = canonicalState(model, pre);
+  const out: Edge[] = [];
+  for (const transition of enabledTransitions(model, pre).filter((candidate) => schedulerAllows(property, candidate))) {
+    for (const rawPost of applyEffect(model, pre, transition.effect)) {
+      for (const post of stabilize(model, rawPost, changedVars(pre, rawPost))) {
+        out.push({
+          preCanon,
+          postCanon: canonicalState(model, post),
+          pre,
+          post,
+          transition,
+          step: facts(pre, post, transition)
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => a.transition.id.localeCompare(b.transition.id) || a.postCanon.localeCompare(b.postCanon));
 }
 
 function schedulerAllows(property: Extract<Property, { kind: "leadsToWithin" }>, transition: Transition): boolean {

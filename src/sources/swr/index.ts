@@ -25,6 +25,7 @@ export interface SwrKeyWindowTemplateOptions {
   op: string;
   payloadDomain: AbstractDomain;
   entries: readonly SwrKeyWindowEntry[];
+  currentKey?: string;
   windowSize?: number;
   activeWhen?: ExprIR;
   revalidateOnFocus?: boolean;
@@ -160,6 +161,11 @@ function keyFromExpression(expr: ts.Expression | undefined): { id: string; activ
     const key = keyFromExpression(expr.whenTrue);
     const activeWhen = exprFromCondition(expr.condition);
     if (key && activeWhen) return { ...key, activeWhen };
+  }
+  if (ts.isConditionalExpression(expr) && isNullish(expr.whenTrue)) {
+    const key = keyFromExpression(expr.whenFalse);
+    const activeWhen = exprFromCondition(expr.condition);
+    if (key && activeWhen) return { ...key, activeWhen: notExpr(activeWhen) };
   }
   return undefined;
 }
@@ -414,7 +420,7 @@ function mutateTransitions(
 
 export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions): TemplateFragment {
   const windowSize = options.windowSize ?? 2;
-  const entries = options.entries.slice(0, windowSize);
+  const entries = selectKeyWindowEntries(options.entries, windowSize, options.currentKey);
   const fragments = entries.map((entry) =>
     createSwrTemplate({
       id: swrWindowEntryId(options.id, entry.id),
@@ -430,6 +436,18 @@ export function createSwrKeyWindowTemplate(options: SwrKeyWindowTemplateOptions)
     vars: fragments.flatMap((fragment) => fragment.vars),
     transitions: fragments.flatMap((fragment) => fragment.transitions)
   };
+}
+
+function selectKeyWindowEntries(
+  entries: readonly SwrKeyWindowEntry[],
+  windowSize: number,
+  currentKey: string | undefined
+): readonly SwrKeyWindowEntry[] {
+  if (windowSize <= 0) return [];
+  const currentIndex = currentKey === undefined ? -1 : entries.findIndex((entry) => entry.id === currentKey);
+  if (currentIndex < 0) return entries.slice(0, windowSize);
+  const start = Math.max(0, currentIndex - windowSize + 1);
+  return entries.slice(start, currentIndex + 1);
 }
 
 export function swrVars(options: SwrTemplateOptions): StateVarDecl[] {
@@ -504,6 +522,11 @@ function pendingIs(op: string): ExprIR {
 
 function lit(value: Value): ExprIR {
   return { kind: "lit", value };
+}
+
+function notExpr(expr: ExprIR): ExprIR {
+  if (expr.kind === "not") return expr.args[0] ?? lit(true);
+  return { kind: "not", args: [expr] };
 }
 
 function combineActive(global: ExprIR | undefined, local: ExprIR | undefined): ExprIR | undefined {

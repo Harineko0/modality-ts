@@ -81,6 +81,41 @@ describe("runReplayCommand", () => {
     expect(result.report.verdict).toEqual({ status: "reproduced", stepsRun: 1 });
   });
 
+  it("passes app-specific action replay hooks from the harness module", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-replay-action-hooks-"));
+    const tracePath = join(dir, "trace.json");
+    const harnessPath = join(dir, "harness.mjs");
+    await writeFile(tracePath, JSON.stringify(traceArtifact({
+      steps: [{
+        transitionId: "edit",
+        label: { kind: "input", locator: { kind: "testId", value: "draft" }, valueClass: "valid" },
+        pre: { draft: "empty" },
+        post: { draft: "custom" },
+        diff: { draft: { before: "empty", after: "custom" } }
+      }]
+    } satisfies Trace)), "utf8");
+    await writeFile(harnessPath, [
+      "export async function renderModalityReplay() {",
+      "  const calls = [];",
+      "  document.body.innerHTML = '<input data-testid=\"draft\"><span data-modality-var=\"draft\">\"empty\"</span>';",
+      "  document.querySelector('[data-testid=\"draft\"]').addEventListener('input', (event) => {",
+      "    document.querySelector('[data-modality-var=\"draft\"]').textContent = JSON.stringify(event.target.value);",
+      "  });",
+      "  return {",
+      "    document,",
+      "    inputValues: { valid: 'custom' },",
+      "    beforeStep: ({ stepIndex }) => calls.push(`before:${stepIndex}`),",
+      "    afterStep: ({ stepIndex }) => calls.push(`after:${stepIndex}`),",
+      "    assertViolation: () => calls.join(',') === 'before:0,after:0'",
+      "  };",
+      "}"
+    ].join("\n"), "utf8");
+
+    const result = await runReplayCommand({ tracePath, harnessPath, mode: "action", now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(0);
+    expect(result.report.verdict).toEqual({ status: "reproduced", stepsRun: 1 });
+  });
+
   it("allows observed state artifacts to compare only observable variables", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-replay-"));
     const tracePath = join(dir, "trace.json");

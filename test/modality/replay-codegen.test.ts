@@ -53,6 +53,8 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("renderModalityReplay(trace)");
     expect(artifact.source).toContain("observeModalityReplay(replayHarness)");
     expect(artifact.source).toContain("...(replayHarness.sources ?? [])");
+    expect(artifact.source).toContain("replayHarness.observedVars ?? observedVars");
+    expect(artifact.source).toContain("beforeStep: replayHarness.beforeStep");
     expect(artifact.source).toContain('"locator":{"kind":"testId","value":"draft"}');
     expect(artifact.source).toContain('"valueClass":"nonEmpty"');
   });
@@ -66,6 +68,9 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("data-modality-var");
     expect(artifact.source).toContain("dom-projection");
     expect(artifact.source).toContain("__modalityRenderReplayApp");
+    expect(artifact.source).toContain("createDeterministicReplayAsyncController");
+    expect(artifact.source).toContain("replayAsync");
+    expect(artifact.source).toContain("resolve: replayAsync.resolve");
   });
 
   it("emits generated action replay files that execute under jsdom", async () => {
@@ -99,6 +104,45 @@ describe("generateAbstractReplayTest", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("emits generated action replay files that can resolve queued async work", async () => {
+    const trace: Trace = {
+      steps: [
+        {
+          transitionId: "submit",
+          label: { kind: "submit", locator: { kind: "testId", value: "checkout" } },
+          pre: { status: "idle" },
+          post: { status: "submitting" },
+          diff: { status: { before: "idle", after: "submitting" } }
+        },
+        {
+          transitionId: "submit.resolve",
+          label: { kind: "resolve", op: "api.submitOrder", outcome: "success" },
+          pre: { status: "submitting" },
+          post: { status: "done" },
+          diff: { status: { before: "submitting", after: "done" } }
+        }
+      ]
+    };
+    const dir = resolve(repoRoot, "src/modality/.tmp-generated-async-replay");
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    const harness = generateReplayHarness();
+    const replay = generateActionReplayTest("checkout resolves", trace);
+    await writeFile(resolve(dir, harness.fileName), `${generatedAsyncAppHook()}\n${harness.source}`, "utf8");
+    await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+
+    try {
+      const result = await execFileAsync("pnpm", ["vitest", "run", resolve(dir, replay.fileName)], {
+        cwd: repoRoot,
+        env: { ...process.env, FORCE_COLOR: "0" },
+        timeout: 30_000
+      });
+      expect(result.stdout).toContain("1 passed");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 function generatedAppHook(): string {
@@ -114,6 +158,33 @@ function generatedAppHook(): string {
     `  const paint = () => { output.textContent = JSON.stringify(flag); };`,
     `  button.addEventListener("click", () => { flag = true; paint(); });`,
     `  document.body.append(button, output);`,
+    `  paint();`,
+    `  return {};`,
+    `};`
+  ].join("\n");
+}
+
+function generatedAsyncAppHook(): string {
+  return [
+    `globalThis.__modalityRenderReplayApp = (_trace, replayAsync) => {`,
+    `  let status = "idle";`,
+    `  document.body.replaceChildren();`,
+    `  const form = document.createElement("form");`,
+    `  form.dataset.testid = "checkout";`,
+    `  const submit = document.createElement("button");`,
+    `  submit.type = "submit";`,
+    `  submit.textContent = "Submit";`,
+    `  const output = document.createElement("output");`,
+    `  output.setAttribute("data-modality-var", "status");`,
+    `  const paint = () => { output.textContent = JSON.stringify(status); };`,
+    `  form.addEventListener("submit", (event) => {`,
+    `    event.preventDefault();`,
+    `    status = "submitting";`,
+    `    replayAsync.registerResolve("api.submitOrder", "success", () => { status = "done"; paint(); });`,
+    `    paint();`,
+    `  });`,
+    `  form.append(submit, output);`,
+    `  document.body.append(form);`,
     `  paint();`,
     `  return {};`,
     `};`

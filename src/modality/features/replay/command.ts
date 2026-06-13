@@ -62,6 +62,12 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
       harnessModule.observeModalityReplay ? harnessModule.observeModalityReplay(replayHarness) : domProjectionSource(),
       ...(replayHarness.sources ?? [])
     ];
+    const replayOptions = {
+      inputValues: replayHarness.inputValues,
+      assertViolation: replayHarness.assertViolation,
+      beforeStep: replayHarness.beforeStep,
+      afterStep: replayHarness.afterStep
+    };
     const actor = createDomReplayActor({
       document: replayHarness.document,
       navigate: replayHarness.navigate,
@@ -70,8 +76,8 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
       timer: replayHarness.timer,
       stabilize: replayHarness.stabilize
     });
-    const observedVars = [...new Set(trace.steps.flatMap((step) => [...Object.keys(step.pre), ...Object.keys(step.post)]))].sort();
-    return replayTrace(trace, new ObservableActionReplayDriver(actor, observedVars, sources));
+    const observedVars = replayHarness.observedVars ?? [...new Set(trace.steps.flatMap((step) => [...Object.keys(step.pre), ...Object.keys(step.post)]))].sort();
+    return replayTrace(trace, new ObservableActionReplayDriver(actor, observedVars, sources, replayOptions));
   } catch (error) {
     return { status: "inconclusive" as const, stepsRun: 0, reason: error instanceof Error ? error.message : String(error) };
   }

@@ -961,6 +961,12 @@ function valueExpr(
     return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
   }
   if (ts.isParenthesizedExpression(expression)) return valueExpr(expression.expression, setters, locals);
+  if (
+    ts.isBinaryExpression(expression) &&
+    (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || expression.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+  ) {
+    return booleanExpr(expression, setters, locals);
+  }
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
     return nullishOptionalReadExpr(expression, setters, locals);
   }
@@ -2282,6 +2288,7 @@ function renderGuardFor(
 ): ParsedGuard | undefined {
   const element = jsxElementForAttribute(eventAttribute);
   if (!element) return undefined;
+  const guards: ParsedGuard[] = [];
   let current: ts.Node = element;
   while (current.parent) {
     const parent = current.parent;
@@ -2295,7 +2302,9 @@ function renderGuardFor(
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.left) });
         return undefined;
       }
-      return parsed;
+      guards.push(parsed);
+      current = parent;
+      continue;
     }
     if (ts.isConditionalExpression(parent) && parent.whenTrue === current) {
       const parsed = parseConjunctiveGuardExpression(parent.condition, setters, locals);
@@ -2303,7 +2312,9 @@ function renderGuardFor(
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
         return undefined;
       }
-      return parsed;
+      guards.push(parsed);
+      current = parent;
+      continue;
     }
     if (ts.isConditionalExpression(parent) && parent.whenFalse === current) {
       const parsed = parseConjunctiveGuardExpression(parent.condition, setters, locals);
@@ -2311,15 +2322,17 @@ function renderGuardFor(
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
         return undefined;
       }
-      return { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads };
-    }
-    if (ts.isParenthesizedExpression(parent) || ts.isJsxExpression(parent)) {
+      guards.push({ expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads });
       current = parent;
       continue;
     }
-    return undefined;
+    if (ts.isParenthesizedExpression(parent) || ts.isJsxExpression(parent) || ts.isJsxElement(parent) || ts.isJsxFragment(parent)) {
+      current = parent;
+      continue;
+    }
+    return combineParsedGuards(guards);
   }
-  return undefined;
+  return combineParsedGuards(guards);
 }
 
 function jsxElementForAttribute(attribute: ts.JsxAttribute): ts.JsxElement | ts.JsxSelfClosingElement | undefined {

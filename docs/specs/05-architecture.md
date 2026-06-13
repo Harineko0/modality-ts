@@ -12,33 +12,37 @@ Three forces dominate, and the structure below is derived from them:
 
 ## 2. Repository layout (single npm package)
 
+This repository implements the package architecture as a **flat TypeScript source
+tree**. Earlier sketches used nested `src/<area>/src/` folders to mirror
+publishable subpackages; the current layout intentionally drops that extra
+directory level because all public surfaces are subpath exports from one npm
+package. Treat the folders below as package-like architecture boundaries, not as
+separate workspaces:
+
 ```
 modality-ts/
 ├── src/
 │   ├── kernel/                  # modality-ts/kernel — the stable center (§3)
-│   │   └── src/
-│   │       ├── ir/              #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
-│   │       ├── trace/           #   Trace, Step, EventLabel, verdicts
-│   │       ├── props/           #   always/leadsToWithin/reachable combinators (user-facing DSL)
-│   │       ├── overlay/         #   overlay builder API (user-facing)
-│   │       ├── report/          #   report + trust-ledger schemas (versioned)
-│   │       └── artifacts/       #   .modality/ artifact IO, schema versioning, model hashing
+│   │   ├── ir/                  #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
+│   │   ├── trace/               #   Trace, Step, EventLabel, verdicts
+│   │   ├── props/               #   always/leadsToWithin/reachable combinators (user-facing DSL)
+│   │   ├── overlay/             #   overlay builder API (user-facing)
+│   │   ├── report/              #   report + trust-ledger schemas (versioned)
+│   │   └── artifacts/           #   .modality/ artifact IO, schema versioning, model hashing
 │   │
 │   ├── checker/                 # modality-ts/checker — Spec 03; Node-only
-│   │   └── src/
-│   │       ├── encode/          #   canonical encoders, token renaming
-│   │       ├── search/          #   BFS core, stabilization, enabledness
-│   │       ├── monitors/        #   invariant, bounded-response, vacuity
-│   │       ├── slicing/         #   cone-of-influence, recording proxy
-│   │       └── traces/          #   parent map, reconstruction, hint passes
+│   │   ├── encode/              #   canonical encoders, token renaming
+│   │   ├── search/              #   BFS core, stabilization, enabledness
+│   │   ├── monitors/            #   invariant, bounded-response, vacuity
+│   │   ├── slicing/             #   cone-of-influence, recording proxy
+│   │   └── traces/              #   parent map, reconstruction, hint passes
 │   │
 │   ├── extraction/              # modality-ts/extraction — Spec 02 engine; Node-only (ts-morph)
-│   │   └── src/
-│   │       ├── pipeline/        #   P0–P7 orchestration; owns phase ordering & fixpoints
-│   │       ├── tsq/             #   shared TS-analysis utilities (symbol resolution, JSX walk,
-│   │       │                    #   call-graph, M0 expression compiler, escape analysis core)
-│   │       ├── spi/             #   ★ StateSourcePlugin + RouterPlugin interfaces (§4)
-│   │       └── report/         #   extraction report assembly
+│   │   ├── pipeline/            #   P0–P7 orchestration; owns phase ordering & fixpoints
+│   │   ├── tsq/                 #   shared TS-analysis utilities (symbol resolution, JSX walk,
+│   │   │                        #   call-graph, M0 expression compiler, escape analysis core)
+│   │   ├── spi/                 #   ★ StateSourcePlugin + RouterPlugin interfaces (§4)
+│   │   └── report/              #   extraction report assembly
 │   │
 │   ├── sources/                 # ★ vertical slices, axis 1: one module per state library (§5)
 │   │   ├── use-state/           # modality-ts/source-use-state
@@ -47,26 +51,27 @@ modality-ts/
 │   │   └── router/              # modality-ts/source-router     (peerDep: react-router)
 │   │
 │   ├── harness/                 # modality-ts/harness — Spec 04 §3 runtime for generated tests;
-│   │   └── src/                 # jsdom context (RTL, MSW gating, stabilization barrier,
+│   │                            # jsdom context (RTL, MSW gating, stabilization barrier,
 │   │                            # witness engine, observation registry)
 │   │
 │   ├── runtime/                 # modality-ts/runtime — Spec 04 §6 dev-build assertions;
-│   │   └── src/                 # browser context; tiny, zero deps, no kernel import —
+│   │                            # browser context; tiny, zero deps, no kernel import —
 │   │                            # only the props/ DSL re-exported via a subpath
 │   │
-│   └── modality/                # `modality` — the product shell (§6)
-│       └── src/
-│           ├── features/        # ★ vertical slices, axis 2: extract/ check/ replay/ conform/
-│           ├── registry/        #   plugin registry; built-in source registration; config loading
-│           ├── codegen/         #   app.model.ts + *.replay.test.tsx emitters
-│           └── cli/             #   thin commander shell (arg parsing only)
+│   ├── modality/                # `modality` — the product shell (§6)
+│   │   ├── features/            # ★ vertical slices, axis 2: extract/ check/ replay/ conform/
+│   │   ├── registry/            #   plugin registry; built-in source registration; config loading
+│   │   ├── codegen/             #   app.model.ts + *.replay.test.tsx emitters
+│   │   └── cli.ts               #   thin commander shell (arg parsing only)
+│   │
+│   └── types/                   # ambient declaration shims only; not semantic model types
 │
 ├── examples/demo-app/           # MVP demo with the three seeded bugs (design §8)
 ├── tools/                       # dependency-cruiser config (§7), differential-test runner vs TLC
 └── docs/
 ```
 
-What is deliberately **not** here: a `utils/` package (utilities live in the slice that needs them until two slices prove the need — then they move to the *narrowest* shared home), and a `types/` package (types live with the code that owns their semantics; cross-cutting types are kernel by definition).
+What is deliberately **not** here: a `utils/` package (utilities live in the slice that needs them until two slices prove the need — then they move to the *narrowest* shared home), and a semantic `types/` package (types live with the code that owns their semantics; cross-cutting types are kernel by definition). The existing `src/types/` directory is limited to ambient declarations for external packages missing local typings; it must not grow domain, IR, report, or plugin types.
 
 ## 3. The kernel: small by policy, versioned by schema
 
@@ -156,7 +161,7 @@ The litmus test the architecture must keep passing: **supporting Zustand = writi
 Inside the `modality` package, each user capability is a self-contained slice:
 
 ```
-src/modality/src/features/
+src/modality/features/
 ├── extract/    # orchestrates extraction pipeline + registry → .modality/model.json,
 │               #   app.model.ts (via codegen/), extraction report; --explain-drift
 ├── check/      # loads model + props → modality-ts/checker → traces, report rendering,
@@ -168,7 +173,7 @@ src/modality/src/features/
 
 Rules that keep these vertical rather than layered:
 
-- **Slices never import each other.** They communicate only through `.modality/` artifacts (schema-versioned kernel types): `extract` writes `model.json`; `check` reads it and writes `traces/*.json`; `replay` reads a trace. This is the same boundary the CLI user sees, so every feature is independently scriptable and independently testable with fixture artifacts — and a crashed `check` can be re-run without re-extracting.
+- **Slices never import each other.** They communicate only through `.modality/` artifacts (schema-versioned kernel types): `extract` writes `model.json`; `check` reads it and writes `traces/*.json`; `replay` reads a trace. This is the same boundary the CLI user sees, so every feature is independently scriptable and independently testable with fixture artifacts — and a crashed `check` can be re-run without re-extracting. The one current exception is `ci`, which is an orchestration slice and may call the public command wrappers for `check` and `conform`; it still must not reach into sibling feature internals.
 - **Each slice owns its full stack**: argument schema, orchestration, rendering (terminal + JSON), and its tests. `cli/` is a dispatch table mapping command names to slice entry points — it contains no logic, so no slice change ever touches it beyond one registration line.
 - Shared *mechanisms* used by multiple slices but owned by none (codegen emitters, the plugin registry, config loading) sit beside `features/` as named modules — pulled out only because ≥2 slices demonstrably use them, mirroring the kernel policy at package-internal scale.
 
@@ -185,7 +190,7 @@ modality      → everything above (features/* additionally: never each other)
 examples/*    → modality, runtime, harness (as a real app would)
 ```
 
-Enforced by dependency-cruiser in CI (`tools/depcruise.config`), including the subpath rules (`sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph) and the "features don't import features" rule. Violations fail the build — architecture that is only documented decays in months.
+Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/types/`, and the "features don't import features" rule. Violations fail the build — architecture that is only documented decays in months.
 
 Two asymmetries worth stating explicitly:
 

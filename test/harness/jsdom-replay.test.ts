@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { Trace } from "modality-ts/kernel";
-import { createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "modality-ts/harness";
+import { createDeterministicReplayAsyncController, createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "modality-ts/harness";
 
 describe("jsdom replay", () => {
   afterEach(() => {
@@ -57,6 +57,54 @@ describe("jsdom replay", () => {
       stepsRun: 1,
       divergenceStep: 1,
       reason: 'postcondition mismatch: local:Checkout.status: expected "done", got "submitting"'
+    });
+  });
+
+  it("replays queued async resolutions deterministically", async () => {
+    const state = renderCheckoutFixture();
+    const replayAsync = createDeterministicReplayAsyncController();
+    replayAsync.registerResolve("api.submitOrder", "success", () => {
+      state.status = "done";
+      state.paint();
+    });
+
+    const verdict = await replayTrace(checkoutTrace({
+      afterSubmit: "submitting",
+      afterResolve: "done"
+    }), new ObservableActionReplayDriver(
+      createDomReplayActor({
+        resolve: replayAsync.resolve,
+        stabilize: async () => Promise.resolve()
+      }),
+      ["local:Checkout.status"],
+      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
+    ));
+
+    expect(verdict).toEqual({ status: "reproduced", stepsRun: 2 });
+    expect(replayAsync.pending()).toEqual([]);
+  });
+
+  it("classifies missing queued async resolutions as not reproduced", async () => {
+    renderCheckoutFixture();
+    const replayAsync = createDeterministicReplayAsyncController();
+
+    const verdict = await replayTrace(checkoutTrace({
+      afterSubmit: "submitting",
+      afterResolve: "done"
+    }), new ObservableActionReplayDriver(
+      createDomReplayActor({ resolve: replayAsync.resolve }),
+      ["local:Checkout.status"],
+      [observationSource("checkout-dom", (varId) => {
+        const text = document.querySelector("[data-testid=\"status\"]")?.textContent;
+        return varId === "local:Checkout.status" && text ? { value: text } : "unobservable";
+      })]
+    ));
+
+    expect(verdict).toEqual({
+      status: "not-reproduced",
+      stepsRun: 1,
+      divergenceStep: 2,
+      reason: "No pending async resolution for api.submitOrder:success"
     });
   });
 });

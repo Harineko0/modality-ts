@@ -14,6 +14,34 @@ export interface ExportTlaCommandResult {
   source: string;
 }
 
+export interface TlaStructuredModel {
+  moduleName: string;
+  variables: readonly string[];
+  init: readonly TlaInitialAssignment[];
+  transitions: readonly TlaStructuredTransition[];
+}
+
+export interface TlaInitialAssignment {
+  id: string;
+  name: string;
+  values: readonly Value[];
+  predicate: string;
+}
+
+export interface TlaStructuredTransition {
+  id: string;
+  name: string;
+  guard: string;
+  branches: readonly TlaStructuredBranch[];
+}
+
+export interface TlaStructuredBranch {
+  assumptions: readonly string[];
+  exists: readonly { name: string; set: string }[];
+  next: Readonly<Record<string, string>>;
+  relation: string;
+}
+
 export async function runExportTlaCommand(options: ExportTlaCommandOptions): Promise<ExportTlaCommandResult> {
   const model = parseModelArtifact(await readFile(options.modelPath, "utf8"));
   const source = generateTlaModule(model, options.moduleName ?? tlaModuleName(model.id));
@@ -48,6 +76,38 @@ export function generateTlaModule(model: Model, moduleName = tlaModuleName(model
     `====`,
     ``
   ].join("\n");
+}
+
+export function generateTlaStructuredModel(model: Model, moduleName = tlaModuleName(model.id)): TlaStructuredModel {
+  const validation = validateModel(model);
+  if (!validation.ok) {
+    throw new Error(`Cannot export invalid model: ${validation.errors.join("; ")}`);
+  }
+  validateTlaIdentifiers(model);
+  return {
+    moduleName,
+    variables: model.vars.map((decl) => tlaName(decl.id)),
+    init: model.vars.map((decl) => {
+      const values = initialValues(decl.domain, decl.initial);
+      return {
+        id: decl.id,
+        name: tlaName(decl.id),
+        values,
+        predicate: tlaInitial(decl.id, values)
+      };
+    }),
+    transitions: model.transitions.map((transition) => ({
+      id: transition.id,
+      name: tlaName(transition.id),
+      guard: tlaExpr(transition.guard),
+      branches: effectBranches(model, transition.effect, currentEnv(model)).map((branch) => ({
+        assumptions: branch.assumptions,
+        exists: branch.exists,
+        next: Object.fromEntries(model.vars.map((decl) => [decl.id, envValue(branch, decl.id)])),
+        relation: branchRelation(model, branch)
+      }))
+    }))
+  };
 }
 
 function tlaAction(model: Model, transition: Transition): string {

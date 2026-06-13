@@ -200,6 +200,40 @@ describe("replayTrace", () => {
     }, actor)).rejects.toThrow("Element is disabled");
   });
 
+  it("classifies absent and disabled DOM targets as replay divergence", async () => {
+    const disabled = new FakeElement("button", { textContent: "Save", disabled: true });
+    const state = { draft: "nonEmpty" };
+    const clickTrace: Trace = {
+      steps: [{
+        transitionId: "save",
+        label: { kind: "click", locator: { kind: "role", role: "button", name: "Save" } },
+        pre: state,
+        post: { ...state, status: "posting" },
+        diff: { status: { before: undefined, after: "posting" } }
+      }]
+    };
+
+    await expect(replayTrace(clickTrace, new ActionReplayDriver(
+      createDomReplayActor({ document: new FakeDocument([]) as unknown as Document }),
+      () => state
+    ))).resolves.toEqual({
+      status: "not-reproduced",
+      stepsRun: 0,
+      divergenceStep: 1,
+      reason: 'No element found for {"kind":"role","role":"button","name":"Save"}'
+    });
+
+    await expect(replayTrace(clickTrace, new ActionReplayDriver(
+      createDomReplayActor({ document: new FakeDocument([disabled]) as unknown as Document }),
+      () => state
+    ))).resolves.toEqual({
+      status: "not-reproduced",
+      stepsRun: 0,
+      divergenceStep: 1,
+      reason: 'Element is disabled for {"kind":"role","role":"button","name":"Save"}'
+    });
+  });
+
   it("classifies missing observable source state as inconclusive", async () => {
     const actionTrace: Trace = {
       steps: [{
@@ -276,6 +310,16 @@ describe("replayTrace", () => {
 
   it("creates deterministic concrete witnesses for abstract domains", () => {
     expect(witnessValue({ kind: "lengthCat" }, "many")).toEqual(["item1", "item2", "item3"]);
+    expect(witnessValue({ kind: "lengthCat" }, "many", {
+      elementWitness: (index) => ({ id: `todo-${index + 1}`, title: "Buy milk" })
+    })).toEqual([
+      { id: "todo-1", title: "Buy milk" },
+      { id: "todo-2", title: "Buy milk" },
+      { id: "todo-3", title: "Buy milk" }
+    ]);
+    expect(witnessValue({ kind: "option", inner: { kind: "lengthCat" } }, "1", {
+      elementWitness: { id: "todo-1" }
+    })).toEqual([{ id: "todo-1" }]);
     expect(witnessValue({ kind: "tokens", count: 2 }, "tok2", { tokenWitnesses: { tok2: { id: 2 } } })).toEqual({ id: 2 });
     expect(witnessValue({
       kind: "record",

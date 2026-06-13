@@ -186,6 +186,51 @@ describe("checker", () => {
     expect(check.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "freshGenerated" });
   });
 
+  it("matches tagIs against the tagged domain discriminant only", () => {
+    const taggedModel: Model = {
+      schemaVersion: 1,
+      id: "tagged-discriminant",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        {
+          id: "session",
+          domain: {
+            kind: "tagged",
+            tag: "kind",
+            variants: {
+              guest: { kind: "record", fields: { role: { kind: "enum", values: ["admin"] } } },
+              admin: { kind: "record", fields: {} }
+            }
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: { kind: "guest", role: "admin" }
+        },
+        { id: "entered", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+      ],
+      transitions: [
+        {
+          id: "enterAdmin",
+          cls: "user",
+          label: { kind: "click", text: "Enter admin" },
+          source: [],
+          guard: { kind: "tagIs", arg: read("session"), tag: "admin" },
+          effect: { kind: "assign", var: "entered", expr: lit(true) },
+          reads: ["session"],
+          writes: ["entered"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    const check = checkModel(taggedModel, [reachable(taggedModel, (state) => state.entered === true, { name: "enteredAdmin" })]);
+    expect(check.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "enteredAdmin" });
+    expect(check.stats.edges).toBe(0);
+  });
+
   it("finds shortest traces for state and step violations", () => {
     const m = model();
     const props: Property[] = [
@@ -211,6 +256,20 @@ describe("checker", () => {
     const result = checkModel(m, props);
     expect(result.verdicts.find((v) => v.property === "submitSettles")?.status).toBe("verified-within-bounds");
     expect(result.verdicts.find((v) => v.property === "failedCanRemainAuthed")?.status).toBe("verified-within-bounds");
+  });
+
+  it("checks bounded response beyond the global BFS frontier", () => {
+    const m: Model = {
+      ...model(),
+      bounds: { ...model().bounds, maxDepth: 3 }
+    };
+    const result = checkModel(m, [
+      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true || s.status === "failed", { name: "submitSettlesAfterFrontier", budget: { environment: 1 } })
+    ]);
+
+    expect(result.boundHits).toContain("maxDepth reached before resolvePostError");
+    expect(result.boundHits).toContain("maxDepth reached before resolvePostSuccess");
+    expect(result.verdicts[0]).toMatchObject({ status: "verified-within-bounds", property: "submitSettlesAfterFrontier" });
   });
 
   it("marks reachableFrom counterexamples as non-replayable", () => {
@@ -243,7 +302,7 @@ describe("checker", () => {
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
     expect(verdict?.status === "violated" ? verdict.trace.steps.map((step) => step.transitionId).slice(0, 3) : []).toEqual(["login", "input", "submit"]);
-    expect(verdict?.status === "violated" ? verdict.trace.steps[3]?.label.kind : undefined).toBe("resolve");
+    expect(verdict?.status === "violated" ? verdict.trace.steps.length : undefined).toBe(3);
   });
 
   it("excludes user interference from bounded response unless explicitly allowed", () => {
@@ -836,7 +895,7 @@ describe("checker", () => {
     expect(result.boundHits).toContain("token cap exhausted at allocate");
   });
 
-  it("keeps enabled transition dependencies in sliced checks", () => {
+  it("preserves enabled() verdicts and witnesses when slicing is enabled", () => {
     const m: Model = {
       schemaVersion: 1,
       id: "enabled-slice",
@@ -873,9 +932,18 @@ describe("checker", () => {
         }
       ]
     };
-    const props = [always(m, (state) => !enabled(m, "go")(state), { name: "goNeverEnabled", reads: [] })];
-    expect(checkModel(m, props).verdicts[0]?.status).toBe("violated");
-    expect(checkModel(m, props, { slicing: true }).verdicts[0]?.status).toBe("violated");
+    const props = [
+      always(m, (state) => !enabled(m, "go")(state), { name: "goNeverEnabled", reads: [] }),
+      reachable(m, (state) => state.clicked === true, { name: "goCanClick", reads: ["clicked"] })
+    ];
+    const unsliced = checkModel(m, props);
+    const sliced = checkModel(m, props, { slicing: true });
+    expect(sliced.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual(
+      unsliced.verdicts.map((verdict) => [verdict.property, verdict.status])
+    );
+    expect(sliced.verdicts.map((verdict) => ("trace" in verdict ? verdict.trace.steps.map((step) => step.transitionId) : []))).toEqual(
+      unsliced.verdicts.map((verdict) => ("trace" in verdict ? verdict.trace.steps.map((step) => step.transitionId) : []))
+    );
   });
 
   it("explores conflicting internal transition orders during stabilization", () => {
@@ -982,5 +1050,70 @@ describe("checker", () => {
       ["triggerRuns", "reachable"],
       ["unrelatedTargetWriteDoesNotRetrigger", "reachable"]
     ]);
+  });
+
+  it("matches an explicit finite-state oracle for branching bounded reachability", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "finite-oracle",
+      bounds: { maxDepth: 3, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "phase", domain: { kind: "enum", values: ["start", "middle", "done"] }, origin: "system", scope: { kind: "global" }, initial: "start" },
+        { id: "flag", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+      ],
+      transitions: [
+        {
+          id: "begin",
+          cls: "user",
+          label: { kind: "click", text: "Begin" },
+          source: [],
+          guard: { kind: "eq", args: [read("phase"), lit("start")] },
+          effect: { kind: "assign", var: "phase", expr: lit("middle") },
+          reads: ["phase"],
+          writes: ["phase"],
+          confidence: "exact"
+        },
+        {
+          id: "finish",
+          cls: "user",
+          label: { kind: "click", text: "Finish" },
+          source: [],
+          guard: { kind: "eq", args: [read("phase"), lit("middle")] },
+          effect: { kind: "assign", var: "phase", expr: lit("done") },
+          reads: ["phase"],
+          writes: ["phase"],
+          confidence: "exact"
+        },
+        {
+          id: "flip",
+          cls: "env",
+          label: { kind: "timer", key: "flip" },
+          source: [],
+          guard: { kind: "eq", args: [read("phase"), lit("middle")] },
+          effect: { kind: "havoc", var: "flag" },
+          reads: ["phase"],
+          writes: ["flag"],
+          confidence: "over-approx"
+        }
+      ]
+    };
+    const expected = [
+      { phase: "start", flag: false },
+      { phase: "middle", flag: false },
+      { phase: "done", flag: false },
+      { phase: "middle", flag: true },
+      { phase: "done", flag: true }
+    ];
+    const result = checkModel(m, [
+      ...expected.map((state, index) => reachable(m, (candidate) => candidate.phase === state.phase && candidate.flag === state.flag, { name: `oracle${index}` })),
+      reachable(m, (state) => state.phase === "start" && state.flag === true, { name: "oracleImpossible" })
+    ]);
+
+    expect(result.stats).toEqual({ states: 5, edges: 7, depth: 3 });
+    expect(result.verdicts.slice(0, expected.length).every((verdict) => verdict.status === "reachable")).toBe(true);
+    expect(result.verdicts.at(-1)).toMatchObject({ property: "oracleImpossible", status: "vacuous-warning" });
   });
 });

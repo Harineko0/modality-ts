@@ -733,6 +733,40 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
+  it("extracts boolean connective setter expressions", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [hasDraft, setHasDraft] = useState<boolean>(false);
+        const [saving, setSaving] = useState<boolean>(false);
+        const [canSubmit, setCanSubmit] = useState<boolean>(false);
+        return <button onClick={() => setCanSubmit(hasDraft && !saving)}>Check</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.canSubmit",
+      effect: {
+        kind: "assign",
+        var: "local:App.canSubmit",
+        expr: {
+          kind: "and",
+          args: [
+            { kind: "read", var: "local:App.hasDraft" },
+            { kind: "not", args: [{ kind: "read", var: "local:App.saving" }] }
+          ]
+        }
+      },
+      reads: ["local:App.hasDraft", "local:App.saving"],
+      writes: ["local:App.canSubmit"],
+      confidence: "exact"
+    });
+  });
+
   it("extracts modeled-state property reads in if conditions", () => {
     const result = extractUseStateSkeleton(
       `
@@ -955,6 +989,50 @@ describe("useState inventory", () => {
       always(model, (state) => state["local:App.saveStatus"] !== "posting", { name: "postingNotReachable", reads: ["local:App.saveStatus"] })
     ]);
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+  });
+
+  it("carries conditional rendering guards through JSX containers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [canSave, setCanSave] = useState<boolean>(false);
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <>{canSave && <section><button onClick={() => setSaveStatus('posting')}>Save</button></section>}</>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      guard: { kind: "read", var: "local:App.canSave" },
+      reads: ["local:App.canSave"],
+      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      confidence: "exact"
+    });
+  });
+
+  it("extracts false-branch conditional rendering guards through JSX containers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [locked, setLocked] = useState<boolean>(true);
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return locked ? null : <section><button onClick={() => setSaveStatus('posting')}>Save</button></section>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      guard: { kind: "not", args: [{ kind: "read", var: "local:App.locked" }] },
+      reads: ["local:App.locked"],
+      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      confidence: "exact"
+    });
   });
 
   it("extracts event target value input handlers as exact value-class transitions", () => {
