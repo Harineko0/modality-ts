@@ -1,0 +1,38 @@
+{
+  "name": "@modality/source-use-state",
+  "version": "0.0.0",
+  "description": "React useState source plugin for modality extraction and replay.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/sources/use-state"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./harness": {
+      "types": "./dist/harness.d.ts",
+      "default": "./dist/harness.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/extraction": "workspace:*",
+    "@modality/kernel": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

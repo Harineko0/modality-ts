@@ -1,0 +1,32 @@
+{
+  "name": "modality-ts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Model-checking-based testing tools for React state-transition bugs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "architecture": "depcruise --config tools/depcruise.config.cjs packages",
+    "build": "pnpm -r build",
+    "clean": "pnpm -r exec rm -rf dist tsconfig.tsbuildinfo",
+    "ci:examples": "tsx tools/examples-ci.ts",
+    "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
+    "phase7": "tsx tools/phase7-differential.ts",
+    "publish:npm": "pnpm -r --filter \"@modality/*\" --filter \"modality\" publish --access public --no-git-checks",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "dependency-cruiser": "^17.4.3",
+    "jsdom": "^29.1.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}

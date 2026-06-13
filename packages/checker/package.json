@@ -1,0 +1,32 @@
+{
+  "name": "@modality/checker",
+  "version": "0.0.0",
+  "description": "Explicit-state model checker for modality IR models.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/checker"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/kernel": "workspace:*"
+  }
+}

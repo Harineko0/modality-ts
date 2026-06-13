@@ -1,0 +1,32 @@
+{
+  "name": "@modality/harness",
+  "version": "0.0.0",
+  "description": "Replay and conformance harness helpers for modality traces.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/harness"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/kernel": "workspace:*"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@modality/kernel",
+  "version": "0.0.0",
+  "description": "Stable IR, property DSL, reports, and artifact schemas for modality.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/kernel"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./props": {
+      "types": "./dist/props/index.d.ts",
+      "default": "./dist/props/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

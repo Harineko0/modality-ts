@@ -1,0 +1,112 @@
+import { canonicalJson, type Trace } from "@modality/kernel";
+
+export interface ReplayTestArtifact {
+  fileName: string;
+  source: string;
+}
+
+export function generateAbstractReplayTest(property: string, trace: Trace): ReplayTestArtifact {
+  const safeName = safeFileName(property);
+  return {
+    fileName: `${safeName}.replay.test.ts`,
+    source: [
+      `import { describe, expect, it } from "vitest";`,
+      `import { replayTrace, StateSequenceDriver, statesFromTrace } from "@modality/harness";`,
+      ``,
+      `const trace = ${canonicalJson(trace)};`,
+      ``,
+      `describe(${JSON.stringify(`replay ${property}`)}, () => {`,
+      `  it("reproduces the model trace", async () => {`,
+      `    const verdict = await replayTrace(trace, new StateSequenceDriver(statesFromTrace(trace)));`,
+      `    expect(verdict.status).toBe("reproduced");`,
+      `  });`,
+      `});`,
+      ``
+    ].join("\n")
+  };
+}
+
+export function generateActionReplayTest(property: string, trace: Trace): ReplayTestArtifact {
+  const safeName = safeFileName(property);
+  return {
+    fileName: `${safeName}.action.replay.test.ts`,
+    source: [
+      `/**`,
+      ` * @vitest-environment jsdom`,
+      ` */`,
+      `import { describe, expect, it } from "vitest";`,
+      `import { createDomReplayActor, ObservableActionReplayDriver, replayTrace } from "@modality/harness";`,
+      `import type { ModalityReplayHarness, ObservationSource } from "@modality/harness";`,
+      `import { observeModalityReplay, renderModalityReplay } from "./modality.replay.harness.js";`,
+      ``,
+      `const trace = ${canonicalJson(trace)};`,
+      `const observedVars = [...new Set(trace.steps.flatMap((step) => [...Object.keys(step.pre), ...Object.keys(step.post)]))];`,
+      ``,
+      `describe(${JSON.stringify(`replay ${property}`)}, () => {`,
+      `  it("drives the app through the model trace", async () => {`,
+      `    const replayHarness: ModalityReplayHarness = await renderModalityReplay(trace);`,
+      `    const observationSources: ObservationSource[] = [observeModalityReplay(replayHarness), ...(replayHarness.sources ?? [])];`,
+      `    const actor = createDomReplayActor({`,
+      `      document: replayHarness.document,`,
+      `      navigate: replayHarness.navigate,`,
+      `      resolve: replayHarness.resolve,`,
+      `      focusRevalidate: replayHarness.focusRevalidate,`,
+      `      timer: replayHarness.timer,`,
+      `      stabilize: replayHarness.stabilize`,
+      `    });`,
+      `    const verdict = await replayTrace(trace, new ObservableActionReplayDriver(actor, observedVars, observationSources));`,
+      `    expect(verdict.status).toBe("reproduced");`,
+      `  });`,
+      `});`,
+      ``
+    ].join("\n")
+  };
+}
+
+export function generateReplayHarness(): ReplayTestArtifact {
+  return {
+    fileName: "modality.replay.harness.ts",
+    source: [
+      `import { observationSource, type ModalityReplayHarness, type ObservationSource } from "@modality/harness";`,
+      `import type { Trace } from "@modality/kernel";`,
+      ``,
+      `declare global {`,
+      `  var __modalityRenderReplayApp: ((trace: Trace) => Partial<ModalityReplayHarness> | Promise<Partial<ModalityReplayHarness>>) | undefined;`,
+      `}`,
+      ``,
+      `export async function renderModalityReplay(trace: Trace): Promise<ModalityReplayHarness> {`,
+      `  const appHarness = await globalThis.__modalityRenderReplayApp?.(trace);`,
+      `  return {`,
+      `    document: globalThis.document,`,
+      `    stabilize: async () => Promise.resolve(),`,
+      `    ...(appHarness ?? {})`,
+      `  };`,
+      `}`,
+      ``,
+      `export function observeModalityReplay(_harness: ModalityReplayHarness): ObservationSource {`,
+      `  return observationSource("dom-projection", (varId) => {`,
+      `    const element = globalThis.document?.querySelector(\`[data-modality-var="\${cssString(varId)}"]\`);`,
+      `    if (!element) return "unobservable";`,
+      `    return { value: parseObservedValue(element.textContent ?? "") };`,
+      `  });`,
+      `}`,
+      ``,
+      `function parseObservedValue(text: string): unknown {`,
+      `  try {`,
+      `    return JSON.parse(text);`,
+      `  } catch {`,
+      `    return text;`,
+      `  }`,
+      `}`,
+      ``,
+      `function cssString(value: string): string {`,
+      `  return value.replace(/["\\\\]/g, "\\\\$&");`,
+      `}`,
+      ``
+    ].join("\n")
+  };
+}
+
+export function safeFileName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
+}
