@@ -38,3 +38,5 @@ jobs:
 
       - name: Publish packages
         run: pnpm publish:npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
