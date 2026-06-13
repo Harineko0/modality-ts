@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "dependencies": {
+    "jotai": "^2.0.0",
+    "react": "^18.0.0",
+    "react-router": "^6.0.0",
+    "swr": "^2.0.0"
+  }
+}

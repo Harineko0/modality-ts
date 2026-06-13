@@ -6,6 +6,9 @@
     { "path": "./packages/extraction" },
     { "path": "./packages/harness" },
     { "path": "./packages/runtime" },
+    { "path": "./packages/sources/jotai" },
+    { "path": "./packages/sources/router" },
+    { "path": "./packages/sources/use-state" },
     { "path": "./packages/sources/swr" },
     { "path": "./packages/modality" }
   ]

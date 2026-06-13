@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { always, reachable, type Model } from "@modality/kernel";
-import { assertObservableInvariantsOrThrow, assertObservableState, assertObservableStateOrThrow, evaluateObservableInvariants, observable } from "../src/index.js";
+import { assertObservableInvariantsOrThrow, assertObservableState, assertObservableStateOrThrow, createModalityAssertions, evaluateObservableInvariants, observable } from "../src/index.js";
 
 const model = {} as Model;
 
@@ -60,5 +60,53 @@ describe("@modality/runtime observable assertions", () => {
         { flag: false }
       )
     ).toThrow("flagTrue: observable invariant failed");
+  });
+
+  it("subscribes to observable state changes and reports invariant results", () => {
+    let snapshot = { auth: "guest", route: "/" };
+    const listeners = new Set<() => void>();
+    const results: boolean[] = [];
+    const violations: string[] = [];
+    const controller = createModalityAssertions(
+      [always(model, (state) => state.auth === "user" || state.route !== "/checkout", { name: "checkoutRequiresUser", reads: ["auth", "route"] })],
+      [
+        observable("auth", (app: typeof snapshot) => app.auth),
+        observable("route", (app: typeof snapshot) => app.route)
+      ],
+      {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }
+      },
+      {
+        onResult: ({ result }) => results.push(result.ok),
+        onViolation: ({ result }) => violations.push(result.violations[0]?.property ?? "unknown")
+      }
+    );
+
+    const stop = controller.start();
+    snapshot = { auth: "guest", route: "/checkout" };
+    listeners.forEach((listener) => listener());
+    stop();
+    snapshot = { auth: "user", route: "/checkout" };
+    listeners.forEach((listener) => listener());
+
+    expect(results).toEqual([true, false]);
+    expect(violations).toEqual(["checkoutRequiresUser"]);
+  });
+
+  it("can throw on subscribed runtime assertion violations", () => {
+    const controller = createModalityAssertions(
+      [always(model, (state) => state.flag === true, { name: "flagTrue", reads: ["flag"] })],
+      [observable("flag", (app: { flag: boolean }) => app.flag)],
+      {
+        getSnapshot: () => ({ flag: false }),
+        subscribe: () => () => {}
+      },
+      { throwOnViolation: true }
+    );
+    expect(() => controller.check()).toThrow("flagTrue: observable invariant failed");
   });
 });

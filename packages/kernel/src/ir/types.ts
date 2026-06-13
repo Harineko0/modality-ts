@@ -93,6 +93,20 @@ export interface Bounds {
   maxInternalSteps: number;
 }
 
+export interface PluginProvenance {
+  id: string;
+  version: string;
+  kind: "state-source" | "router";
+  packageNames: readonly string[];
+}
+
+export interface ExtractionCaveats {
+  globalTaints: readonly { id: string; reason: string; source?: string }[];
+  staleReads: readonly { id: string; reason: string; source?: string }[];
+  unhandledRejections: readonly { id: string; reason: string; source?: string }[];
+  unextractableHandlers: readonly { id: string; reason: string; source?: string }[];
+}
+
 export interface Model {
   schemaVersion: 1;
   id: string;
@@ -101,6 +115,9 @@ export interface Model {
   bounds: Bounds;
   metadata?: {
     sourceHashes?: Record<string, string>;
+    plugins?: readonly PluginProvenance[];
+    domainProvenance?: Record<string, "overlay-refined">;
+    extractionCaveats?: ExtractionCaveats;
   };
 }
 

@@ -51,13 +51,27 @@ describe("applyOverlay", () => {
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(["toggle"]);
   });
 
+  it("applies domain refinements and marks their provenance", () => {
+    const result = applyOverlay(model, {
+      domains: [{ var: "debug", domain: { kind: "enum", values: ["off", "on"] }, initial: "off" }]
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.model.vars.find((decl) => decl.id === "debug")).toMatchObject({
+      domain: { kind: "enum", values: ["off", "on"] },
+      initial: "off"
+    });
+    expect(result.model.metadata?.domainProvenance).toEqual({ debug: "overlay-refined" });
+  });
+
   it("reports orphan overlay entries as errors", () => {
     const result = applyOverlay(model, {
       transitions: [{ ...model.transitions[0]!, id: "missing" }],
-      ignoreVars: ["alsoMissing"]
+      ignoreVars: ["alsoMissing"],
+      domains: [{ var: "domainMissing", domain: { kind: "bool" } }]
     });
     expect(result.errors).toEqual([
       "Overlay transition missing does not match an extracted transition",
+      "Overlay domain domainMissing does not match a state variable",
       "Overlay ignoreVar alsoMissing does not match a state variable"
     ]);
     expect(result.model).toBe(model);

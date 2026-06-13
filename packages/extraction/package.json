@@ -3,7 +3,18 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./pipeline": {
+      "types": "./dist/pipeline/index.d.ts",
+      "default": "./dist/pipeline/index.js"
+    },
+    "./spi": {
+      "types": "./dist/spi/index.d.ts",
+      "default": "./dist/spi/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -b"

@@ -12,6 +12,10 @@
     "@modality/checker": "workspace:*",
     "@modality/extraction": "workspace:*",
     "@modality/harness": "workspace:*",
-    "@modality/kernel": "workspace:*"
+    "@modality/kernel": "workspace:*",
+    "@modality/source-jotai": "workspace:*",
+    "@modality/source-router": "workspace:*",
+    "@modality/source-swr": "workspace:*",
+    "@modality/source-use-state": "workspace:*"
   }
 }

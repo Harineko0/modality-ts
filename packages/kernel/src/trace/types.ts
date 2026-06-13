@@ -11,3 +11,8 @@ export interface TraceStep {
 export interface Trace {
   steps: TraceStep[];
 }
+
+export interface TraceArtifact extends Trace {
+  schemaVersion: 1;
+  kind: "trace";
+}

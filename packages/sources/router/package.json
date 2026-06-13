@@ -1,0 +1,34 @@
+{
+  "name": "@modality/source-router",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./harness": {
+      "types": "./src/harness.ts",
+      "default": "./src/harness.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "peerDependencies": {
+    "react-router": ">=6",
+    "react-router-dom": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "react-router": {
+      "optional": true
+    },
+    "react-router-dom": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@modality/extraction": "workspace:*",
+    "@modality/kernel": "workspace:*"
+  }
+}

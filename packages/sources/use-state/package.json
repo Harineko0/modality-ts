@@ -1,0 +1,23 @@
+{
+  "name": "@modality/source-use-state",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./harness": {
+      "types": "./src/harness.ts",
+      "default": "./src/harness.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@modality/extraction": "workspace:*",
+    "@modality/kernel": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

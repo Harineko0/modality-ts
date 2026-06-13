@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "../../../checker/src/index.js";
 import { always, reachable, type Model } from "@modality/kernel";
-import { createSwrKeyWindowTemplate, createSwrTemplate, swrVarId, swrView, swrWindowView } from "../src/index.js";
+import { createSwrKeyWindowTemplate, createSwrTemplate, discoverSwrHooks, swrSource, swrVarId, swrView, swrWindowView } from "../src/index.js";
+import { observe, setup } from "../src/harness.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -49,6 +50,73 @@ function model(): Model {
 }
 
 describe("SWR template", () => {
+  it("exposes a StateSourcePlugin-compatible source slice", () => {
+    const plugin = swrSource();
+    expect(plugin.id).toBe("swr");
+    expect(plugin.packageNames).toEqual(["swr"]);
+    expect(plugin.discover({ sourceText: "", fileName: "App.tsx", route: "/" })).toEqual([]);
+    expect(plugin.writeChannels({ sourceText: "", fileName: "App.tsx" })).toEqual([]);
+    expect(plugin.conformance?.testedVersions).toBe("swr>=2");
+  });
+
+  it("observes SWR data values through harness cache handles", () => {
+    const handles = setup({ cache: new Map([["api_user", { id: "u1" }]]) });
+    expect(observe("swr:api_user:data", handles)).toEqual({ value: { id: "u1" } });
+    expect(swrSource().harness.observe("swr:api_user:data", handles)).toEqual({ value: { id: "u1" } });
+  });
+
+  it("falls back to initial model state for SWR observation", () => {
+    expect(observe("swr:api_user:error", setup({ initialState: { "swr:api_user:error": false } }))).toEqual({ value: false });
+    expect(observe("swr:missing:data", setup({}))).toBe("unobservable");
+  });
+
+  it("discovers useSWR call sites and instantiates template fragments through SPI", () => {
+    const source = `
+      import useSWR from 'swr';
+      type Todo = { id: string };
+      export function App() {
+        const { data } = useSWR<Todo[]>('/api/todos', fetchTodos, { revalidateOnFocus: true });
+        return data?.length;
+      }
+    `;
+    const decls = discoverSwrHooks(source, "App.tsx");
+    expect(decls).toEqual([
+      {
+        id: "swr:api_todos",
+        kind: "swr/useSWR",
+        origin: { file: "App.tsx", line: 5, column: 26 },
+        metadata: {
+          key: "/api/todos",
+          id: "api_todos",
+          op: "GET /api/todos",
+          payloadDomain: { kind: "lengthCat" },
+          revalidateOnFocus: true
+        }
+      }
+    ]);
+    const fragment = swrSource().template?.(decls[0]!, { route: "/" });
+    expect(fragment?.vars.map((decl) => decl.id)).toEqual(["swr:api_todos:data", "swr:api_todos:isValidating", "swr:api_todos:error"]);
+    expect(fragment?.transitions.map((transition) => transition.id)).toContain("swr:api_todos:focus-revalidate");
+  });
+
+  it("extracts conditional literal keys as guarded template declarations", () => {
+    const source = `
+      import { useSWR } from 'swr';
+      export function App() {
+        useSWR(isLoggedIn ? '/api/me' : null);
+      }
+    `;
+    const decl = discoverSwrHooks(source, "App.tsx")[0];
+    expect(decl).toMatchObject({
+      id: "swr:api_me",
+      metadata: {
+        activeWhen: { kind: "read", var: "isLoggedIn" }
+      }
+    });
+    const fragment = swrSource().template?.(decl!, { route: "/" });
+    expect(fragment?.transitions[0]?.guard).toEqual({ kind: "read", var: "isLoggedIn" });
+  });
+
   it("models loading, success data, and stale-data retention on error", () => {
     const m = model();
     const result = checkModel(m, [

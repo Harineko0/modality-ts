@@ -116,7 +116,7 @@ function checkoutProperties(model: Model): Property[] {
       (_pre, step, post) =>
         !(step.resolved("POST_ORDER", "success") && post.step === "success" && post.auth === "user") ||
         step.op?.args.plan === post.plan,
-      { name: "orderSuccessMatchesCart", reads: ["plan", "step", "sys:pending"] }
+      { name: "orderSuccessMatchesCart", reads: ["auth", "plan", "step", "sys:pending"] }
     ),
     reachableFrom(
       model,
@@ -131,6 +131,7 @@ describe("hand-written checkout IR", () => {
   it("reproduces representative stale-submit checkout violations", () => {
     const model = checkoutModel();
     const result = checkModel(model, checkoutProperties(model));
+    expect(result.stats).toEqual({ states: 44, edges: 176, depth: 10 });
     const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
 
     expect(byName.get("guestCannotReachSuccess")?.status).toBe("violated");

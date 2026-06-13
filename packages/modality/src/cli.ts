@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-import { runCheckCommand } from "./check.js";
-import { runCiCommand } from "./ci.js";
-import { runConformCommand } from "./conform.js";
-import { runExportTlaCommand } from "./export-tla.js";
-import { runExtractCommand } from "./extract.js";
-import { runReplayCommand } from "./replay.js";
+import { runCheckCommand } from "./features/check/index.js";
+import { runCiCommand } from "./features/ci/index.js";
+import { runConformCommand } from "./features/conform/index.js";
+import { runExportTlaCommand } from "./features/export/index.js";
+import { runExtractCommand } from "./features/extract/index.js";
+import { runReplayCommand } from "./features/replay/index.js";
 
 async function main(): Promise<void> {
   const [, , command, ...args] = process.argv;
   if (command !== "check" && command !== "ci" && command !== "conform" && command !== "export" && command !== "extract" && command !== "replay") {
-    console.log("Usage: modality extract <source.tsx> --out model.json [--report extraction-report.json] [--expect-model expected.json] [--effect-api name]");
+    console.log("Usage: modality extract <source.tsx> --out model.json [--app-model app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
-    console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8]");
-    console.log("       modality replay <trace.json> --states states.json [--report report.json]");
+    console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]");
+    console.log("       modality replay <trace.json> [--states states.json] [--observed observed-states.json] [--report report.json]");
     console.log("       modality conform <walks.json> [--report conform-report.json]");
     console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--report conform-report.json]");
     console.log("       modality export <model.json> --format tla --out model.tla");
@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     const conformDepthFlag = args.indexOf("--conform-depth");
     const conformSeedFlag = args.indexOf("--conform-seed");
     const minConformPassRateFlag = args.indexOf("--min-conform-pass-rate");
+    const minTransitionConformPassRateFlag = args.indexOf("--min-transition-conform-pass-rate");
     const artifactDir = artifactsFlag >= 0 ? args[artifactsFlag + 1] : undefined;
     const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
     const baselinePath = baselineFlag >= 0 ? args[baselineFlag + 1] : undefined;
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
     const conformDepth = conformDepthFlag >= 0 && args[conformDepthFlag + 1] ? Number(args[conformDepthFlag + 1]) : undefined;
     const conformSeed = conformSeedFlag >= 0 && args[conformSeedFlag + 1] ? Number(args[conformSeedFlag + 1]) : undefined;
     const minConformPassRate = minConformPassRateFlag >= 0 && args[minConformPassRateFlag + 1] ? Number(args[minConformPassRateFlag + 1]) : undefined;
+    const minTransitionConformPassRate = minTransitionConformPassRateFlag >= 0 && args[minTransitionConformPassRateFlag + 1] ? Number(args[minTransitionConformPassRateFlag + 1]) : undefined;
     const positional = args.filter((arg, index) =>
       index !== artifactsFlag && index !== artifactsFlag + 1 &&
       index !== overlayFlag && index !== overlayFlag + 1 &&
@@ -46,7 +48,8 @@ async function main(): Promise<void> {
       index !== conformCountFlag && index !== conformCountFlag + 1 &&
       index !== conformDepthFlag && index !== conformDepthFlag + 1 &&
       index !== conformSeedFlag && index !== conformSeedFlag + 1 &&
-      index !== minConformPassRateFlag && index !== minConformPassRateFlag + 1
+      index !== minConformPassRateFlag && index !== minConformPassRateFlag + 1 &&
+      index !== minTransitionConformPassRateFlag && index !== minTransitionConformPassRateFlag + 1
     );
     const [modelPath, propsPath] = positional;
     if (!modelPath) throw new Error("Missing model.json path");
@@ -55,7 +58,7 @@ async function main(): Promise<void> {
     if (baselineFlag >= 0 && !baselinePath) throw new Error("Missing --baseline path");
     if (sourceFlag >= 0 && !sourcePath) throw new Error("Missing --source path");
     if (conformWalksFlag >= 0 && !conformWalksPath) throw new Error("Missing --conform-walks path");
-    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, sourcePath, conformWalksPath, conformCount, conformDepth, conformSeed, minConformPassRate });
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, sourcePath, conformWalksPath, conformCount, conformDepth, conformSeed, minConformPassRate, minTransitionConformPassRate });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }
@@ -107,34 +110,49 @@ async function main(): Promise<void> {
   }
   if (command === "extract") {
     const outFlag = args.indexOf("--out");
+    const appModelFlag = args.indexOf("--app-model");
     const reportFlag = args.indexOf("--report");
     const overlayFlag = args.indexOf("--overlay");
     const expectModelFlag = args.indexOf("--expect-model");
+    const configFlag = args.indexOf("--config");
+    const packageJsonFlag = args.indexOf("--package-json");
+    const explainDrift = args.includes("--explain-drift");
     const effectApiFlags = args.flatMap((arg, index) => (arg === "--effect-api" && args[index + 1] ? [args[index + 1]!] : []));
-    const sourcePath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== reportFlag + 1 && index !== overlayFlag + 1 && index !== expectModelFlag + 1 && args[index - 1] !== "--effect-api");
+    const disabledPlugins = args.flatMap((arg, index) => (arg === "--disable-plugin" && args[index + 1] ? [args[index + 1]!] : []));
+    const sourcePath = args.find((arg, index) => !arg.startsWith("--") && index !== outFlag + 1 && index !== appModelFlag + 1 && index !== reportFlag + 1 && index !== overlayFlag + 1 && index !== expectModelFlag + 1 && index !== configFlag + 1 && index !== packageJsonFlag + 1 && args[index - 1] !== "--effect-api" && args[index - 1] !== "--disable-plugin");
     const modelPath = outFlag >= 0 ? args[outFlag + 1] : undefined;
+    const appModelPath = appModelFlag >= 0 ? args[appModelFlag + 1] : undefined;
     const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
     const overlayPath = overlayFlag >= 0 ? args[overlayFlag + 1] : undefined;
     const expectModelPath = expectModelFlag >= 0 ? args[expectModelFlag + 1] : undefined;
+    const configPath = configFlag >= 0 ? args[configFlag + 1] : undefined;
+    const packageJsonPath = packageJsonFlag >= 0 ? args[packageJsonFlag + 1] : undefined;
     if (!sourcePath) throw new Error("Missing source.tsx path");
     if (!modelPath) throw new Error("Missing --out path");
+    if (appModelFlag >= 0 && !appModelPath) throw new Error("Missing --app-model path");
     if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
     if (overlayFlag >= 0 && !overlayPath) throw new Error("Missing --overlay path");
     if (expectModelFlag >= 0 && !expectModelPath) throw new Error("Missing --expect-model path");
-    const result = await runExtractCommand({ sourcePath, modelPath, reportPath, overlayPath, expectModelPath, effectApis: effectApiFlags });
+    if (configFlag >= 0 && !configPath) throw new Error("Missing --config path");
+    if (packageJsonFlag >= 0 && !packageJsonPath) throw new Error("Missing --package-json path");
+    if (args.includes("--disable-plugin") && disabledPlugins.length === 0) throw new Error("Missing --disable-plugin id");
+    const result = await runExtractCommand({ sourcePath, modelPath, appModelPath, reportPath, overlayPath, expectModelPath, configPath, packageJsonPath, disabledPlugins, effectApis: effectApiFlags, explainDrift });
     for (const line of result.lines) console.log(line);
     process.exit(0);
   }
   if (command === "replay") {
     const reportFlag = args.indexOf("--report");
     const statesFlag = args.indexOf("--states");
+    const observedFlag = args.indexOf("--observed");
     const reportPath = reportFlag >= 0 ? args[reportFlag + 1] : undefined;
     const statesPath = statesFlag >= 0 ? args[statesFlag + 1] : undefined;
-    const tracePath = args.find((arg, index) => !arg.startsWith("--") && index !== reportFlag + 1 && index !== statesFlag + 1);
+    const observedPath = observedFlag >= 0 ? args[observedFlag + 1] : undefined;
+    const tracePath = args.find((arg, index) => !arg.startsWith("--") && index !== reportFlag + 1 && index !== statesFlag + 1 && index !== observedFlag + 1);
     if (!tracePath) throw new Error("Missing trace.json path");
-    if (!statesPath) throw new Error("Missing --states path");
     if (reportFlag >= 0 && !reportPath) throw new Error("Missing --report path");
-    const result = await runReplayCommand({ tracePath, statesPath, reportPath });
+    if (statesFlag >= 0 && !statesPath) throw new Error("Missing --states path");
+    if (observedFlag >= 0 && !observedPath) throw new Error("Missing --observed path");
+    const result = await runReplayCommand({ tracePath, statesPath, observedPath, reportPath });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }

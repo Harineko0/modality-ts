@@ -163,6 +163,7 @@ describe("hand-written ToDo IR", () => {
   it("reproduces the walkthrough verdicts for the core properties", () => {
     const model = todoModel();
     const result = checkModel(model, todoProperties(model));
+    expect(result.stats).toEqual({ states: 139, edges: 435, depth: 10 });
     const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
 
     for (const name of ["guestCannotSubmit", "emptyDraftCannotSubmit", "noSubmitWhilePosting", "failedPostKeepsDraft", "successResets", "logoutAvailableDuringGetError"]) {

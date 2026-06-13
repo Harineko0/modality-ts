@@ -23,7 +23,8 @@ Phases 1–3 need no React, no ts-morph, no DOM — pure Node — which is where
 
 ## Standing verification machinery (built once, runs always)
 
-- **Verify and commit the implemented outputs everytime after each phase has done.**
+- **Verify and commit the implemented outputs after each phase (Phase 1 ~ Phase 7) has done.**
+- **Strictly follow software architecture defined in docs/specs/05-architecture.md**
 - **Golden snapshots**: extraction output (`model.json`) per fixture app, reviewed as diffs in PRs — the model diff is the review artifact.
 - **Walkthrough conformance suite**: the verdict tables of both walkthroughs encoded as test expectations; any spec or code change that flips a verdict must update the walkthrough document in the same PR (docs and behavior cannot drift apart silently).
 - **Determinism check** in CI: every checker run executed twice, outputs byte-compared.

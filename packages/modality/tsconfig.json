@@ -5,6 +5,7 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "references": [{ "path": "../kernel" }, { "path": "../checker" }, { "path": "../extraction" }, { "path": "../harness" }],
-  "include": ["src/**/*.ts"]
+  "references": [{ "path": "../kernel" }, { "path": "../checker" }, { "path": "../extraction" }, { "path": "../harness" }, { "path": "../sources/jotai" }, { "path": "../sources/router" }, { "path": "../sources/swr" }, { "path": "../sources/use-state" }],
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -5,12 +5,16 @@
   "type": "module",
   "packageManager": "pnpm@10.12.4",
   "scripts": {
+    "architecture": "depcruise --config tools/depcruise.config.cjs packages",
     "build": "pnpm -r build",
+    "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "dependency-cruiser": "^17.4.3",
+    "jsdom": "^29.1.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14"

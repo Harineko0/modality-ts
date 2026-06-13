@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Trace } from "@modality/kernel";
-import { generateAbstractReplayTest, generateActionReplayTest } from "../src/codegen/replay-test.js";
+import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../src/codegen/replay-test.js";
+
+const execFileAsync = promisify(execFile);
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 describe("generateAbstractReplayTest", () => {
   it("emits a deterministic abstract replay vitest file", () => {
@@ -15,10 +23,11 @@ describe("generateAbstractReplayTest", () => {
         }
       ]
     };
-    const artifact = generateAbstractReplayTest("flag starts false", trace, [{ flag: false }, { flag: true }]);
+    const artifact = generateAbstractReplayTest("flag starts false", trace);
     expect(artifact.fileName).toBe("flag_starts_false.replay.test.ts");
     expect(artifact.source).toContain('describe("replay flag starts false"');
     expect(artifact.source).toContain('expect(verdict.status).toBe("reproduced");');
+    expect(artifact.source).toContain("statesFromTrace(trace)");
     expect(artifact.source).toContain('"transitionId":"setFlag"');
   });
 
@@ -36,8 +45,77 @@ describe("generateAbstractReplayTest", () => {
     };
     const artifact = generateActionReplayTest("draft can change", trace);
     expect(artifact.fileName).toBe("draft_can_change.action.replay.test.ts");
-    expect(artifact.source).toContain("ActionReplayDriver");
+    expect(artifact.source).toContain("@vitest-environment jsdom");
+    expect(artifact.source).toContain("createDomReplayActor");
+    expect(artifact.source).toContain("ObservableActionReplayDriver");
+    expect(artifact.source).toContain("ModalityReplayHarness");
+    expect(artifact.source).toContain('from "./modality.replay.harness.js"');
+    expect(artifact.source).toContain("renderModalityReplay(trace)");
+    expect(artifact.source).toContain("observeModalityReplay(replayHarness)");
+    expect(artifact.source).toContain("...(replayHarness.sources ?? [])");
     expect(artifact.source).toContain('"locator":{"kind":"testId","value":"draft"}');
     expect(artifact.source).toContain('"valueClass":"nonEmpty"');
   });
+
+  it("emits a typed starter app replay harness", () => {
+    const artifact = generateReplayHarness();
+    expect(artifact.fileName).toBe("modality.replay.harness.ts");
+    expect(artifact.source).toContain("renderModalityReplay");
+    expect(artifact.source).toContain("observeModalityReplay");
+    expect(artifact.source).toContain("ModalityReplayHarness");
+    expect(artifact.source).toContain("data-modality-var");
+    expect(artifact.source).toContain("dom-projection");
+    expect(artifact.source).toContain("__modalityRenderReplayApp");
+  });
+
+  it("emits generated action replay files that execute under jsdom", async () => {
+    const trace: Trace = {
+      steps: [
+        {
+          transitionId: "setFlag",
+          label: { kind: "click", locator: { kind: "testId", value: "set-flag" } },
+          pre: { flag: false },
+          post: { flag: true },
+          diff: { flag: { before: false, after: true } }
+        }
+      ]
+    };
+    const dir = resolve(repoRoot, "packages/modality/.tmp-generated-replay");
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    const harness = generateReplayHarness();
+    const replay = generateActionReplayTest("flag starts false", trace);
+    await writeFile(resolve(dir, harness.fileName), `${generatedAppHook()}\n${harness.source}`, "utf8");
+    await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+
+    try {
+      const result = await execFileAsync("pnpm", ["vitest", "run", resolve(dir, replay.fileName)], {
+        cwd: repoRoot,
+        env: { ...process.env, FORCE_COLOR: "0" },
+        timeout: 30_000
+      });
+      expect(result.stdout).toContain("1 passed");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
+
+function generatedAppHook(): string {
+  return [
+    `globalThis.__modalityRenderReplayApp = () => {`,
+    `  let flag = false;`,
+    `  document.body.replaceChildren();`,
+    `  const button = document.createElement("button");`,
+    `  button.dataset.testid = "set-flag";`,
+    `  button.textContent = "Set flag";`,
+    `  const output = document.createElement("output");`,
+    `  output.setAttribute("data-modality-var", "flag");`,
+    `  const paint = () => { output.textContent = JSON.stringify(flag); };`,
+    `  button.addEventListener("click", () => { flag = true; paint(); });`,
+    `  document.body.append(button, output);`,
+    `  paint();`,
+    `  return {};`,
+    `};`
+  ].join("\n");
+}

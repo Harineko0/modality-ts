@@ -1,5 +1,4 @@
-import { canonicalJson } from "@modality/kernel";
-import type { ModelState, Property, Value } from "@modality/kernel";
+import type { ModelState, Property, Value } from "@modality/kernel/props";
 
 export interface Observable<TContext = unknown> {
   var: string;
@@ -34,6 +33,27 @@ export interface ObservableInvariantResult {
   skipped: ObservableInvariantSkip[];
 }
 
+export interface ModalityAssertionStore<TContext> {
+  getSnapshot(): TContext;
+  subscribe(listener: () => void): () => void;
+}
+
+export interface ModalityAssertionEvent<TContext = unknown> {
+  result: ObservableInvariantResult;
+  context: TContext;
+}
+
+export interface ModalityAssertionOptions<TContext = unknown> {
+  onResult?: (event: ModalityAssertionEvent<TContext>) => void;
+  onViolation?: (event: ModalityAssertionEvent<TContext>) => void;
+  throwOnViolation?: boolean;
+}
+
+export interface ModalityAssertionController {
+  check(): ObservableInvariantResult;
+  start(): () => void;
+}
+
 export function observable<TContext>(varId: string, read: (context: TContext) => Value): Observable<TContext> {
   return { var: varId, read };
 }
@@ -45,7 +65,7 @@ export function assertObservableState<TContext>(
 ): ObservableAssertion {
   const mismatches = observables
     .map((probe) => ({ var: probe.var, expected: expected[probe.var], actual: probe.read(context) }))
-    .filter((mismatch) => canonicalJson(mismatch.expected) !== canonicalJson(mismatch.actual));
+    .filter((mismatch) => stableJson(mismatch.expected) !== stableJson(mismatch.actual));
   return { ok: mismatches.length === 0, mismatches };
 }
 
@@ -56,12 +76,20 @@ export function assertObservableStateOrThrow<TContext>(
 ): void {
   const assertion = assertObservableState(expected, observables, context);
   if (!assertion.ok) {
-    throw new Error(`Observable state mismatch: ${assertion.mismatches.map((mismatch) => `${mismatch.var} expected=${canonicalJson(mismatch.expected)} actual=${canonicalJson(mismatch.actual)}`).join("; ")}`);
+    throw new Error(`Observable state mismatch: ${assertion.mismatches.map((mismatch) => `${mismatch.var} expected=${stableJson(mismatch.expected)} actual=${stableJson(mismatch.actual)}`).join("; ")}`);
   }
 }
 
 export function readObservableState<TContext>(observables: readonly Observable<TContext>[], context: TContext): ModelState {
   return Object.fromEntries(observables.map((probe) => [probe.var, probe.read(context)]));
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function evaluateObservableInvariants<TContext>(
@@ -103,4 +131,34 @@ export function assertObservableInvariantsOrThrow<TContext>(
   if (!result.ok) {
     throw new Error(`Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`);
   }
+}
+
+export function createModalityAssertions<TContext>(
+  properties: readonly Property[],
+  observables: readonly Observable<TContext>[],
+  store: ModalityAssertionStore<TContext>,
+  options: ModalityAssertionOptions<TContext> = {}
+): ModalityAssertionController {
+  const check = (): ObservableInvariantResult => {
+    const context = store.getSnapshot();
+    const result = evaluateObservableInvariants(properties, observables, context);
+    const event = { result, context };
+    options.onResult?.(event);
+    if (!result.ok) {
+      options.onViolation?.(event);
+      if (options.throwOnViolation) {
+        throw new Error(`Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`);
+      }
+    }
+    return result;
+  };
+  return {
+    check,
+    start() {
+      check();
+      return store.subscribe(() => {
+        check();
+      });
+    }
+  };
 }

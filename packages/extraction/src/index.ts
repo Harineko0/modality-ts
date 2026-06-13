@@ -1,11 +1,17 @@
 import * as ts from "typescript";
-import type { AbstractDomain, ExprIR, Locator, StateVarDecl, Transition, Value } from "@modality/kernel";
+import type { AbstractDomain, EffectIR, ExprIR, Locator, StateVarDecl, Transition, Value } from "@modality/kernel";
+import type { WriteChannel } from "./spi/index.js";
+
+export * from "./pipeline/index.js";
+export * from "./spi/index.js";
 
 export interface UseStateExtractionOptions {
   route?: string;
   fileName?: string;
   effectApis?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  stateVars?: readonly StateVarDecl[];
+  writeChannels?: readonly WriteChannel[];
 }
 
 export interface ExtractionWarning {
@@ -28,8 +34,39 @@ interface SetterBinding {
   stateName: string;
   domain: AbstractDomain;
 }
+interface SetterCall {
+  setter: SetterBinding;
+  argument: ts.Expression;
+}
 
 type ExtractableHandler = ts.ArrowFunction | ts.FunctionExpression;
+type ComponentDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+type CustomHookDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+type InternalTransition = Transition & { __stableIdKey?: string };
+interface BoundExpr {
+  expr: ExprIR;
+  reads: string[];
+}
+interface HookStateReturn {
+  domain: AbstractDomain;
+  initial: Value;
+}
+
+interface EffectSummary {
+  effect: Extract<EffectIR, { kind: "assign" | "havoc" }>;
+  reads: string[];
+}
+
+function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
+  const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
+  const atomMatch = /^atom:(.+)$/.exec(decl.id);
+  return {
+    varId: decl.id,
+    component: localMatch?.[1] ?? "Anonymous",
+    stateName: localMatch?.[2] ?? atomMatch?.[1] ?? decl.id,
+    domain: decl.domain
+  };
+}
 
 export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
@@ -63,47 +100,126 @@ export function extractUseStateVars(sourceText: string, options: UseStateExtract
 export function extractUseStateSkeleton(sourceText: string, options: UseStateExtractionOptions = {}): ExtractedModelSkeleton {
   const fileName = options.fileName ?? "App.tsx";
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const vars: StateVarDecl[] = [];
+  const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
   const effectApis = new Set(options.effectApis ?? []);
   const setters = new Map<string, SetterBinding>();
+  const globalTaints = new Set<string>();
+  const components = componentDeclarations(source);
+  const customHooks = customHookDeclarations(source);
+  const statefulListComponents = detectStatefulListComponents(source, components);
+  const reportedStatefulListComponents = new Set<string>();
+  const reportedCustomHooks = new Set<string>();
+  if (options.stateVars && options.writeChannels) {
+    for (const channel of options.writeChannels) {
+      const decl = options.stateVars.find((candidate) => candidate.id === channel.varId);
+      if (!decl) continue;
+      setters.set(channel.symbolName, setterBindingFromDecl(decl));
+    }
+  }
   const handlers = new Map<string, ExtractableHandler>();
   const visit = (node: ts.Node, componentName: string | undefined): void => {
+    if (!componentName && isCustomHookDeclaration(node)) return;
     const nextComponent = componentNameFor(node) ?? componentName;
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isExtractableHandler(node.initializer)) {
       handlers.set(node.name.text, node.initializer);
     }
+    if (ts.isVariableDeclaration(node) && node.initializer && isUseReducerCall(node.initializer)) {
+      warnings.push({ message: `Unsupported useReducer ${nextComponent ?? "Anonymous"}.useReducer`, ...lineAndColumn(source, node) });
+    }
+    if (ts.isVariableDeclaration(node) && nextComponent && inlineCustomHookState(source, fileName, node, customHooks, vars, setters, nextComponent, route)) {
+      return;
+    }
+    const customHook = calledCustomHook(node, new Set(customHooks.keys()));
+    if (customHook && nextComponent) {
+      const key = `${nextComponent}.${customHook}`;
+      if (!reportedCustomHooks.has(key)) {
+        reportedCustomHooks.add(key);
+        warnings.push({ message: `Unextractable custom hook ${key}`, ...lineAndColumn(source, node) });
+      }
+    }
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseStateCall(node.initializer)) {
+      if (nextComponent && statefulListComponents.has(nextComponent)) {
+        if (!reportedStatefulListComponents.has(nextComponent)) {
+          reportedStatefulListComponents.add(nextComponent);
+          warnings.push({ message: `Unextractable stateful list item ${nextComponent}`, ...lineAndColumn(source, node) });
+        }
+        ts.forEachChild(node, (child) => visit(child, nextComponent));
+        return;
+      }
       const stateName = node.name.elements[0];
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const domain = inferUseStateDomain(node.initializer);
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
-        vars.push({
-          id: varId,
-          domain,
-          origin: { file: fileName, ...lineAndColumn(source, node) },
-          scope: { kind: "route-local", route },
-          initial: initialValueForUseState(node.initializer, domain)
-        });
+        if (!options.stateVars) {
+          vars.push({
+            id: varId,
+            domain,
+            origin: { file: fileName, ...lineAndColumn(source, node) },
+            scope: { kind: "route-local", route },
+            initial: initialValueForUseState(node.initializer, domain)
+          });
+        }
         if (setterName && ts.isBindingElement(setterName) && ts.isIdentifier(setterName.name)) {
-          setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text, domain });
+          if (!options.writeChannels) setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text, domain });
         }
       } else {
         warnings.push({ message: "Unsupported useState binding pattern", ...lineAndColumn(source, node) });
       }
     }
-    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text)) {
+    const refTaint = refSetterTaint(node, setters);
+    if (refTaint) {
+      const key = `Global taint ${refTaint.varId}`;
+      if (!globalTaints.has(key)) {
+        globalTaints.add(key);
+        warnings.push({ message: key, ...lineAndColumn(source, refTaint.node) });
+      }
+    }
+    transitions.push(...transitionsFromTimerCall(source, fileName, node, setters, nextComponent ?? "Anonymous"));
+    for (const timerTaint of timerSetterTaints(node, setters)) {
+      const key = `Global taint ${timerTaint.varId}`;
+      if (!globalTaints.has(key)) {
+        globalTaints.add(key);
+        warnings.push({ message: key, ...lineAndColumn(source, timerTaint.node) });
+      }
+    }
+    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isForwardablePropName(node.name.text) && !isIntrinsicJsxAttribute(node)) {
+      const extracted = transitionsFromComponentPropAttribute(source, fileName, node, setters, handlers, components, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, warnings);
+      transitions.push(...extracted);
+      if (extracted.length === 0) {
+        warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
+      }
+    }
+    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text) && isIntrinsicJsxAttribute(node)) {
+      const listInfo = listRenderedHandlerInfo(node, vars, nextComponent ?? "Anonymous");
+      if (listInfo) {
+        if (listInfo.domain.kind === "boundedList") {
+          const extracted = transitionsFromBoundedListAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", {
+            varId: listInfo.varId,
+            domain: listInfo.domain,
+            itemName: listInfo.itemName
+          });
+          if (extracted.length > 0) {
+            transitions.push(...tagStableIdKey(extracted, node));
+            ts.forEachChild(node, (child) => visit(child, nextComponent));
+            return;
+          }
+        }
+        warnings.push({ message: `Unextractable list-rendered handler ${nextComponent ?? "Anonymous"}.${node.name.text} over ${listInfo.domain.kind} ${listInfo.varId}`, ...lineAndColumn(source, node) });
+        ts.forEachChild(node, (child) => visit(child, nextComponent));
+        return;
+      }
       const guard = combineParsedGuards([
         renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous"),
         disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous")
       ]);
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard);
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard, warnings);
       transitions.push(...extracted);
-      if (extracted.length === 0) {
+      if (extracted.length === 0 && !forwardsComponentProp(node, handlers, components.get(nextComponent ?? "")) && !handlerSchedulesModeledTimer(node, handlers, setters)) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
       }
     }
@@ -117,7 +233,52 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
     ts.forEachChild(node, (child) => visit(child, nextComponent));
   };
   visit(source, undefined);
-  return { vars, transitions, warnings };
+  return { vars, transitions: withStableTransitionIds(transitions), warnings };
+}
+
+function withStableTransitionIds(transitions: readonly Transition[]): Transition[] {
+  const groups = new Map<string, InternalTransition[]>();
+  for (const transition of transitions) {
+    const group = groups.get(transition.id) ?? [];
+    group.push(transition as InternalTransition);
+    groups.set(transition.id, group);
+  }
+  const emitted = new Map<string, number>();
+  return transitions.map((transition) => {
+    const internal = transition as InternalTransition;
+    const group = groups.get(transition.id) ?? [];
+    const base = stripInternalTransition(internal);
+    if (group.length <= 1) return base;
+    const suffix = shortHash(internal.__stableIdKey ?? canonicalTransitionKey(base));
+    const id = `${transition.id}.${suffix}`;
+    const count = emitted.get(id) ?? 0;
+    emitted.set(id, count + 1);
+    return { ...base, id: count === 0 ? id : `${id}.${count + 1}` };
+  });
+}
+
+function stripInternalTransition(transition: InternalTransition): Transition {
+  const { __stableIdKey: _ignored, ...publicTransition } = transition;
+  return publicTransition;
+}
+
+function canonicalTransitionKey(transition: Transition): string {
+  return JSON.stringify({
+    label: transition.label,
+    guard: transition.guard,
+    effect: transition.effect,
+    reads: transition.reads,
+    writes: transition.writes
+  });
+}
+
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(6, "0").slice(0, 6);
 }
 
 function inferUseStateDomain(call: ts.CallExpression): AbstractDomain {
@@ -135,6 +296,8 @@ function inferUseStateDomain(call: ts.CallExpression): AbstractDomain {
 function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain): Value {
   const initial = call.arguments[0];
   if (!initial) return firstValue(domain);
+  const parsed = initialValueFromExpression(initial, domain);
+  if (parsed !== undefined) return parsed;
   if (initial.kind === ts.SyntaxKind.TrueKeyword) return true;
   if (initial.kind === ts.SyntaxKind.FalseKeyword) return false;
   if (ts.isStringLiteral(initial)) return initial.text;
@@ -142,6 +305,23 @@ function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain
   if (initial.kind === ts.SyntaxKind.NullKeyword) return null;
   if (ts.isArrayLiteralExpression(initial)) return initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many";
   return firstValue(domain);
+}
+
+function initialValueFromExpression(expression: ts.Expression, domain: AbstractDomain): Value | undefined {
+  const literal = literalValue(expression);
+  if (literal !== undefined) return literal;
+  if (domain.kind === "option") return initialValueFromExpression(expression, domain.inner);
+  if (domain.kind === "record" && ts.isObjectLiteralExpression(expression)) {
+    const fields: Record<string, Value> = {};
+    for (const [field, fieldDomain] of Object.entries(domain.fields)) {
+      const property = expression.properties.find((candidate): candidate is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(candidate) && propertyName(candidate.name) === field
+      );
+      fields[field] = property ? initialValueFromExpression(property.initializer, fieldDomain) ?? firstValue(fieldDomain) : firstValue(fieldDomain);
+    }
+    return fields;
+  }
+  return undefined;
 }
 
 function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
@@ -155,27 +335,35 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
 
 function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
   const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
-  if (nonNull.length !== node.types.length && nonNull.length === 1) {
-    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0]) };
+  if (nonNull.length !== node.types.length && nonNull.length > 0) {
+    return { kind: "option", inner: nonNull.length === 1 ? inferDomainFromTypeNode(nonNull[0]) : domainFromUnionMembers(nonNull) };
   }
+  return domainFromUnionMembers(node.types);
+}
+
+function domainFromUnionMembers(types: readonly ts.TypeNode[]): AbstractDomain {
   const literalValues: string[] = [];
   const numericValues: number[] = [];
-  for (const part of node.types) {
-    if (!ts.isLiteralTypeNode(part)) return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
+  for (const part of types) {
+    if (!ts.isLiteralTypeNode(part)) return taggedUnionFromMembers(types) ?? { kind: "tokens", count: 1 };
     const lit = part.literal;
     if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
     else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
-    else return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
+    else return taggedUnionFromMembers(types) ?? { kind: "tokens", count: 1 };
   }
-  if (numericValues.length === node.types.length) {
+  if (numericValues.length === types.length) {
     return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
   }
   return { kind: "enum", values: literalValues };
 }
 
 function taggedUnionFrom(node: ts.UnionTypeNode): AbstractDomain | undefined {
-  const members = node.types.filter(ts.isTypeLiteralNode);
-  if (members.length !== node.types.length) return undefined;
+  return taggedUnionFromMembers(node.types);
+}
+
+function taggedUnionFromMembers(types: readonly ts.TypeNode[]): AbstractDomain | undefined {
+  const members = types.filter(ts.isTypeLiteralNode);
+  if (members.length !== types.length) return undefined;
   const tagCandidates = new Map<string, Set<string>>();
   for (const member of members) {
     for (const prop of member.members.filter(ts.isPropertySignature)) {
@@ -216,12 +404,117 @@ function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
 }
 
+function isUseReducerCall(node: ts.Expression): node is ts.CallExpression {
+  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useReducer";
+}
+
+function isUseRefCall(node: ts.Expression): node is ts.CallExpression {
+  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useRef";
+}
+
 function isUseEffectCall(node: ts.CallExpression): boolean {
   return ts.isIdentifier(node.expression) && node.expression.text === "useEffect";
 }
 
 function isExtractableHandler(node: ts.Expression): node is ExtractableHandler {
   return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+}
+
+function refSetterTaint(node: ts.Node, setters: Map<string, SetterBinding>): { varId: string; node: ts.Node } | undefined {
+  if (ts.isVariableDeclaration(node) && node.initializer && isUseRefCall(node.initializer)) {
+    const arg = node.initializer.arguments[0];
+    if (arg && ts.isIdentifier(arg)) {
+      const setter = setters.get(arg.text);
+      if (setter) return { varId: setter.varId, node: arg };
+    }
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left) && node.left.name.text === "current" && ts.isIdentifier(node.right)) {
+    const setter = setters.get(node.right.text);
+    if (setter) return { varId: setter.varId, node: node.right };
+  }
+  return undefined;
+}
+
+function timerSetterTaints(node: ts.Node, setters: Map<string, SetterBinding>): { varId: string; node: ts.Node }[] {
+  if (!ts.isCallExpression(node)) return [];
+  const name = callName(node.expression);
+  if (name !== "setTimeout" && name !== "setInterval") return [];
+  const callback = node.arguments[0];
+  if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback))) return [];
+  if (timerCallbackSummaries(callback, setters)) return [];
+  return uniqueSetters(settersWrittenIn(callback.body, setters)).map((setter) => ({ varId: setter.varId, node: callback }));
+}
+
+function transitionsFromTimerCall(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.Node,
+  setters: Map<string, SetterBinding>,
+  component: string
+): Transition[] {
+  if (!ts.isCallExpression(node)) return [];
+  const name = callName(node.expression);
+  if (name !== "setTimeout" && name !== "setInterval") return [];
+  const callback = node.arguments[0];
+  if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback))) return [];
+  const summaries = timerCallbackSummaries(callback, setters);
+  if (!summaries || summaries.length === 0) return [];
+  const effects = summaries.map((summary) => summary.effect);
+  const writes = uniqueStrings(effects.map((effect) => effect.var));
+  const suffix = writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") || "callback";
+  return [{
+    id: `${component}.${name}.${suffix}`,
+    cls: "env",
+    label: { kind: "timer", key: `${component}.${name}.${suffix}` },
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: effects.length === 1 ? effects[0]! : { kind: "seq", effects },
+    reads: uniqueStrings(summaries.flatMap((summary) => summary.reads)),
+    writes,
+    confidence: effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact"
+  }];
+}
+
+function timerCallbackSummaries(callback: ExtractableHandler, setters: Map<string, SetterBinding>): EffectSummary[] | undefined {
+  if (ts.isCallExpression(callback.body)) {
+    const summary = summarizeSetterCall(callback.body, setters);
+    return summary ? [summary] : undefined;
+  }
+  if (!ts.isBlock(callback.body) || callback.body.statements.length === 0) return undefined;
+  const summaries: EffectSummary[] = [];
+  for (const statement of callback.body.statements) {
+    const summary = summarizeSetterStatement(statement, setters);
+    if (!summary) return undefined;
+    summaries.push(summary);
+  }
+  return summaries;
+}
+
+function handlerSchedulesModeledTimer(attribute: ts.JsxAttribute, handlers: Map<string, ExtractableHandler>, setters: Map<string, SetterBinding>): boolean {
+  if (!attribute.initializer) return false;
+  const expression = ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined;
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return false;
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node)) {
+      const name = callName(node.expression);
+      const callback = node.arguments[0];
+      if (
+        (name === "setTimeout" || name === "setInterval") &&
+        callback &&
+        (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+        timerCallbackSummaries(callback, setters)
+      ) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(handler.body);
+  return found;
 }
 
 function transitionsFromJsxAttribute(
@@ -233,7 +526,8 @@ function transitionsFromJsxAttribute(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
-  disabledGuard: ParsedGuard | undefined
+  disabledGuard: ParsedGuard | undefined,
+  warnings: ExtractionWarning[]
 ): Transition[] {
   if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
@@ -242,40 +536,573 @@ function transitionsFromJsxAttribute(
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
-  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, handler, setters, component, effectApis, asyncOutcomes, locator);
+  return tagStableIdKey(
+    transitionsFromResolvedHandler(source, fileName, node, attr, handler, setters, handlers, component, effectApis, asyncOutcomes, disabledGuard, locator, warnings),
+    handler
+  );
+}
+
+function transitionsFromComponentPropAttribute(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  components: Map<string, ComponentDecl>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  warnings: ExtractionWarning[]
+): Transition[] {
+  if (!node.initializer || !ts.isIdentifier(node.name)) return [];
+  const tag = jsxTagName(node);
+  if (!tag) return [];
+  const callee = components.get(tag);
+  if (!callee) return [];
+  const trigger = componentPropTrigger(source, callee, node.name.text, setters, warnings);
+  if (!trigger) return [];
+  const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
+  const callerGuard = combineParsedGuards([
+    renderGuardFor(node, setters, warnings, source, component),
+    disabledGuardFor(node, setters, warnings, source, component)
+  ]);
+  return tagStableIdKey(
+    transitionsFromResolvedHandler(
+      source,
+      fileName,
+      node,
+      trigger.attr,
+      handler,
+      setters,
+      handlers,
+      component,
+      effectApis,
+      asyncOutcomes,
+      combineParsedGuards([trigger.guard, callerGuard]),
+      trigger.locator,
+      warnings
+    ),
+    handler
+  );
+}
+
+function transitionsFromBoundedListAttribute(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  component: string,
+  listInfo: { varId: string; domain: Extract<AbstractDomain, { kind: "boundedList" }>; itemName: string }
+): Transition[] {
+  if (!node.initializer || !ts.isIdentifier(node.name)) return [];
+  const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
+  const attr = node.name.text;
+  const summary = callSummaryFromHandler(handler, setters, new Map([[listInfo.itemName, readListItemBinding(listInfo.varId, 0)]]));
+  if (!summary) return [];
+  const setterCall = setterCallFrom(summary.call, setters);
+  if (!setterCall) return [];
+  const baseLocator = locatorForEventAttribute(node);
+  const transitions: Transition[] = [];
+  for (let index = 0; index < listInfo.domain.maxLen; index += 1) {
+    const locals = new Map(summary.locals);
+    locals.set(listInfo.itemName, readListItemBinding(listInfo.varId, index));
+    const assigned = setterArgumentExpr(setterCall.argument, setterCall.setter, setters, locals);
+    if (!assigned) return [];
+    const locator = baseLocator ? { kind: "positional" as const, base: baseLocator, index } : undefined;
+    const guard = boundedListIndexGuard(listInfo.varId, index);
+    transitions.push({
+      id: `${component}.${attr}.${setterCall.setter.stateName}.${index}`,
+      cls: "user" as const,
+      label: labelForEvent(attr, locator),
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard,
+      effect: { kind: "assign" as const, var: setterCall.setter.varId, expr: assigned.expr },
+      reads: uniqueStrings([listInfo.varId, ...assigned.reads]),
+      writes: [setterCall.setter.varId],
+      confidence: index <= 1 ? "exact" as const : "over-approx" as const
+    });
+  }
+  return transitions;
+}
+
+function readListItemBinding(varId: string, index: number): BoundExpr {
+  return { expr: { kind: "read", var: varId, path: [String(index)] }, reads: [varId] };
+}
+
+function boundedListIndexGuard(varId: string, index: number): ExprIR {
+  const len = { kind: "lenCat" as const, arg: { kind: "read" as const, var: varId } };
+  if (index === 0) return { kind: "neq", args: [len, { kind: "lit", value: "0" }] };
+  return { kind: "eq", args: [len, { kind: "lit", value: "many" }] };
+}
+
+function tagStableIdKey(transitions: readonly Transition[], node: ts.Node): Transition[] {
+  const key = normalizedAstKey(node);
+  return transitions.map((transition) => ({ ...(transition as InternalTransition), __stableIdKey: key }));
+}
+
+function normalizedAstKey(node: ts.Node): string {
+  return node
+    .getText()
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "")
+    .replace(/\s+/g, "");
+}
+
+function transitionsFromResolvedHandler(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  disabledGuard: ParsedGuard | undefined,
+  locator: Locator | undefined,
+  warnings: ExtractionWarning[]
+): Transition[] {
+  const asyncTransitions = transitionsFromAsyncHandler(source, fileName, attr, handler, setters, component, effectApis, asyncOutcomes, locator, warnings);
   if (asyncTransitions.length > 0) return applyParsedGuard(asyncTransitions, disabledGuard);
-  const body = handler.body;
-  const call = ts.isCallExpression(body)
-    ? body
-    : ts.isBlock(body) && body.statements.length === 1 && ts.isExpressionStatement(body.statements[0]) && ts.isCallExpression(body.statements[0].expression)
-      ? body.statements[0].expression
-      : undefined;
-  if (!call) return [];
-  const navigation = navigationTransition(source, fileName, node, attr, component, call, locator);
+  const conditionalTransition = conditionalTransitionFromHandler(source, fileName, node, attr, handler, setters, component, locator);
+  if (conditionalTransition) return applyParsedGuard([conditionalTransition], disabledGuard);
+  const loopTransitions = loopWriteTransitions(source, fileName, node, attr, handler, setters, component, locator);
+  if (loopTransitions.length > 0) return applyParsedGuard(loopTransitions, disabledGuard);
+  const sequentialTransition = sequentialTransitionFromHandler(source, fileName, node, attr, handler, setters, component, locator);
+  if (sequentialTransition) return applyParsedGuard([sequentialTransition], disabledGuard);
+  const summary = callSummaryFromHandler(handler, setters);
+  if (!summary) return [];
+  const inlined = inlinedHelperCall(summary.call, handlers, setters);
+  const inlinedCall = inlined?.call ?? summary.call;
+  const locals = inlined?.locals ?? summary.locals;
+  const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator);
   if (navigation) return applyParsedGuard([navigation], disabledGuard);
-  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 1) return [];
-  const setter = setters.get(call.expression.text);
-  if (!setter) {
-    const escaped = escapedSetters(call, setters);
+  const setterCall = setterCallFrom(inlinedCall, setters);
+  if (!setterCall) {
+    const escaped = escapedSetters(inlinedCall, setters);
     if (escaped.length === 0) return [];
     return applyParsedGuard(escapedSetterTransitions(source, fileName, node, attr, component, escaped, locator), disabledGuard);
   }
-  if ((attr === "onChange" || attr === "onInput") && isInputValueExpression(call.arguments[0], handler.parameters[0])) {
+  const { setter, argument } = setterCall;
+  if ((attr === "onChange" || attr === "onInput") && isInputValueExpression(inlinedCall.arguments[0], handler.parameters[0])) {
     return applyParsedGuard(inputTransitions(source, fileName, node, attr, component, setter, locator), disabledGuard);
   }
-  const value = literalValue(call.arguments[0]);
-  if (value === undefined) return [];
+  const assignment = setterArgumentExpr(argument, setter, setters, locals);
+  if (!assignment) {
+    return applyParsedGuard([havocSetterTransition(source, fileName, node, attr, component, setter, locator, "unrepresentable")], disabledGuard);
+  }
   return applyParsedGuard([{
     id: `${component}.${attr}.${setter.stateName}`,
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: { kind: "lit", value: true },
-    effect: { kind: "assign", var: setter.varId, expr: { kind: "lit", value } },
-    reads: [],
+    effect: { kind: "assign", var: setter.varId, expr: assignment.expr },
+    reads: assignment.reads,
     writes: [setter.varId],
     confidence: "exact"
   }], disabledGuard);
+}
+
+function sequentialTransitionFromHandler(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  component: string,
+  locator: Locator | undefined
+): Transition | undefined {
+  if (!ts.isBlock(handler.body)) return undefined;
+  const locals = new Map<string, BoundExpr>();
+  const summaries: EffectSummary[] = [];
+  for (const statement of handler.body.statements) {
+    if (bindConstStatement(statement, setters, locals)) continue;
+    const summary = summarizeSetterStatement(statement, setters, locals);
+    if (!summary) return undefined;
+    summaries.push(summary);
+  }
+  if (summaries.length <= 1) return undefined;
+  const effects = summaries.map((summary) => summary.effect);
+  const writes = uniqueStrings(effects.map((effect) => effect.var));
+  return {
+    id: `${component}.${attr}.${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "seq", effects },
+    reads: uniqueStrings(summaries.flatMap((summary) => summary.reads)),
+    writes,
+    confidence: effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact"
+  };
+}
+
+function loopWriteTransitions(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  component: string,
+  locator: Locator | undefined
+): Transition[] {
+  if (!ts.isBlock(handler.body)) return [];
+  const loopSetters: SetterBinding[] = [];
+  for (const statement of handler.body.statements) {
+    if (!isLoopStatement(statement)) continue;
+    for (const setter of settersWrittenIn(statement, setters)) loopSetters.push(setter);
+  }
+  return uniqueSetters(loopSetters).map((setter) => havocSetterTransition(source, fileName, node, attr, component, setter, locator, "loop"));
+}
+
+function isLoopStatement(statement: ts.Statement): boolean {
+  return ts.isForStatement(statement) ||
+    ts.isForInStatement(statement) ||
+    ts.isForOfStatement(statement) ||
+    ts.isWhileStatement(statement) ||
+    ts.isDoStatement(statement);
+}
+
+function settersWrittenIn(node: ts.Node, setters: Map<string, SetterBinding>): SetterBinding[] {
+  const found: SetterBinding[] = [];
+  const visit = (candidate: ts.Node): void => {
+    if (ts.isCallExpression(candidate)) {
+      const setterCall = setterCallFrom(candidate, setters);
+      if (setterCall) found.push(setterCall.setter);
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function uniqueSetters(setters: readonly SetterBinding[]): SetterBinding[] {
+  const byVar = new Map<string, SetterBinding>();
+  for (const setter of setters) byVar.set(setter.varId, setter);
+  return [...byVar.values()].sort((left, right) => left.varId.localeCompare(right.varId));
+}
+
+function setterCallFrom(call: ts.CallExpression, setters: Map<string, SetterBinding>): SetterCall | undefined {
+  if (ts.isIdentifier(call.expression) && call.arguments.length === 1) {
+    const setter = setters.get(call.expression.text);
+    return setter ? { setter, argument: call.arguments[0]! } : undefined;
+  }
+  const name = callName(call.expression);
+  const atomArg = call.arguments[0];
+  if (name && call.arguments.length === 2 && atomArg && ts.isIdentifier(atomArg)) {
+    const setter = setters.get(`${name}:${atomArg.text}`);
+    return setter ? { setter, argument: call.arguments[1]! } : undefined;
+  }
+  return undefined;
+}
+
+function havocSetterTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  setter: SetterBinding,
+  locator: Locator | undefined,
+  suffix: string
+): Transition {
+  return {
+    id: `${component}.${attr}.${setter.stateName}.${suffix}`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "havoc", var: setter.varId },
+    reads: [],
+    writes: [setter.varId],
+    confidence: "over-approx"
+  };
+}
+
+function setterArgumentExpr(
+  argument: ts.Expression,
+  setter: SetterBinding,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  if ((ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) && argument.parameters.length === 1 && ts.isIdentifier(argument.parameters[0].name)) {
+    if (ts.isBlock(argument.body)) return undefined;
+    return valueExpr(argument.body, setters, new Map([...locals, [argument.parameters[0].name.text, readBinding(setter.varId)]]));
+  }
+  return valueExpr(argument, setters, locals);
+}
+
+function valueExpr(
+  expression: ts.Expression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  const value = literalValue(expression);
+  if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
+  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return modeledReadExpr(expression, setters, locals);
+  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
+    const parsed = booleanExpr(expression.operand, setters, locals);
+    return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
+  }
+  if (ts.isParenthesizedExpression(expression)) return valueExpr(expression.expression, setters, locals);
+  if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+    return nullishOptionalReadExpr(expression, setters);
+  }
+  if (ts.isConditionalExpression(expression)) {
+    const condition = booleanExpr(expression.condition, setters, locals);
+    const whenTrue = valueExpr(expression.whenTrue, setters, locals);
+    const whenFalse = valueExpr(expression.whenFalse, setters, locals);
+    if (!condition || !whenTrue || !whenFalse) return undefined;
+    return {
+      expr: { kind: "cond", args: [condition.expr, whenTrue.expr, whenFalse.expr] },
+      reads: [...new Set([...condition.reads, ...whenTrue.reads, ...whenFalse.reads])]
+    };
+  }
+  if (ts.isObjectLiteralExpression(expression)) return objectSpreadUpdateExpr(expression, setters, locals);
+  return undefined;
+}
+
+function objectSpreadUpdateExpr(
+  expression: ts.ObjectLiteralExpression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  if (expression.properties.length < 2) return undefined;
+  const [spread, ...properties] = expression.properties;
+  if (!ts.isSpreadAssignment(spread)) return undefined;
+  let current = valueExpr(spread.expression, setters, locals);
+  if (!current) return undefined;
+  const reads = new Set(current.reads);
+  for (const property of properties) {
+    if (!ts.isPropertyAssignment(property)) return undefined;
+    const name = propertyName(property.name);
+    if (!name) return undefined;
+    const value = valueExpr(property.initializer, setters, locals);
+    if (!value) return undefined;
+    value.reads.forEach((read) => reads.add(read));
+    current = {
+      expr: { kind: "updateField", target: current.expr, path: [name], value: value.expr },
+      reads: [...reads]
+    };
+  }
+  return current;
+}
+
+interface OptionalReadPath {
+  base: string;
+  path: string[];
+  optional: boolean;
+}
+
+function nullishOptionalReadExpr(
+  expression: ts.BinaryExpression,
+  setters: Map<string, SetterBinding>
+): BoundExpr | undefined {
+  if (literalValue(expression.right) !== null) return undefined;
+  const read = optionalReadPath(expression.left);
+  if (!read?.optional || read.path.length === 0) return undefined;
+  const varId = stateVarForName(read.base, setters);
+  if (!varId) return undefined;
+  return {
+    expr: {
+      kind: "cond",
+      args: [
+        { kind: "eq", args: [{ kind: "read", var: varId }, { kind: "lit", value: null }] },
+        { kind: "lit", value: null },
+        { kind: "read", var: varId, path: read.path }
+      ]
+    },
+    reads: [varId]
+  };
+}
+
+function optionalReadPath(expression: ts.Expression): OptionalReadPath | undefined {
+  if (ts.isIdentifier(expression)) return { base: expression.text, path: [], optional: false };
+  if (ts.isPropertyAccessExpression(expression)) {
+    const base = optionalReadPath(expression.expression);
+    if (!base) return undefined;
+    return {
+      base: base.base,
+      path: [...base.path, expression.name.text],
+      optional: base.optional || Boolean((expression as ts.PropertyAccessExpression & { questionDotToken?: unknown }).questionDotToken)
+    };
+  }
+  return undefined;
+}
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return undefined;
+}
+
+function booleanExpr(
+  expression: ts.Expression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
+  if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
+  if (ts.isIdentifier(expression)) return valueExpr(expression, setters, locals);
+  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
+    const parsed = booleanExpr(expression.operand, setters, locals);
+    return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
+  }
+  if (ts.isParenthesizedExpression(expression)) return booleanExpr(expression.expression, setters, locals);
+  if (ts.isBinaryExpression(expression)) {
+    if (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || expression.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+      const left = booleanExpr(expression.left, setters, locals);
+      const right = booleanExpr(expression.right, setters, locals);
+      if (!left || !right) return undefined;
+      return {
+        expr: { kind: expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? "and" : "or", args: [left.expr, right.expr] },
+        reads: [...new Set([...left.reads, ...right.reads])]
+      };
+    }
+    if (
+      expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      const left = valueExpr(expression.left, setters, locals);
+      const right = valueExpr(expression.right, setters, locals);
+      if (!left || !right) return undefined;
+      return {
+        expr: {
+          kind: expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken || expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken ? "neq" : "eq",
+          args: [left.expr, right.expr]
+        },
+        reads: [...new Set([...left.reads, ...right.reads])]
+      };
+    }
+  }
+  return undefined;
+}
+
+function modeledReadExpr(
+  expression: ts.Expression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  const path = propertyAccessPath(expression);
+  if (!path || path.length === 0) return undefined;
+  const [base, ...segments] = path;
+  const local = locals.get(base);
+  if (local) {
+    if (segments.length === 0) return local;
+    if (local.expr.kind !== "read") return undefined;
+    return {
+      expr: { kind: "read", var: local.expr.var, path: [...(local.expr.path ?? []), ...segments] },
+      reads: local.reads
+    };
+  }
+  const stateVar = stateVarForName(base, setters);
+  if (!stateVar) return undefined;
+  return {
+    expr: { kind: "read", var: stateVar, ...(segments.length > 0 ? { path: segments } : {}) },
+    reads: [stateVar]
+  };
+}
+
+function readBinding(varId: string): BoundExpr {
+  return { expr: { kind: "read", var: varId }, reads: [varId] };
+}
+
+function conditionalTransitionFromHandler(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  component: string,
+  locator: Locator | undefined
+): Transition | undefined {
+  const body = handler.body;
+  if (!ts.isBlock(body) || body.statements.length !== 1 || !ts.isIfStatement(body.statements[0])) return undefined;
+  const statement = body.statements[0];
+  const condition = parseGuardExpression(statement.expression, setters);
+  if (!condition) return undefined;
+  const thenEffect = singleSetterEffect(statement.thenStatement, setters) ?? identityEffect();
+  const elseEffect = statement.elseStatement ? singleSetterEffect(statement.elseStatement, setters) ?? identityEffect() : identityEffect();
+  if (thenEffect.kind === "seq" && elseEffect.kind === "seq") return undefined;
+  const writes = [...new Set([...effectWriteVars(thenEffect), ...effectWriteVars(elseEffect)])];
+  const suffix = writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") || "if";
+  return {
+    id: `${component}.${attr}.${suffix}.if`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "if", cond: condition.expr, then: thenEffect, else: elseEffect },
+    reads: condition.reads,
+    writes,
+    confidence: "exact"
+  };
+}
+
+function singleSetterEffect(statement: ts.Statement, setters: Map<string, SetterBinding>): Extract<Transition["effect"], { kind: "assign" }> | undefined {
+  if (ts.isBlock(statement) && statement.statements.length === 1) return setterAssignEffect(statement.statements[0], setters);
+  return setterAssignEffect(statement, setters);
+}
+
+function identityEffect(): Extract<Transition["effect"], { kind: "seq" }> {
+  return { kind: "seq", effects: [] };
+}
+
+function effectWriteVars(effect: Transition["effect"]): string[] {
+  if (effect.kind === "assign" || effect.kind === "havoc" || effect.kind === "choose") return [effect.var];
+  if (effect.kind === "seq") return effect.effects.flatMap(effectWriteVars);
+  if (effect.kind === "if") return [...effectWriteVars(effect.then), ...effectWriteVars(effect.else)];
+  if (effect.kind === "enqueue" || effect.kind === "dequeue") return ["sys:pending"];
+  if (effect.kind === "navigate") return ["sys:route", "sys:history"];
+  return [...effect.ref.declaredWrites];
+}
+
+function stateNameForVar(varId: string, setters: Map<string, SetterBinding>): string | undefined {
+  return [...setters.values()].find((setter) => setter.varId === varId)?.stateName;
+}
+
+function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string, SetterBinding>, initialLocals: Map<string, BoundExpr> = new Map()): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
+  const body = handler.body;
+  if (ts.isCallExpression(body)) return { call: body, locals: new Map(initialLocals) };
+  if (ts.isBlock(body)) {
+    const locals = new Map<string, BoundExpr>(initialLocals);
+    for (let index = 0; index < body.statements.length; index += 1) {
+      const statement = body.statements[index];
+      const isLast = index === body.statements.length - 1;
+      if (isLast && ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) return { call: statement.expression, locals };
+      if (!bindConstStatement(statement, setters, locals)) return undefined;
+    }
+  }
+  return undefined;
+}
+
+function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>): boolean {
+  if (!ts.isVariableStatement(statement)) return false;
+  if ((ts.getCombinedNodeFlags(statement.declarationList) & ts.NodeFlags.Const) === 0) return false;
+  for (const declaration of statement.declarationList.declarations) {
+    if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return false;
+    const binding = valueExpr(declaration.initializer, setters, locals);
+    if (!binding) return false;
+    locals.set(declaration.name.text, binding);
+  }
+  return true;
+}
+
+function inlinedHelperCall(call: ts.CallExpression, handlers: Map<string, ExtractableHandler>, setters: Map<string, SetterBinding>): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
+  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 0) return undefined;
+  const helper = handlers.get(call.expression.text);
+  return helper ? callSummaryFromHandler(helper, setters) : undefined;
 }
 
 function navigationTransition(
@@ -367,7 +1194,10 @@ function inputTransitions(
   setter: SetterBinding,
   locator: Locator | undefined
 ): Transition[] {
-  const finite = finiteInputValues(setter.domain);
+  const literalValues = literalInputValues(node);
+  const finite = literalValues
+    ? finiteInputValues(setter.domain).filter(({ valueClass }) => literalValues.has(valueClass))
+    : finiteInputValues(setter.domain);
   if (finite.length > 0) {
     return finite.map(({ value, valueClass }) => ({
       id: `${component}.${attr}.${setter.stateName}.${safeId(valueClass)}`,
@@ -394,6 +1224,39 @@ function inputTransitions(
   }];
 }
 
+function literalInputValues(attribute: ts.JsxAttribute): Set<string> | undefined {
+  return selectOptionValues(attribute) ?? radioInputValue(attribute);
+}
+
+function selectOptionValues(attribute: ts.JsxAttribute): Set<string> | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const opening = attrs.parent;
+  if (!ts.isJsxOpeningElement(opening) || opening.tagName.getText() !== "select" || !ts.isJsxElement(opening.parent)) return undefined;
+  const values = opening.parent.children
+    .filter(ts.isJsxElement)
+    .filter((child) => child.openingElement.tagName.getText() === "option")
+    .map((child) => optionValue(child))
+    .filter((value): value is string => Boolean(value));
+  return values.length > 0 ? new Set(values) : undefined;
+}
+
+function optionValue(option: ts.JsxElement): string | undefined {
+  const value = stringAttribute(option.openingElement.attributes, "value");
+  if (value) return value;
+  return simpleElementText(option.openingElement);
+}
+
+function radioInputValue(attribute: ts.JsxAttribute): Set<string> | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const opening = attrs.parent;
+  if (!ts.isJsxOpeningElement(opening) && !ts.isJsxSelfClosingElement(opening)) return undefined;
+  if (opening.tagName.getText() !== "input" || stringAttribute(attrs, "type") !== "radio") return undefined;
+  const value = stringAttribute(attrs, "value");
+  return value ? new Set([value]) : undefined;
+}
+
 function finiteInputValues(domain: AbstractDomain): { value: Value; valueClass: string }[] {
   if (domain.kind === "enum") return domain.values.map((value) => ({ value, valueClass: value }));
   if (domain.kind === "boundedInt") {
@@ -418,6 +1281,384 @@ function handlerExpression(expression: ts.Expression | undefined, handlers: Map<
   return undefined;
 }
 
+function componentDeclarations(source: ts.SourceFile): Map<string, ComponentDecl> {
+  const components = new Map<string, ComponentDecl>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name && startsUppercase(node.name.text)) {
+      components.set(node.name.text, node);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && startsUppercase(node.name.text) && node.initializer && isExtractableHandler(node.initializer)) {
+      components.set(node.name.text, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return components;
+}
+
+function customHookDeclarations(source: ts.SourceFile): Map<string, CustomHookDecl> {
+  const hooks = new Map<string, CustomHookDecl>();
+  const visit = (node: ts.Node): void => {
+    const name = customHookDeclarationName(node);
+    if (name) {
+      if (ts.isFunctionDeclaration(node)) hooks.set(name, node);
+      else if (ts.isVariableDeclaration(node) && node.initializer && isExtractableHandler(node.initializer)) hooks.set(name, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return hooks;
+}
+
+function isCustomHookDeclaration(node: ts.Node): boolean {
+  return Boolean(customHookDeclarationName(node));
+}
+
+function inlineCustomHookState(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.VariableDeclaration,
+  customHooks: Map<string, CustomHookDecl>,
+  vars: StateVarDecl[],
+  setters: Map<string, SetterBinding>,
+  component: string,
+  route: string
+): boolean {
+  if (!ts.isArrayBindingPattern(node.name) || !node.initializer || !ts.isCallExpression(node.initializer) || !ts.isIdentifier(node.initializer.expression)) return false;
+  const hook = customHooks.get(node.initializer.expression.text);
+  if (!hook) return false;
+  const stateName = node.name.elements[0];
+  const setterName = node.name.elements[1];
+  if (!ts.isBindingElement(stateName) || !ts.isIdentifier(stateName.name) || !ts.isBindingElement(setterName) || !ts.isIdentifier(setterName.name)) return false;
+  const summary = hookStateReturn(hook);
+  if (!summary) return false;
+  const varId = `local:${component}.${stateName.name.text}`;
+  const decl: StateVarDecl = {
+    id: varId,
+    domain: summary.domain,
+    origin: { file: fileName, ...lineAndColumn(source, node) },
+    scope: { kind: "route-local", route },
+    initial: summary.initial
+  };
+  vars.push(decl);
+  setters.set(setterName.name.text, { varId, component, stateName: stateName.name.text, domain: summary.domain });
+  return true;
+}
+
+function hookStateReturn(hook: CustomHookDecl): HookStateReturn | undefined {
+  const body = hookBody(hook);
+  if (!body) return undefined;
+  let stateName: string | undefined;
+  let setterName: string | undefined;
+  let stateCall: ts.CallExpression | undefined;
+  for (const statement of body.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const decl of statement.declarationList.declarations) {
+      if (!ts.isArrayBindingPattern(decl.name) || !decl.initializer || !isUseStateCall(decl.initializer)) continue;
+      const state = decl.name.elements[0];
+      const setter = decl.name.elements[1];
+      if (!ts.isBindingElement(state) || !ts.isIdentifier(state.name) || !ts.isBindingElement(setter) || !ts.isIdentifier(setter.name)) return undefined;
+      if (stateCall) return undefined;
+      stateName = state.name.text;
+      setterName = setter.name.text;
+      stateCall = decl.initializer;
+    }
+  }
+  if (!stateName || !setterName || !stateCall) return undefined;
+  const returned = body.statements.find(ts.isReturnStatement);
+  if (!returned?.expression) return undefined;
+  const elements = returnedArrayElements(returned.expression);
+  if (!elements || elements.length < 2) return undefined;
+  if (!ts.isIdentifier(elements[0]) || elements[0].text !== stateName || !ts.isIdentifier(elements[1]) || elements[1].text !== setterName) return undefined;
+  const domain = inferUseStateDomain(stateCall);
+  return { domain, initial: initialValueForUseState(stateCall, domain) };
+}
+
+function hookBody(hook: CustomHookDecl): ts.Block | undefined {
+  if (ts.isFunctionDeclaration(hook)) return hook.body;
+  return ts.isBlock(hook.body) ? hook.body : undefined;
+}
+
+function returnedArrayElements(expression: ts.Expression): ts.NodeArray<ts.Expression> | undefined {
+  if (ts.isArrayLiteralExpression(expression)) return expression.elements;
+  if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression) || ts.isParenthesizedExpression(expression)) return returnedArrayElements(expression.expression);
+  return undefined;
+}
+
+function customHookDeclarationName(node: ts.Node): string | undefined {
+  if (ts.isFunctionDeclaration(node) && node.name && isCustomHookName(node.name.text)) return node.name.text;
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isCustomHookName(node.name.text) && node.initializer && isExtractableHandler(node.initializer)) {
+    return node.name.text;
+  }
+  return undefined;
+}
+
+function calledCustomHook(node: ts.Node, customHooks: Set<string>): string | undefined {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return undefined;
+  return customHooks.has(node.expression.text) ? node.expression.text : undefined;
+}
+
+function isCustomHookName(name: string): boolean {
+  return /^use[A-Z0-9]/.test(name) && name !== "useState" && name !== "useEffect" && name !== "useReducer" && name !== "useRef";
+}
+
+function detectStatefulListComponents(source: ts.SourceFile, components: Map<string, ComponentDecl>): Set<string> {
+  const listComponents = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "map") {
+      for (const rendered of jsxComponentTags(node)) {
+        const component = components.get(rendered);
+        if (component && componentHasUseState(component)) listComponents.add(rendered);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return listComponents;
+}
+
+function listRenderedHandlerInfo(
+  attribute: ts.JsxAttribute,
+  vars: readonly StateVarDecl[],
+  component: string
+): { varId: string; domain: AbstractDomain; itemName: string } | undefined {
+  let current: ts.Node = attribute;
+  while (current.parent) {
+    const parent = current.parent;
+    if (ts.isCallExpression(parent) && ts.isPropertyAccessExpression(parent.expression) && parent.expression.name.text === "map") {
+      const callback = parent.arguments[0];
+      if (callback && current.pos >= callback.pos && current.end <= callback.end) {
+        const receiver = parent.expression.expression;
+        const itemName = mapItemName(callback);
+        if (ts.isIdentifier(receiver) && itemName) {
+          const info = stateVarInfoForName(receiver.text, vars, component);
+          return info ? { ...info, itemName } : undefined;
+        }
+      }
+    }
+    current = parent;
+  }
+  return undefined;
+}
+
+function mapItemName(callback: ts.Expression): string | undefined {
+  if ((ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) && callback.parameters.length > 0) {
+    const name = callback.parameters[0]?.name;
+    return name && ts.isIdentifier(name) ? name.text : undefined;
+  }
+  return undefined;
+}
+
+function stateVarInfoForName(
+  name: string,
+  vars: readonly StateVarDecl[],
+  component: string
+): { varId: string; domain: AbstractDomain } | undefined {
+  const localId = `local:${component}.${name}`;
+  const decl = vars.find((candidate) => candidate.id === localId);
+  return decl ? { varId: decl.id, domain: decl.domain } : undefined;
+}
+
+function jsxComponentTags(node: ts.Node): string[] {
+  const tags = new Set<string>();
+  const visit = (candidate: ts.Node): void => {
+    const tag = jsxElementTag(candidate);
+    if (tag && startsUppercase(tag)) tags.add(tag);
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return [...tags].sort();
+}
+
+function jsxElementTag(node: ts.Node): string | undefined {
+  if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+    return ts.isIdentifier(node.tagName) ? node.tagName.text : undefined;
+  }
+  return undefined;
+}
+
+function componentHasUseState(component: ComponentDecl): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node) && isUseStateCall(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return found;
+}
+
+function componentPropTrigger(
+  source: ts.SourceFile,
+  component: ComponentDecl,
+  propName: string,
+  setters: Map<string, SetterBinding>,
+  warnings: ExtractionWarning[]
+): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
+  const localHandlers = componentLocalHandlers(component);
+  let trigger: { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined;
+  const visit = (node: ts.Node): void => {
+    if (trigger) return;
+    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text) && isIntrinsicJsxAttribute(node)) {
+      const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+      const handler = handlerExpression(expression, localHandlers);
+      if (expression && (expressionReferencesProp(expression, component, propName) || (handler && handlerCallsProp(handler, component, propName, localHandlers)))) {
+        trigger = {
+          attr: node.name.text,
+          locator: locatorForEventAttribute(node),
+          guard: disabledGuardFor(node, setters, warnings, source, componentName(component) ?? "Anonymous")
+        };
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return trigger;
+}
+
+function forwardsComponentProp(node: ts.JsxAttribute, handlers: Map<string, ExtractableHandler>, component: ComponentDecl | undefined): boolean {
+  if (!component || !node.initializer) return false;
+  const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+  if (expression && expressionReferencesForwardableProp(expression, component)) return true;
+  const localHandlers = componentLocalHandlers(component);
+  const handler = handlerExpression(expression, handlers) ?? handlerExpression(expression, localHandlers);
+  return Boolean(handler && handlerCallsForwardableProp(handler, component, localHandlers));
+}
+
+function componentLocalHandlers(component: ComponentDecl): Map<string, ExtractableHandler> {
+  const localHandlers = new Map<string, ExtractableHandler>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isExtractableHandler(node.initializer)) {
+      localHandlers.set(node.name.text, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return localHandlers;
+}
+
+function handlerCallsProp(handler: ExtractableHandler, component: ComponentDecl, propName: string, localHandlers: Map<string, ExtractableHandler>, seen = new Set<ExtractableHandler>()): boolean {
+  if (seen.has(handler)) return false;
+  seen.add(handler);
+  const aliases = componentPropAliases(component, propName);
+  const propObjects = componentPropObjectNames(component);
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node)) {
+      if (callInvokesProp(node.expression, propName, aliases, propObjects)) {
+        found = true;
+        return;
+      }
+      if (ts.isIdentifier(node.expression)) {
+        const local = localHandlers.get(node.expression.text);
+        if (local && handlerCallsProp(local, component, propName, localHandlers, seen)) {
+          found = true;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(handler.body);
+  return found;
+}
+
+function handlerCallsForwardableProp(handler: ExtractableHandler, component: ComponentDecl, localHandlers: Map<string, ExtractableHandler>): boolean {
+  return forwardableComponentPropNames(component).some((propName) => handlerCallsProp(handler, component, propName, localHandlers));
+}
+
+function expressionReferencesForwardableProp(expression: ts.Expression, component: ComponentDecl): boolean {
+  return forwardableComponentPropNames(component).some((propName) => expressionReferencesProp(expression, component, propName));
+}
+
+function expressionReferencesProp(expression: ts.Expression, component: ComponentDecl, propName: string): boolean {
+  const aliases = componentPropAliases(component, propName);
+  const propObjects = componentPropObjectNames(component);
+  if (ts.isIdentifier(expression)) return aliases.has(expression.text);
+  if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== propName) return false;
+  if (propObjects.size === 0) return true;
+  return ts.isIdentifier(expression.expression) && propObjects.has(expression.expression.text);
+}
+
+function callInvokesProp(expression: ts.Expression, propName: string, aliases: Set<string>, propObjects: Set<string>): boolean {
+  if (ts.isIdentifier(expression)) return aliases.has(expression.text);
+  if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== propName) return false;
+  if (propObjects.size === 0) return true;
+  return ts.isIdentifier(expression.expression) && propObjects.has(expression.expression.text);
+}
+
+function componentPropAliases(component: ComponentDecl, propName: string): Set<string> {
+  const aliases = new Set<string>();
+  const firstParam = component.parameters[0];
+  if (!firstParam || !ts.isObjectBindingPattern(firstParam.name)) return aliases;
+  for (const element of firstParam.name.elements) {
+    const name = element.name;
+    if (!ts.isIdentifier(name)) continue;
+    const propertyName = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : name.text;
+    if (propertyName === propName) aliases.add(name.text);
+  }
+  return aliases;
+}
+
+function forwardableComponentPropNames(component: ComponentDecl): string[] {
+  const names = new Set<string>();
+  const firstParam = component.parameters[0];
+  if (!firstParam) return [];
+  if (ts.isObjectBindingPattern(firstParam.name)) {
+    for (const element of firstParam.name.elements) {
+      const name = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : ts.isIdentifier(element.name) ? element.name.text : undefined;
+      if (name && isForwardablePropName(name)) names.add(name);
+    }
+  }
+  if (ts.isIdentifier(firstParam.name)) {
+    if (!component.body) return [...names].sort();
+    const objectName = firstParam.name.text;
+    const visit = (node: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === objectName && isForwardablePropName(node.name.text)) {
+        names.add(node.name.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(component.body);
+  }
+  return [...names].sort();
+}
+
+function componentPropObjectNames(component: ComponentDecl): Set<string> {
+  const firstParam = component.parameters[0];
+  return new Set(firstParam && ts.isIdentifier(firstParam.name) ? [firstParam.name.text] : []);
+}
+
+function componentName(component: ComponentDecl): string | undefined {
+  if (ts.isFunctionDeclaration(component) && component.name) return component.name.text;
+  return componentNameFor(component.parent);
+}
+
+function isForwardablePropName(name: string): boolean {
+  return /^on[A-Z]/.test(name);
+}
+
+function isIntrinsicJsxAttribute(attribute: ts.JsxAttribute): boolean {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return false;
+  const parent = attrs.parent;
+  if (!ts.isJsxOpeningElement(parent) && !ts.isJsxSelfClosingElement(parent)) return false;
+  const tag = parent.tagName;
+  return ts.isIdentifier(tag) && !startsUppercase(tag.text);
+}
+
+function jsxTagName(attribute: ts.JsxAttribute): string | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const parent = attrs.parent;
+  if (!ts.isJsxOpeningElement(parent) && !ts.isJsxSelfClosingElement(parent)) return undefined;
+  return ts.isIdentifier(parent.tagName) ? parent.tagName.text : undefined;
+}
+
 function transitionsFromAsyncHandler(
   source: ts.SourceFile,
   fileName: string,
@@ -427,25 +1668,45 @@ function transitionsFromAsyncHandler(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
-  locator: Locator | undefined
+  locator: Locator | undefined,
+  warnings: ExtractionWarning[]
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
   const statements = expression.body.statements;
   const tryStatement = statements.find(ts.isTryStatement);
-  const preStatements = tryStatement ? statements.slice(0, statements.indexOf(tryStatement)) : statements;
   const awaitStatement = tryStatement
     ? tryStatement.tryBlock.statements.find((statement) => expressionStatementAwait(statement, effectApis))
     : statements.find((statement) => expressionStatementAwait(statement, effectApis));
   if (!awaitStatement) return [];
-  const op = awaitedOp(awaitStatement, effectApis);
+  const awaited = awaitedCall(awaitStatement, effectApis);
+  const op = awaited?.op;
   if (!op) return [];
-  const preEffects = preStatements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
+  const opArgs = awaited ? effectCallArgs(awaited.call, setters, new Map()) : { args: {}, reads: [] };
+  const preStatements = tryStatement ? statements.slice(0, statements.indexOf(tryStatement)) : statements.slice(0, statements.indexOf(awaitStatement));
+  const preSummaries = summarizeAsyncSegment(preStatements, setters);
   const successStatements = tryStatement ? tryStatement.tryBlock.statements.slice(tryStatement.tryBlock.statements.indexOf(awaitStatement) + 1) : statements.slice(statements.indexOf(awaitStatement) + 1);
-  const successEffects = successStatements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
-  const catchEffects = tryStatement?.catchClause?.block.statements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect)) ?? [];
+  if (!tryStatement) {
+    const chained = transitionsFromSequentialAwait(source, fileName, attr, expression, awaitStatement, op, preSummaries, successStatements, setters, effectApis, component, locator, warnings);
+    if (chained.length > 0) return chained;
+  }
+  if (containsAwaitedEffect(successStatements, effectApis) || (tryStatement?.catchClause && containsAwaitedEffect(tryStatement.catchClause.block.statements, effectApis))) {
+    warnings.push({ message: `Unextractable handler ${component}.${attr}`, ...lineAndColumn(source, awaitStatement) });
+    return [];
+  }
+  const successSummaries = summarizeAsyncSegment(successStatements, setters);
+  const catchSummaries = tryStatement?.catchClause ? summarizeAsyncSegment(tryStatement.catchClause.block.statements, setters) : [];
+  const preEffects = preSummaries.map((summary) => summary.effect);
+  const successEffects = successSummaries.map((summary) => summary.effect);
+  const catchEffects = catchSummaries.map((summary) => summary.effect);
+  const preReads = uniqueStrings([...preSummaries.flatMap((summary) => summary.reads), ...opArgs.reads]);
+  const successReads = uniqueStrings(successSummaries.flatMap((summary) => summary.reads));
+  const catchReads = uniqueStrings(catchSummaries.flatMap((summary) => summary.reads));
   if (successEffects.length === 0 && catchEffects.length === 0) return [];
   const writes = [...new Set([...preEffects, ...successEffects, ...catchEffects].map((effect) => effect.var))];
   const baseId = `${component}.${attr}.${op}`;
+  for (const read of uniqueStrings([...successReads, ...catchReads])) {
+    warnings.push({ message: `Stale-read risk ${baseId}:${read}`, ...lineAndColumn(source, awaitStatement) });
+  }
   const sourceAnchor = [{ file: fileName, ...lineAndColumn(source, expression) }];
   const enqueue: Transition = {
     id: `${baseId}.start`,
@@ -453,10 +1714,10 @@ function transitionsFromAsyncHandler(
     label: labelForEvent(attr, locator),
     source: sourceAnchor,
     guard: { kind: "lit", value: true },
-    effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op, continuation: `${baseId}.cont`, args: {} }] },
-    reads: [],
+    effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op, continuation: `${baseId}.cont`, args: opArgs.args }] },
+    reads: preReads,
     writes: [...new Set([...preEffects.map((effect) => effect.var), "sys:pending"])],
-    confidence: "exact"
+    confidence: confidenceForEffects(preEffects)
   };
   const success: Transition = {
     id: `${baseId}.success`,
@@ -465,9 +1726,9 @@ function transitionsFromAsyncHandler(
     source: sourceAnchor,
     guard: pendingIs(op),
     effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...successEffects] },
-    reads: ["sys:pending"],
+    reads: uniqueStrings(["sys:pending", ...successReads]),
     writes: ["sys:pending", ...successEffects.map((effect) => effect.var)],
-    confidence: "exact"
+    confidence: confidenceForEffects(successEffects)
   };
   const transitions = [enqueue, success];
   if (catchEffects.length > 0 || asyncOutcomes[op]?.error !== undefined) {
@@ -478,12 +1739,182 @@ function transitionsFromAsyncHandler(
       source: sourceAnchor,
       guard: pendingIs(op),
       effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...catchEffects] },
-      reads: ["sys:pending"],
+      reads: uniqueStrings(["sys:pending", ...catchReads]),
       writes: ["sys:pending", ...catchEffects.map((effect) => effect.var)],
-      confidence: "exact"
+      confidence: confidenceForEffects(catchEffects)
     });
+  } else {
+    warnings.push({ message: `Unhandled rejection ${baseId}`, ...lineAndColumn(source, awaitStatement) });
   }
   return transitions.map((transition) => ({ ...transition, writes: [...new Set(transition.writes)] }));
+}
+
+function transitionsFromSequentialAwait(
+  source: ts.SourceFile,
+  fileName: string,
+  attr: string,
+  expression: ExtractableHandler,
+  firstAwait: ts.Statement,
+  firstOp: string,
+  preSummaries: readonly EffectSummary[],
+  successStatements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  effectApis: Set<string>,
+  component: string,
+  locator: Locator | undefined,
+  warnings: ExtractionWarning[]
+): Transition[] {
+  const secondIndex = successStatements.findIndex((statement) => expressionStatementAwait(statement, effectApis));
+  if (secondIndex < 0) return [];
+  const secondAwait = successStatements[secondIndex]!;
+  const secondOp = awaitedOp(secondAwait, effectApis);
+  const promiseAllOps = secondOp ? undefined : promiseAllAwaitOps(secondAwait, effectApis);
+  if (!secondOp && !promiseAllOps) return [];
+  const betweenStatements = successStatements.slice(0, secondIndex);
+  const tailStatements = successStatements.slice(secondIndex + 1);
+  if (containsAwaitedEffect(tailStatements, effectApis)) return [];
+  const betweenSummaries = summarizeAsyncSegment(betweenStatements, setters);
+  const tailSummaries = summarizeAsyncSegment(tailStatements, setters);
+  const preEffects = preSummaries.map((summary) => summary.effect);
+  const betweenEffects = betweenSummaries.map((summary) => summary.effect);
+  const tailEffects = tailSummaries.map((summary) => summary.effect);
+  if (tailEffects.length === 0) return [];
+  const preReads = uniqueStrings(preSummaries.flatMap((summary) => summary.reads));
+  const betweenReads = uniqueStrings(betweenSummaries.flatMap((summary) => summary.reads));
+  const tailReads = uniqueStrings(tailSummaries.flatMap((summary) => summary.reads));
+  const firstBaseId = `${component}.${attr}.${firstOp}`;
+  const secondBaseId = `${component}.${attr}.${secondOp ?? "Promise_all"}`;
+  for (const read of uniqueStrings([...betweenReads, ...tailReads])) {
+    warnings.push({ message: `Stale-read risk ${firstBaseId}:${read}`, ...lineAndColumn(source, firstAwait) });
+  }
+  warnings.push({ message: `Unhandled rejection ${firstBaseId}`, ...lineAndColumn(source, firstAwait) });
+  for (const op of promiseAllOps ?? [secondOp!]) {
+    warnings.push({ message: `Unhandled rejection ${component}.${attr}.${op}`, ...lineAndColumn(source, secondAwait) });
+  }
+  const sourceAnchor = [{ file: fileName, ...lineAndColumn(source, expression) }];
+  const secondEnqueueEffects: EffectIR[] = promiseAllOps
+    ? promiseAllOps.map((op) => ({ kind: "enqueue", op, continuation: `${secondBaseId}.cont`, args: {} }))
+    : [{ kind: "enqueue", op: secondOp!, continuation: `${secondBaseId}.cont`, args: {} }];
+  const secondSuccess: Transition = promiseAllOps
+    ? {
+        id: `${secondBaseId}.success`,
+        cls: "env",
+        label: { kind: "internal", text: `${secondBaseId}.join` },
+        source: sourceAnchor,
+        guard: promiseAllGuard(promiseAllOps),
+        effect: { kind: "seq", effects: [...promiseAllOps.map((_, index) => ({ kind: "dequeue" as const, index })).reverse(), ...tailEffects] },
+        reads: uniqueStrings(["sys:pending", ...tailReads]),
+        writes: uniqueStrings(["sys:pending", ...tailEffects.map((effect) => effect.var)]),
+        confidence: confidenceForEffects(tailEffects)
+      }
+    : {
+        id: `${secondBaseId}.success`,
+        cls: "env",
+        label: { kind: "resolve", op: secondOp!, outcome: "success" },
+        source: sourceAnchor,
+        guard: pendingIs(secondOp!),
+        effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...tailEffects] },
+        reads: uniqueStrings(["sys:pending", ...tailReads]),
+        writes: uniqueStrings(["sys:pending", ...tailEffects.map((effect) => effect.var)]),
+        confidence: confidenceForEffects(tailEffects)
+      };
+  const transitions: Transition[] = [
+    {
+      id: `${firstBaseId}.start`,
+      cls: "user",
+      label: labelForEvent(attr, locator),
+      source: sourceAnchor,
+      guard: { kind: "lit", value: true },
+      effect: { kind: "seq", effects: [...preEffects, { kind: "enqueue", op: firstOp, continuation: `${firstBaseId}.cont`, args: {} }] },
+      reads: preReads,
+      writes: uniqueStrings([...preEffects.map((effect) => effect.var), "sys:pending"]),
+      confidence: confidenceForEffects(preEffects)
+    },
+    {
+      id: `${firstBaseId}.success`,
+      cls: "env",
+      label: { kind: "resolve", op: firstOp, outcome: "success" },
+      source: sourceAnchor,
+      guard: pendingIs(firstOp),
+      effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, ...betweenEffects, ...secondEnqueueEffects] },
+      reads: uniqueStrings(["sys:pending", ...betweenReads]),
+      writes: uniqueStrings(["sys:pending", ...betweenEffects.map((effect) => effect.var)]),
+      confidence: confidenceForEffects(betweenEffects)
+    },
+    secondSuccess
+  ];
+  return transitions.map((transition) => ({ ...transition, writes: uniqueStrings(transition.writes) }));
+}
+
+function promiseAllGuard(ops: readonly string[]): ExprIR {
+  return ops
+    .map((op, index): ExprIR => pendingIsAt(index, op))
+    .reduce(andGuard);
+}
+
+function confidenceForEffects(effects: readonly EffectIR[]): Transition["confidence"] {
+  return effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact";
+}
+
+function summarizeAsyncSegment(statements: readonly ts.Statement[], setters: Map<string, SetterBinding>): EffectSummary[] {
+  const summaries: EffectSummary[] = [];
+  for (const statement of statements) {
+    const summary = summarizeSetterStatement(statement, setters);
+    if (summary) {
+      summaries.push(summary);
+      continue;
+    }
+    for (const setter of escapedSettersInStatement(statement, setters)) {
+      summaries.push({ effect: { kind: "havoc", var: setter.varId }, reads: [] });
+    }
+    for (const setter of settersWrittenIn(statement, setters)) {
+      summaries.push({ effect: { kind: "havoc", var: setter.varId }, reads: [] });
+    }
+  }
+  return uniqueSummariesByEffect(summaries);
+}
+
+function escapedSettersInStatement(statement: ts.Statement, setters: Map<string, SetterBinding>): SetterBinding[] {
+  const found: SetterBinding[] = [];
+  const visit = (candidate: ts.Node): void => {
+    if (ts.isCallExpression(candidate)) found.push(...escapedSetters(candidate, setters));
+    ts.forEachChild(candidate, visit);
+  };
+  visit(statement);
+  return uniqueSetters(found);
+}
+
+function uniqueSummariesByEffect(summaries: readonly EffectSummary[]): EffectSummary[] {
+  const seen = new Set<string>();
+  const out: EffectSummary[] = [];
+  for (const summary of summaries) {
+    const key = JSON.stringify(summary.effect);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(summary);
+  }
+  return out;
+}
+
+function summarizeSetterStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr> = new Map()): EffectSummary | undefined {
+  if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return undefined;
+  return summarizeSetterCall(statement.expression, setters, locals);
+}
+
+function summarizeSetterCall(call: ts.CallExpression, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr> = new Map()): EffectSummary | undefined {
+  const setterCall = setterCallFrom(call, setters);
+  if (!setterCall) return undefined;
+  const assignment = setterArgumentExpr(setterCall.argument, setterCall.setter, setters, locals);
+  if (!assignment) {
+    return {
+      effect: { kind: "havoc", var: setterCall.setter.varId },
+      reads: []
+    };
+  }
+  return {
+    effect: { kind: "assign", var: setterCall.setter.varId, expr: assignment.expr },
+    reads: assignment.reads
+  };
 }
 
 function transitionsFromUseEffect(
@@ -495,28 +1926,79 @@ function transitionsFromUseEffect(
 ): Transition[] {
   const callback = node.arguments[0];
   if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) || !ts.isBlock(callback.body)) return [];
-  const effects = callback.body.statements.map((statement) => setterAssignEffect(statement, setters)).filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => Boolean(effect));
-  if (effects.length === 0) return [];
-  const deps = dependencyReads(node.arguments[1], setters);
-  const guards: ExprIR[] = effects.map((effect) => ({ kind: "neq", args: [{ kind: "read", var: effect.var }, effect.expr] }));
-  const guard = guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!);
-  return [{
-    id: `${component}.useEffect.${effects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
-    cls: "internal",
-    label: { kind: "internal", text: `${component}.useEffect` },
-    source: [{ file: fileName, ...lineAndColumn(source, node) }],
-    guard,
-    effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
-    reads: [...new Set([...deps, ...effects.map((effect) => effect.var)])],
-    writes: [...new Set(effects.map((effect) => effect.var))],
-    confidence: "exact",
-    triggeredBy: deps
-  }];
+  const cleanup = cleanupSummaries(callback.body.statements, setters);
+  const bodyStatements = callback.body.statements.filter((statement) => !isCleanupReturn(statement));
+  const summaries = summarizeEffectStatements(bodyStatements, setters);
+  if (!summaries || !cleanup) return [];
+  const transitions: Transition[] = [];
+  const effectReads = uniqueStrings(summaries.flatMap((summary) => summary.reads));
+  const deps = dependencyReads(node.arguments[1], setters, effectReads);
+  const effects = summaries.map((summary) => summary.effect);
+  if (effects.length > 0) {
+    const assignEffects = effects.filter((effect): effect is Extract<Transition["effect"], { kind: "assign" }> => effect.kind === "assign");
+    const guards: ExprIR[] = assignEffects.map((effect) => ({ kind: "neq", args: [{ kind: "read", var: effect.var }, effect.expr] }));
+    const guard = guards.length > 0 ? guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!) : { kind: "lit" as const, value: true };
+    transitions.push({
+      id: `${component}.useEffect.${effects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
+      cls: "internal",
+      label: { kind: "internal", text: `${component}.useEffect` },
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard,
+      effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
+      reads: uniqueStrings([...deps, ...effectReads, ...effects.map((effect) => effect.var)]),
+      writes: [...new Set(effects.map((effect) => effect.var))],
+      confidence: effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact",
+      triggeredBy: deps
+    });
+  }
+  if (cleanup.length > 0) {
+    const cleanupEffects = cleanup.map((summary) => summary.effect);
+    const cleanupReads = uniqueStrings(cleanup.flatMap((summary) => summary.reads));
+    transitions.push({
+      id: `${component}.useEffect.cleanup.${cleanupEffects.map((effect) => effect.var.split(".").at(-1) ?? effect.var).join("_")}`,
+      cls: "internal",
+      label: { kind: "internal", text: `${component}.useEffect.cleanup` },
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit", value: true },
+      effect: cleanupEffects.length === 1 ? cleanupEffects[0] : { kind: "seq", effects: cleanupEffects },
+      reads: cleanupReads,
+      writes: [...new Set(cleanupEffects.map((effect) => effect.var))],
+      confidence: "over-approx",
+      triggeredBy: deps
+    });
+  }
+  return transitions;
 }
 
-function dependencyReads(node: ts.Expression | undefined, setters: Map<string, SetterBinding>): string[] {
+function summarizeEffectStatements(statements: readonly ts.Statement[], setters: Map<string, SetterBinding>): EffectSummary[] | undefined {
+  const locals = new Map<string, BoundExpr>();
+  const summaries: EffectSummary[] = [];
+  for (const statement of statements) {
+    if (bindConstStatement(statement, setters, locals)) continue;
+    const summary = summarizeSetterStatement(statement, setters, locals);
+    if (!summary) return undefined;
+    summaries.push(summary);
+  }
+  return summaries;
+}
+
+function cleanupSummaries(statements: readonly ts.Statement[], setters: Map<string, SetterBinding>): EffectSummary[] | undefined {
+  const returns = statements.filter(isCleanupReturn);
+  if (returns.length === 0) return [];
+  if (returns.length > 1) return undefined;
+  const expression = returns[0]!.expression;
+  if (!expression || (!ts.isArrowFunction(expression) && !ts.isFunctionExpression(expression)) || !ts.isBlock(expression.body)) return undefined;
+  return summarizeEffectStatements(expression.body.statements, setters);
+}
+
+function isCleanupReturn(statement: ts.Statement): statement is ts.ReturnStatement {
+  if (!ts.isReturnStatement(statement) || !statement.expression) return false;
+  return ts.isArrowFunction(statement.expression) || ts.isFunctionExpression(statement.expression);
+}
+
+function dependencyReads(node: ts.Expression | undefined, setters: Map<string, SetterBinding>, fallbackReads: readonly string[] = []): string[] {
   if (!node || !ts.isArrayLiteralExpression(node)) {
-    return [...new Set([...setters.values()].map((setter) => setter.varId))];
+    return uniqueStrings(fallbackReads);
   }
   return [...new Set(node.elements.flatMap((element) => ts.isIdentifier(element) ? [stateVarForName(element.text, setters)].filter((id): id is string => Boolean(id)) : []))];
 }
@@ -538,11 +2020,13 @@ interface ParsedGuard {
 
 function applyParsedGuard(transitions: Transition[], parsed: ParsedGuard | undefined): Transition[] {
   if (!parsed) return transitions;
-  return transitions.map((transition) => ({
-    ...transition,
-    guard: andGuard(parsed.expr, transition.guard),
-    reads: [...new Set([...transition.reads, ...parsed.reads])]
-  }));
+  return transitions.map((transition) => transition.cls === "user"
+    ? {
+        ...transition,
+        guard: andGuard(parsed.expr, transition.guard),
+        reads: [...new Set([...transition.reads, ...parsed.reads])]
+      }
+    : transition);
 }
 
 function combineParsedGuards(guards: readonly (ParsedGuard | undefined)[]): ParsedGuard | undefined {
@@ -648,11 +2132,7 @@ function parseGuardExpression(
 ): ParsedGuard | undefined {
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
-  if (ts.isIdentifier(expression)) {
-    const stateVar = stateVarForName(expression.text, setters);
-    if (!stateVar) return undefined;
-    return { expr: { kind: "read", var: stateVar }, reads: [stateVar] };
-  }
+  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, new Map());
   if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
     const parsed = parseGuardExpression(expression.operand, setters);
     return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
@@ -701,11 +2181,7 @@ function parseGuardOperand(
 ): ParsedGuard | undefined {
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
-  if (ts.isIdentifier(expression)) {
-    const stateVar = stateVarForName(expression.text, setters);
-    if (!stateVar) return undefined;
-    return { expr: { kind: "read", var: stateVar }, reads: [stateVar] };
-  }
+  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, new Map());
   return parseGuardExpression(expression, setters);
 }
 
@@ -758,7 +2234,12 @@ function inferredRole(node: ts.Node): string | undefined {
   const tag = node.tagName.getText();
   if (tag === "button") return "button";
   if (tag === "form") return "form";
-  if (tag === "input") return "textbox";
+  if (tag === "input" && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))) {
+    const type = stringAttribute(node.attributes, "type");
+    if (type === "radio") return "radio";
+    if (type === "checkbox") return "checkbox";
+    return "textbox";
+  }
   if (tag === "select") return "combobox";
   if (tag === "textarea") return "textbox";
   return undefined;
@@ -788,11 +2269,13 @@ function isEventTargetValue(node: ts.Expression, parameter: ts.ParameterDeclarat
 
 function isInputValueExpression(node: ts.Expression, parameter: ts.ParameterDeclaration | undefined): boolean {
   if (isEventTargetValue(node, parameter)) return true;
-  return ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "Number" &&
-    node.arguments.length === 1 &&
-    isEventTargetValue(node.arguments[0], parameter);
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && (node.expression.text === "Number" || node.expression.text === "String")) {
+    return node.arguments.length === 1 && isInputValueExpression(node.arguments[0], parameter);
+  }
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && (node.expression.name.text === "trim" || node.expression.name.text === "toLowerCase")) {
+    return node.arguments.length === 0 && isInputValueExpression(node.expression.expression, parameter);
+  }
+  return false;
 }
 
 function propertyAccessPath(node: ts.Expression): string[] | undefined {
@@ -812,6 +2295,10 @@ function valueClassForDomain(domain: AbstractDomain): string {
 
 function safeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "_") || "value";
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }
 
 function literalValue(node: ts.Expression): Value | undefined {
@@ -834,15 +2321,79 @@ function setterAssignEffect(statement: ts.Statement, setters: Map<string, { varI
 }
 
 function expressionStatementAwait(statement: ts.Statement, effectApis: Set<string>): boolean {
-  return Boolean(awaitedOp(statement, effectApis));
+  return Boolean(awaitedOp(statement, effectApis) ?? promiseAllAwaitOps(statement, effectApis));
+}
+
+function containsAwaitedEffect(statements: readonly ts.Statement[], effectApis: Set<string>): boolean {
+  return statements.some((statement) => {
+    let found = false;
+    const visit = (node: ts.Node, insideAwait = false): void => {
+      if (found) return;
+      if (ts.isAwaitExpression(node)) {
+        visit(node.expression, true);
+        return;
+      }
+      if (insideAwait && ts.isCallExpression(node)) {
+        const name = callName(node.expression);
+        if (name && effectApis.has(name)) {
+          found = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, (child) => visit(child, insideAwait));
+    };
+    visit(statement);
+    return found;
+  });
 }
 
 function awaitedOp(statement: ts.Statement, effectApis: Set<string>): string | undefined {
+  return awaitedCall(statement, effectApis)?.op;
+}
+
+function awaitedCall(statement: ts.Statement, effectApis: Set<string>): { op: string; call: ts.CallExpression } | undefined {
   if (!ts.isExpressionStatement(statement)) return undefined;
   const expression = statement.expression;
   if (!ts.isAwaitExpression(expression) || !ts.isCallExpression(expression.expression)) return undefined;
   const name = callName(expression.expression.expression);
-  return name && effectApis.has(name) ? name : undefined;
+  return name && effectApis.has(name) ? { op: name, call: expression.expression } : undefined;
+}
+
+function effectCallArgs(call: ts.CallExpression, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>): { args: Record<string, ExprIR>; reads: string[] } {
+  const first = call.arguments[0];
+  if (!first) return { args: {}, reads: [] };
+  if (ts.isObjectLiteralExpression(first)) {
+    const args: Record<string, ExprIR> = {};
+    const reads = new Set<string>();
+    for (const property of first.properties) {
+      if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property)) return { args: {}, reads: [] };
+      const name = propertyName(property.name);
+      if (!name) return { args: {}, reads: [] };
+      const value = ts.isShorthandPropertyAssignment(property) ? valueExpr(property.name, setters, locals) : valueExpr(property.initializer, setters, locals);
+      if (!value) return { args: {}, reads: [] };
+      args[name] = value.expr;
+      value.reads.forEach((read) => reads.add(read));
+    }
+    return { args, reads: [...reads] };
+  }
+  const value = valueExpr(first, setters, locals);
+  return value ? { args: { value: value.expr }, reads: value.reads } : { args: {}, reads: [] };
+}
+
+function promiseAllAwaitOps(statement: ts.Statement, effectApis: Set<string>): string[] | undefined {
+  if (!ts.isExpressionStatement(statement)) return undefined;
+  const expression = statement.expression;
+  if (!ts.isAwaitExpression(expression) || !ts.isCallExpression(expression.expression)) return undefined;
+  const call = expression.expression;
+  if (callName(call.expression) !== "Promise.all" || call.arguments.length !== 1 || !ts.isArrayLiteralExpression(call.arguments[0])) return undefined;
+  const ops: string[] = [];
+  for (const element of call.arguments[0].elements) {
+    if (!ts.isCallExpression(element)) return undefined;
+    const name = callName(element.expression);
+    if (!name || !effectApis.has(name)) return undefined;
+    ops.push(name);
+  }
+  return ops.length > 0 ? ops : undefined;
 }
 
 function callName(expression: ts.Expression): string | undefined {
@@ -852,7 +2403,11 @@ function callName(expression: ts.Expression): string | undefined {
 }
 
 function pendingIs(op: string): Transition["guard"] {
-  return { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: op }] };
+  return pendingIsAt(0, op);
+}
+
+function pendingIsAt(index: number, op: string): Transition["guard"] {
+  return { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: [String(index), "opId"] }, { kind: "lit", value: op }] };
 }
 
 function componentNameFor(node: ts.Node): string | undefined {

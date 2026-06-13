@@ -1,5 +1,8 @@
 import { canonicalJson, enumerateDomain } from "@modality/kernel";
 import type { AbstractDomain, ExprIR, ModelState, StateVarDecl, TemplateFragment, Transition, Value } from "@modality/kernel";
+import type { SourceDecl, StateSourcePlugin } from "@modality/extraction/spi";
+import * as ts from "typescript";
+import * as harness from "./harness.js";
 
 export interface SwrTemplateOptions {
   id: string;
@@ -37,6 +40,188 @@ export interface SwrView {
   isValidating: boolean;
   loadedEmpty: boolean;
   loadedSome: boolean;
+}
+
+export function swrSource(): StateSourcePlugin {
+  return {
+    id: "swr",
+    version: "0.1.0",
+    packageNames: ["swr"],
+    discover: (ctx) => discoverSwrHooks(ctx.sourceText, ctx.fileName),
+    writeChannels: () => [],
+    template: (decl) => templateForSwrDecl(decl),
+    harness,
+    conformance: {
+      templateProbes: [],
+      testedVersions: "swr>=2"
+    }
+  };
+}
+
+export function discoverSwrHooks(sourceText: string, fileName = "App.tsx"): SourceDecl[] {
+  const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const useSwrNames = useSwrImportNames(source);
+  if (useSwrNames.size === 0) return [];
+
+  const decls: SourceDecl[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && useSwrNames.has(node.expression.text)) {
+      const key = keyFromExpression(node.arguments[0]);
+      if (key) {
+        const id = swrIdFromKey(key.id);
+        const origin = { file: fileName, ...lineAndColumn(source, node) };
+        decls.push({
+          id: `swr:${id}`,
+          kind: "swr/useSWR",
+          origin,
+          metadata: {
+            key: key.id,
+            id,
+            op: `GET ${key.id}`,
+            payloadDomain: inferPayloadDomain(node.typeArguments?.[0]) as Value,
+            ...(key.activeWhen ? { activeWhen: key.activeWhen as Value } : {}),
+            ...optionsMetadata(node.arguments[2])
+          }
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return decls;
+}
+
+function templateForSwrDecl(decl: SourceDecl): TemplateFragment {
+  const metadata = decl.metadata ?? {};
+  return createSwrTemplate({
+    id: stringMetadata(metadata, "id", decl.id.replace(/^swr:/, "")),
+    op: stringMetadata(metadata, "op", decl.id),
+    payloadDomain: domainMetadata(metadata.payloadDomain),
+    activeWhen: exprMetadata(metadata.activeWhen),
+    revalidateOnFocus: booleanMetadata(metadata, "revalidateOnFocus", false),
+    sourceFile: decl.origin !== "system" && decl.origin !== "library-template" ? decl.origin.file : undefined
+  });
+}
+
+function useSwrImportNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== "swr") continue;
+    if (statement.importClause?.name) names.add(statement.importClause.name.text);
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const specifier of bindings.elements) {
+      const imported = specifier.propertyName?.text ?? specifier.name.text;
+      if (imported === "useSWR") names.add(specifier.name.text);
+    }
+  }
+  return names;
+}
+
+function keyFromExpression(expr: ts.Expression | undefined): { id: string; activeWhen?: ExprIR } | undefined {
+  if (!expr) return undefined;
+  if (ts.isStringLiteral(expr) && expr.text.length > 0) return { id: expr.text };
+  if (ts.isNoSubstitutionTemplateLiteral(expr) && expr.text.length > 0) return { id: expr.text };
+  if (ts.isArrayLiteralExpression(expr)) {
+    const parts = expr.elements.map(keyPartFromExpression);
+    if (parts.every((part): part is string => Boolean(part))) return { id: `[${parts.join(",")}]` };
+  }
+  if (ts.isConditionalExpression(expr) && isNullish(expr.whenFalse)) {
+    const key = keyFromExpression(expr.whenTrue);
+    const activeWhen = exprFromCondition(expr.condition);
+    if (key && activeWhen) return { ...key, activeWhen };
+  }
+  return undefined;
+}
+
+function keyPartFromExpression(expr: ts.Expression): string | undefined {
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
+  if (ts.isNumericLiteral(expr)) return expr.text;
+  return undefined;
+}
+
+function exprFromCondition(expr: ts.Expression): ExprIR | undefined {
+  if (ts.isIdentifier(expr)) return { kind: "read", var: expr.text };
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return { kind: "lit", value: true };
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return { kind: "lit", value: false };
+  if (ts.isBinaryExpression(expr) && (expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)) {
+    const left = ts.isIdentifier(expr.left) ? { kind: "read" as const, var: expr.left.text } : undefined;
+    const right = literalExpr(expr.right);
+    if (left && right) return { kind: expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ? "eq" : "neq", args: [left, right] };
+  }
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
+    const inner = exprFromCondition(expr.operand);
+    if (inner) return { kind: "not", args: [inner] };
+  }
+  return undefined;
+}
+
+function literalExpr(expr: ts.Expression): ExprIR | undefined {
+  if (ts.isStringLiteral(expr)) return { kind: "lit", value: expr.text };
+  if (ts.isNumericLiteral(expr)) return { kind: "lit", value: Number(expr.text) };
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return { kind: "lit", value: true };
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return { kind: "lit", value: false };
+  if (expr.kind === ts.SyntaxKind.NullKeyword) return { kind: "lit", value: null };
+  return undefined;
+}
+
+function isNullish(expr: ts.Expression): boolean {
+  return expr.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(expr) && expr.text === "undefined");
+}
+
+function optionsMetadata(expr: ts.Expression | undefined): Record<string, Value> {
+  if (!expr || !ts.isObjectLiteralExpression(expr)) return {};
+  const metadata: Record<string, Value> = {};
+  for (const prop of expr.properties) {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+    if (prop.name.text === "revalidateOnFocus" && prop.initializer.kind === ts.SyntaxKind.TrueKeyword) metadata.revalidateOnFocus = true;
+    if (prop.name.text === "revalidateOnFocus" && prop.initializer.kind === ts.SyntaxKind.FalseKeyword) metadata.revalidateOnFocus = false;
+  }
+  return metadata;
+}
+
+function inferPayloadDomain(typeArg: ts.TypeNode | undefined): AbstractDomain {
+  if (!typeArg) return { kind: "tokens", count: 1 };
+  switch (typeArg.kind) {
+    case ts.SyntaxKind.BooleanKeyword:
+      return { kind: "bool" };
+    case ts.SyntaxKind.LiteralType:
+      return domainFromLiteralType(typeArg as ts.LiteralTypeNode);
+    case ts.SyntaxKind.UnionType:
+      return domainFromUnion(typeArg as ts.UnionTypeNode);
+    case ts.SyntaxKind.ArrayType:
+      return { kind: "lengthCat" };
+    case ts.SyntaxKind.TypeReference: {
+      const name = (typeArg as ts.TypeReferenceNode).typeName.getText();
+      if (name === "Array" || name === "ReadonlyArray") return { kind: "lengthCat" };
+      return { kind: "tokens", count: 1 };
+    }
+    default:
+      return { kind: "tokens", count: 1 };
+  }
+}
+
+function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
+  const lit = node.literal;
+  if (lit.kind === ts.SyntaxKind.TrueKeyword || lit.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
+  if (ts.isStringLiteral(lit)) return { kind: "enum", values: [lit.text] };
+  if (ts.isNumericLiteral(lit)) return { kind: "boundedInt", min: Number(lit.text), max: Number(lit.text) };
+  if (lit.kind === ts.SyntaxKind.NullKeyword) return { kind: "option", inner: { kind: "tokens", count: 1 } };
+  return { kind: "tokens", count: 1 };
+}
+
+function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
+  const literalValues: string[] = [];
+  const numericValues: number[] = [];
+  for (const part of node.types) {
+    if (!ts.isLiteralTypeNode(part)) return { kind: "tokens", count: 1 };
+    const lit = part.literal;
+    if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
+    else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
+    else return { kind: "tokens", count: 1 };
+  }
+  if (numericValues.length === node.types.length) return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
+  return { kind: "enum", values: literalValues };
 }
 
 export function createSwrTemplate(options: SwrTemplateOptions): TemplateFragment {
@@ -220,6 +405,37 @@ export function swrWindowEntryId(id: string, key: string): string {
   return `${id}:${key}`;
 }
 
+function swrIdFromKey(key: string): string {
+  return key.replace(/^\/+/, "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "root";
+}
+
+function stringMetadata(metadata: Record<string, Value>, key: string, fallback: string): string {
+  const value = metadata[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function booleanMetadata(metadata: Record<string, Value>, key: string, fallback: boolean): boolean {
+  const value = metadata[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function domainMetadata(value: Value | undefined): AbstractDomain {
+  if (isDomain(value)) return value;
+  return { kind: "tokens", count: 1 };
+}
+
+function exprMetadata(value: Value | undefined): ExprIR | undefined {
+  return isExpr(value) ? value : undefined;
+}
+
+function isDomain(value: Value | undefined): value is AbstractDomain {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && "kind" in value);
+}
+
+function isExpr(value: Value | undefined): value is ExprIR {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && "kind" in value);
+}
+
 function pendingIs(op: string): ExprIR {
   return { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, lit(op)] };
 }
@@ -251,4 +467,9 @@ function exprReadList(expr: ExprIR): string[] {
 
 export function outcomeFor(value: Value): string {
   return canonicalJson(value);
+}
+
+function lineAndColumn(source: ts.SourceFile, node: ts.Node): { line: number; column: number } {
+  const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
+  return { line: pos.line + 1, column: pos.character + 1 };
 }
