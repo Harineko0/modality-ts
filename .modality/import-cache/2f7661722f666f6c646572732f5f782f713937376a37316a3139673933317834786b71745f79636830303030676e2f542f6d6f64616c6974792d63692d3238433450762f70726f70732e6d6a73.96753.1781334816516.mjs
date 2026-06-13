@@ -1,1 +1,0 @@
-export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: state => state.flag === false }];
