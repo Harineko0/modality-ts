@@ -6,6 +6,7 @@ import { extractUseStateSkeleton, runExtractionPipeline } from "modality-ts/extr
 import { canonicalJson, parseModelArtifact, type EffectIR, type ExtractionCaveat, type ExtractionReport, type Model, type OverlaySpec, type StateVarDecl } from "modality-ts/kernel";
 import type { Bounds } from "modality-ts/kernel";
 import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extraction/spi";
+import { routeVars as defaultRouteVars } from "modality-ts/source-router";
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
@@ -70,12 +71,15 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     extractHandlers: (sourceText, handlerOptions) => extractUseStateSkeleton(sourceText, handlerOptions)
   });
   const transitions = [...pipeline.transitions];
+  const routeVars = pipeline.routeVars.length > 0 ? pipeline.routeVars : defaultRouteVars([route], { route, bounds: { maxHistory: 4 } });
+  const templateVars = pipeline.templateFragments.flatMap((fragment) => fragment.vars);
+  const stateVars = refineAssignedLiteralDomains([...pipeline.stateVars, ...templateVars], transitions);
   const extractedModel: Model = {
     schemaVersion: 1,
     id: "extracted-model",
     bounds,
     metadata: { sourceHashes: { [options.sourcePath]: sha256(source) }, plugins: pluginProvenance(pipeline.plugins) },
-    vars: [...pipeline.routeVars, ...pendingVars(effectApis, transitions, [...pipeline.routeVars, ...pipeline.stateVars, ...pipeline.templateFragments.flatMap((fragment) => fragment.vars)], bounds.maxPending), ...pipeline.stateVars, ...pipeline.templateFragments.flatMap((fragment) => fragment.vars)],
+    vars: [...routeVars, ...pendingVars(effectApis, transitions, [...routeVars, ...stateVars], bounds.maxPending), ...stateVars],
     transitions
   };
   const overlaySpec = options.explainDrift && options.overlayPath ? await readOverlaySpec(options.overlayPath) : undefined;
@@ -464,6 +468,32 @@ function pendingArgDomain(expr: Extract<EffectIR, { kind: "enqueue" }>["args"][s
   const domain = varsById.get(expr.var)?.domain;
   if (!domain) return { kind: "tokens", count: 1 };
   return expr.path?.length ? { kind: "tokens", count: 1 } : domain;
+}
+
+function refineAssignedLiteralDomains(vars: readonly StateVarDecl[], transitions: readonly Model["transitions"][number][]): StateVarDecl[] {
+  const refinements = new Map<string, StateVarDecl["domain"]>();
+  for (const transition of transitions) {
+    for (const [varId, domain] of assignedLiteralDomains(transition.effect)) {
+      refinements.set(varId, mergeArgDomains(refinements.get(varId), domain));
+    }
+  }
+  return vars.map((decl) => {
+    if (decl.origin === "library-template") return decl;
+    const refinement = refinements.get(decl.id);
+    return refinement ? { ...decl, domain: mergeArgDomains(decl.domain, refinement) } : decl;
+  });
+}
+
+function assignedLiteralDomains(effect: EffectIR): Array<[string, StateVarDecl["domain"]]> {
+  if (effect.kind === "assign" && effect.expr.kind === "lit") return [[effect.var, domainForLiteral(effect.expr.value)]];
+  if (effect.kind === "choose") {
+    return effect.among
+      .filter((expr): expr is Extract<typeof expr, { kind: "lit" }> => expr.kind === "lit")
+      .map((expr) => [effect.var, domainForLiteral(expr.value)]);
+  }
+  if (effect.kind === "seq") return effect.effects.flatMap(assignedLiteralDomains);
+  if (effect.kind === "if") return [...assignedLiteralDomains(effect.then), ...assignedLiteralDomains(effect.else)];
+  return [];
 }
 
 function domainForLiteral(value: unknown): StateVarDecl["domain"] {

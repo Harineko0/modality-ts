@@ -68,7 +68,7 @@ function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
   };
 }
 
-export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
+export function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
     case ts.SyntaxKind.BooleanKeyword:
@@ -81,13 +81,13 @@ export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): Abstract
     case ts.SyntaxKind.LiteralType:
       return domainFromLiteralType(node as ts.LiteralTypeNode);
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(node as ts.UnionTypeNode);
+      return domainFromUnion(node as ts.UnionTypeNode, typeAliases);
     case ts.SyntaxKind.TypeLiteral:
       return domainFromTypeLiteral(node as ts.TypeLiteralNode);
     case ts.SyntaxKind.ArrayType:
       return { kind: "lengthCat" };
     case ts.SyntaxKind.TypeReference:
-      return domainFromTypeReference(node as ts.TypeReferenceNode);
+      return domainFromTypeReference(node as ts.TypeReferenceNode, typeAliases);
     default:
       return { kind: "tokens", count: 1 };
   }
@@ -100,6 +100,7 @@ export function extractUseStateVars(sourceText: string, options: UseStateExtract
 export function extractUseStateSkeleton(sourceText: string, options: UseStateExtractionOptions = {}): ExtractedModelSkeleton {
   const fileName = options.fileName ?? "App.tsx";
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const typeAliases = typeAliasDeclarations(source);
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
@@ -152,7 +153,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       const stateName = node.name.elements[0];
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
-        const domain = inferUseStateDomain(node.initializer);
+        const domain = inferUseStateDomain(node.initializer, typeAliases);
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
         if (!options.stateVars) {
@@ -213,9 +214,10 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         ts.forEachChild(node, (child) => visit(child, nextComponent));
         return;
       }
+      const guardLocals = componentGuardLocalsFor(node, setters);
       const guard = combineParsedGuards([
-        renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous"),
-        disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous")
+        renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals),
+        disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals)
       ]);
       const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard, warnings);
       transitions.push(...extracted);
@@ -281,9 +283,9 @@ function shortHash(value: string): string {
   return (hash >>> 0).toString(36).padStart(6, "0").slice(0, 6);
 }
 
-function inferUseStateDomain(call: ts.CallExpression): AbstractDomain {
+function inferUseStateDomain(call: ts.CallExpression, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
-  if (typeArg) return inferDomainFromTypeNode(typeArg);
+  if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
   if (!initial) return { kind: "tokens", count: 1 };
   if (initial.kind === ts.SyntaxKind.TrueKeyword || initial.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
@@ -333,10 +335,10 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
+function domainFromUnion(node: ts.UnionTypeNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
   if (nonNull.length !== node.types.length && nonNull.length > 0) {
-    return { kind: "option", inner: nonNull.length === 1 ? inferDomainFromTypeNode(nonNull[0]) : domainFromUnionMembers(nonNull) };
+    return { kind: "option", inner: nonNull.length === 1 ? inferDomainFromTypeNode(nonNull[0], typeAliases) : domainFromUnionMembers(nonNull) };
   }
   return domainFromUnionMembers(node.types);
 }
@@ -393,11 +395,23 @@ function domainFromTypeLiteral(node: ts.TypeLiteralNode, omitField?: string): Ab
   return { kind: "record", fields };
 }
 
-function domainFromTypeReference(node: ts.TypeReferenceNode): AbstractDomain {
+function domainFromTypeReference(node: ts.TypeReferenceNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const name = node.typeName.getText();
+  const alias = typeAliases.get(name);
+  if (alias) return inferDomainFromTypeNode(alias, typeAliases);
   if ((name === "Array" || name === "ReadonlyArray") && node.typeArguments?.length === 1) return { kind: "lengthCat" };
   if (name === "Record") return { kind: "tokens", count: 1 };
   return { kind: "tokens", count: 1 };
+}
+
+function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> {
+  const aliases = new Map<string, ts.TypeNode>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) aliases.set(node.name.text, node.type);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return aliases;
 }
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
@@ -564,9 +578,10 @@ function transitionsFromComponentPropAttribute(
   const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
   const handler = handlerExpression(expression, handlers);
   if (!handler) return [];
+  const guardLocals = componentGuardLocalsFor(node, setters);
   const callerGuard = combineParsedGuards([
-    renderGuardFor(node, setters, warnings, source, component),
-    disabledGuardFor(node, setters, warnings, source, component)
+    renderGuardFor(node, setters, warnings, source, component, guardLocals),
+    disabledGuardFor(node, setters, warnings, source, component, guardLocals)
   ]);
   return tagStableIdKey(
     transitionsFromResolvedHandler(
@@ -1072,6 +1087,29 @@ function stateNameForVar(varId: string, setters: Map<string, SetterBinding>): st
   return [...setters.values()].find((setter) => setter.varId === varId)?.stateName;
 }
 
+function componentGuardLocalsFor(attribute: ts.JsxAttribute, setters: Map<string, SetterBinding>): Map<string, BoundExpr> {
+  const body = enclosingFunctionBody(attribute);
+  if (!body) return new Map();
+  const locals = new Map<string, BoundExpr>();
+  for (const statement of body.statements) {
+    if (statement.pos > attribute.pos) break;
+    if (ts.isReturnStatement(statement)) break;
+    bindConstStatement(statement, setters, locals, true);
+  }
+  return locals;
+}
+
+function enclosingFunctionBody(node: ts.Node): ts.Block | undefined {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if ((ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current) || ts.isArrowFunction(current)) && current.body && ts.isBlock(current.body)) {
+      return current.body;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
 function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string, SetterBinding>, initialLocals: Map<string, BoundExpr> = new Map()): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
   const body = handler.body;
   if (ts.isCallExpression(body)) return { call: body, locals: new Map(initialLocals) };
@@ -1087,12 +1125,13 @@ function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string
   return undefined;
 }
 
-function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>): boolean {
+function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>, partialBoolean = false): boolean {
   if (!ts.isVariableStatement(statement)) return false;
   if ((ts.getCombinedNodeFlags(statement.declarationList) & ts.NodeFlags.Const) === 0) return false;
   for (const declaration of statement.declarationList.declarations) {
     if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return false;
-    const binding = valueExpr(declaration.initializer, setters, locals);
+    const binding = valueExpr(declaration.initializer, setters, locals) ??
+      (partialBoolean ? parseConjunctiveGuardExpression(declaration.initializer, setters, locals) : booleanExpr(declaration.initializer, setters, locals));
     if (!binding) return false;
     locals.set(declaration.name.text, binding);
   }
@@ -2043,7 +2082,8 @@ function renderGuardFor(
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
   source: ts.SourceFile,
-  component: string
+  component: string,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   const element = jsxElementForAttribute(eventAttribute);
   if (!element) return undefined;
@@ -2055,7 +2095,7 @@ function renderGuardFor(
       parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
       parent.right === current
     ) {
-      const parsed = parseGuardExpression(parent.left, setters);
+      const parsed = parseConjunctiveGuardExpression(parent.left, setters, locals);
       if (!parsed) {
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.left) });
         return undefined;
@@ -2063,7 +2103,7 @@ function renderGuardFor(
       return parsed;
     }
     if (ts.isConditionalExpression(parent) && parent.whenTrue === current) {
-      const parsed = parseGuardExpression(parent.condition, setters);
+      const parsed = parseConjunctiveGuardExpression(parent.condition, setters, locals);
       if (!parsed) {
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
         return undefined;
@@ -2071,7 +2111,7 @@ function renderGuardFor(
       return parsed;
     }
     if (ts.isConditionalExpression(parent) && parent.whenFalse === current) {
-      const parsed = parseGuardExpression(parent.condition, setters);
+      const parsed = parseConjunctiveGuardExpression(parent.condition, setters, locals);
       if (!parsed) {
         warnings.push({ message: `Unsupported render guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, parent.condition) });
         return undefined;
@@ -2100,15 +2140,16 @@ function disabledGuardFor(
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
   source: ts.SourceFile,
-  component: string
+  component: string,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   const attrs = eventAttribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
   const disabled = attrs.properties.find((property): property is ts.JsxAttribute =>
     ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && (property.name.text === "disabled" || property.name.text === "aria-disabled")
-  );
+  ) ?? submitButtonDisabledAttribute(eventAttribute);
   if (!disabled) return undefined;
-  const parsed = jsxAttributeBoolean(disabled, setters);
+  const parsed = jsxAttributeBoolean(disabled, setters, locals);
   if (!parsed) {
     warnings.push({ message: `Unsupported disabled guard ${component}.${eventAttribute.name.getText(source)}`, ...lineAndColumn(source, disabled) });
     return undefined;
@@ -2116,39 +2157,64 @@ function disabledGuardFor(
   return { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads };
 }
 
+function submitButtonDisabledAttribute(eventAttribute: ts.JsxAttribute): ts.JsxAttribute | undefined {
+  if (!ts.isIdentifier(eventAttribute.name) || eventAttribute.name.text !== "onSubmit") return undefined;
+  const element = jsxElementForAttribute(eventAttribute);
+  if (!element || !ts.isJsxElement(element)) return undefined;
+  let found: ts.JsxAttribute | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = ts.isIdentifier(node.tagName) ? node.tagName.text : undefined;
+      if (tag === "button" && stringAttribute(node.attributes, "type") === "submit") {
+        found = node.attributes.properties.find((property): property is ts.JsxAttribute =>
+          ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && (property.name.text === "disabled" || property.name.text === "aria-disabled")
+        );
+        if (found) return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(element);
+  return found;
+}
+
 function jsxAttributeBoolean(
   attribute: ts.JsxAttribute,
-  setters: Map<string, SetterBinding>
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   if (!attribute.initializer) return { expr: { kind: "lit", value: true }, reads: [] };
   if (ts.isStringLiteral(attribute.initializer)) return { expr: { kind: "lit", value: attribute.initializer.text === "true" }, reads: [] };
   if (!ts.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) return undefined;
-  return parseGuardExpression(attribute.initializer.expression, setters);
+  return parseConjunctiveGuardExpression(attribute.initializer.expression, setters, locals);
 }
 
 function parseGuardExpression(
   expression: ts.Expression,
-  setters: Map<string, SetterBinding>
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, new Map());
+  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, locals);
   if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
-    const parsed = parseGuardExpression(expression.operand, setters);
+    const parsed = parseGuardExpression(expression.operand, setters, locals);
     return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
   }
-  if (ts.isParenthesizedExpression(expression)) return parseGuardExpression(expression.expression, setters);
-  if (ts.isBinaryExpression(expression)) return parseBinaryGuardExpression(expression, setters);
+  if (ts.isParenthesizedExpression(expression)) return parseGuardExpression(expression.expression, setters, locals);
+  if (ts.isBinaryExpression(expression)) return parseBinaryGuardExpression(expression, setters, locals);
   return undefined;
 }
 
 function parseBinaryGuardExpression(
   expression: ts.BinaryExpression,
-  setters: Map<string, SetterBinding>
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   if (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || expression.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-    const left = parseGuardExpression(expression.left, setters);
-    const right = parseGuardExpression(expression.right, setters);
+    const left = parseGuardExpression(expression.left, setters, locals);
+    const right = parseGuardExpression(expression.right, setters, locals);
     if (!left || !right) return undefined;
     return {
       expr: { kind: expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? "and" : "or", args: [left.expr, right.expr] },
@@ -2161,8 +2227,8 @@ function parseBinaryGuardExpression(
     expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
     expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
   ) {
-    const left = parseGuardOperand(expression.left, setters);
-    const right = parseGuardOperand(expression.right, setters);
+    const left = parseGuardOperand(expression.left, setters, locals);
+    const right = parseGuardOperand(expression.right, setters, locals);
     if (!left || !right) return undefined;
     return {
       expr: {
@@ -2177,12 +2243,28 @@ function parseBinaryGuardExpression(
 
 function parseGuardOperand(
   expression: ts.Expression,
-  setters: Map<string, SetterBinding>
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
 ): ParsedGuard | undefined {
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, new Map());
-  return parseGuardExpression(expression, setters);
+  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, locals);
+  return parseGuardExpression(expression, setters, locals);
+}
+
+function parseConjunctiveGuardExpression(
+  expression: ts.Expression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
+): ParsedGuard | undefined {
+  if (ts.isParenthesizedExpression(expression)) return parseConjunctiveGuardExpression(expression.expression, setters, locals);
+  if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+    return combineParsedGuards([
+      parseConjunctiveGuardExpression(expression.left, setters, locals),
+      parseConjunctiveGuardExpression(expression.right, setters, locals)
+    ]);
+  }
+  return parseGuardExpression(expression, setters, locals);
 }
 
 function stateVarForName(name: string, setters: Map<string, SetterBinding>): string | undefined {

@@ -1,0 +1,1 @@
+export const properties = [{ kind: "always", name: "flagAlwaysFalse", predicate: state => state.flag === false }];

@@ -21,6 +21,7 @@ export default useStateSource;
 
 export function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/"): SourceDecl[] {
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const typeAliases = typeAliasDeclarations(source);
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const component = componentNameFor(node) ?? componentName;
@@ -29,7 +30,7 @@ export function discoverUseState(sourceText: string, fileName = "App.tsx", route
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const componentId = component ?? "Anonymous";
-        const domain = inferUseStateDomain(node.initializer);
+        const domain = inferUseStateDomain(node.initializer, typeAliases);
         const varId = `local:${componentId}.${stateName.name.text}`;
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         const variable: StateVarDecl = {
@@ -71,7 +72,7 @@ export function discoverUseStateWriteChannels(sourceText: string, fileName = "Ap
   });
 }
 
-export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
+export function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
     case ts.SyntaxKind.BooleanKeyword:
@@ -84,21 +85,21 @@ export function inferDomainFromTypeNode(node: ts.TypeNode | undefined): Abstract
     case ts.SyntaxKind.LiteralType:
       return domainFromLiteralType(node as ts.LiteralTypeNode);
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(node as ts.UnionTypeNode);
+      return domainFromUnion(node as ts.UnionTypeNode, typeAliases);
     case ts.SyntaxKind.TypeLiteral:
       return domainFromTypeLiteral(node as ts.TypeLiteralNode);
     case ts.SyntaxKind.ArrayType:
       return { kind: "lengthCat" };
     case ts.SyntaxKind.TypeReference:
-      return domainFromTypeReference(node as ts.TypeReferenceNode);
+      return domainFromTypeReference(node as ts.TypeReferenceNode, typeAliases);
     default:
       return { kind: "tokens", count: 1 };
   }
 }
 
-function inferUseStateDomain(call: ts.CallExpression): AbstractDomain {
+function inferUseStateDomain(call: ts.CallExpression, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
-  if (typeArg) return inferDomainFromTypeNode(typeArg);
+  if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
   if (!initial) return { kind: "tokens", count: 1 };
   if (initial.kind === ts.SyntaxKind.TrueKeyword || initial.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
@@ -130,10 +131,10 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
+function domainFromUnion(node: ts.UnionTypeNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
   if (nonNull.length !== node.types.length && nonNull.length === 1) {
-    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0]) };
+    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0], typeAliases) };
   }
   const literalValues: string[] = [];
   const numericValues: number[] = [];
@@ -180,11 +181,23 @@ function domainFromTypeLiteral(node: ts.TypeLiteralNode, omitField?: string): Ab
   return { kind: "record", fields };
 }
 
-function domainFromTypeReference(node: ts.TypeReferenceNode): AbstractDomain {
+function domainFromTypeReference(node: ts.TypeReferenceNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const name = node.typeName.getText();
+  const alias = typeAliases.get(name);
+  if (alias) return inferDomainFromTypeNode(alias, typeAliases);
   if ((name === "Array" || name === "ReadonlyArray") && node.typeArguments?.length === 1) return { kind: "lengthCat" };
   if (name === "Record") return { kind: "tokens", count: 1 };
   return { kind: "tokens", count: 1 };
+}
+
+function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> {
+  const aliases = new Map<string, ts.TypeNode>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) aliases.set(node.name.text, node.type);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return aliases;
 }
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {

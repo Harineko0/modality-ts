@@ -423,6 +423,80 @@ describe("runExtractCommand", () => {
     }));
   });
 
+  it("extracts supported disabled guard conjuncts through component boolean aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      type SubmissionPhase = 'idle' | 'submitting';
+      export function App() {
+        const [phase, setPhase] = useState<SubmissionPhase>('idle');
+        const isUser = session.status === 'user';
+        const isApplied = snapshot?.application?.applied ?? false;
+        const isBusy = phase === 'submitting';
+        const canSubmit = isUser && !isApplied && !isBusy;
+        return <button disabled={!canSubmit} onClick={() => setPhase('submitting')}>Submit</button>;
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath, reportPath });
+    expect(result.model.transitions).toContainEqual(expect.objectContaining({
+      id: "App.onClick.phase",
+      guard: {
+        kind: "not",
+        args: [{
+          kind: "not",
+          args: [{
+            kind: "not",
+            args: [{
+              kind: "eq",
+              args: [{ kind: "read", var: "local:App.phase" }, { kind: "lit", value: "submitting" }]
+            }]
+          }]
+        }]
+      },
+      reads: ["local:App.phase"],
+      effect: { kind: "assign", var: "local:App.phase", expr: { kind: "lit", value: "submitting" } }
+    }));
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(report.warnings).not.toContain("Unsupported disabled guard App.onClick");
+  });
+
+  it("uses submit button disabled guards for form submit transitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [phase, setPhase] = useState<'idle' | 'submitting'>('idle');
+        const isBusy = phase === 'submitting';
+        const canSubmit = !isBusy;
+        return (
+          <form onSubmit={() => setPhase('submitting')}>
+            <button type="submit" disabled={!canSubmit}>Submit</button>
+          </form>
+        );
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions).toContainEqual(expect.objectContaining({
+      id: "App.onSubmit.phase",
+      reads: ["local:App.phase"]
+    }));
+  });
+
   it("extracts Jotai default-store writes through source write channels", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
