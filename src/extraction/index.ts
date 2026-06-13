@@ -566,9 +566,9 @@ function staticLinkTransitions(
       cls: "nav" as const,
       label: { kind: "navigate" as const, mode: "push" as const, to: target.to },
       source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
-      guard: { kind: "lit" as const, value: true },
+      guard: routeMountGuard(component, routePatterns),
       effect: { kind: "navigate" as const, mode: "push" as const, to: { kind: "lit" as const, value: target.to } },
-      reads: ["sys:route", "sys:history"],
+      reads: routeMountReads(component, routePatterns),
       writes: ["sys:route", "sys:history"],
       confidence: target.confidence,
       __stableIdKey: `${component}:${toAttr.getText(source)}:${target.to}`
@@ -2032,12 +2032,39 @@ function linkNavigationTransition(
     cls: "nav",
     label: { kind: "navigate", mode: "push", to },
     source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
-    guard: { kind: "lit", value: true },
+    guard: routeMountGuard(component, routePatterns),
     effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: to } },
-    reads: ["sys:route", "sys:history"],
+    reads: routeMountReads(component, routePatterns),
     writes: ["sys:route", "sys:history"],
     confidence: "exact"
   };
+}
+
+function routeMountGuard(component: string, routePatterns: readonly string[]): ExprIR {
+  const route = routeForComponent(component, routePatterns);
+  return route ? { kind: "eq", args: [{ kind: "read", var: "sys:route" }, { kind: "lit", value: route }] } : { kind: "lit", value: true };
+}
+
+function routeMountReads(component: string, routePatterns: readonly string[]): string[] {
+  return routeForComponent(component, routePatterns) ? ["sys:history", "sys:route"] : ["sys:route", "sys:history"];
+}
+
+function routeForComponent(component: string, routePatterns: readonly string[]): string | undefined {
+  const normalized = normalizeComponentRouteName(component);
+  if (!normalized) return undefined;
+  return routePatterns.find((pattern) => normalizeRouteComponentName(pattern) === normalized);
+}
+
+function normalizeComponentRouteName(component: string): string {
+  return component.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+function normalizeRouteComponentName(route: string): string {
+  const parts = route.replace(/^\/+/, "").split("/").filter(Boolean);
+  if (parts.length !== 1) return "";
+  const [part] = parts;
+  if (!part || part.startsWith(":") || part === "*") return "";
+  return part.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
 
 function jsxRouteTarget(attribute: ts.JsxAttribute, routePatterns: readonly string[]): string | undefined {

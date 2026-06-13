@@ -174,6 +174,26 @@ describe("useState inventory", () => {
     });
   });
 
+  it("guards page-component Link navigation by the mounted route", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      export function Analytics() {
+        return <Link to="/analytics">Clear</Link>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] }
+    );
+    expect(result.transitions.find((transition) => transition.id === "Analytics.Link.navigate._analytics")).toMatchObject({
+      cls: "nav",
+      guard: {
+        kind: "eq",
+        args: [{ kind: "read", var: "sys:route" }, { kind: "lit", value: "/analytics" }]
+      },
+      reads: ["sys:history", "sys:route"]
+    });
+  });
+
   it("models conditional Link targets as nondeterministic branch transitions", () => {
     const result = extractUseStateSkeleton(
       `
