@@ -77,6 +77,7 @@ function effectRelation(model: Model, effect: EffectIR, env: TlaEnv): string {
 function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
   switch (effect.kind) {
     case "assign":
+      if (effect.expr.kind === "freshToken") return [withFreshToken(model, env, effect.var, effect.expr.domainOf)];
       return [withValue(env, effect.var, tlaExpr(effect.expr, env))];
     case "havoc": {
       const decl = model.vars.find((candidate) => candidate.id === effect.var);
@@ -179,6 +180,54 @@ function withExistentialValue(env: TlaEnv, id: string, set: string): TlaEnv {
   return next;
 }
 
+function withFreshToken(model: Model, env: TlaEnv, target: string, domainOf: string): TlaEnv {
+  const decl = model.vars.find((candidate) => candidate.id === domainOf);
+  if (!decl || decl.domain.kind !== "tokens") throw new Error(`TLA export cannot freshToken non-token var ${domainOf}`);
+  const next = cloneEnv(env);
+  const name = `${tlaName(target)}_fresh_${next.nextId + 1}`;
+  next.nextId += 1;
+  next.exists.push({ name, set: tlaSet(enumerateDomain(decl.domain)) });
+  next.assumptions.push(freshTokenAssumption(model, env, name));
+  next.values.set(target, name);
+  return next;
+}
+
+function freshTokenAssumption(model: Model, env: TlaEnv, tokenName: string): string {
+  const clauses = model.vars.map((decl) => tokenAbsentExpr(decl.domain, envValue(env, decl.id), tokenName));
+  return clauses.length === 0 ? "TRUE" : clauses.join(" /\\ ");
+}
+
+function tokenAbsentExpr(domain: Model["vars"][number]["domain"], valueExpr: string, tokenName: string): string {
+  switch (domain.kind) {
+    case "tokens":
+      return `(${valueExpr} # ${tokenName})`;
+    case "option":
+      return `((${valueExpr} = "null") \\/ ${tokenAbsentExpr(domain.inner, valueExpr, tokenName)})`;
+    case "record": {
+      const clauses = Object.entries(domain.fields).map(([field, fieldDomain]) => tokenAbsentExpr(fieldDomain, `${valueExpr}.${tlaName(field)}`, tokenName));
+      return clauses.length === 0 ? "TRUE" : `(${clauses.join(" /\\ ")})`;
+    }
+    case "tagged": {
+      const fieldNames = new Set<string>();
+      for (const variant of Object.values(domain.variants)) {
+        if (variant.kind === "record") for (const field of Object.keys(variant.fields)) fieldNames.add(field);
+      }
+      const clauses = [...fieldNames].map((field) => {
+        const fieldDomain = Object.values(domain.variants)
+          .filter((variant): variant is Extract<typeof variant, { kind: "record" }> => variant.kind === "record")
+          .map((variant) => variant.fields[field])
+          .find((candidate): candidate is Model["vars"][number]["domain"] => Boolean(candidate)) ?? { kind: "enum", values: [] } as const;
+        return tokenAbsentExpr(fieldDomain, `${valueExpr}.${tlaName(field)}`, tokenName);
+      });
+      return clauses.length === 0 ? "TRUE" : `(${clauses.join(" /\\ ")})`;
+    }
+    case "boundedList":
+      return `(\\A i \\in 1..Len(${valueExpr}): ${tokenAbsentExpr(domain.inner, `${valueExpr}[i]`, tokenName)})`;
+    default:
+      return "TRUE";
+  }
+}
+
 function envValue(env: TlaEnv, id: string): string {
   return env.values.get(id) ?? tlaName(id);
 }
@@ -208,7 +257,7 @@ function tlaExpr(expr: ExprIR, env: TlaEnv = emptyEnv()): string {
     case "lenCat":
       return `(IF Len(${tlaExpr(expr.arg, env)}) = 0 THEN "0" ELSE IF Len(${tlaExpr(expr.arg, env)}) = 1 THEN "1" ELSE "many")`;
     case "freshToken":
-      throw new Error("TLA export does not support freshToken yet");
+      throw new Error("TLA export only supports freshToken as an assignment expression");
     default:
       throw new Error("TLA export encountered an unsupported expression kind");
   }

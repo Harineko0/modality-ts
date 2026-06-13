@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/checker";
 import { always, reachable, type Model } from "modality-ts/kernel";
 import { extractUseStateSkeleton, extractUseStateVars } from "modality-ts/extraction";
+import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extraction/spi";
 
 describe("useState inventory", () => {
   it("extracts route-local state declarations with stable ids", () => {
@@ -1721,6 +1722,64 @@ describe("useState inventory", () => {
     expect(result.vars).toEqual([]);
     expect(result.transitions).toEqual([]);
     expect(result.warnings.map((warning) => warning.message)).toContain("Unsupported useReducer App.useReducer");
+  });
+
+  it("uses custom router plugins to summarize navigation calls", () => {
+    const routerPlugin: RouterPlugin = {
+      id: "custom-router",
+      packageNames: ["custom-router"],
+      routeVars: () => [],
+      navigationCall: (callee, args) => callee === "go" && typeof args[0] === "string" ? { mode: "replace", to: args[0] } : "unsupported",
+      harness: { setup: () => ({}), observe: () => "unobservable", navigate: () => undefined }
+    };
+    const result = extractUseStateSkeleton(
+      `
+      export function App() {
+        return <button onClick={() => go('/next')}>Go</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", routerPlugin }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.navigate._next",
+      cls: "nav",
+      effect: { kind: "navigate", mode: "replace", to: { kind: "lit", value: "/next" } }
+    });
+  });
+
+  it("uses source plugin summarizeWrite hooks before built-in setter handling", () => {
+    const plugin: StateSourcePlugin = {
+      id: "external-state",
+      packageNames: ["external-state"],
+      discover: () => [],
+      writeChannels: () => [],
+      summarizeWrite: (call) => call.callee === "externalSet"
+        ? { kind: "assign", var: "external", expr: { kind: "lit", value: "on" } }
+        : "unsupported",
+      harness: { setup: () => ({}), observe: () => "unobservable" }
+    };
+    const result = extractUseStateSkeleton(
+      `
+      export function App() {
+        return <button onClick={() => externalSet('on')}>On</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        sourcePlugins: [plugin],
+        stateVars: [{ id: "external", domain: { kind: "enum", values: ["off", "on"] }, origin: "system", scope: { kind: "global" }, initial: "off" }]
+      }
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.external-state.externalSet",
+      effect: { kind: "assign", var: "external", expr: { kind: "lit", value: "on" } },
+      reads: [],
+      writes: ["external"],
+      confidence: "exact"
+    });
   });
 
   it("reports refs that hold modeled setters as global taints", () => {

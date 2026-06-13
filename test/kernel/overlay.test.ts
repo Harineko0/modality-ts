@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOverlay, type Model } from "modality-ts/kernel";
+import { applyOverlay, overlay, type Model } from "modality-ts/kernel";
 
 const model: Model = {
   schemaVersion: 1,
@@ -61,6 +61,21 @@ describe("applyOverlay", () => {
       initial: "off"
     });
     expect(result.model.metadata?.domainProvenance).toEqual({ debug: "overlay-refined" });
+  });
+
+  it("builds typed overlay specs and applies locators", () => {
+    const spec = overlay(model)
+      .locator("toggle", { kind: "testId", value: "toggle" })
+      .refineDomain("debug", { kind: "enum", values: ["off", "on"] }, { initial: "off" })
+      .toJSON();
+    const result = applyOverlay(model, spec);
+    expect(result.errors).toEqual([]);
+    expect(result.model.transitions.find((transition) => transition.id === "toggle")?.label).toEqual({
+      kind: "click",
+      text: "Toggle",
+      locator: { kind: "testId", value: "toggle" }
+    });
+    expect(result.model.vars.find((decl) => decl.id === "debug")?.initial).toBe("off");
   });
 
   it("reports orphan overlay entries as errors", () => {

@@ -27,11 +27,12 @@ describe("runReplayCommand", () => {
     const result = await runReplayCommand({ tracePath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.exitCode).toBe(0);
-    expect(result.lines).toEqual(["replay: reproduced", "stepsRun=1"]);
+    expect(result.lines).toEqual(["replay: reproduced", "mode=abstract", "stepsRun=1"]);
     expect(report).toEqual({
       schemaVersion: 1,
       kind: "replay-report",
       generatedAt: "2026-06-12T00:00:00.000Z",
+      mode: "abstract",
       verdict: { status: "reproduced", stepsRun: 1 }
     });
   });
@@ -51,6 +52,33 @@ describe("runReplayCommand", () => {
       divergenceStep: 1,
       reason: 'postcondition mismatch: auth: expected "user", got "guest"'
     });
+  });
+
+  it("runs action replay through a harness module", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-replay-action-"));
+    const tracePath = join(dir, "trace.json");
+    const harnessPath = join(dir, "harness.mjs");
+    await writeFile(tracePath, JSON.stringify(traceArtifact({
+      steps: [{
+        ...trace.steps[0]!,
+        label: { kind: "click", locator: { kind: "testId", value: "login" } }
+      }]
+    })), "utf8");
+    await writeFile(harnessPath, [
+      "export async function renderModalityReplay() {",
+      "  document.body.innerHTML = '<button data-testid=\"login\">Login</button><span data-modality-var=\"auth\">\"guest\"</span>';",
+      "  document.querySelector('[data-testid=\"login\"]').addEventListener('click', () => {",
+      "    document.querySelector('[data-modality-var=\"auth\"]').textContent = '\"user\"';",
+      "  });",
+      "  return { document };",
+      "}"
+    ].join("\n"), "utf8");
+
+    const result = await runReplayCommand({ tracePath, harnessPath, mode: "action", now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(0);
+    expect(result.report.mode).toBe("action");
+    expect(result.report.harnessPath).toBe(harnessPath);
+    expect(result.report.verdict).toEqual({ status: "reproduced", stepsRun: 1 });
   });
 
   it("allows observed state artifacts to compare only observable variables", async () => {

@@ -83,11 +83,12 @@ describe("runConformCommand", () => {
     const result = await runConformCommand({ walksPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.exitCode).toBe(2);
-    expect(result.lines).toEqual(["conform: total=2 reproduced=1 notReproduced=1 inconclusive=0", "passRate=0.5"]);
+    expect(result.lines).toEqual(["conform: total=2 reproduced=1 notReproduced=1 inconclusive=0", "mode=abstract", "passRate=0.5"]);
     expect(report).toMatchObject({
       schemaVersion: 1,
       kind: "conform-report",
       generatedAt: "2026-06-12T00:00:00.000Z",
+      mode: "abstract",
       metrics: { total: 2, reproduced: 1, notReproduced: 1, inconclusive: 0, passRate: 0.5 }
     });
     expect(report.walks.map((walk: { id: string; status: string }) => [walk.id, walk.status])).toEqual([
@@ -130,6 +131,32 @@ describe("runConformCommand", () => {
       { transitionId: "login", walks: 1, reproduced: 1, notReproduced: 0, inconclusive: 0, passRate: 1 },
       { transitionId: "submit", walks: 1, reproduced: 1, notReproduced: 0, inconclusive: 0, passRate: 1 }
     ]);
+  });
+
+  it("runs action conformance walks through a harness module", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-conform-action-"));
+    const walksPath = join(dir, "walks.json");
+    const harnessPath = join(dir, "harness.mjs");
+    await writeFile(
+      walksPath,
+      JSON.stringify(conformWalks([{ id: "action", trace: { steps: [{ ...trace.steps[0]!, label: { kind: "click", locator: { kind: "testId", value: "login" } } }] } }])),
+      "utf8"
+    );
+    await writeFile(harnessPath, [
+      "export async function renderModalityReplay() {",
+      "  document.body.innerHTML = '<button data-testid=\"login\">Login</button><span data-modality-var=\"auth\">\"guest\"</span>';",
+      "  document.querySelector('[data-testid=\"login\"]').addEventListener('click', () => {",
+      "    document.querySelector('[data-modality-var=\"auth\"]').textContent = '\"user\"';",
+      "  });",
+      "  return { document };",
+      "}"
+    ].join("\n"), "utf8");
+
+    const result = await runConformCommand({ walksPath, mode: "action", harnessPath, now: new Date("2026-06-12T00:00:00.000Z") });
+    expect(result.exitCode).toBe(0);
+    expect(result.report.mode).toBe("action");
+    expect(result.report.harnessPath).toBe(harnessPath);
+    expect(result.report.metrics).toMatchObject({ total: 1, reproduced: 1, notReproduced: 0, inconclusive: 0, passRate: 1 });
   });
 
   it("compares only observed variables when walk artifacts provide observed states", async () => {
@@ -228,7 +255,7 @@ describe("runConformCommand", () => {
     const result = await runConformCommand({ modelPath, reportPath, walkCount: 2, depth: 2, seed: 7, now: new Date("2026-06-12T00:00:00.000Z") });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.exitCode).toBe(0);
-    expect(result.lines).toEqual(["conform: total=2 reproduced=2 notReproduced=0 inconclusive=0", "passRate=1"]);
+    expect(result.lines).toEqual(["conform: total=2 reproduced=2 notReproduced=0 inconclusive=0", "mode=abstract", "passRate=1"]);
     expect(report.walks.map((walk: { id: string; status: string; stepsRun: number }) => [walk.id, walk.status, walk.stepsRun])).toEqual([
       ["walk-1", "reproduced", 1],
       ["walk-2", "reproduced", 1]

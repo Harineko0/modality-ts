@@ -199,6 +199,53 @@ describe("TLA export", () => {
     expect(generateTlaModule(emptyArgs, "EmptyArgsFixture")).toContain("args |-> [__empty |-> TRUE]");
   });
 
+  it("exports freshToken assignments as finite fresh choices", () => {
+    const tokenModel: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        { id: "slot", domain: { kind: "tokens", count: 2 }, origin: "system", scope: { kind: "global" }, initial: "tok1" }
+      ],
+      transitions: [
+        {
+          ...model().transitions[0]!,
+          id: "fresh",
+          guard: { kind: "lit", value: true },
+          effect: { kind: "assign", var: "slot", expr: { kind: "freshToken", domainOf: "slot" } },
+          reads: ["slot"],
+          writes: ["slot"]
+        }
+      ]
+    };
+    const source = generateTlaModule(tokenModel, "FreshFixture");
+    expect(source).toContain("\\E slot_fresh_1 \\in {\"tok1\", \"tok2\"}:");
+    expect(source).toContain("(slot # slot_fresh_1)");
+    expect(source).toContain("slot' = slot_fresh_1");
+  });
+
+  it("exports exhausted freshToken choices as unsatisfiable actions", () => {
+    const exhausted: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        { id: "slot", domain: { kind: "tokens", count: 1 }, origin: "system", scope: { kind: "global" }, initial: "tok1" }
+      ],
+      transitions: [
+        {
+          ...model().transitions[0]!,
+          id: "fresh",
+          guard: { kind: "lit", value: true },
+          effect: { kind: "assign", var: "slot", expr: { kind: "freshToken", domainOf: "slot" } },
+          reads: ["slot"],
+          writes: ["slot"]
+        }
+      ]
+    };
+    const source = generateTlaModule(exhausted, "FreshExhaustedFixture");
+    expect(source).toContain("\\E slot_fresh_1 \\in {\"tok1\"}:");
+    expect(source).toContain("(slot # slot_fresh_1)");
+  });
+
   it("exports branched and choice effects under the transition guard", () => {
     const branched: Model = {
       ...model(),

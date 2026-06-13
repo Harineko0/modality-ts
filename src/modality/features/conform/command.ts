@@ -1,8 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { replayTrace, StateSequenceDriver, statesFromTrace, type ReplayVerdict } from "modality-ts/harness";
+import { pathToFileURL } from "node:url";
+import { createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace, StateSequenceDriver, statesFromTrace, type ModalityReplayHarness, type ObservationSource, type ReplayVerdict } from "modality-ts/harness";
 import { modelInitialStates, modelSuccessors } from "modality-ts/checker";
-import { canonicalJson, parseModelArtifact, type ConformReport, type Model, type ModelState, type Trace, type TraceStep } from "modality-ts/kernel";
+import { canonicalJson, parseModelArtifact, type ConformReport, type Model, type ModelState, type Trace, type TraceStep, type Value } from "modality-ts/kernel";
 
 export interface ConformWalkArtifact {
   id: string;
@@ -24,6 +25,8 @@ export interface ConformCommandOptions {
   walkCount?: number;
   depth?: number;
   seed?: number;
+  mode?: "abstract" | "action";
+  harnessPath?: string;
   now?: Date;
 }
 
@@ -35,16 +38,26 @@ export interface ConformCommandResult {
 
 export async function runConformCommand(options: ConformCommandOptions): Promise<ConformCommandResult> {
   const walks = await loadOrGenerateWalks(options);
+  const mode = options.mode ?? (options.harnessPath ? "action" : "abstract");
+  let actionHarness: ReplayHarnessModule | undefined;
+  let actionSetupError = mode === "action" && !options.harnessPath ? "Action conformance requires harnessPath" : undefined;
+  if (mode === "action" && options.harnessPath) {
+    try {
+      actionHarness = await loadReplayHarness(options.harnessPath);
+    } catch (error) {
+      actionSetupError = error instanceof Error ? error.message : String(error);
+    }
+  }
   const verdicts = await Promise.all(
     walks.map(async (walk) => ({
       id: walk.id,
       trace: walk.trace,
-      verdict: await replayTrace(walk.trace, new StateSequenceDriver(walk.observedStates ?? walk.states ?? statesFromTrace(walk.trace)), {
-        compareState: walk.observedStates ? compareObservedState : undefined
-      })
+      verdict: actionSetupError
+        ? { status: "inconclusive" as const, stepsRun: 0, reason: actionSetupError }
+        : actionHarness ? await replayActionWalk(walk.trace, actionHarness) : await replayAbstractWalk(walk)
     }))
   );
-  const report = createConformReport(verdicts, options.now ?? new Date());
+  const report = createConformReport(verdicts, options.now ?? new Date(), mode, options.harnessPath);
   if (options.reportPath) {
     await mkdir(dirname(options.reportPath), { recursive: true });
     await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
@@ -54,6 +67,83 @@ export async function runConformCommand(options: ConformCommandOptions): Promise
     exitCode: report.metrics.notReproduced > 0 ? 2 : report.metrics.inconclusive > 0 ? 3 : 0,
     lines: renderConformReport(report)
   };
+}
+
+async function replayAbstractWalk(walk: ConformWalkArtifact): Promise<ReplayVerdict> {
+  return replayTrace(walk.trace, new StateSequenceDriver(walk.observedStates ?? walk.states ?? statesFromTrace(walk.trace)), {
+    compareState: walk.observedStates ? compareObservedState : undefined
+  });
+}
+
+async function replayActionWalk(trace: Trace, harnessModule: ReplayHarnessModule): Promise<ReplayVerdict> {
+  try {
+    await ensureDocument();
+    const replayHarness = await harnessModule.renderModalityReplay(trace);
+    const sources = [
+      harnessModule.observeModalityReplay ? harnessModule.observeModalityReplay(replayHarness) : domProjectionSource(),
+      ...(replayHarness.sources ?? [])
+    ];
+    const actor = createDomReplayActor({
+      document: replayHarness.document,
+      navigate: replayHarness.navigate,
+      resolve: replayHarness.resolve,
+      focusRevalidate: replayHarness.focusRevalidate,
+      timer: replayHarness.timer,
+      stabilize: replayHarness.stabilize
+    });
+    const observedVars = [...new Set(trace.steps.flatMap((step) => [...Object.keys(step.pre), ...Object.keys(step.post)]))].sort();
+    return replayTrace(trace, new ObservableActionReplayDriver(actor, observedVars, sources));
+  } catch (error) {
+    return { status: "inconclusive", stepsRun: 0, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+interface ReplayHarnessModule {
+  renderModalityReplay(trace: Trace): ModalityReplayHarness | Promise<ModalityReplayHarness>;
+  observeModalityReplay?(harness: ModalityReplayHarness): ObservationSource;
+}
+
+async function loadReplayHarness(harnessPath: string): Promise<ReplayHarnessModule> {
+  const module = (await import(`${pathToFileURL(harnessPath).href}?t=${Date.now()}`)) as Partial<ReplayHarnessModule>;
+  if (typeof module.renderModalityReplay !== "function") {
+    throw new Error("Replay harness must export renderModalityReplay(trace)");
+  }
+  return module as ReplayHarnessModule;
+}
+
+async function ensureDocument(): Promise<void> {
+  if (globalThis.document) return;
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    HTMLInputElement: dom.window.HTMLInputElement,
+    HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
+    HTMLSelectElement: dom.window.HTMLSelectElement,
+    Event: dom.window.Event
+  });
+}
+
+function domProjectionSource(): ObservationSource {
+  return observationSource("dom-projection", (varId) => {
+    const element = globalThis.document?.querySelector(`[data-modality-var="${cssString(varId)}"]`);
+    if (!element) return "unobservable";
+    return { value: parseObservedValue(element.textContent ?? "") };
+  });
+}
+
+function parseObservedValue(text: string): Value {
+  try {
+    return JSON.parse(text) as Value;
+  } catch {
+    return text;
+  }
+}
+
+function cssString(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
 }
 
 export function generateConformWalks(model: Model, options: { count?: number; depth?: number; seed?: number } = {}): ConformWalkArtifact[] {
@@ -113,7 +203,12 @@ function validateConformWalk(value: unknown, index: number): void {
   if (value.observedStates !== undefined && !Array.isArray(value.observedStates)) throw new Error(`conform walk ${index + 1} observedStates must be an array`);
 }
 
-function createConformReport(verdicts: readonly { id: string; trace: Trace; verdict: ReplayVerdict }[], now: Date): ConformReport {
+function createConformReport(
+  verdicts: readonly { id: string; trace: Trace; verdict: ReplayVerdict }[],
+  now: Date,
+  mode: "abstract" | "action",
+  harnessPath: string | undefined
+): ConformReport {
   const walks = verdicts.map(({ id, verdict }) => ({ id, ...verdict }));
   const reproduced = walks.filter((walk) => walk.status === "reproduced").length;
   const notReproduced = walks.filter((walk) => walk.status === "not-reproduced").length;
@@ -122,6 +217,8 @@ function createConformReport(verdicts: readonly { id: string; trace: Trace; verd
     schemaVersion: 1,
     kind: "conform-report",
     generatedAt: now.toISOString(),
+    mode,
+    ...(harnessPath ? { harnessPath } : {}),
     walks,
     metrics: {
       total: walks.length,
@@ -168,6 +265,8 @@ function compareObservedState(expected: ModelState, observed: ModelState): strin
 function renderConformReport(report: ConformReport): string[] {
   return [
     `conform: total=${report.metrics.total} reproduced=${report.metrics.reproduced} notReproduced=${report.metrics.notReproduced} inconclusive=${report.metrics.inconclusive}`,
+    `mode=${report.mode ?? "abstract"}`,
+    ...(report.harnessPath ? [`harness=${report.harnessPath}`] : []),
     `passRate=${report.metrics.passRate}`
   ];
 }

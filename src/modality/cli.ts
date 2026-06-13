@@ -29,9 +29,9 @@ async function main(): Promise<void> {
     console.log("Usage: modality extract <source.tsx> --out model.json [--app-model app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]");
     console.log("Usage: modality check <model.json> [props.ts] [--report report.json]");
     console.log("       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]");
-    console.log("       modality replay <trace.json> [--states states.json] [--observed observed-states.json] [--report report.json]");
-    console.log("       modality conform <walks.json> [--report conform-report.json]");
-    console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--report conform-report.json]");
+    console.log("       modality replay <trace.json> [--mode abstract|action] [--harness harness.ts] [--states states.json] [--observed observed-states.json] [--report report.json]");
+    console.log("       modality conform <walks.json> [--mode abstract|action] [--harness harness.ts] [--report conform-report.json]");
+    console.log("       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--mode abstract|action] [--harness harness.ts] [--report conform-report.json]");
     console.log("       modality export <model.json> --format tla --out model.tla");
     process.exit(command ? 1 : 0);
   }
@@ -44,6 +44,8 @@ async function main(): Promise<void> {
     const conformCountValue = flagValue(args, "--conform-count");
     const conformDepthValue = flagValue(args, "--conform-depth");
     const conformSeedValue = flagValue(args, "--conform-seed");
+    const conformMode = flagValue(args, "--conform-mode") as "abstract" | "action" | undefined;
+    const conformHarnessPath = flagValue(args, "--conform-harness");
     const minConformPassRateValue = flagValue(args, "--min-conform-pass-rate");
     const minTransitionConformPassRateValue = flagValue(args, "--min-transition-conform-pass-rate");
     const conformCount = conformCountValue ? Number(conformCountValue) : undefined;
@@ -51,7 +53,7 @@ async function main(): Promise<void> {
     const conformSeed = conformSeedValue ? Number(conformSeedValue) : undefined;
     const minConformPassRate = minConformPassRateValue ? Number(minConformPassRateValue) : undefined;
     const minTransitionConformPassRate = minTransitionConformPassRateValue ? Number(minTransitionConformPassRateValue) : undefined;
-    const positional = positionals(args, ["--artifacts", "--overlay", "--baseline", "--source", "--conform-walks", "--conform-count", "--conform-depth", "--conform-seed", "--min-conform-pass-rate", "--min-transition-conform-pass-rate"]);
+    const positional = positionals(args, ["--artifacts", "--overlay", "--baseline", "--source", "--conform-walks", "--conform-count", "--conform-depth", "--conform-seed", "--conform-mode", "--conform-harness", "--min-conform-pass-rate", "--min-transition-conform-pass-rate"]);
     const [modelPath, propsPath] = positional;
     if (!modelPath) throw new Error("Missing model.json path");
     if (!artifactDir) throw new Error("Missing --artifacts path");
@@ -59,7 +61,7 @@ async function main(): Promise<void> {
     if (args.includes("--baseline") && !baselinePath) throw new Error("Missing --baseline path");
     if (args.includes("--source") && !sourcePath) throw new Error("Missing --source path");
     if (args.includes("--conform-walks") && !conformWalksPath) throw new Error("Missing --conform-walks path");
-    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, sourcePath, conformWalksPath, conformCount, conformDepth, conformSeed, minConformPassRate, minTransitionConformPassRate });
+    const result = await runCiCommand({ modelPath, propsPath, artifactDir, overlayPath, baselinePath, sourcePath, conformWalksPath, conformCount, conformDepth, conformSeed, conformMode, conformHarnessPath, minConformPassRate, minTransitionConformPassRate });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }
@@ -70,15 +72,17 @@ async function main(): Promise<void> {
     const countValue = flagValue(args, "--count");
     const depthValue = flagValue(args, "--depth");
     const seedValue = flagValue(args, "--seed");
+    const mode = flagValue(args, "--mode") as "abstract" | "action" | undefined;
+    const harnessPath = flagValue(args, "--harness");
     const walkCount = countValue ? Number(countValue) : undefined;
     const depth = depthValue ? Number(depthValue) : undefined;
     const seed = seedValue ? Number(seedValue) : undefined;
-    const walksPath = flaggedWalksPath ?? positionals(args, ["--report", "--model", "--walks", "--count", "--depth", "--seed"])[0];
+    const walksPath = flaggedWalksPath ?? positionals(args, ["--report", "--model", "--walks", "--count", "--depth", "--seed", "--mode", "--harness"])[0];
     if (!walksPath && !modelPath) throw new Error("Missing walks.json path or --model path");
     if (args.includes("--report") && !reportPath) throw new Error("Missing --report path");
     if (args.includes("--model") && !modelPath) throw new Error("Missing --model path");
     if (args.includes("--walks") && !flaggedWalksPath) throw new Error("Missing --walks path");
-    const result = await runConformCommand({ walksPath, modelPath, reportPath, walkCount, depth, seed });
+    const result = await runConformCommand({ walksPath, modelPath, reportPath, walkCount, depth, seed, mode, harnessPath });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }
@@ -124,12 +128,14 @@ async function main(): Promise<void> {
     const reportPath = flagValue(args, "--report");
     const statesPath = flagValue(args, "--states");
     const observedPath = flagValue(args, "--observed");
-    const tracePath = positionals(args, ["--report", "--states", "--observed"])[0];
+    const mode = flagValue(args, "--mode") as "abstract" | "action" | undefined;
+    const harnessPath = flagValue(args, "--harness");
+    const tracePath = positionals(args, ["--report", "--states", "--observed", "--mode", "--harness"])[0];
     if (!tracePath) throw new Error("Missing trace.json path");
     if (args.includes("--report") && !reportPath) throw new Error("Missing --report path");
     if (args.includes("--states") && !statesPath) throw new Error("Missing --states path");
     if (args.includes("--observed") && !observedPath) throw new Error("Missing --observed path");
-    const result = await runReplayCommand({ tracePath, statesPath, observedPath, reportPath });
+    const result = await runReplayCommand({ tracePath, statesPath, observedPath, reportPath, mode, harnessPath });
     for (const line of result.lines) console.log(line);
     process.exit(result.exitCode);
   }

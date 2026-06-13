@@ -12,6 +12,8 @@ export interface HandlerExtractorOptions {
   effectApis: readonly string[];
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
+  sourcePlugins: readonly StateSourcePlugin[];
+  routerPlugin?: RouterPlugin;
 }
 
 export interface ExtractionPipelineOptions {
@@ -90,7 +92,9 @@ export function runExtractionPipeline(options: ExtractionPipelineOptions): Extra
     fileName: options.fileName,
     effectApis: options.effectApis ?? [],
     stateVars: [...stateVars, ...templateFragments.flatMap((fragment) => fragment.vars)],
-    writeChannels
+    writeChannels,
+    sourcePlugins,
+    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {})
   }) ?? { transitions: [], warnings: [] };
   const transitions = [...extracted.transitions, ...templateFragments.flatMap((fragment) => fragment.transitions)];
   const routes = [options.route, ...navigatedRoutes(transitions.map((transition) => transition.effect))];

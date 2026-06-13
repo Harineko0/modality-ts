@@ -1,6 +1,6 @@
 import * as ts from "typescript";
-import type { AbstractDomain, EffectIR, ExprIR, Locator, StateVarDecl, Transition, Value } from "modality-ts/kernel";
-import type { WriteChannel } from "./spi/index.js";
+import { effectReads, effectWrites, type AbstractDomain, type EffectIR, type ExprIR, type Locator, type StateVarDecl, type Transition, type Value } from "modality-ts/kernel";
+import type { CallSite, M0Ctx, RouterPlugin, StateSourcePlugin, WriteChannel } from "./spi/index.js";
 
 export * from "./pipeline/index.js";
 export * from "./spi/index.js";
@@ -12,6 +12,8 @@ export interface UseStateExtractionOptions {
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
+  sourcePlugins?: readonly StateSourcePlugin[];
+  routerPlugin?: RouterPlugin;
 }
 
 export interface ExtractionWarning {
@@ -106,6 +108,8 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
   const effectApis = new Set(options.effectApis ?? []);
+  const sourcePlugins = options.sourcePlugins ?? [];
+  const routerPlugin = options.routerPlugin;
   const setters = new Map<string, SetterBinding>();
   const globalTaints = new Set<string>();
   const components = componentDeclarations(source);
@@ -190,7 +194,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
       }
     }
     if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isForwardablePropName(node.name.text) && !isIntrinsicJsxAttribute(node)) {
-      const extracted = transitionsFromComponentPropAttribute(source, fileName, node, setters, handlers, components, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, warnings);
+      const extracted = transitionsFromComponentPropAttribute(source, fileName, node, setters, handlers, components, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, warnings);
       transitions.push(...extracted);
       if (extracted.length === 0) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -220,7 +224,7 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
         renderGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals),
         disabledGuardFor(node, setters, warnings, source, nextComponent ?? "Anonymous", guardLocals)
       ]);
-      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, guard, warnings);
+      const extracted = transitionsFromJsxAttribute(source, fileName, node, setters, handlers, nextComponent ?? "Anonymous", effectApis, options.asyncOutcomes ?? {}, sourcePlugins, routerPlugin, guard, warnings);
       transitions.push(...extracted);
       if (extracted.length === 0 && !forwardsComponentProp(node, handlers, components.get(nextComponent ?? "")) && !handlerSchedulesModeledTimer(node, handlers, setters)) {
         warnings.push({ message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`, ...lineAndColumn(source, node) });
@@ -550,6 +554,8 @@ function transitionsFromJsxAttribute(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
   disabledGuard: ParsedGuard | undefined,
   warnings: ExtractionWarning[]
 ): Transition[] {
@@ -561,7 +567,7 @@ function transitionsFromJsxAttribute(
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
   return tagStableIdKey(
-    transitionsFromResolvedHandler(source, fileName, node, attr, handler, setters, handlers, component, effectApis, asyncOutcomes, disabledGuard, locator, warnings),
+    transitionsFromResolvedHandler(source, fileName, node, attr, handler, setters, handlers, component, effectApis, asyncOutcomes, sourcePlugins, routerPlugin, disabledGuard, locator, warnings),
     handler
   );
 }
@@ -576,6 +582,8 @@ function transitionsFromComponentPropAttribute(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
   warnings: ExtractionWarning[]
 ): Transition[] {
   if (!node.initializer || !ts.isIdentifier(node.name)) return [];
@@ -605,6 +613,8 @@ function transitionsFromComponentPropAttribute(
       component,
       effectApis,
       asyncOutcomes,
+      sourcePlugins,
+      routerPlugin,
       combineParsedGuards([trigger.guard, callerGuard]),
       trigger.locator,
       warnings
@@ -689,6 +699,8 @@ function transitionsFromResolvedHandler(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
   disabledGuard: ParsedGuard | undefined,
   locator: Locator | undefined,
   warnings: ExtractionWarning[]
@@ -706,8 +718,10 @@ function transitionsFromResolvedHandler(
   const inlined = inlinedHelperCall(summary.call, handlers, setters);
   const inlinedCall = inlined?.call ?? summary.call;
   const locals = inlined?.locals ?? summary.locals;
-  const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator);
+  const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator, routerPlugin);
   if (navigation) return applyParsedGuard([navigation], disabledGuard);
+  const pluginWrite = pluginWriteTransition(source, fileName, node, attr, component, inlinedCall, setters, locals, sourcePlugins, locator);
+  if (pluginWrite) return applyParsedGuard([pluginWrite], disabledGuard);
   const swrMutate = swrMutateTransition(source, fileName, node, attr, component, inlinedCall, locator);
   if (swrMutate) return applyParsedGuard([swrMutate], disabledGuard);
   const setterCall = setterCallFrom(inlinedCall, setters);
@@ -1213,6 +1227,73 @@ function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string
   return undefined;
 }
 
+function pluginWriteTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  call: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  locator: Locator | undefined
+): Transition | undefined {
+  const callee = callName(call.expression);
+  if (!callee) return undefined;
+  const ctx: M0Ctx = {
+    read: (name, path) => {
+      const local = locals.get(name);
+      if (local?.expr.kind === "read") {
+        return { kind: "read", var: local.expr.var, path: [...(local.expr.path ?? []), ...(path ?? [])] };
+      }
+      const varId = stateVarForName(name, setters) ?? name;
+      return { kind: "read", var: varId, ...(path && path.length > 0 ? { path } : {}) };
+    },
+    locator
+  };
+  const callSite: CallSite = {
+    callee,
+    arguments: call.arguments.map(callArgumentValue),
+    source: { file: fileName, ...lineAndColumn(source, call) }
+  };
+  for (const plugin of sourcePlugins) {
+    const summary = plugin.summarizeWrite?.(callSite, ctx);
+    if (!summary || summary === "unsupported") continue;
+    const reads = [...effectReads(summary)].sort();
+    const writes = [...effectWrites(summary)].sort();
+    return {
+      id: `${component}.${attr}.${safeId(plugin.id)}.${safeId(callee)}`,
+      cls: "user",
+      label: labelForEvent(attr, locator),
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit", value: true },
+      effect: summary,
+      reads,
+      writes,
+      confidence: "exact"
+    };
+  }
+  return undefined;
+}
+
+function callArgumentValue(argument: ts.Expression): unknown {
+  const literal = literalValue(argument);
+  if (literal !== undefined) return literal;
+  if (ts.isIdentifier(argument)) return argument.text;
+  if (ts.isObjectLiteralExpression(argument)) {
+    const fields: Record<string, unknown> = {};
+    for (const property of argument.properties) {
+      if (!ts.isPropertyAssignment(property)) return argument.getText();
+      const name = propertyName(property.name);
+      if (!name) return argument.getText();
+      fields[name] = callArgumentValue(property.initializer);
+    }
+    return fields;
+  }
+  return argument.getText();
+}
+
 function swrMutateTransition(
   source: ts.SourceFile,
   fileName: string,
@@ -1262,9 +1343,10 @@ function navigationTransition(
   attr: string,
   component: string,
   call: ts.CallExpression,
-  locator: Locator | undefined
+  locator: Locator | undefined,
+  routerPlugin: RouterPlugin | undefined
 ): Transition | undefined {
-  const navigation = navigationCall(call);
+  const navigation = navigationCall(call, routerPlugin);
   if (!navigation) return undefined;
   const routeId = navigation.to ? safeId(navigation.to) : "back";
   return {
@@ -1288,9 +1370,11 @@ function navigationTransition(
   };
 }
 
-function navigationCall(call: ts.CallExpression): { mode: "push" | "replace" | "back"; to?: string } | undefined {
+function navigationCall(call: ts.CallExpression, routerPlugin: RouterPlugin | undefined): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   const name = callName(call.expression);
   if (!name) return undefined;
+  const pluginNavigation = routerPlugin?.navigationCall(name, call.arguments.map(callArgumentValue));
+  if (pluginNavigation && pluginNavigation !== "unsupported") return pluginNavigation;
   if (name === "navigate" && call.arguments.length === 1) {
     const to = literalValue(call.arguments[0]);
     return typeof to === "string" ? { mode: "push", to } : undefined;

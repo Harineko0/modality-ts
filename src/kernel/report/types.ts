@@ -67,6 +67,8 @@ export interface ReplayReport {
   schemaVersion: 1;
   kind: "replay-report";
   generatedAt: string;
+  mode?: "abstract" | "action";
+  harnessPath?: string;
   verdict: {
     status: ReplayVerdictStatus;
     stepsRun: number;
@@ -104,6 +106,8 @@ export interface ConformReport {
   schemaVersion: 1;
   kind: "conform-report";
   generatedAt: string;
+  mode?: "abstract" | "action";
+  harnessPath?: string;
   walks: readonly {
     id: string;
     status: ReplayVerdictStatus;

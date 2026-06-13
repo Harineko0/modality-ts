@@ -9,7 +9,7 @@ import type { Bounds } from "modality-ts/kernel";
 import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extraction/spi";
 import { routeVars as defaultRouteVars } from "modality-ts/source-router";
 import { emitAppModel } from "../../codegen/model.js";
-import { loadAndApplyOverlay } from "../../overlay.js";
+import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 
 export interface ModalityConfig {
@@ -84,7 +84,7 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     vars: [...routeVars, ...pendingVars(effectApis, transitions, [...routeVars, ...stateVars], bounds.maxPending), ...stateVars],
     transitions
   };
-  const overlaySpec = options.explainDrift && options.overlayPath ? await readOverlaySpec(options.overlayPath) : undefined;
+  const overlaySpec = options.explainDrift && options.overlayPath ? await readOverlaySpec(extractedModel, options.overlayPath) : undefined;
   const driftLines = overlaySpec ? explainOverlayDrift(extractedModel, overlaySpec) : [];
   const overlay = await loadAndApplyOverlay(extractedModel, options.overlayPath);
   if (overlay.errors.length > 0) {
@@ -193,8 +193,8 @@ function resolveImportPath(baseDir: string, specifier: string): string | undefin
   return candidates[0];
 }
 
-async function readOverlaySpec(overlayPath: string): Promise<OverlaySpec> {
-  return JSON.parse(await readFile(overlayPath, "utf8")) as OverlaySpec;
+async function readOverlaySpec(model: Model, overlayPath: string): Promise<OverlaySpec> {
+  return loadOverlaySpec(model, overlayPath);
 }
 
 async function loadModalityConfig(configPath: string | undefined): Promise<ModalityConfig> {

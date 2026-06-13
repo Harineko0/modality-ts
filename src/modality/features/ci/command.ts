@@ -17,6 +17,8 @@ export interface CiCommandOptions {
   conformCount?: number;
   conformDepth?: number;
   conformSeed?: number;
+  conformMode?: "abstract" | "action";
+  conformHarnessPath?: string;
   minConformPassRate?: number;
   minTransitionConformPassRate?: number;
   now?: Date;
@@ -109,6 +111,8 @@ async function runOptionalConformance(options: CiCommandOptions, now: Date) {
     walkCount: options.conformCount,
     depth: options.conformDepth,
     seed: options.conformSeed,
+    mode: options.conformMode,
+    harnessPath: options.conformHarnessPath,
     now
   });
 }
