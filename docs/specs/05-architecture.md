@@ -14,7 +14,7 @@ Three forces dominate, and the structure below is derived from them:
 
 ```
 modality-ts/
-├── packages/
+├── src/
 │   ├── kernel/                  # modality-ts/kernel — the stable center (§3)
 │   │   └── src/
 │   │       ├── ir/              #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
@@ -128,7 +128,7 @@ Design notes on why this shape:
 Each source package owns its concern end-to-end — discovery to replay to conformance — so adding a library never fans out across the repo:
 
 ```
-packages/sources/jotai/
+src/sources/jotai/
 ├── src/
 │   ├── discover.ts          # P1: atom() resolution through aliasing/re-exports
 │   ├── domains.ts           # P2 hints (derived-atom inlining decisions)
@@ -156,7 +156,7 @@ The litmus test the architecture must keep passing: **supporting Zustand = writi
 Inside the `modality` package, each user capability is a self-contained slice:
 
 ```
-packages/modality/src/features/
+src/modality/src/features/
 ├── extract/    # orchestrates extraction pipeline + registry → .modality/model.json,
 │               #   app.model.ts (via codegen/), extraction report; --explain-drift
 ├── check/      # loads model + props → modality-ts/checker → traces, report rendering,

@@ -8,116 +8,116 @@
     "url": "git+https://github.com/Harineko0/modality-ts.git"
   },
   "type": "module",
-  "types": "./packages/modality/dist/cli.d.ts",
+  "types": "./dist/modality/cli.d.ts",
   "files": [
-    "packages/**/dist/**",
+    "dist/**",
     "README.md",
     "LICENSE"
   ],
   "bin": {
-    "modality": "packages/modality/dist/cli.js"
+    "modality": "dist/modality/cli.js"
   },
   "exports": {
     ".": {
-      "types": "./packages/modality/dist/cli.d.ts",
-      "default": "./packages/modality/dist/cli.js"
+      "types": "./dist/modality/cli.d.ts",
+      "default": "./dist/modality/cli.js"
     },
     "./check": {
-      "types": "./packages/modality/dist/check.d.ts",
-      "default": "./packages/modality/dist/check.js"
+      "types": "./dist/modality/check.d.ts",
+      "default": "./dist/modality/check.js"
     },
     "./ci": {
-      "types": "./packages/modality/dist/ci.d.ts",
-      "default": "./packages/modality/dist/ci.js"
+      "types": "./dist/modality/ci.d.ts",
+      "default": "./dist/modality/ci.js"
     },
     "./conform": {
-      "types": "./packages/modality/dist/conform.d.ts",
-      "default": "./packages/modality/dist/conform.js"
+      "types": "./dist/modality/conform.d.ts",
+      "default": "./dist/modality/conform.js"
     },
     "./extract": {
-      "types": "./packages/modality/dist/extract.d.ts",
-      "default": "./packages/modality/dist/extract.js"
+      "types": "./dist/modality/extract.d.ts",
+      "default": "./dist/modality/extract.js"
     },
     "./replay": {
-      "types": "./packages/modality/dist/replay.d.ts",
-      "default": "./packages/modality/dist/replay.js"
+      "types": "./dist/modality/replay.d.ts",
+      "default": "./dist/modality/replay.js"
     },
     "./export-tla": {
-      "types": "./packages/modality/dist/export-tla.d.ts",
-      "default": "./packages/modality/dist/export-tla.js"
+      "types": "./dist/modality/export-tla.d.ts",
+      "default": "./dist/modality/export-tla.js"
     },
     "./kernel": {
-      "types": "./packages/kernel/dist/index.d.ts",
-      "default": "./packages/kernel/dist/index.js"
+      "types": "./dist/kernel/index.d.ts",
+      "default": "./dist/kernel/index.js"
     },
     "./kernel/props": {
-      "types": "./packages/kernel/dist/props/index.d.ts",
-      "default": "./packages/kernel/dist/props/index.js"
+      "types": "./dist/kernel/props/index.d.ts",
+      "default": "./dist/kernel/props/index.js"
     },
     "./checker": {
-      "types": "./packages/checker/dist/index.d.ts",
-      "default": "./packages/checker/dist/index.js"
+      "types": "./dist/checker/index.d.ts",
+      "default": "./dist/checker/index.js"
     },
     "./extraction": {
-      "types": "./packages/extraction/dist/index.d.ts",
-      "default": "./packages/extraction/dist/index.js"
+      "types": "./dist/extraction/index.d.ts",
+      "default": "./dist/extraction/index.js"
     },
     "./extraction/pipeline": {
-      "types": "./packages/extraction/dist/pipeline/index.d.ts",
-      "default": "./packages/extraction/dist/pipeline/index.js"
+      "types": "./dist/extraction/pipeline/index.d.ts",
+      "default": "./dist/extraction/pipeline/index.js"
     },
     "./extraction/spi": {
-      "types": "./packages/extraction/dist/spi/index.d.ts",
-      "default": "./packages/extraction/dist/spi/index.js"
+      "types": "./dist/extraction/spi/index.d.ts",
+      "default": "./dist/extraction/spi/index.js"
     },
     "./harness": {
-      "types": "./packages/harness/dist/index.d.ts",
-      "default": "./packages/harness/dist/index.js"
+      "types": "./dist/harness/index.d.ts",
+      "default": "./dist/harness/index.js"
     },
     "./runtime": {
-      "types": "./packages/runtime/dist/index.d.ts",
-      "default": "./packages/runtime/dist/index.js"
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
     },
     "./source-jotai": {
-      "types": "./packages/sources/jotai/dist/index.d.ts",
-      "default": "./packages/sources/jotai/dist/index.js"
+      "types": "./dist/sources/jotai/index.d.ts",
+      "default": "./dist/sources/jotai/index.js"
     },
     "./source-jotai/harness": {
-      "types": "./packages/sources/jotai/dist/harness.d.ts",
-      "default": "./packages/sources/jotai/dist/harness.js"
+      "types": "./dist/sources/jotai/harness.d.ts",
+      "default": "./dist/sources/jotai/harness.js"
     },
     "./source-router": {
-      "types": "./packages/sources/router/dist/index.d.ts",
-      "default": "./packages/sources/router/dist/index.js"
+      "types": "./dist/sources/router/index.d.ts",
+      "default": "./dist/sources/router/index.js"
     },
     "./source-router/harness": {
-      "types": "./packages/sources/router/dist/harness.d.ts",
-      "default": "./packages/sources/router/dist/harness.js"
+      "types": "./dist/sources/router/harness.d.ts",
+      "default": "./dist/sources/router/harness.js"
     },
     "./source-swr": {
-      "types": "./packages/sources/swr/dist/index.d.ts",
-      "default": "./packages/sources/swr/dist/index.js"
+      "types": "./dist/sources/swr/index.d.ts",
+      "default": "./dist/sources/swr/index.js"
     },
     "./source-swr/harness": {
-      "types": "./packages/sources/swr/dist/harness.d.ts",
-      "default": "./packages/sources/swr/dist/harness.js"
+      "types": "./dist/sources/swr/harness.d.ts",
+      "default": "./dist/sources/swr/harness.js"
     },
     "./source-use-state": {
-      "types": "./packages/sources/use-state/dist/index.d.ts",
-      "default": "./packages/sources/use-state/dist/index.js"
+      "types": "./dist/sources/use-state/index.d.ts",
+      "default": "./dist/sources/use-state/index.js"
     },
     "./source-use-state/harness": {
-      "types": "./packages/sources/use-state/dist/harness.d.ts",
-      "default": "./packages/sources/use-state/dist/harness.js"
+      "types": "./dist/sources/use-state/harness.d.ts",
+      "default": "./dist/sources/use-state/harness.js"
     }
   },
   "packageManager": "pnpm@10.12.4",
   "scripts": {
-    "architecture": "depcruise --config tools/depcruise.config.cjs packages",
+    "architecture": "depcruise --config tools/depcruise.config.cjs src",
     "build": "tsc -b",
-    "clean": "rm -rf packages/*/dist packages/sources/*/dist packages/*/tsconfig.tsbuildinfo packages/sources/*/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "ci:examples": "tsx tools/examples-ci.ts",
-    "demo": "vitest run packages/modality/test/demo-acceptance.test.ts",
+    "demo": "vitest run test/modality/demo-acceptance.test.ts",
     "phase7": "tsx tools/phase7-differential.ts",
     "publish:npm": "npm publish --access public",
     "test": "vitest run",

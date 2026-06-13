@@ -2,10 +2,10 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCheckCommand } from "../packages/modality/src/check.ts";
-import { runCiCommand } from "../packages/modality/src/ci.ts";
-import { runExtractCommand } from "../packages/modality/src/extract.ts";
-import { runReplayCommand } from "../packages/modality/src/replay.ts";
+import { runCheckCommand } from "../src/modality/check.ts";
+import { runCiCommand } from "../src/modality/ci.ts";
+import { runExtractCommand } from "../src/modality/extract.ts";
+import { runReplayCommand } from "../src/modality/replay.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const demoDir = join(repoRoot, "examples", "demo-app");
