@@ -89,7 +89,7 @@ export function runExtractionPipeline(options: ExtractionPipelineOptions): Extra
     route: options.route,
     fileName: options.fileName,
     effectApis: options.effectApis ?? [],
-    stateVars,
+    stateVars: [...stateVars, ...templateFragments.flatMap((fragment) => fragment.vars)],
     writeChannels
   }) ?? { transitions: [], warnings: [] };
   const transitions = [...extracted.transitions, ...templateFragments.flatMap((fragment) => fragment.transitions)];

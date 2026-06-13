@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -592,6 +592,72 @@ describe("runExtractCommand", () => {
         }
       }
     });
+  });
+
+  it("loads local imports for Jotai atoms and SWR payload domains", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    await mkdir(join(dir, "state"));
+    await mkdir(join(dir, "api"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "state", "auth.ts"),
+      `
+      import { atom } from 'jotai';
+      export type AuthState = { status: 'guest'; userId: null } | { status: 'user'; userId: string };
+      export const authAtom = atom<AuthState>({ status: 'guest', userId: null });
+      `,
+      "utf8"
+    );
+    await writeFile(
+      join(dir, "api", "eventApi.ts"),
+      `
+      export type ApplicationStatus = { applied: boolean };
+      export type EventSnapshot = { application: ApplicationStatus | null };
+      `,
+      "utf8"
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useAtom } from 'jotai';
+      import useSWR from 'swr';
+      import { authAtom } from './state/auth';
+      import type { EventSnapshot } from './api/eventApi';
+      export function App() {
+        const [auth, setAuth] = useAtom(authAtom);
+        const userId = auth.userId;
+        const { data: snapshot } = useSWR<EventSnapshot>(['event-snapshot', userId], fetcher);
+        const isUser = auth.status === 'user';
+        const application = snapshot?.application;
+        const isApplied = application?.applied ?? false;
+        const canCancel = isUser && isApplied;
+        return <button disabled={!canCancel} onClick={() => setAuth({ status: 'guest', userId: null })}>Logout</button>;
+      }
+      `,
+      "utf8"
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.vars.find((decl) => decl.id === "atom:authAtom")?.domain).toMatchObject({
+      kind: "tagged",
+      tag: "status"
+    });
+    expect(result.model.vars.find((decl) => decl.id === "swr:event_snapshot_userId:data")?.domain).toMatchObject({
+      inner: {
+        fields: {
+          application: {
+            inner: {
+              fields: {
+                applied: { kind: "bool" }
+              }
+            }
+          }
+        }
+      }
+    });
+    const click = result.model.transitions.find((transition) => transition.id.startsWith("App.onClick.authAtom"));
+    expect(click?.reads).toEqual(["atom:authAtom", "swr:event_snapshot_userId:data"]);
   });
 
   it("explains over-approximate extracted handlers", async () => {

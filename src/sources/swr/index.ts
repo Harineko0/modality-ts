@@ -1,6 +1,6 @@
 import { canonicalJson, enumerateDomain } from "modality-ts/kernel";
 import type { AbstractDomain, ExprIR, ModelState, StateVarDecl, TemplateFragment, Transition, Value } from "modality-ts/kernel";
-import type { SourceDecl, StateSourcePlugin } from "modality-ts/extraction/spi";
+import type { SourceDecl, StateSourcePlugin, WriteChannel } from "modality-ts/extraction/spi";
 import * as ts from "typescript";
 import * as harness from "./harness.js";
 
@@ -48,7 +48,7 @@ export function swrSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["swr"],
     discover: (ctx) => discoverSwrHooks(ctx.sourceText, ctx.fileName),
-    writeChannels: () => [],
+    writeChannels: (ctx) => discoverSwrReadChannels(ctx.sourceText, ctx.fileName),
     template: (decl) => templateForSwrDecl(decl),
     harness,
     conformance: {
@@ -58,10 +58,40 @@ export function swrSource(): StateSourcePlugin {
   };
 }
 
+export function discoverSwrReadChannels(sourceText: string, fileName = "App.tsx"): WriteChannel[] {
+  const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const useSwrNames = useSwrImportNames(source);
+  const channels: WriteChannel[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer && ts.isCallExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && useSwrNames.has(node.initializer.expression.text)) {
+      const key = keyFromExpression(node.initializer.arguments[0]);
+      if (key) {
+        const id = swrIdFromKey(key.id);
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const property = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : element.name.text;
+          if (property === "data" || property === "isValidating" || property === "error") {
+            channels.push({
+              id: `swr:${id}.${property}.read`,
+              varId: swrVarId(id, property === "data" ? "data" : property),
+              symbolName: element.name.text,
+              source: { file: fileName, ...lineAndColumn(source, node) }
+            });
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return channels;
+}
+
 export function discoverSwrHooks(sourceText: string, fileName = "App.tsx"): SourceDecl[] {
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const useSwrNames = useSwrImportNames(source);
   if (useSwrNames.size === 0) return [];
+  const typeAliases = typeAliasDeclarations(source);
 
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node): void => {
@@ -78,7 +108,7 @@ export function discoverSwrHooks(sourceText: string, fileName = "App.tsx"): Sour
             key: key.id,
             id,
             op: `GET ${key.id}`,
-            payloadDomain: inferPayloadDomain(node.typeArguments?.[0]) as Value,
+            payloadDomain: inferPayloadDomain(node.typeArguments?.[0], typeAliases) as Value,
             ...(key.activeWhen ? { activeWhen: key.activeWhen as Value } : {}),
             ...optionsMetadata(node.arguments[2])
           }
@@ -124,7 +154,7 @@ function keyFromExpression(expr: ts.Expression | undefined): { id: string; activ
   if (ts.isNoSubstitutionTemplateLiteral(expr) && expr.text.length > 0) return { id: expr.text };
   if (ts.isArrayLiteralExpression(expr)) {
     const parts = expr.elements.map(keyPartFromExpression);
-    if (parts.every((part): part is string => Boolean(part))) return { id: `[${parts.join(",")}]` };
+    if (parts.length > 0 && parts.every((part): part is string => Boolean(part))) return { id: parts.join(":") };
   }
   if (ts.isConditionalExpression(expr) && isNullish(expr.whenFalse)) {
     const key = keyFromExpression(expr.whenTrue);
@@ -137,6 +167,7 @@ function keyFromExpression(expr: ts.Expression | undefined): { id: string; activ
 function keyPartFromExpression(expr: ts.Expression): string | undefined {
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
   if (ts.isNumericLiteral(expr)) return expr.text;
+  if (ts.isIdentifier(expr)) return expr.text;
   return undefined;
 }
 
@@ -180,7 +211,7 @@ function optionsMetadata(expr: ts.Expression | undefined): Record<string, Value>
   return metadata;
 }
 
-function inferPayloadDomain(typeArg: ts.TypeNode | undefined): AbstractDomain {
+function inferPayloadDomain(typeArg: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   if (!typeArg) return { kind: "tokens", count: 1 };
   switch (typeArg.kind) {
     case ts.SyntaxKind.BooleanKeyword:
@@ -188,11 +219,15 @@ function inferPayloadDomain(typeArg: ts.TypeNode | undefined): AbstractDomain {
     case ts.SyntaxKind.LiteralType:
       return domainFromLiteralType(typeArg as ts.LiteralTypeNode);
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(typeArg as ts.UnionTypeNode);
+      return domainFromUnion(typeArg as ts.UnionTypeNode, typeAliases);
+    case ts.SyntaxKind.TypeLiteral:
+      return domainFromTypeLiteral(typeArg as ts.TypeLiteralNode, typeAliases);
     case ts.SyntaxKind.ArrayType:
       return { kind: "lengthCat" };
     case ts.SyntaxKind.TypeReference: {
       const name = (typeArg as ts.TypeReferenceNode).typeName.getText();
+      const alias = typeAliases.get(name);
+      if (alias) return inferPayloadDomain(alias, typeAliases);
       if (name === "Array" || name === "ReadonlyArray") return { kind: "lengthCat" };
       return { kind: "tokens", count: 1 };
     }
@@ -210,18 +245,45 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
+function domainFromUnion(node: ts.UnionTypeNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
+  const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
+  if (nonNull.length !== node.types.length && nonNull.length > 0) {
+    return { kind: "option", inner: nonNull.length === 1 ? inferPayloadDomain(nonNull[0], typeAliases) : domainFromUnionMembers(nonNull) };
+  }
+  return domainFromUnionMembers(node.types);
+}
+
+function domainFromUnionMembers(types: readonly ts.TypeNode[]): AbstractDomain {
   const literalValues: string[] = [];
   const numericValues: number[] = [];
-  for (const part of node.types) {
+  for (const part of types) {
     if (!ts.isLiteralTypeNode(part)) return { kind: "tokens", count: 1 };
     const lit = part.literal;
     if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
     else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
     else return { kind: "tokens", count: 1 };
   }
-  if (numericValues.length === node.types.length) return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
+  if (numericValues.length === types.length) return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
   return { kind: "enum", values: literalValues };
+}
+
+function domainFromTypeLiteral(node: ts.TypeLiteralNode, typeAliases: ReadonlyMap<string, ts.TypeNode>): AbstractDomain {
+  const fields: Record<string, AbstractDomain> = {};
+  for (const member of node.members) {
+    if (!ts.isPropertySignature(member) || !member.type || !ts.isIdentifier(member.name)) continue;
+    fields[member.name.text] = inferPayloadDomain(member.type, typeAliases);
+  }
+  return { kind: "record", fields };
+}
+
+function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> {
+  const aliases = new Map<string, ts.TypeNode>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) aliases.set(node.name.text, node.type);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return aliases;
 }
 
 export function createSwrTemplate(options: SwrTemplateOptions): TemplateFragment {

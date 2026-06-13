@@ -43,12 +43,13 @@ export function discoverJotaiAtoms(sourceText: string, fileName = "state.ts"): S
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const importedAtomNames = atomImportNames(source);
   if (importedAtomNames.size === 0) return [];
+  const typeAliases = typeAliasDeclarations(source);
 
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isAtomCall(node.initializer, importedAtomNames)) {
       const origin = { file: fileName, ...lineAndColumn(source, node) };
-      const domain = inferAtomDomain(node.initializer);
+      const domain = inferAtomDomain(node.initializer, typeAliases);
       const variable: StateVarDecl = {
         id: `atom:${node.name.text}`,
         domain,
@@ -84,7 +85,16 @@ export function discoverJotaiWriteChannels(sourceText: string, fileName = "state
     }
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseAtomLikeCall(node.initializer, setters.useAtom)) {
       const atomArg = node.initializer.arguments[0];
+      const reader = node.name.elements[0];
       const setter = node.name.elements.at(-1);
+      if (atomArg && ts.isIdentifier(atomArg) && reader && ts.isBindingElement(reader) && ts.isIdentifier(reader.name)) {
+        channels.push({
+          id: `atom:${atomArg.text}.read`,
+          varId: `atom:${atomArg.text}`,
+          symbolName: reader.name.text,
+          source: { file: fileName, ...lineAndColumn(source, node) } satisfies SourceAnchor
+        });
+      }
       if (atomArg && ts.isIdentifier(atomArg) && setter && ts.isBindingElement(setter) && ts.isIdentifier(setter.name)) {
         channels.push({
           id: `atom:${atomArg.text}.setter`,
@@ -181,9 +191,9 @@ function isGetDefaultStoreCall(node: ts.Expression, names: Set<string>): node is
   return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && names.has(node.expression.text);
 }
 
-function inferAtomDomain(call: ts.CallExpression): AbstractDomain {
+function inferAtomDomain(call: ts.CallExpression, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
-  if (typeArg) return inferDomainFromTypeNode(typeArg);
+  if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
   if (!initial) return { kind: "tokens", count: 1 };
   if (initial.kind === ts.SyntaxKind.TrueKeyword || initial.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
@@ -208,7 +218,7 @@ function initialValueForAtom(call: ts.CallExpression, domain: AbstractDomain): V
   return firstValue(domain);
 }
 
-function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain {
+function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
     case ts.SyntaxKind.BooleanKeyword:
@@ -221,13 +231,13 @@ function inferDomainFromTypeNode(node: ts.TypeNode | undefined): AbstractDomain 
     case ts.SyntaxKind.LiteralType:
       return domainFromLiteralType(node as ts.LiteralTypeNode);
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(node as ts.UnionTypeNode);
+      return domainFromUnion(node as ts.UnionTypeNode, typeAliases);
     case ts.SyntaxKind.TypeLiteral:
       return domainFromTypeLiteral(node as ts.TypeLiteralNode);
     case ts.SyntaxKind.ArrayType:
       return { kind: "lengthCat" };
     case ts.SyntaxKind.TypeReference:
-      return domainFromTypeReference(node as ts.TypeReferenceNode);
+      return domainFromTypeReference(node as ts.TypeReferenceNode, typeAliases);
     default:
       return { kind: "tokens", count: 1 };
   }
@@ -242,10 +252,10 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(node: ts.UnionTypeNode): AbstractDomain {
+function domainFromUnion(node: ts.UnionTypeNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
   if (nonNull.length !== node.types.length && nonNull.length === 1) {
-    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0]) };
+    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0], typeAliases) };
   }
   const literalValues: string[] = [];
   const numericValues: number[] = [];
@@ -311,10 +321,22 @@ function domainFromExpression(expr: ts.Expression): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromTypeReference(node: ts.TypeReferenceNode): AbstractDomain {
+function domainFromTypeReference(node: ts.TypeReferenceNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
   const name = node.typeName.getText();
+  const alias = typeAliases.get(name);
+  if (alias) return inferDomainFromTypeNode(alias, typeAliases);
   if ((name === "Array" || name === "ReadonlyArray") && node.typeArguments?.length === 1) return { kind: "lengthCat" };
   return { kind: "tokens", count: 1 };
+}
+
+function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> {
+  const aliases = new Map<string, ts.TypeNode>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) aliases.set(node.name.text, node.type);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return aliases;
 }
 
 function valueFromObjectLiteral(node: ts.ObjectLiteralExpression, domain: AbstractDomain): Value {

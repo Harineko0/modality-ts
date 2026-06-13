@@ -124,8 +124,9 @@ export function extractUseStateSkeleton(sourceText: string, options: UseStateExt
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     if (!componentName && isCustomHookDeclaration(node)) return;
     const nextComponent = componentNameFor(node) ?? componentName;
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isExtractableHandler(node.initializer)) {
-      handlers.set(node.name.text, node.initializer);
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const handler = extractableHandlerInitializer(node.initializer);
+      if (handler) handlers.set(node.name.text, handler);
     }
     if (ts.isVariableDeclaration(node) && node.initializer && isUseReducerCall(node.initializer)) {
       warnings.push({ message: `Unsupported useReducer ${nextComponent ?? "Anonymous"}.useReducer`, ...lineAndColumn(source, node) });
@@ -434,6 +435,15 @@ function isExtractableHandler(node: ts.Expression): node is ExtractableHandler {
   return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
 }
 
+function extractableHandlerInitializer(node: ts.Expression): ExtractableHandler | undefined {
+  if (isExtractableHandler(node)) return node;
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useCallback") {
+    const callback = node.arguments[0];
+    return callback && isExtractableHandler(callback) ? callback : undefined;
+  }
+  return undefined;
+}
+
 function refSetterTaint(node: ts.Node, setters: Map<string, SetterBinding>): { varId: string; node: ts.Node } | undefined {
   if (ts.isVariableDeclaration(node) && node.initializer && isUseRefCall(node.initializer)) {
     const arg = node.initializer.arguments[0];
@@ -689,7 +699,7 @@ function transitionsFromResolvedHandler(
   if (conditionalTransition) return applyParsedGuard([conditionalTransition], disabledGuard);
   const loopTransitions = loopWriteTransitions(source, fileName, node, attr, handler, setters, component, locator);
   if (loopTransitions.length > 0) return applyParsedGuard(loopTransitions, disabledGuard);
-  const sequentialTransition = sequentialTransitionFromHandler(source, fileName, node, attr, handler, setters, component, locator);
+  const sequentialTransition = sequentialTransitionFromHandler(source, fileName, node, attr, handler, setters, handlers, component, locator);
   if (sequentialTransition) return applyParsedGuard([sequentialTransition], disabledGuard);
   const summary = callSummaryFromHandler(handler, setters);
   if (!summary) return [];
@@ -698,6 +708,8 @@ function transitionsFromResolvedHandler(
   const locals = inlined?.locals ?? summary.locals;
   const navigation = navigationTransition(source, fileName, node, attr, component, inlinedCall, locator);
   if (navigation) return applyParsedGuard([navigation], disabledGuard);
+  const swrMutate = swrMutateTransition(source, fileName, node, attr, component, inlinedCall, locator);
+  if (swrMutate) return applyParsedGuard([swrMutate], disabledGuard);
   const setterCall = setterCallFrom(inlinedCall, setters);
   if (!setterCall) {
     const escaped = escapedSetters(inlinedCall, setters);
@@ -732,6 +744,7 @@ function sequentialTransitionFromHandler(
   attr: string,
   handler: ExtractableHandler,
   setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
   component: string,
   locator: Locator | undefined
 ): Transition | undefined {
@@ -740,6 +753,11 @@ function sequentialTransitionFromHandler(
   const summaries: EffectSummary[] = [];
   for (const statement of handler.body.statements) {
     if (bindConstStatement(statement, setters, locals)) continue;
+    const helper = helperSummariesFromStatement(statement, handlers, setters);
+    if (helper) {
+      summaries.push(...helper);
+      continue;
+    }
     const summary = summarizeSetterStatement(statement, setters, locals);
     if (!summary) return undefined;
     summaries.push(summary);
@@ -758,6 +776,24 @@ function sequentialTransitionFromHandler(
     writes,
     confidence: effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact"
   };
+}
+
+function helperSummariesFromStatement(
+  statement: ts.Statement,
+  handlers: Map<string, ExtractableHandler>,
+  setters: Map<string, SetterBinding>
+): EffectSummary[] | undefined {
+  if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression) || !ts.isIdentifier(statement.expression.expression)) return undefined;
+  const helper = handlers.get(statement.expression.expression.text);
+  if (!helper || !ts.isBlock(helper.body)) return undefined;
+  const locals = new Map<string, BoundExpr>();
+  const summaries: EffectSummary[] = [];
+  for (const child of helper.body.statements) {
+    if (bindConstStatement(child, setters, locals)) continue;
+    const summary = summarizeSetterStatement(child, setters, locals);
+    if (summary) summaries.push(summary);
+  }
+  return summaries.length > 0 ? summaries : undefined;
 }
 
 function loopWriteTransitions(
@@ -849,11 +885,53 @@ function setterArgumentExpr(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>
 ): BoundExpr | undefined {
+  if (ts.isObjectLiteralExpression(argument)) {
+    const object = objectLiteralAssignmentExpr(argument, setter.domain, setters, locals);
+    if (object) return object;
+  }
   if ((ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) && argument.parameters.length === 1 && ts.isIdentifier(argument.parameters[0].name)) {
     if (ts.isBlock(argument.body)) return undefined;
     return valueExpr(argument.body, setters, new Map([...locals, [argument.parameters[0].name.text, readBinding(setter.varId)]]));
   }
   return valueExpr(argument, setters, locals);
+}
+
+function objectLiteralAssignmentExpr(
+  expression: ts.ObjectLiteralExpression,
+  domain: AbstractDomain,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>
+): BoundExpr | undefined {
+  const value: Record<string, Value> = {};
+  const reads = new Set<string>();
+  const fields = domain.kind === "record" ? domain.fields : domain.kind === "tagged" ? taggedFieldsForObject(expression, domain) : {};
+  for (const property of expression.properties) {
+    if (!ts.isPropertyAssignment(property)) return undefined;
+    const name = propertyName(property.name);
+    if (!name) return undefined;
+    const literal = literalValue(property.initializer);
+    if (literal !== undefined) {
+      value[name] = literal;
+      continue;
+    }
+    const bound = valueExpr(property.initializer, setters, locals);
+    if (bound?.expr.kind === "lit") {
+      value[name] = bound.expr.value;
+      bound.reads.forEach((read) => reads.add(read));
+      continue;
+    }
+    value[name] = firstValue(fields[name] ?? { kind: "tokens", count: 1 });
+  }
+  return { expr: { kind: "lit", value }, reads: [...reads] };
+}
+
+function taggedFieldsForObject(expression: ts.ObjectLiteralExpression, domain: Extract<AbstractDomain, { kind: "tagged" }>): Record<string, AbstractDomain> {
+  const tagProperty = expression.properties.find((property): property is ts.PropertyAssignment =>
+    ts.isPropertyAssignment(property) && propertyName(property.name) === domain.tag
+  );
+  const tag = tagProperty ? literalValue(tagProperty.initializer) : undefined;
+  const variant = typeof tag === "string" ? domain.variants[tag] : undefined;
+  return variant?.kind === "record" ? variant.fields : {};
 }
 
 function valueExpr(
@@ -863,14 +941,14 @@ function valueExpr(
 ): BoundExpr | undefined {
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return modeledReadExpr(expression, setters, locals);
+  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) return modeledReadExpr(expression, setters, locals);
   if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
     const parsed = booleanExpr(expression.operand, setters, locals);
     return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
   }
   if (ts.isParenthesizedExpression(expression)) return valueExpr(expression.expression, setters, locals);
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
-    return nullishOptionalReadExpr(expression, setters);
+    return nullishOptionalReadExpr(expression, setters, locals);
   }
   if (ts.isConditionalExpression(expression)) {
     const condition = booleanExpr(expression.condition, setters, locals);
@@ -920,20 +998,24 @@ interface OptionalReadPath {
 
 function nullishOptionalReadExpr(
   expression: ts.BinaryExpression,
-  setters: Map<string, SetterBinding>
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map()
 ): BoundExpr | undefined {
-  if (literalValue(expression.right) !== null) return undefined;
+  const fallback = literalValue(expression.right);
+  if (fallback === undefined) return undefined;
   const read = optionalReadPath(expression.left);
   if (!read?.optional || read.path.length === 0) return undefined;
-  const varId = stateVarForName(read.base, setters);
+  const local = locals.get(read.base);
+  const varId = local?.expr.kind === "read" ? local.expr.var : stateVarForName(read.base, setters);
   if (!varId) return undefined;
+  const basePath = local?.expr.kind === "read" ? local.expr.path ?? [] : [];
   return {
     expr: {
       kind: "cond",
       args: [
-        { kind: "eq", args: [{ kind: "read", var: varId }, { kind: "lit", value: null }] },
-        { kind: "lit", value: null },
-        { kind: "read", var: varId, path: read.path }
+        { kind: "eq", args: [{ kind: "read", var: varId, ...(basePath.length > 0 ? { path: basePath } : {}) }, { kind: "lit", value: null }] },
+        { kind: "lit", value: fallback },
+        { kind: "read", var: varId, path: [...basePath, ...read.path] }
       ]
     },
     reads: [varId]
@@ -942,7 +1024,7 @@ function nullishOptionalReadExpr(
 
 function optionalReadPath(expression: ts.Expression): OptionalReadPath | undefined {
   if (ts.isIdentifier(expression)) return { base: expression.text, path: [], optional: false };
-  if (ts.isPropertyAccessExpression(expression)) {
+  if (isPropertyAccessLike(expression)) {
     const base = optionalReadPath(expression.expression);
     if (!base) return undefined;
     return {
@@ -1020,8 +1102,12 @@ function modeledReadExpr(
       reads: local.reads
     };
   }
-  const stateVar = stateVarForName(base, setters);
+  const setter = setterForName(base, setters);
+  const stateVar = setter?.varId;
   if (!stateVar) return undefined;
+  if (setter.domain.kind === "tagged" && segments.length > 0 && segments[0] !== setter.domain.tag) {
+    return { expr: { kind: "lit", value: firstValue(taggedPathDomain(setter.domain, segments) ?? { kind: "tokens", count: 1 }) }, reads: [] };
+  }
   return {
     expr: { kind: "read", var: stateVar, ...(segments.length > 0 ? { path: segments } : {}) },
     reads: [stateVar]
@@ -1113,16 +1199,41 @@ function enclosingFunctionBody(node: ts.Node): ts.Block | undefined {
 function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string, SetterBinding>, initialLocals: Map<string, BoundExpr> = new Map()): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
   const body = handler.body;
   if (ts.isCallExpression(body)) return { call: body, locals: new Map(initialLocals) };
+  if (ts.isVoidExpression(body) && ts.isCallExpression(body.expression)) return { call: body.expression, locals: new Map(initialLocals) };
   if (ts.isBlock(body)) {
     const locals = new Map<string, BoundExpr>(initialLocals);
     for (let index = 0; index < body.statements.length; index += 1) {
       const statement = body.statements[index];
       const isLast = index === body.statements.length - 1;
       if (isLast && ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) return { call: statement.expression, locals };
+      if (isLast && ts.isExpressionStatement(statement) && ts.isVoidExpression(statement.expression) && ts.isCallExpression(statement.expression.expression)) return { call: statement.expression.expression, locals };
       if (!bindConstStatement(statement, setters, locals)) return undefined;
     }
   }
   return undefined;
+}
+
+function swrMutateTransition(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  call: ts.CallExpression,
+  locator: Locator | undefined
+): Transition | undefined {
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== "mutate") return undefined;
+  return {
+    id: `${component}.${attr}.mutate`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "seq", effects: [] },
+    reads: [],
+    writes: [],
+    confidence: "exact"
+  };
 }
 
 function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>, partialBoolean = false): boolean {
@@ -2197,7 +2308,7 @@ function parseGuardExpression(
 ): ParsedGuard | undefined {
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword) return { expr: { kind: "lit", value: false }, reads: [] };
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, locals);
+  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) return valueExpr(expression, setters, locals);
   if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
     const parsed = parseGuardExpression(expression.operand, setters, locals);
     return parsed ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads } : undefined;
@@ -2248,7 +2359,7 @@ function parseGuardOperand(
 ): ParsedGuard | undefined {
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) return valueExpr(expression, setters, locals);
+  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) return valueExpr(expression, setters, locals);
   return parseGuardExpression(expression, setters, locals);
 }
 
@@ -2268,7 +2379,30 @@ function parseConjunctiveGuardExpression(
 }
 
 function stateVarForName(name: string, setters: Map<string, SetterBinding>): string | undefined {
-  return [...setters.values()].find((setter) => setter.stateName === name)?.varId;
+  return setterForName(name, setters)?.varId;
+}
+
+function setterForName(name: string, setters: Map<string, SetterBinding>): SetterBinding | undefined {
+  return setters.get(name) ?? [...setters.values()].find((setter) => setter.stateName === name);
+}
+
+function taggedPathDomain(domain: Extract<AbstractDomain, { kind: "tagged" }>, path: readonly string[]): AbstractDomain | undefined {
+  const [field, ...rest] = path;
+  if (!field) return domain;
+  const variants = Object.values(domain.variants).filter((variant): variant is Extract<AbstractDomain, { kind: "record" }> => variant.kind === "record");
+  const fieldDomains = variants.map((variant) => variant.fields[field]).filter((candidate): candidate is AbstractDomain => Boolean(candidate));
+  if (fieldDomains.length === 0) return undefined;
+  const first = fieldDomains[0]!;
+  if (rest.length === 0) return first;
+  return first.kind === "record" ? domainAtRecordPath(first, rest) : undefined;
+}
+
+function domainAtRecordPath(domain: Extract<AbstractDomain, { kind: "record" }>, path: readonly string[]): AbstractDomain | undefined {
+  const [field, ...rest] = path;
+  if (!field) return domain;
+  const next = domain.fields[field];
+  if (!next || rest.length === 0) return next;
+  return next.kind === "record" ? domainAtRecordPath(next, rest) : undefined;
 }
 
 function andGuard(left: ExprIR, right: ExprIR): ExprIR {
@@ -2362,11 +2496,15 @@ function isInputValueExpression(node: ts.Expression, parameter: ts.ParameterDecl
 
 function propertyAccessPath(node: ts.Expression): string[] | undefined {
   if (ts.isIdentifier(node)) return [node.text];
-  if (ts.isPropertyAccessExpression(node)) {
+  if (isPropertyAccessLike(node)) {
     const base = propertyAccessPath(node.expression);
     return base ? [...base, node.name.text] : undefined;
   }
   return undefined;
+}
+
+function isPropertyAccessLike(node: ts.Expression): node is ts.PropertyAccessExpression {
+  return ts.isPropertyAccessExpression(node) || ts.isPropertyAccessChain(node);
 }
 
 function valueClassForDomain(domain: AbstractDomain): string {

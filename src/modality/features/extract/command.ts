@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, join, parse } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import * as ts from "typescript";
 import { extractUseStateSkeleton, runExtractionPipeline } from "modality-ts/extraction";
 import { canonicalJson, parseModelArtifact, type EffectIR, type ExtractionCaveat, type ExtractionReport, type Model, type OverlaySpec, type StateVarDecl } from "modality-ts/kernel";
 import type { Bounds } from "modality-ts/kernel";
@@ -61,8 +62,9 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
   });
   const effectApis = uniqueStrings([...(config.effectApis ?? []), ...(options.effectApis ?? [])]);
   const bounds = { maxDepth: 12, maxPending: 3, maxInternalSteps: 16, ...(config.bounds ?? {}), ...(options.bounds ?? {}) };
+  const discoverySource = await sourceWithLocalImports(options.sourcePath, source);
   const pipeline = runExtractionPipeline({
-    sourceText: source,
+    sourceText: discoverySource,
     fileName: options.sourcePath,
     route,
     effectApis,
@@ -128,6 +130,67 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
       ...(options.reportPath ? [`report=${options.reportPath}`] : [])
     ]
   };
+}
+
+async function sourceWithLocalImports(sourcePath: string, source: string): Promise<string> {
+  const seen = new Set<string>([resolve(sourcePath)]);
+  const chunks = [source];
+  const queue = localImportSpecifiers(source).map((specifier) => resolveImportPath(dirname(sourcePath), specifier)).filter((path): path is string => Boolean(path));
+  while (queue.length > 0) {
+    const next = queue.shift()!;
+    const canonical = resolve(next);
+    if (seen.has(canonical)) continue;
+    let text: string;
+    try {
+      text = await readFile(canonical, "utf8");
+    } catch {
+      continue;
+    }
+    seen.add(canonical);
+    chunks.push(text);
+    for (const specifier of localImportSpecifiers(text)) {
+      const imported = resolveImportPath(dirname(canonical), specifier);
+      if (imported) queue.push(imported);
+    }
+  }
+  return chunks.join("\n");
+}
+
+function localImportSpecifiers(source: string): string[] {
+  const specs: string[] = [];
+  const parsed = tsCreateSourceFile(source);
+  const visit = (node: import("typescript").Node): void => {
+    if (tsIsImportDeclaration(node) && tsIsStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text.startsWith(".")) {
+      specs.push(node.moduleSpecifier.text);
+    }
+    tsForEachChild(node, visit);
+  };
+  visit(parsed);
+  return specs;
+}
+
+function tsCreateSourceFile(source: string): import("typescript").SourceFile {
+  return ts.createSourceFile("imports.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+}
+
+function tsIsImportDeclaration(node: import("typescript").Node): node is import("typescript").ImportDeclaration {
+  return ts.isImportDeclaration(node);
+}
+
+function tsIsStringLiteral(node: import("typescript").Node): node is import("typescript").StringLiteral {
+  return ts.isStringLiteral(node);
+}
+
+function tsForEachChild(node: import("typescript").Node, cb: (node: import("typescript").Node) => void): void {
+  ts.forEachChild(node, cb);
+}
+
+function resolveImportPath(baseDir: string, specifier: string): string | undefined {
+  const base = resolve(baseDir, specifier);
+  const candidates = /\.[cm]?[jt]sx?$/.test(base)
+    ? [base]
+    : [`${base}.ts`, `${base}.tsx`, `${base}.mts`, `${base}.cts`, join(base, "index.ts"), join(base, "index.tsx")];
+  return candidates[0];
 }
 
 async function readOverlaySpec(overlayPath: string): Promise<OverlaySpec> {
@@ -480,8 +543,15 @@ function refineAssignedLiteralDomains(vars: readonly StateVarDecl[], transitions
   return vars.map((decl) => {
     if (decl.origin === "library-template") return decl;
     const refinement = refinements.get(decl.id);
-    return refinement ? { ...decl, domain: mergeArgDomains(decl.domain, refinement) } : decl;
+    return refinement ? { ...decl, domain: mergeAssignedDomain(decl.domain, refinement) } : decl;
   });
+}
+
+function mergeAssignedDomain(left: StateVarDecl["domain"], right: StateVarDecl["domain"]): StateVarDecl["domain"] {
+  if (left.kind === "enum" && right.kind === "enum") return mergeArgDomains(left, right);
+  if (left.kind === "boundedInt" && right.kind === "boundedInt") return mergeArgDomains(left, right);
+  if (left.kind === "tokens") return right;
+  return left;
 }
 
 function assignedLiteralDomains(effect: EffectIR): Array<[string, StateVarDecl["domain"]]> {

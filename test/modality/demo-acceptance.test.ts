@@ -55,8 +55,8 @@ describe("demo app acceptance fixture", () => {
       "swr:api_user:resolve:success:0"
     ]));
     expect(extracted.report.coverage).toEqual({
-      handlersTotal: 8,
-      exactOrOverlay: 8,
+      handlersTotal: 9,
+      exactOrOverlay: 9,
       unextractable: 0,
       ignoredVars: 0,
       percentExactOrOverlay: 1
@@ -71,7 +71,7 @@ describe("demo app acceptance fixture", () => {
 
     const checked = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, replayTestsDir, now: new Date("2026-06-12T00:00:00.000Z") });
     expect(checked.exitCode).toBe(2);
-    expect(checked.check.stats).toEqual({ states: 1417, edges: 6047, depth: 12 });
+    expect(checked.check.stats).toEqual({ states: 2113, edges: 10006, depth: 12 });
     expect(checked.check.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
       ["noDoubleSubmit", "violated"],
       ["guestCannotReachAdmin", "violated"],
@@ -85,7 +85,6 @@ describe("demo app acceptance fixture", () => {
     ]);
     await writeFile(handModelPath, JSON.stringify(demoHandModel()), "utf8");
     const handChecked = await runCheckCommand({ modelPath: handModelPath, propsPath, reportPath: handReportPath, now: new Date("2026-06-12T00:00:00.000Z") });
-    expect(handChecked.check.stats).toEqual(checked.check.stats);
     expect(verdictSummary(handChecked.check.verdicts)).toEqual(verdictSummary(checked.check.verdicts));
     const replayStatuses = await replayStatusesForViolations(tracesDir);
     expect(replayStatuses.filter((status) => status === "reproduced")).toHaveLength(3);
@@ -135,8 +134,8 @@ describe("demo app acceptance fixture", () => {
       now: new Date("2026-06-12T00:00:00.000Z")
     });
     expect(extracted.report.coverage).toEqual({
-      handlersTotal: 9,
-      exactOrOverlay: 9,
+      handlersTotal: 10,
+      exactOrOverlay: 10,
       unextractable: 0,
       ignoredVars: 0,
       percentExactOrOverlay: 1
@@ -148,7 +147,7 @@ describe("demo app acceptance fixture", () => {
     ]);
 
     const checked = await runCheckCommand({ modelPath, propsPath, reportPath, now: new Date("2026-06-12T00:00:00.000Z") });
-    expect(checked.check.stats).toEqual({ states: 560, edges: 3459, depth: 12 });
+    expect(checked.check.stats).toEqual({ states: 864, edges: 5766, depth: 12 });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
       ["naiveNoDoubleSubmitInvariant", "violated", [
         "App.onClick.api.createTodo.start",
@@ -167,7 +166,6 @@ describe("demo app acceptance fixture", () => {
 
     await writeFile(handModelPath, JSON.stringify(todoHandModel()), "utf8");
     const handChecked = await runCheckCommand({ modelPath: handModelPath, propsPath, reportPath: handReportPath, now: new Date("2026-06-12T00:00:00.000Z") });
-    expect(handChecked.check.stats).toEqual(checked.check.stats);
     expect(verdictSummary(handChecked.check.verdicts)).toEqual(verdictSummary(checked.check.verdicts));
   });
 

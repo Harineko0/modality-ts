@@ -98,6 +98,12 @@ describe("Jotai source plugin", () => {
     `;
     expect(discoverJotaiWriteChannels(source, "App.tsx")).toEqual([
       {
+        id: "atom:authAtom.read",
+        varId: "atom:authAtom",
+        symbolName: "auth",
+        source: { file: "App.tsx", line: 3, column: 13 }
+      },
+      {
         id: "atom:authAtom.setter",
         varId: "atom:authAtom",
         symbolName: "setAuth",
