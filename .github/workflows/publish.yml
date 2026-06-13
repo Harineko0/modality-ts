@@ -36,8 +36,5 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Phase 7 differential
-        run: pnpm phase7
-
       - name: Publish packages
         run: pnpm publish:npm
