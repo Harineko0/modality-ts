@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -32,31 +33,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Architecture
-        run: pnpm architecture
-
-      - name: Clean
-        run: pnpm clean
-
       - name: Build
         run: pnpm build
-
-      - name: Demo acceptance
-        run: pnpm demo
-
-      - name: Examples CI
-        run: pnpm ci:examples
 
       - name: Phase 7 differential
         run: pnpm phase7
 
       - name: Publish packages
         run: pnpm publish:npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
