@@ -6,6 +6,7 @@ export interface StepFacts {
   transition: Transition;
   enqueued(op: string): boolean;
   resolved(op: string, outcome?: string): boolean;
+  navigated(): boolean;
   navigatedTo(route: string): boolean;
   op?: { id: string; continuation?: string; args: Record<string, unknown> };
 }
@@ -139,6 +140,7 @@ function recordingStepFacts(): StepFacts {
     transition: {} as Transition,
     enqueued: () => false,
     resolved: () => false,
+    navigated: () => false,
     navigatedTo: () => false
   };
 }

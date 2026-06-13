@@ -84,7 +84,11 @@ function checkModelCore(model: Model, properties: readonly Property[]): CheckRes
       const enabled = enabledTransitions(model, pre);
       for (const transition of enabled) {
         enabledTransitionIds.add(transition.id);
-        const rawPosts = applyEffect(model, pre, transition.effect, { onBoundHit: () => boundHits.add(`token cap exhausted at ${transition.id}`) });
+        const rawPosts = applyEffect(model, pre, transition.effect, {
+          onBoundHit: (hit) => {
+            boundHits.add(hit.startsWith("token cap exhausted") ? `token cap exhausted at ${transition.id}` : `${hit} at ${transition.id}`);
+          }
+        });
         if (rawPosts.length === 0 && effectContainsEnqueue(transition.effect)) {
           boundHits.add(`pending cap saturated at ${transition.id}`);
         }
@@ -550,6 +554,7 @@ function facts(pre: ModelState, post: ModelState, transition: Transition): StepF
     transition,
     enqueued: (op) => Boolean(enqueued && enqueued.opId === op),
     resolved: (op, outcome) => transition.label.kind === "resolve" && transition.label.op === op && (!outcome || transition.label.outcome === outcome),
+    navigated: () => pre["sys:route"] !== post["sys:route"],
     navigatedTo: (route) => post["sys:route"] === route && pre["sys:route"] !== route,
     op: enqueued ? { id: enqueued.opId, continuation: enqueued.continuation, args: enqueued.args } : dequeued ? { id: dequeued.opId, continuation: dequeued.continuation, args: dequeued.args } : undefined
   };

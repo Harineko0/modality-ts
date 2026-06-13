@@ -71,7 +71,7 @@ describe("demo app acceptance fixture", () => {
 
     const checked = await runCheckCommand({ modelPath, propsPath, reportPath, tracesDir, replayTestsDir, now: new Date("2026-06-12T00:00:00.000Z") });
     expect(checked.exitCode).toBe(2);
-    expect(checked.check.stats).toEqual({ states: 2113, edges: 10006, depth: 12 });
+    expect(checked.check.stats).toEqual({ states: 1422, edges: 7382, depth: 12 });
     expect(checked.check.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
       ["noDoubleSubmit", "violated"],
       ["guestCannotReachAdmin", "violated"],

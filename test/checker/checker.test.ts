@@ -827,6 +827,37 @@ describe("checker", () => {
     expect(byName.get("offRouteLocalRemainsUnmounted")).toBe("reachable");
   });
 
+  it("exposes generic navigation step facts", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "navigation-step-facts",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] }
+      ],
+      transitions: [
+        {
+          id: "pushB",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    const result = checkModel(m, [
+      alwaysStep(m, (_pre, step) => step.transition.id !== "pushB" || (step.navigated() && step.navigatedTo("/b")), { name: "pushReportsNavigation", reads: ["sys:route"] })
+    ]);
+    expect(result.verdicts[0]).toMatchObject({ status: "verified-within-bounds", property: "pushReportsNavigation" });
+  });
+
   it("reports pending-cap bound hits", () => {
     const m: Model = {
       ...model(),
@@ -852,6 +883,36 @@ describe("checker", () => {
     };
     const result = checkModel(m, [reachable(m, (s) => Array.isArray(s["sys:pending"]) && s["sys:pending"].length === 1, { name: "onePendingReachable" })]);
     expect(result.boundHits).toContain("pending cap saturated at spam");
+  });
+
+  it("reports history-cap bound hits on push navigation", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "history-bound",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] }
+      ],
+      transitions: [
+        {
+          id: "pushB",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    const result = checkModel(m, [reachable(m, (s) => s["sys:route"] === "/b", { name: "pushedB", reads: ["sys:route"] })]);
+    expect(result.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "pushedB" });
+    expect(result.boundHits).toContain("history cap saturated at pushB");
   });
 
   it("reports max-depth bound hits only when enabled transitions remain at the boundary", () => {

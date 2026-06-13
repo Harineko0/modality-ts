@@ -181,6 +181,11 @@ function navigateBranches(model: Model, effect: Extract<EffectIR, { kind: "navig
     next = withValue(next, "sys:history", `IF Len(${history}) = 0 THEN ${history} ELSE SubSeq(${history}, 1, Len(${history}) - 1)`);
   } else {
     const to = effect.to ? tlaExpr(effect.to, env) : route;
+    const historyDecl = model.vars.find((decl) => decl.id === "sys:history");
+    const historyCap = historyDecl?.domain.kind === "boundedList" ? historyDecl.domain.maxLen : undefined;
+    if (effect.mode === "push" && historyCap !== undefined) {
+      next = envWithAssumption(next, `(Len(${history}) < ${historyCap})`);
+    }
     next = withValue(next, "sys:route", to);
     next = withValue(next, "sys:history", effect.mode === "push" ? `Append(${history}, ${route})` : history);
   }

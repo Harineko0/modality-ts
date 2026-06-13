@@ -196,6 +196,37 @@ describe("TLA export", () => {
     expect(await readFile(outPath, "utf8")).toBe(result.source);
   });
 
+  it("exports push navigation with the bounded history assumption", () => {
+    const routes = { kind: "enum", values: ["/a", "/b"] } as const;
+    const m: Model = {
+      ...model(),
+      vars: [
+        { id: "sys:route", domain: routes, origin: "system", scope: { kind: "global" }, initial: "/a" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: routes, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        model().vars.find((decl) => decl.id === "sys:pending")!,
+        model().vars.find((decl) => decl.id === "flag")!
+      ],
+      transitions: [
+        {
+          id: "pushB",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/b" } },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    const structured = generateTlaStructuredModel(m, "HistoryFixture");
+    const push = structured.transitions.find((transition) => transition.id === "pushB");
+    expect(push?.branches[0]?.assumptions).toEqual(["(Len(sys_history) < 1)"]);
+    expect(push?.branches[0]?.next["sys:history"]).toBe("Append(sys_history, sys_route)");
+  });
+
   it("cross-validates structured TLA export against a finite checker oracle", () => {
     const m = assuranceModel();
     const expectedReachable = oracleReachableStates(m);

@@ -115,7 +115,7 @@ function applyEffectUnsafe(model: Model, state: ModelState, effect: EffectIR, op
       return [{ ...state, "sys:pending": pending.filter((_, i) => i !== effect.index) }];
     }
     case "navigate":
-      return navigate(model, state, effect);
+      return navigate(model, state, effect, options);
     case "opaque":
       return applyOpaqueEffect(model, state, effect.ref);
   }
@@ -126,7 +126,7 @@ export function readPending(state: ModelState): PendingOp[] {
   return Array.isArray(pending) ? (pending as PendingOp[]) : [];
 }
 
-function navigate(model: Model, state: ModelState, effect: Extract<EffectIR, { kind: "navigate" }>): ModelState[] {
+function navigate(model: Model, state: ModelState, effect: Extract<EffectIR, { kind: "navigate" }>, options: EvalOptions): ModelState[] {
   const route = state["sys:route"];
   const history = Array.isArray(state["sys:history"]) ? state["sys:history"] : [];
   if (effect.mode === "back") {
@@ -136,6 +136,12 @@ function navigate(model: Model, state: ModelState, effect: Extract<EffectIR, { k
   }
   const to = effect.to ? evalExpr(model, state, effect.to) : undefined;
   if (typeof to !== "string") return [state];
+  const historyDecl = model.vars.find((decl) => decl.id === "sys:history");
+  const historyCap = historyDecl?.domain.kind === "boundedList" ? historyDecl.domain.maxLen : undefined;
+  if (effect.mode === "push" && historyCap !== undefined && history.length >= historyCap) {
+    options.onBoundHit?.("history cap saturated");
+    return [];
+  }
   const nextHistory = effect.mode === "push" && typeof route === "string" ? [...history, route] : history;
   return resetRouteLocals(model, { ...state, "sys:route": to, "sys:history": nextHistory }, route);
 }
