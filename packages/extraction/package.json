@@ -1,7 +1,19 @@
 {
   "name": "@modality/extraction",
-  "version": "0.1.0",
+  "version": "0.0.0",
+  "description": "React and TypeScript model extraction engine for modality.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/extraction"
+  },
   "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,6 +27,9 @@
       "types": "./dist/spi/index.d.ts",
       "default": "./dist/spi/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -b"

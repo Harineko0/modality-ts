@@ -1,16 +1,31 @@
 {
   "name": "@modality/source-jotai",
-  "version": "0.1.0",
+  "version": "0.0.0",
+  "description": "Jotai state source plugin for modality extraction and replay.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harineko0/modality-ts.git",
+    "directory": "packages/sources/jotai"
+  },
   "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./harness": {
-      "types": "./src/harness.ts",
-      "default": "./src/harness.ts"
+      "types": "./dist/harness.d.ts",
+      "default": "./dist/harness.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -b"

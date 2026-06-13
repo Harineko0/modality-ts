@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkModel, sliceModel } from "../src/index.js";
+import { checkModel, modelInitialStates, sliceModel } from "../src/index.js";
 import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "@modality/kernel";
 
 const bool = { kind: "bool" } as const;
@@ -111,6 +111,81 @@ function model(): Model {
 }
 
 describe("checker", () => {
+  it("preserves nondeterministic route-local initials on initial mount and remount", () => {
+    const routeLocalModel: Model = {
+      schemaVersion: 1,
+      id: "route-local-initials",
+      bounds: { maxDepth: 3, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "local:Page.choice", domain: { kind: "enum", values: ["x", "y"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: ["x", "y"] }
+      ],
+      transitions: [
+        {
+          id: "goB",
+          cls: "nav",
+          label: { kind: "navigate", to: "/b" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        },
+        {
+          id: "goA",
+          cls: "nav",
+          label: { kind: "navigate", to: "/a" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/a") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    expect(modelInitialStates(routeLocalModel).map((state) => state["local:Page.choice"]).sort()).toEqual(["x", "y"]);
+    const check = checkModel(routeLocalModel, [reachable(routeLocalModel, (state) => state["local:Page.choice"] === "y", { name: "canMountY" })]);
+    expect(check.verdicts[0]).toMatchObject({ status: "reachable", property: "canMountY" });
+  });
+
+  it("treats named token values as used when freshToken checks exhaustion", () => {
+    const tokenModel: Model = {
+      schemaVersion: 1,
+      id: "named-token-exhaustion",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
+        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        { id: "payload", domain: { kind: "tokens", count: 1, names: ["userA"] }, origin: "system", scope: { kind: "global" }, initial: "userA" },
+        { id: "next", domain: { kind: "tokens", count: 1, names: ["userA"] }, origin: "system", scope: { kind: "global" }, initial: "userA" }
+      ],
+      transitions: [
+        {
+          id: "fresh",
+          cls: "user",
+          label: { kind: "click", text: "Fresh" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "next", expr: { kind: "freshToken", domainOf: "next" } },
+          reads: [],
+          writes: ["next"],
+          confidence: "exact"
+        }
+      ]
+    };
+
+    const check = checkModel(tokenModel, [reachable(tokenModel, (state) => state.next !== "userA", { name: "freshGenerated" })]);
+    expect(check.stats.edges).toBe(0);
+    expect(check.boundHits).toEqual(["token cap exhausted at fresh"]);
+    expect(check.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "freshGenerated" });
+  });
+
   it("finds shortest traces for state and step violations", () => {
     const m = model();
     const props: Property[] = [

@@ -224,7 +224,7 @@ function initialStates(model: Model): ModelState[] {
   return model.vars.reduce<ModelState[]>((states, decl) => {
     const initials = initialValues(decl.domain, decl.initial);
     return states.flatMap((state) => initials.map((value) => ({ ...state, [decl.id]: value })));
-  }, [{}]).map((state) => normalizeInitialRouteLocals(model, state));
+  }, [{}]).flatMap((state) => normalizeInitialRouteLocals(model, state));
 }
 
 function enabledTransitions(model: Model, state: ModelState): Transition[] {

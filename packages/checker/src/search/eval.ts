@@ -58,8 +58,9 @@ export function evalExpr(model: Model, state: ModelState, expr: ExprIR, options:
       const decl = model.vars.find((candidate) => candidate.id === expr.domainOf);
       if (!decl || decl.domain.kind !== "tokens") throw new Error(`freshToken domainOf must reference token var: ${expr.domainOf}`);
       const names = enumerateDomain(decl.domain) as string[];
+      const tokenSet = new Set(names);
       const used = new Set<string>();
-      for (const value of Object.values(state)) collectTokens(value, used);
+      for (const value of Object.values(state)) collectTokens(value, used, tokenSet);
       const fresh = names.find((name) => !used.has(name));
       if (!fresh) throw new TokenExhausted(expr.domainOf);
       return fresh;
@@ -130,28 +131,32 @@ function navigate(model: Model, state: ModelState, effect: Extract<EffectIR, { k
   if (effect.mode === "back") {
     const previous = history[history.length - 1];
     if (typeof previous !== "string") return [state];
-    return [resetRouteLocals(model, { ...state, "sys:route": previous, "sys:history": history.slice(0, -1) }, route)];
+    return resetRouteLocals(model, { ...state, "sys:route": previous, "sys:history": history.slice(0, -1) }, route);
   }
   const to = effect.to ? evalExpr(model, state, effect.to) : undefined;
   if (typeof to !== "string") return [state];
   const nextHistory = effect.mode === "push" && typeof route === "string" ? [...history, route] : history;
-  return [resetRouteLocals(model, { ...state, "sys:route": to, "sys:history": nextHistory }, route)];
+  return resetRouteLocals(model, { ...state, "sys:route": to, "sys:history": nextHistory }, route);
 }
 
-export function normalizeInitialRouteLocals(model: Model, state: ModelState): ModelState {
-  return resetRouteLocals(model, state, undefined);
+export function normalizeInitialRouteLocals(model: Model, state: ModelState): ModelState[] {
+  return resetRouteLocals(model, state, undefined, { preserveMounted: true });
 }
 
-function resetRouteLocals(model: Model, state: ModelState, previousRoute: Value | undefined): ModelState {
+function resetRouteLocals(model: Model, state: ModelState, previousRoute: Value | undefined, options: { preserveMounted?: boolean } = {}): ModelState[] {
   const currentRoute = state["sys:route"];
-  if (previousRoute === currentRoute) return state;
-  let next = state;
+  if (previousRoute === currentRoute) return [state];
+  let states = [state];
   for (const decl of model.vars) {
     if (decl.scope.kind !== "route-local") continue;
-    const value = decl.scope.route === currentRoute ? initialValues(decl.domain, decl.initial)[0] : UNMOUNTED;
-    next = { ...next, [decl.id]: value };
+    if (decl.scope.route === currentRoute) {
+      if (options.preserveMounted) continue;
+      states = states.flatMap((candidate) => initialValues(decl.domain, decl.initial).map((value) => ({ ...candidate, [decl.id]: value })));
+    } else {
+      states = states.map((candidate) => ({ ...candidate, [decl.id]: UNMOUNTED }));
+    }
   }
-  return next;
+  return states;
 }
 
 function readPath(value: Value | undefined, path: readonly string[]): Value {
@@ -176,10 +181,10 @@ function writePath(target: Value, path: readonly string[], value: Value): Value 
   return { ...base, [head]: writePath((base as Record<string, Value>)[head], tail, value) };
 }
 
-function collectTokens(value: Value, out: Set<string>): void {
-  if (typeof value === "string" && /^tok\d+$/.test(value)) out.add(value);
-  else if (Array.isArray(value)) value.forEach((item) => collectTokens(item, out));
-  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectTokens(item, out));
+function collectTokens(value: Value, out: Set<string>, tokenSet: ReadonlySet<string>): void {
+  if (typeof value === "string" && tokenSet.has(value)) out.add(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectTokens(item, out, tokenSet));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectTokens(item, out, tokenSet));
 }
 
 function applyOpaqueEffect(model: Model, state: ModelState, ref: OpaqueRef): ModelState[] {
