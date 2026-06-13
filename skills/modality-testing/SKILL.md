@@ -9,6 +9,8 @@ description: Guide use of modality-ts for model-checking React and TypeScript st
 
 Use modality-ts to verify bounded, deterministic React state transitions. Focus on app behavior represented in TypeScript state, router state, cache/source state, and named side effects; keep DOM layout, CSS, animation timing, browser quirks, and unbounded external systems covered by ordinary unit, integration, or end-to-end tests.
 
+The built-in extraction pipeline can model React local state plus supported source plugins such as Jotai, SWR, and router state. When the target imports local modules, extraction follows relative TypeScript imports so atom definitions, SWR payload aliases, and helper handlers can contribute domains and transitions. Treat the generated model as the source of truth for exact variable IDs before writing properties.
+
 ## Workflow
 
 1. Pick a target component or entry file whose important behavior is finite enough to model.
@@ -24,20 +26,21 @@ modality extract src/App.tsx --out .modality/model.json
 modality extract src/App.tsx --out .modality/model.json --effect-api api.placeOrder
 ```
 
-4. Write a property file that exports `properties()` and returns checks over model state.
-5. Check the model and write reports/traces:
+4. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
+5. Write a property file that exports `properties()` and returns checks over model state.
+6. Check the model and write reports/traces:
 
 ```bash
 modality check .modality/model.json src/app.props.mjs --report .modality/report.json --traces .modality/traces
 ```
 
-6. Replay a failing counterexample when a property is violated:
+7. Replay a failing counterexample when a property is violated:
 
 ```bash
 modality replay .modality/traces/noDoubleSubmit.violated.trace.json
 ```
 
-7. Prefer CI artifacts when automating verification:
+8. Prefer CI artifacts when automating verification:
 
 ```bash
 modality ci .modality/model.json src/app.props.mjs --artifacts .modality
@@ -60,28 +63,32 @@ export function properties() {
     {
       kind: "alwaysStep",
       name: "guestCannotSubmit",
-      reads: ["local:App.auth", "sys:pending"],
+      reads: ["atom:authAtom", "sys:pending"],
       predicate: (pre, step) =>
-        !(step.enqueued("api.placeOrder") && pre["local:App.auth"] === "guest")
+        !(step.enqueued("api.placeOrder") && pre["atom:authAtom"]?.kind === "guest")
     },
     {
       kind: "reachableFrom",
       name: "reviewCanReachSuccess",
-      reads: ["local:App.auth", "local:App.step"],
-      when: (state) => state["local:App.auth"] === "user" && state["local:App.step"] === "review",
+      reads: ["atom:authAtom", "local:App.step"],
+      when: (state) => state["atom:authAtom"]?.kind === "user" && state["local:App.step"] === "review",
       goal: (state) => state["local:App.step"] === "success"
     }
   ];
 }
 ```
 
-Declare `reads` explicitly when a property touches model variables. Use state keys as they appear in the extracted model, commonly `local:<Component>.<stateName>`, `sys:pending`, `sys:route`, and adapter-specific state such as atom or cache entries.
+Declare `reads` explicitly when a property touches model variables. Use state keys as they appear in the extracted model, commonly `local:<Component>.<stateName>`, `sys:pending`, `sys:route`, `atom:<atomName>`, and SWR cache entries such as `swr:<key>:data`, `swr:<key>:error`, or `swr:<key>:isValidating`.
+
+For Jotai, prefer properties over the atom variable, for example `atom:authAtom`, and use the extracted tagged-union shape when the atom type is a discriminated union. For SWR, read the extracted data variable and nested payload fields directly when the payload type is finite, for example `state["swr:event_snapshot_userId:data"]?.application?.applied`. If the exact SWR key ID is not obvious, inspect `.modality/model.json` or the generated app model before writing the property.
 
 ## Failure Triage
 
 When a check fails, inspect the report first, then open the trace for the shortest counterexample. Decide whether the result reveals a real bug, an overly broad model, a missing side-effect API, an incorrect property, or behavior that should be bounded differently.
 
 Use replay to confirm the failure sequence. If the model diverges from the intended app behavior, update the extraction target, side-effect declarations, finite domains, or property file before treating the result as a product bug.
+
+Extraction caveats matter. An `Unextractable handler` means the flow is not represented directly and may need a simpler handler shape, a supported helper pattern, or an overlay. An `over-approx` transition is useful for bug finding but is not a precise proof; inspect havoc writes and refine code, domains, or overlays when a property needs proof-level confidence. If a modeled side effect has lifecycle behavior that is not in the model, such as aborting or clearing pending requests, encode that behavior with an overlay or keep the property scoped to the modeled semantics.
 
 ## Command Reference
 
