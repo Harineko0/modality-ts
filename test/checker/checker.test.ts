@@ -903,6 +903,224 @@ describe("checker", () => {
       alwaysStep(toggleLoop, () => true, { name: "allEdgesOk", reads: [] }),
     ]);
     expect(loop.stats).toEqual({ states: 2, edges: 2, depth: 2 });
+    expect(diamond.diagnostics?.storage).toMatchObject({
+      edgeRecordingMode: "none",
+      recordedEdges: 0,
+      storedStates: 4,
+      parentEntries: 4,
+    });
+  });
+
+  it("observes alwaysStep violations on edges into already visited states", () => {
+    const toggleLoop: Model = {
+      schemaVersion: 1,
+      id: "oracle-toggle-loop-violation",
+      bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "setTrue",
+          cls: "user",
+          label: { kind: "click", text: "Set true" },
+          source: [],
+          guard: { kind: "not", args: [read("a")] },
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: ["a"],
+          writes: ["a"],
+          confidence: "exact",
+        },
+        {
+          id: "setFalse",
+          cls: "user",
+          label: { kind: "click", text: "Set false" },
+          source: [],
+          guard: read("a"),
+          effect: { kind: "assign", var: "a", expr: lit(false) },
+          reads: ["a"],
+          writes: ["a"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(toggleLoop, [
+      alwaysStep(
+        toggleLoop,
+        (_pre, _step, post) => post.a === true,
+        { name: "aMustStayTrue", reads: ["a"] },
+      ),
+    ]);
+    const verdict = result.verdicts[0];
+    expect(verdict?.status).toBe("violated");
+    expect(
+      verdict?.status === "violated"
+        ? verdict.trace.steps.at(-1)?.transitionId
+        : undefined,
+    ).toBe("setFalse");
+    expect(result.diagnostics?.storage?.edgeRecordingMode).toBe("none");
+  });
+
+  it("skips edge recording for always and reachable property sets", () => {
+    const independentBits: Model = {
+      schemaVersion: 1,
+      id: "oracle-independent-bits-storage",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "flipA",
+          cls: "user",
+          label: { kind: "click", text: "A" },
+          source: [],
+          guard: { kind: "not", args: [read("a")] },
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: ["a"],
+          writes: ["a"],
+          confidence: "exact",
+        },
+        {
+          id: "flipB",
+          cls: "user",
+          label: { kind: "click", text: "B" },
+          source: [],
+          guard: { kind: "not", args: [read("b")] },
+          effect: { kind: "assign", var: "b", expr: lit(true) },
+          reads: ["b"],
+          writes: ["b"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(independentBits, [
+      always(independentBits, () => true, {
+        name: "trivialAlways",
+        reads: ["a", "b"],
+      }),
+      reachable(independentBits, (state) => state.a === true, {
+        name: "aReachable",
+        reads: ["a"],
+      }),
+    ]);
+    expect(result.diagnostics?.storage).toMatchObject({
+      edgeRecordingMode: "none",
+      recordedEdges: 0,
+    });
+    expect(result.stats.edges).toBe(4);
+  });
+
+  it("reconstructs traces with correct pre/post state diffs after compact parent storage", () => {
+    const m = model();
+    const result = checkModel(m, [
+      reachable(m, (state) => state.done === true, {
+        name: "doneReachable",
+        reads: ["done"],
+      }),
+    ]);
+    const verdict = result.verdicts[0];
+    expect(verdict?.status).toBe("reachable");
+    const submitStep =
+      verdict?.status === "reachable"
+        ? verdict.trace.steps.find((step) => step.transitionId === "submit")
+        : undefined;
+    expect(submitStep?.diff.status).toEqual({
+      before: "idle",
+      after: "posting",
+    });
+    expect(submitStep?.pre.status).toBe("idle");
+    expect(submitStep?.post.status).toBe("posting");
+  });
+
+  it("uses compact edge recording for leadsToWithin and reverse recording for reachableFrom", () => {
+    const m = model();
+    const leadsResult = checkModel(m, [
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (state) => state.done === true || state.status === "failed",
+        { name: "submitSettles", budget: { environment: 1 } },
+      ),
+    ]);
+    expect(leadsResult.diagnostics?.storage?.edgeRecordingMode).toBe("compact");
+    expect(leadsResult.diagnostics?.storage?.recordedEdges).toBe(
+      leadsResult.stats.edges,
+    );
+
+    const reachResult = checkModel(m, [
+      reachableFrom(
+        m,
+        (state) => state.status === "failed",
+        (state) => state.auth === true,
+        { name: "failedCanRemainAuthed" },
+      ),
+    ]);
+    expect(reachResult.diagnostics?.storage?.edgeRecordingMode).toBe("reverse");
+    expect(reachResult.diagnostics?.storage?.recordedEdges).toBe(
+      reachResult.stats.edges,
+    );
   });
 
   it("executes opaque effects and validates their declared write footprint", () => {
@@ -2620,11 +2838,80 @@ describe("checker", () => {
   });
 
   it("reports search diagnostics with frontier and depth stats", () => {
-    const m = model();
+    const m: Model = {
+      schemaVersion: 1,
+      id: "independent-diagnostic-slices",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 2 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "setA",
+          cls: "user",
+          label: { kind: "click", text: "A" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: [],
+          writes: ["a"],
+          confidence: "exact",
+        },
+        {
+          id: "setB",
+          cls: "user",
+          label: { kind: "click", text: "B" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "b", expr: lit(true) },
+          reads: [],
+          writes: ["b"],
+          confidence: "exact",
+        },
+      ],
+    };
     const props: Property[] = [
-      always(m, (state) => state.done !== true, {
-        name: "notDone",
-        reads: ["done"],
+      always(m, (state) => state.a !== true, {
+        name: "notA",
+        reads: ["a"],
+      }),
+      always(m, (state) => state.b !== true, {
+        name: "notB",
+        reads: ["b"],
       }),
     ];
     const result = checkModel(m, props, { slicing: true });
@@ -2636,6 +2923,13 @@ describe("checker", () => {
     expect(result.diagnostics?.slicing).toMatchObject({
       enabled: true,
       slices: expect.any(Number),
+    });
+    expect(result.diagnostics?.slicing?.slices).toBeGreaterThan(1);
+    expect(result.diagnostics?.storage).toMatchObject({
+      edgeRecordingMode: "none",
+      recordedEdges: 0,
+      storedStates: result.stats.states,
+      parentEntries: result.stats.states,
     });
   });
 

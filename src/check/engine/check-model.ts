@@ -1,5 +1,5 @@
 import { canonicalState, validateModel } from "modality-ts/core";
-import type { Model, ModelState, Property } from "modality-ts/core";
+import type { Model, ModelState, Property, StepFacts, Transition } from "modality-ts/core";
 import {
   effectContainsEnqueue,
   recordMaxDepthBoundHits,
@@ -13,15 +13,18 @@ import {
   sliceModelForProperty,
 } from "../slicing/slice-model.js";
 import { facts } from "../traces/step-facts.js";
+import type { TraceContext } from "../traces/trace.js";
 import type {
   CheckDiagnostics,
   CheckOptions,
   CheckProgress,
   CheckResult,
-  Edge,
+  EdgeRecordingMode,
+  GraphRecording,
   Parent,
   PropertyVerdict,
   SliceSummary,
+  StorageDiagnostics,
 } from "../types.js";
 import { initialStates } from "./initial-states.js";
 import { stabilize } from "./stabilize.js";
@@ -38,6 +41,99 @@ interface SearchTracker {
   expandedDepths: number;
   dominantVarValues: Map<string, Set<string>>;
   limitHit: CheckDiagnostics["limits"] | null;
+}
+
+export function needsRecordedEdges(properties: readonly Property[]): boolean {
+  return properties.some((property) => property.kind === "leadsToWithin");
+}
+
+export function needsReverseGraph(properties: readonly Property[]): boolean {
+  return properties.some((property) => property.kind === "reachableFrom");
+}
+
+export function needsStepMonitoring(properties: readonly Property[]): boolean {
+  return properties.some((property) => property.kind === "alwaysStep");
+}
+
+function resolveEdgeRecordingMode(
+  properties: readonly Property[],
+): EdgeRecordingMode {
+  if (needsRecordedEdges(properties)) return "compact";
+  if (needsReverseGraph(properties)) return "reverse";
+  return "none";
+}
+
+function createGraphRecording(mode: EdgeRecordingMode): GraphRecording {
+  return {
+    mode,
+    compactEdges: [],
+    reverseEdges: [],
+    fullEdges: [],
+  };
+}
+
+function recordExploredEdge(
+  graph: GraphRecording,
+  properties: readonly Property[],
+  preCanon: string,
+  postCanon: string,
+  pre: ModelState,
+  post: ModelState,
+  transition: Transition,
+  step: StepFacts,
+): void {
+  switch (graph.mode) {
+    case "full":
+      graph.fullEdges.push({
+        preCanon,
+        postCanon,
+        pre,
+        post,
+        transition,
+        step,
+      });
+      break;
+    case "compact":
+      graph.compactEdges.push({
+        preCanon,
+        postCanon,
+        transitionId: transition.id,
+        triggeredProperties: properties
+          .filter(
+            (property): property is Extract<Property, { kind: "leadsToWithin" }> =>
+              property.kind === "leadsToWithin",
+          )
+          .filter((property) => property.trigger(step))
+          .map((property) => property.name),
+      });
+      break;
+    case "reverse":
+      graph.reverseEdges.push({ preCanon, postCanon });
+      break;
+    case "none":
+      break;
+  }
+}
+
+function buildStorageDiagnostics(
+  parents: Map<string, Parent>,
+  states: Map<string, ModelState>,
+  graph: GraphRecording,
+): StorageDiagnostics {
+  const recordedEdges =
+    graph.mode === "none"
+      ? 0
+      : graph.mode === "reverse"
+        ? graph.reverseEdges.length
+        : graph.mode === "compact"
+          ? graph.compactEdges.length
+          : graph.fullEdges.length;
+  return {
+    recordedEdges,
+    storedStates: states.size,
+    parentEntries: parents.size,
+    edgeRecordingMode: graph.mode,
+  };
 }
 
 export function checkModel(
@@ -103,7 +199,8 @@ function checkModelCore(
   installEnabledHook(model);
   const parents = new Map<string, Parent>();
   const states = new Map<string, ModelState>();
-  const edges: Edge[] = [];
+  const graph = createGraphRecording(resolveEdgeRecordingMode(properties));
+  const traceCtx: TraceContext = { model, parents, states };
   const enabledTransitionIds = new Set<string>();
   const boundHits = new Set<string>();
   const tracker = createSearchTracker(model);
@@ -111,7 +208,7 @@ function checkModelCore(
   const verdicts = new Map<string, PropertyVerdict>();
   let depth = 0;
   let edgeCount = 0;
-  observeStates(model, properties, frontier, parents, verdicts);
+  observeStates(model, properties, frontier, traceCtx, verdicts);
   recordDominantVars(model, frontier, tracker);
 
   while (
@@ -139,7 +236,8 @@ function checkModelCore(
       frontier,
       parents,
       states,
-      edges,
+      graph,
+      traceCtx,
       verdicts,
       enabledTransitionIds,
       boundHits,
@@ -150,7 +248,7 @@ function checkModelCore(
     );
     frontier = result.next;
     edgeCount += result.edges;
-    observeStates(model, properties, frontier, parents, verdicts);
+    observeStates(model, properties, frontier, traceCtx, verdicts);
     recordDominantVars(model, frontier, tracker);
     depth += 1;
     tracker.expandedDepths = depth;
@@ -179,7 +277,7 @@ function checkModelCore(
   if (tracker.limitHit) {
     applySearchLimitVerdicts(properties, verdicts, tracker.limitHit);
   } else {
-    finalizeProperties(model, properties, parents, states, edges, verdicts);
+    finalizeProperties(model, properties, traceCtx, graph, verdicts);
   }
 
   return {
@@ -193,7 +291,11 @@ function checkModelCore(
     stats: { states: parents.size, edges: edgeCount, depth },
     vacuityWarnings: vacuityWarnings(model, states, enabledTransitionIds),
     boundHits: [...boundHits].sort(),
-    diagnostics: buildSearchDiagnostics(tracker, startedAt),
+    diagnostics: buildSearchDiagnostics(
+      tracker,
+      startedAt,
+      buildStorageDiagnostics(parents, states, graph),
+    ),
   };
 }
 
@@ -238,7 +340,8 @@ function recordDominantVars(
 
 function buildSearchDiagnostics(
   tracker: SearchTracker,
-  startedAt?: number,
+  startedAt: number | undefined,
+  storage: StorageDiagnostics,
 ): CheckDiagnostics {
   const dominantVars = [...tracker.dominantVarValues.entries()]
     .map(([varId, values]) => ({ varId, distinctValues: values.size }))
@@ -255,6 +358,7 @@ function buildSearchDiagnostics(
   }
   return {
     search,
+    storage,
     ...(tracker.limitHit ? { limits: tracker.limitHit } : {}),
     ...(dominantVars.length > 0 ? { dominantVars } : {}),
   };
@@ -349,12 +453,7 @@ function seedFrontier(
   for (const state of frontier) {
     const canon = canonicalState(model, state);
     if (!parents.has(canon)) {
-      parents.set(canon, {
-        parent: null,
-        transition: null,
-        pre: null,
-        post: state,
-      });
+      parents.set(canon, { parent: null, transitionId: null });
       states.set(canon, state);
     }
   }
@@ -367,7 +466,8 @@ function exploreDepth(
   frontier: readonly ModelState[],
   parents: Map<string, Parent>,
   states: Map<string, ModelState>,
-  edges: Edge[],
+  graph: GraphRecording,
+  traceCtx: TraceContext,
   verdicts: Map<string, PropertyVerdict>,
   enabledTransitionIds: Set<string>,
   boundHits: Set<string>,
@@ -404,7 +504,16 @@ function exploreDepth(
           edgeCount += 1;
           const postCanon = canonicalState(model, post);
           const step = facts(pre, post, transition);
-          edges.push({ preCanon, postCanon, pre, post, transition, step });
+          recordExploredEdge(
+            graph,
+            properties,
+            preCanon,
+            postCanon,
+            pre,
+            post,
+            transition,
+            step,
+          );
           observeEdge(
             model,
             properties,
@@ -412,7 +521,7 @@ function exploreDepth(
             post,
             transition,
             step,
-            parents,
+            traceCtx,
             verdicts,
           );
           if (
@@ -428,7 +537,10 @@ function exploreDepth(
             break;
           }
           if (!parents.has(postCanon)) {
-            parents.set(postCanon, { parent: preCanon, transition, pre, post });
+            parents.set(postCanon, {
+              parent: preCanon,
+              transitionId: transition.id,
+            });
             states.set(postCanon, post);
             next.push(post);
             tracker.maxFrontier = Math.max(tracker.maxFrontier, next.length);
@@ -576,6 +688,7 @@ function mergeDiagnostics(
     search: overlay?.search ?? base?.search,
     limits: overlay?.limits ?? base?.limits,
     dominantVars: overlay?.dominantVars ?? base?.dominantVars,
+    storage: overlay?.storage ?? base?.storage,
   };
 }
 
@@ -608,6 +721,24 @@ function mergeSearchDiagnostics(
     },
     limits: left.limits ?? right.limits,
     dominantVars: dominant,
+    storage: mergeStorageDiagnostics(left.storage, right.storage),
+  };
+}
+
+function mergeStorageDiagnostics(
+  left: CheckDiagnostics["storage"],
+  right: CheckDiagnostics["storage"],
+): CheckDiagnostics["storage"] {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    recordedEdges: left.recordedEdges + right.recordedEdges,
+    storedStates: left.storedStates + right.storedStates,
+    parentEntries: left.parentEntries + right.parentEntries,
+    edgeRecordingMode:
+      left.edgeRecordingMode === right.edgeRecordingMode
+        ? left.edgeRecordingMode
+        : "property-specific",
   };
 }
 

@@ -1,5 +1,6 @@
 import type {
   EventLabel,
+  Model,
   ModelState,
   Trace,
   TraceStep,
@@ -8,14 +9,27 @@ import type {
 import type { Parent, PropertyVerdict } from "../types.js";
 import { diff } from "../engine/state-utils.js";
 
-export function traceTo(parents: Map<string, Parent>, canon: string): Trace {
+export interface TraceContext {
+  model: Model;
+  parents: Map<string, Parent>;
+  states: Map<string, ModelState>;
+}
+
+export function traceTo(ctx: TraceContext, canon: string): Trace {
   const steps: TraceStep[] = [];
   let current: string | null = canon;
   while (current) {
-    const parent = parents.get(current);
+    const parent = ctx.parents.get(current);
     if (!parent) break;
-    if (parent.parent && parent.transition && parent.pre) {
-      steps.push(makeTraceStep(parent.pre, parent.post, parent.transition));
+    if (parent.parent && parent.transitionId) {
+      const pre = ctx.states.get(parent.parent);
+      const post = ctx.states.get(current);
+      const transition = ctx.model.transitions.find(
+        (candidate) => candidate.id === parent.transitionId,
+      );
+      if (pre && post && transition) {
+        steps.push(makeTraceStep(pre, post, transition));
+      }
     }
     current = parent.parent;
   }

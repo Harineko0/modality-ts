@@ -237,6 +237,12 @@ export function renderCheckResult(check: CheckResult): string[] {
       `search-limit=${limitKind} states=${check.stats.states} frontier=${check.diagnostics?.search?.finalFrontier ?? 0} depth=${check.stats.depth}`,
     );
   }
+  const storage = check.diagnostics?.storage;
+  if (storage) {
+    lines.push(
+      `storage=mode:${storage.edgeRecordingMode} recordedEdges:${storage.recordedEdges} storedStates:${storage.storedStates} parentEntries:${storage.parentEntries}`,
+    );
+  }
   return lines;
 }
 

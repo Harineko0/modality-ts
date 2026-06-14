@@ -8,7 +8,7 @@ export function unreachableWitness(
   model: Model,
   property: ReachableFrom,
   states: Map<string, ModelState>,
-  edges: readonly Edge[],
+  reverseEdges: readonly { preCanon: string; postCanon: string }[],
 ): [string, ModelState] | undefined {
   const goalCanons = [...states]
     .filter(([, state]) =>
@@ -19,7 +19,7 @@ export function unreachableWitness(
   let changed = true;
   while (changed) {
     changed = false;
-    for (const edge of edges) {
+    for (const edge of reverseEdges) {
       if (backward.has(edge.postCanon) && !backward.has(edge.preCanon)) {
         backward.add(edge.preCanon);
         changed = true;

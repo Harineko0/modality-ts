@@ -649,6 +649,32 @@ describe("runCheckCommand", () => {
     expect(result.check.diagnostics?.limits).toBeUndefined();
   });
 
+  it("reports storage diagnostics when available", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      searchLimits: false,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.check.diagnostics?.storage?.edgeRecordingMode).toBe("none");
+    expect(result.check.diagnostics?.storage?.recordedEdges).toBe(0);
+    expect(
+      result.lines.some((line) => line.startsWith("storage=mode:none")),
+    ).toBe(true);
+  });
+
   it("rejects unsupported model artifact versions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");

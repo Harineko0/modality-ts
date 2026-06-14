@@ -6,19 +6,20 @@ import type {
   StepFacts,
   Transition,
 } from "modality-ts/core";
-import type { Parent, PropertyVerdict } from "../types.js";
+import type { PropertyVerdict } from "../types.js";
 import { checkedState } from "./checked-state.js";
 import {
   makeTraceStep,
   replayCheckedVerdict,
   traceTo,
+  type TraceContext,
 } from "../traces/trace.js";
 
 export function observeStates(
   model: Model,
   properties: readonly Property[],
   candidates: readonly ModelState[],
-  parents: Map<string, Parent>,
+  traceCtx: TraceContext,
   verdicts: Map<string, PropertyVerdict>,
 ): void {
   for (const state of candidates) {
@@ -37,7 +38,7 @@ export function observeStates(
             replayCheckedVerdict(
               "violated",
               property.name,
-              traceTo(parents, canon),
+              traceTo(traceCtx, canon),
             ),
           );
         }
@@ -52,7 +53,7 @@ export function observeStates(
             replayCheckedVerdict(
               "reachable",
               property.name,
-              traceTo(parents, canon),
+              traceTo(traceCtx, canon),
             ),
           );
         }
@@ -74,7 +75,7 @@ export function observeEdge(
   post: ModelState,
   transition: Transition,
   step: StepFacts,
-  parents: Map<string, Parent>,
+  traceCtx: TraceContext,
   verdicts: Map<string, PropertyVerdict>,
 ): void {
   for (const property of properties) {
@@ -93,7 +94,7 @@ export function observeEdge(
           property.name,
           replayCheckedVerdict("violated", property.name, {
             steps: [
-              ...traceTo(parents, preCanon).steps,
+              ...traceTo(traceCtx, preCanon).steps,
               makeTraceStep(pre, post, transition),
             ],
           }),

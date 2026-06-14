@@ -42,6 +42,20 @@ export interface SliceSummary {
   depth: number;
 }
 
+export type EdgeRecordingMode =
+  | "none"
+  | "compact"
+  | "reverse"
+  | "full"
+  | "property-specific";
+
+export interface StorageDiagnostics {
+  recordedEdges: number;
+  storedStates: number;
+  parentEntries: number;
+  edgeRecordingMode: EdgeRecordingMode;
+}
+
 export interface CheckDiagnostics {
   slicing?: {
     enabled: boolean;
@@ -64,6 +78,7 @@ export interface CheckDiagnostics {
     memoryGuardBytes?: number;
   };
   dominantVars?: readonly { varId: string; distinctValues: number }[];
+  storage?: StorageDiagnostics;
 }
 
 export interface CheckResult {
@@ -87,9 +102,19 @@ export interface CheckOptions {
 
 export interface Parent {
   parent: string | null;
-  transition: Transition | null;
-  pre: ModelState | null;
-  post: ModelState;
+  transitionId: string | null;
+}
+
+export interface ReverseEdge {
+  preCanon: string;
+  postCanon: string;
+}
+
+export interface CompactEdge {
+  preCanon: string;
+  postCanon: string;
+  transitionId: string;
+  triggeredProperties: readonly string[];
 }
 
 export interface Edge {
@@ -99,4 +124,11 @@ export interface Edge {
   post: ModelState;
   transition: Transition;
   step: StepFacts;
+}
+
+export interface GraphRecording {
+  mode: EdgeRecordingMode;
+  compactEdges: CompactEdge[];
+  reverseEdges: ReverseEdge[];
+  fullEdges: Edge[];
 }
