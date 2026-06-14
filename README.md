@@ -36,6 +36,8 @@ Check the extracted model against a property file:
 modality check
 ```
 
+`modality check` applies conservative default search limits (`--max-states`, `--max-edges`, `--max-frontier`, `--memory-guard-mb`). Use `--no-search-limits` for intentionally unbounded runs.
+
 When a property fails, replay the generated counterexample trace:
 
 ```bash
@@ -53,7 +55,7 @@ Useful commands:
 ```bash
 modality init
 modality extract [source.tsx ...]
-modality check [model.json] [props.mjs ...]
+modality check [model.json] [props.mjs ...] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]
 modality replay <trace.json>
 modality conform --count 8 --depth 4
 modality export

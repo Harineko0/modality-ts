@@ -141,7 +141,118 @@ describe("modality CLI", () => {
       stderr: expect.stringContaining("Missing trace.json path"),
     });
   });
+
+  it("stops gracefully when --max-states is hit", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    let stdout = "";
+    try {
+      await execFileAsync(
+        tsxBin,
+        [
+          cliPath,
+          "check",
+          modelPath,
+          propsPath,
+          "--max-states",
+          "1",
+          "--report",
+          reportPath,
+        ],
+        { cwd: dir },
+      );
+    } catch (error: unknown) {
+      const execError = error as { stdout?: string; code?: number };
+      expect(execError.code).toBe(2);
+      stdout = execError.stdout ?? "";
+    }
+    expect(stdout).toContain("search-limit=maxStates");
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(report.diagnostics.limits.maxStates).toBe(1);
+    expect(
+      report.verdicts.some((verdict: { status: string }) => verdict.status === "error"),
+    ).toBe(true);
+  });
+
+  it("rejects invalid --max-states values", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
+    await writeFile(propsPath, "export const properties = [];", "utf8");
+
+    await expect(
+      execFileAsync(tsxBin, [cliPath, "check", modelPath, propsPath, "--max-states", "nope"], {
+        cwd: dir,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid --max-states value"),
+    });
+  });
+
+  it("rejects --no-search-limits combined with explicit limits", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
+    await writeFile(propsPath, "export const properties = [];", "utf8");
+
+    await expect(
+      execFileAsync(
+        tsxBin,
+        [cliPath, "check", modelPath, propsPath, "--no-search-limits", "--max-states", "1"],
+        { cwd: dir },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("cannot be combined"),
+    });
+  });
 });
+
+function tinyCheckModel() {
+  return {
+    schemaVersion: 1,
+    id: "cli-search-limit-fixture",
+    bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "flag",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+    ],
+    transitions: [
+      {
+        id: "setFlag",
+        cls: "user",
+        label: { kind: "click", locator: { kind: "testId", value: "set-flag" } },
+        source: [],
+        guard: { kind: "not", args: [{ kind: "read", var: "flag" }] },
+        effect: {
+          kind: "assign",
+          var: "flag",
+          expr: { kind: "lit", value: true },
+        },
+        reads: ["flag"],
+        writes: ["flag"],
+        confidence: "manual",
+      },
+    ],
+  };
+}
 
 async function writeFixtureApp(dir: string): Promise<void> {
   await mkdir(join(dir, "src"), { recursive: true });

@@ -18,7 +18,14 @@ export interface ValidationResult {
   errors: string[];
 }
 
-export function validateModel(model: Model): ValidationResult {
+export interface ValidationOptions {
+  sliced?: boolean;
+}
+
+export function validateModel(
+  model: Model,
+  options: ValidationOptions = {},
+): ValidationResult {
   const errors: string[] = [];
   const varIds = new Set(model.vars.map((v) => v.id));
   const varsById = new Map(model.vars.map((v) => [v.id, v]));
@@ -36,7 +43,11 @@ export function validateModel(model: Model): ValidationResult {
     model.transitions.map((t) => t.id),
   );
   for (const decl of model.vars) validateDecl(errors, decl);
-  validateSystemVars(errors, varsById, model);
+  if (options.sliced) {
+    validatePresentSystemVars(errors, varsById, model);
+  } else {
+    validateSystemVars(errors, varsById, model);
+  }
   for (const transition of model.transitions)
     validateTransition(errors, transition, varIds, varsById);
   return { ok: errors.length === 0, errors };
@@ -116,6 +127,30 @@ function validateSystemVars(
   validateSystemDecl(errors, "sys:history", history);
   validateSystemDecl(errors, "sys:pending", pending);
 
+  validateSystemVarShapes(errors, route, history, pending, model);
+}
+
+function validatePresentSystemVars(
+  errors: string[],
+  varsById: Map<string, StateVarDecl>,
+  model: Model,
+): void {
+  const route = varsById.get("sys:route");
+  const history = varsById.get("sys:history");
+  const pending = varsById.get("sys:pending");
+  if (route) validateSystemDecl(errors, "sys:route", route);
+  if (history) validateSystemDecl(errors, "sys:history", history);
+  if (pending) validateSystemDecl(errors, "sys:pending", pending);
+  validateSystemVarShapes(errors, route, history, pending, model);
+}
+
+function validateSystemVarShapes(
+  errors: string[],
+  route: StateVarDecl | undefined,
+  history: StateVarDecl | undefined,
+  pending: StateVarDecl | undefined,
+  model: Model,
+): void {
   if (route && route.domain.kind !== "enum") {
     errors.push("sys:route must use an enum domain");
   }

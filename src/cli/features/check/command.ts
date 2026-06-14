@@ -1,8 +1,10 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getHeapStatistics } from "node:v8";
 import {
   checkModel,
+  type CheckOptions,
   type CheckResult,
   type PropertyVerdict,
 } from "modality-ts/check";
@@ -23,6 +25,11 @@ import {
 } from "../../codegen/replay-test.js";
 import { loadAndApplyOverlay } from "../../overlay.js";
 
+const DEFAULT_CLI_MAX_STATES = 1_000_000;
+const DEFAULT_CLI_MAX_EDGES = 5_000_000;
+const DEFAULT_CLI_MAX_FRONTIER = 250_000;
+const MIB = 1024 * 1024;
+
 export interface CheckCommandOptions {
   modelPath: string;
   propsPath?: string;
@@ -33,6 +40,14 @@ export interface CheckCommandOptions {
   replayTestsDir?: string;
   actionReplayTestsDir?: string;
   statesPath?: string;
+  searchLimits?:
+    | {
+        maxStates?: number;
+        maxEdges?: number;
+        maxFrontier?: number;
+        memoryGuardBytes?: number;
+      }
+    | false;
   now?: Date;
 }
 
@@ -58,7 +73,13 @@ export async function runCheckCommand(
     ...(options.propsPaths ?? []),
     ...(options.propsPath ? [options.propsPath] : []),
   ]);
-  const check = checkModel(model, properties);
+  const canSlice =
+    properties.length > 0 &&
+    properties.every((property) => property.reads !== undefined);
+  const check = checkModel(model, properties, {
+    slicing: canSlice,
+    ...resolveCheckSearchLimits(options.searchLimits),
+  });
   const report = createCheckReport(
     model,
     check,
@@ -111,6 +132,7 @@ export function createCheckReport(
     verdicts: check.verdicts.map(reportVerdict),
     stats: check.stats,
     vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
+    ...(check.diagnostics ? { diagnostics: check.diagnostics } : {}),
     trustLedger: {
       bounds: model.bounds,
       plugins: model.metadata?.plugins ?? [],
@@ -183,7 +205,78 @@ export function renderCheckResult(check: CheckResult): string[] {
   lines.push(
     `states=${check.stats.states} edges=${check.stats.edges} depth=${check.stats.depth}`,
   );
+  const slicing = check.diagnostics?.slicing;
+  if (slicing?.enabled) {
+    const totalVars =
+      slicing.sliceSummaries?.reduce((sum, summary) => sum + summary.vars, 0) ??
+      0;
+    const totalTransitions =
+      slicing.sliceSummaries?.reduce(
+        (sum, summary) => sum + summary.transitions,
+        0,
+      ) ?? 0;
+    lines.push(
+      `slicing=slices:${slicing.slices ?? 0} vars:${totalVars} transitions:${totalTransitions} skipped:0`,
+    );
+  } else if (slicing?.skipped) {
+    lines.push(
+      `slicing=skipped reason:${slicing.skipReason ?? "unknown"}`,
+    );
+  }
+  const limits = check.diagnostics?.limits;
+  if (limits) {
+    const limitKind =
+      limits.maxStates !== undefined
+        ? "maxStates"
+        : limits.maxFrontier !== undefined
+          ? "maxFrontier"
+          : limits.maxEdges !== undefined
+            ? "maxEdges"
+            : "memoryGuard";
+    lines.push(
+      `search-limit=${limitKind} states=${check.stats.states} frontier=${check.diagnostics?.search?.finalFrontier ?? 0} depth=${check.stats.depth}`,
+    );
+  }
   return lines;
+}
+
+function defaultMemoryGuardBytes(): number | undefined {
+  const heapLimit = getHeapStatistics().heap_size_limit;
+  const headroom = Math.min(heapLimit * 0.8, heapLimit - 256 * MIB);
+  const bytes = Math.floor(headroom);
+  return bytes > 0 ? bytes : undefined;
+}
+
+function resolveCheckSearchLimits(
+  searchLimits?: CheckCommandOptions["searchLimits"],
+): Pick<CheckOptions, "maxStates" | "maxEdges" | "maxFrontier" | "memoryGuard"> {
+  if (searchLimits === false) {
+    return {};
+  }
+  const defaults = {
+    maxStates: DEFAULT_CLI_MAX_STATES,
+    maxEdges: DEFAULT_CLI_MAX_EDGES,
+    maxFrontier: DEFAULT_CLI_MAX_FRONTIER,
+    memoryGuardBytes: defaultMemoryGuardBytes(),
+  };
+  const resolved =
+    searchLimits === undefined
+      ? defaults
+      : {
+          maxStates: searchLimits.maxStates ?? defaults.maxStates,
+          maxEdges: searchLimits.maxEdges ?? defaults.maxEdges,
+          maxFrontier: searchLimits.maxFrontier ?? defaults.maxFrontier,
+          memoryGuardBytes:
+            searchLimits.memoryGuardBytes ?? defaults.memoryGuardBytes,
+        };
+  return {
+    maxStates: resolved.maxStates,
+    maxEdges: resolved.maxEdges,
+    maxFrontier: resolved.maxFrontier,
+    ...(resolved.memoryGuardBytes !== undefined
+      ? { memoryGuard: { maxHeapUsedBytes: resolved.memoryGuardBytes } }
+      : {}),
+  };
 }
 
 async function loadProperties(

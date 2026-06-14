@@ -51,6 +51,38 @@ export interface ReportPropertyVerdict {
   replayBlockedReason?: string;
 }
 
+export interface CheckReportDiagnostics {
+  slicing?: {
+    enabled: boolean;
+    slices?: number;
+    skipped?: boolean;
+    skipReason?: string;
+    sliceSummaries?: readonly {
+      index: number;
+      properties: readonly string[];
+      vars: number;
+      transitions: number;
+      states: number;
+      edges: number;
+      depth: number;
+    }[];
+  };
+  search?: {
+    maxFrontier: number;
+    finalFrontier: number;
+    expandedDepths: number;
+    elapsedMs?: number;
+  };
+  limits?: {
+    reason: string;
+    maxStates?: number;
+    maxEdges?: number;
+    maxFrontier?: number;
+    memoryGuardBytes?: number;
+  };
+  dominantVars?: readonly { varId: string; distinctValues: number }[];
+}
+
 export interface CheckReport {
   schemaVersion: 1;
   kind: "check-report";
@@ -63,6 +95,7 @@ export interface CheckReport {
     depth: number;
   };
   vacuityWarnings: readonly string[];
+  diagnostics?: CheckReportDiagnostics;
   trustLedger: ReportTrustLedger;
 }
 

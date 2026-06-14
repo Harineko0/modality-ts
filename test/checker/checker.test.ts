@@ -572,6 +572,82 @@ describe("checker", () => {
     ).toBe(3);
   });
 
+  it("does not slice leadsToWithin trigger edges away", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "leads-to-trigger-slice",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "done",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "triggered",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "fire",
+          cls: "user",
+          label: { kind: "click", text: "Fire" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "triggered", expr: lit(true) },
+          reads: [],
+          writes: ["triggered"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const props = [
+      leadsToWithin(
+        m,
+        (step) => step.transition.id === "fire",
+        (state) => state.done === true,
+        { name: "fireEventuallyDone", budget: { environment: 0 } },
+      ),
+    ];
+    const unsliced = checkModel(m, props);
+    const sliced = checkModel(m, props, { slicing: true });
+    expect(unsliced.verdicts[0]?.status).toBe("violated");
+    expect(sliced.verdicts[0]?.status).toBe("violated");
+    expect(sliced.verdicts[0]?.status).not.toBe("vacuous-warning");
+    expect(
+      sliced.verdicts[0]?.status === "violated"
+        ? sliced.verdicts[0].trace.steps.map((step) => step.transitionId)
+        : [],
+    ).toEqual(["fire"]);
+  });
+
   it("excludes user interference from bounded response unless explicitly allowed", () => {
     const m: Model = {
       schemaVersion: 1,
@@ -2196,7 +2272,479 @@ describe("checker", () => {
       });
     }
   });
+
+  it("does not retain unrelated sys:history in slices for local-only properties", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "history-noise",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "counter",
+          domain: { kind: "enum", values: ["zero", "one"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "zero",
+        },
+      ],
+      transitions: [
+        {
+          id: "bump",
+          cls: "user",
+          label: { kind: "click", text: "Bump" },
+          source: [],
+          guard: { kind: "eq", args: [read("counter"), lit("zero")] },
+          effect: { kind: "assign", var: "counter", expr: lit("one") },
+          reads: ["counter"],
+          writes: ["counter"],
+          confidence: "exact",
+        },
+        {
+          id: "navigateAway",
+          cls: "user",
+          label: { kind: "click", text: "Navigate" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "navigate",
+            to: "/other",
+            pushHistory: true,
+          },
+          reads: ["sys:route"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const sliced = sliceModel(m, ["counter"]);
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:history");
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "bump",
+    ]);
+  });
+
+  it("keeps minimum route var for route-local properties with mount semantics", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "local:/a.panel",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "openPanel",
+          cls: "user",
+          label: { kind: "click", text: "Open" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "local:/a.panel",
+            expr: lit(true),
+          },
+          reads: ["local:/a.panel", "sys:route"],
+          writes: ["local:/a.panel"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const sliced = sliceModel(m, ["local:/a.panel"]);
+    expect(sliced.vars.map((decl) => decl.id)).toContain("sys:route");
+    expect(sliced.vars.map((decl) => decl.id)).toContain("local:/a.panel");
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "openPanel",
+    ]);
+  });
+
+  it("keeps navigation transitions that reset route-local vars", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-nav-slice",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:/a.panel",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: true,
+        },
+      ],
+      transitions: [
+        {
+          id: "navigateAway",
+          cls: "user",
+          label: { kind: "click", text: "Navigate" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const sliced = sliceModel(m, ["local:/a.panel"]);
+    expect(sliced.transitions.map((transition) => transition.id)).toContain(
+      "navigateAway",
+    );
+    expect(sliced.vars.map((decl) => decl.id)).toEqual(
+      expect.arrayContaining(["local:/a.panel", "sys:route", "sys:history"]),
+    );
+  });
+
+  it("keeps sliced route-local verdicts sound when navigation unmounts state", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-nav-verdict",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:/a.panel",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: true,
+        },
+      ],
+      transitions: [
+        {
+          id: "navigateAway",
+          cls: "user",
+          label: { kind: "click", text: "Navigate" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const props = [
+      always(m, (state) => state["local:/a.panel"] === true, {
+        name: "panelStaysMounted",
+        reads: ["local:/a.panel"],
+      }),
+    ];
+    const unsliced = checkModel(m, props);
+    const sliced = checkModel(m, props, { slicing: true });
+    expect(unsliced.verdicts[0]?.status).toBe("violated");
+    expect(sliced.verdicts[0]?.status).toBe("violated");
+    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
+  });
+
+  it("drops reader-only transitions that do not write into the property cone", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "reader-only",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "needed",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "writer",
+          cls: "user",
+          label: { kind: "click", text: "Write" },
+          source: [],
+          guard: { kind: "eq", args: [read("needed"), lit(false)] },
+          effect: { kind: "assign", var: "needed", expr: lit(true) },
+          reads: ["needed"],
+          writes: ["needed"],
+          confidence: "exact",
+        },
+        {
+          id: "readerOnly",
+          cls: "user",
+          label: { kind: "click", text: "Read" },
+          source: [],
+          guard: { kind: "eq", args: [read("needed"), lit(true)] },
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["needed"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const sliced = sliceModel(m, ["needed"]);
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "writer",
+    ]);
+    const props = [
+      always(m, (state) => state.needed === false, {
+        name: "neededStaysFalse",
+        reads: ["needed"],
+      }),
+    ];
+    expect(
+      checkModel(m, props, { slicing: true }).verdicts.map((verdict) => [
+        verdict.property,
+        verdict.status,
+      ]),
+    ).toEqual(
+      checkModel(m, props).verdicts.map((verdict) => [
+        verdict.property,
+        verdict.status,
+      ]),
+    );
+  });
+
+  it("stops gracefully when maxStates is exceeded", () => {
+    const m = model();
+    const props: Property[] = [
+      reachable(m, (state) => state.done === true, {
+        name: "doneReachable",
+        reads: ["done"],
+      }),
+      always(m, (state) => state.draft !== "missing", {
+        name: "draftKnown",
+        reads: ["draft"],
+      }),
+    ];
+    const result = checkModel(m, props, { maxStates: 1 });
+    expect(result.diagnostics?.limits?.reason).toContain("maxStates=1");
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
+    expect(byName.get("doneReachable")?.status).toBe("error");
+    expect(
+      byName.get("doneReachable")?.status === "error"
+        ? byName.get("doneReachable")?.message
+        : "",
+    ).toContain("search limit exceeded");
+  });
+
+  it("reports search diagnostics with frontier and depth stats", () => {
+    const m = model();
+    const props: Property[] = [
+      always(m, (state) => state.done !== true, {
+        name: "notDone",
+        reads: ["done"],
+      }),
+    ];
+    const result = checkModel(m, props, { slicing: true });
+    expect(result.diagnostics?.search).toMatchObject({
+      maxFrontier: expect.any(Number),
+      finalFrontier: expect.any(Number),
+      expandedDepths: expect.any(Number),
+    });
+    expect(result.diagnostics?.slicing).toMatchObject({
+      enabled: true,
+      slices: expect.any(Number),
+    });
+  });
+
+  it("stops mid-depth when maxEdges is exceeded", () => {
+    const m = highBranchingModel();
+    const props: Property[] = [
+      reachable(m, (state) => state.choice === "b9", {
+        name: "lastBranchReachable",
+        reads: ["choice"],
+      }),
+    ];
+    const result = checkModel(m, props, { maxEdges: 2 });
+    expect(result.diagnostics?.limits?.reason).toContain("maxEdges=2");
+    expect(result.diagnostics?.limits?.maxEdges).toBe(2);
+    expect(result.stats.edges).toBeLessThanOrEqual(2);
+    expect(result.stats.edges).toBeLessThan(10);
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
+    expect(byName.get("lastBranchReachable")?.status).toBe("error");
+    expect(
+      byName.get("lastBranchReachable")?.status === "error"
+        ? byName.get("lastBranchReachable")?.message
+        : "",
+    ).toContain("search limit exceeded");
+  });
+
+  it("stops mid-depth when maxFrontier is exceeded", () => {
+    const m = highBranchingModel();
+    const props: Property[] = [
+      reachable(m, (state) => state.choice === "b9", {
+        name: "lastBranchReachable",
+        reads: ["choice"],
+      }),
+    ];
+    const result = checkModel(m, props, { maxFrontier: 2 });
+    expect(result.diagnostics?.limits?.reason).toContain("maxFrontier=2");
+    expect(result.diagnostics?.limits?.maxFrontier).toBe(2);
+    expect(result.diagnostics?.search?.maxFrontier).toBeLessThanOrEqual(2);
+    expect(result.diagnostics?.search?.maxFrontier).toBeLessThan(10);
+    expect(result.stats.states).toBeLessThanOrEqual(3);
+  });
 });
+
+function highBranchingModel(): Model {
+  const branchValues = [
+    "start",
+    "b0",
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5",
+    "b6",
+    "b7",
+    "b8",
+    "b9",
+  ] as const;
+  return {
+    schemaVersion: 1,
+    id: "high-branching",
+    bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "sys:route",
+        domain: route,
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "/",
+      },
+      {
+        id: "sys:history",
+        domain: { kind: "boundedList", inner: route, maxLen: 1 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "sys:pending",
+        domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "choice",
+        domain: { kind: "enum", values: [...branchValues] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "start",
+      },
+    ],
+    transitions: Array.from({ length: 10 }, (_, index) => ({
+      id: `toB${index}`,
+      cls: "user" as const,
+      label: { kind: "click" as const, text: `Branch ${index}` },
+      source: [],
+      guard: { kind: "eq" as const, args: [read("choice"), lit("start")] },
+      effect: {
+        kind: "assign" as const,
+        var: "choice",
+        expr: lit(`b${index}`),
+      },
+      reads: ["choice"],
+      writes: ["choice"],
+      confidence: "exact" as const,
+    })),
+  };
+}
 
 function partialStateMatches(
   state: Record<string, unknown>,

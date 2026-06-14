@@ -104,9 +104,9 @@ describe("demo app acceptance fixture", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expect(checked.exitCode).toBe(2);
-    expect(checked.check.stats).toEqual({
-      states: 1422,
-      edges: 7382,
+    expectSlicedStats(checked.check, {
+      states: 2143,
+      edges: 9719,
       depth: 12,
     });
     expect(
@@ -231,9 +231,9 @@ describe("demo app acceptance fixture", () => {
       reportPath,
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    expect(checked.check.stats).toEqual({
-      states: 864,
-      edges: 5766,
+    expectSlicedStats(checked.check, {
+      states: 1728,
+      edges: 11532,
       depth: 12,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
@@ -425,9 +425,9 @@ describe("demo app acceptance fixture", () => {
       reportPath,
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    expect(checked.check.stats).toEqual({
-      states: 277,
-      edges: 1600,
+    expectSlicedStats(checked.check, {
+      states: 554,
+      edges: 3200,
       depth: 16,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
@@ -893,6 +893,27 @@ function createCheckoutReplay(trace: Trace): {
       state["local:App.plan"] === "none";
     stepOutput.textContent = String(state["local:App.step"]);
   }
+}
+
+function expectSlicedStats(
+  check: {
+    stats: { states: number; edges: number; depth: number };
+    diagnostics?: {
+      slicing?: {
+        enabled: boolean;
+        slices?: number;
+        sliceSummaries?: readonly unknown[];
+      };
+    };
+  },
+  stats: { states: number; edges: number; depth: number },
+) {
+  expect(check.stats).toEqual(stats);
+  expect(check.diagnostics?.slicing).toMatchObject({ enabled: true });
+  expect(check.diagnostics?.slicing?.slices ?? 0).toBeGreaterThan(0);
+  expect(check.diagnostics?.slicing?.sliceSummaries?.length ?? 0).toBeGreaterThan(
+    0,
+  );
 }
 
 function verdictSummary(

@@ -11,38 +11,64 @@ export function sliceModelForProperty(
   model: Model,
   property: Pick<Property, "reads" | "enabledTransitions">,
 ): Model {
-  const systemVars = new Set(
-    model.vars
-      .filter((decl) => decl.id.startsWith("sys:"))
-      .map((decl) => decl.id),
-  );
   const forcedTransitions = new Set(property.enabledTransitions ?? []);
-  const needed = new Set([
-    ...systemVars,
+  const neededVars = new Set([
     ...(property.reads ?? []),
     ...enabledTransitionVars(model, forcedTransitions),
   ]);
+  const neededTransitions = new Set<string>();
+
   let changed = true;
   while (changed) {
     changed = false;
+    if (addRouteVarsForNeededRouteLocals(model, neededVars)) {
+      changed = true;
+    }
     for (const transition of model.transitions) {
-      if (!transition.writes.some((write) => needed.has(write))) continue;
+      if (!transition.writes.some((write) => neededVars.has(write))) continue;
+      if (!neededTransitions.has(transition.id)) {
+        neededTransitions.add(transition.id);
+        changed = true;
+      }
       for (const id of [...transition.reads, ...transition.writes]) {
-        if (!needed.has(id)) {
-          needed.add(id);
+        if (!neededVars.has(id)) {
+          neededVars.add(id);
           changed = true;
         }
       }
     }
   }
-  const vars = model.vars.filter((decl) => needed.has(decl.id));
-  const transitions = model.transitions.filter(
-    (transition) =>
-      forcedTransitions.has(transition.id) ||
-      transition.writes.some((write) => needed.has(write)) ||
-      transition.reads.some((read) => needed.has(read)),
+
+  for (const id of forcedTransitions) {
+    neededTransitions.add(id);
+    const transition = model.transitions.find((candidate) => candidate.id === id);
+    if (!transition) continue;
+    for (const varId of [...transition.reads, ...transition.writes]) {
+      neededVars.add(varId);
+    }
+  }
+
+  const vars = model.vars.filter((decl) => neededVars.has(decl.id));
+  const transitions = model.transitions.filter((transition) =>
+    neededTransitions.has(transition.id),
   );
   return { ...model, vars, transitions };
+}
+
+function addRouteVarsForNeededRouteLocals(
+  model: Model,
+  neededVars: Set<string>,
+): boolean {
+  let changed = false;
+  for (const decl of model.vars) {
+    if (neededVars.has(decl.id) && decl.scope.kind === "route-local") {
+      if (!neededVars.has("sys:route")) {
+        neededVars.add("sys:route");
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }
 
 export function enabledTransitionVars(
@@ -60,4 +86,8 @@ export function enabledTransitionVars(
     for (const write of transition.writes) vars.add(write);
   }
   return [...vars].sort();
+}
+
+export function canSliceProperty(property: Pick<Property, "kind">): boolean {
+  return property.kind !== "alwaysStep" && property.kind !== "leadsToWithin";
 }

@@ -58,3 +58,16 @@ The process aborts with a raw V8 out-of-memory crash.
 - Add partial-order reduction or independence reduction for unrelated local UI state.
 - Provide a per-route or per-source extraction/check mode that does not pull in the whole shared app shell.
 - Make default bounds more conservative for extracted real apps, or auto-suggest lower bounds when the graph grows too quickly.
+
+## Implemented Notes
+
+The checker now addresses the main scalability path without rewriting search:
+
+- `modality check` enables per-property slicing by default when every loaded property declares or infers `reads`. Properties without `reads` keep full-model search and the report records that slicing was skipped.
+- Slicing uses the spec cone-of-influence rule: seed from property reads and `enabled(...)` transition vars, grow through transitions that **write** into the cone, and do not blindly include every `sys:*` variable.
+- `alwaysStep` properties fall back to full-model search because reader-only transitions may be semantically relevant to step predicates.
+- Structured diagnostics (`CheckResult.diagnostics` / `report.json` `diagnostics`) report slicing summaries, frontier/states/depth stats, optional dominant variables, and graceful search-limit stops (`maxStates`, `maxFrontier`, `maxEdges`, optional `memoryGuard`).
+- CLI output adds compact `slicing=...` and `search-limit=...` lines when relevant; detailed per-depth stats remain in `report.json`.
+- `modality check` now exposes `--max-states`, `--max-edges`, `--max-frontier`, `--memory-guard-mb`, and `--no-search-limits`, with conservative CLI defaults when no search-limit flags are provided.
+
+Re-run the reproduction commands above after upgrading; a single props file should explore a much smaller slice, and configured limits should fail with a structured diagnostic instead of a raw V8 heap abort.

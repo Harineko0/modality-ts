@@ -25,6 +25,14 @@ function flagValue(args: readonly string[], flag: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function parsePositiveIntegerValue(flag: string, raw: string): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${flag} value`);
+  }
+  return value;
+}
+
 function positionals(
   args: readonly string[],
   valueFlags: readonly string[],
@@ -59,7 +67,7 @@ async function main(): Promise<void> {
       "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
     );
     console.log(
-      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json]",
+      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]",
     );
     console.log(
       "       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]",
@@ -331,6 +339,46 @@ async function main(): Promise<void> {
   const tracesFlag = flagValue(args, "--traces");
   const replayTestsFlag = flagValue(args, "--replay-tests");
   const actionReplayTestsFlag = flagValue(args, "--action-replay-tests");
+  const noSearchLimits = args.includes("--no-search-limits");
+  const maxStatesRaw = flagValue(args, "--max-states");
+  const maxEdgesRaw = flagValue(args, "--max-edges");
+  const maxFrontierRaw = flagValue(args, "--max-frontier");
+  const memoryGuardMbRaw = flagValue(args, "--memory-guard-mb");
+  if (
+    noSearchLimits &&
+    (args.includes("--max-states") ||
+      args.includes("--max-edges") ||
+      args.includes("--max-frontier") ||
+      args.includes("--memory-guard-mb"))
+  ) {
+    throw new Error(
+      "--no-search-limits cannot be combined with explicit search-limit flags",
+    );
+  }
+  if (args.includes("--max-states") && maxStatesRaw === undefined)
+    throw new Error("Missing --max-states value");
+  if (args.includes("--max-edges") && maxEdgesRaw === undefined)
+    throw new Error("Missing --max-edges value");
+  if (args.includes("--max-frontier") && maxFrontierRaw === undefined)
+    throw new Error("Missing --max-frontier value");
+  if (args.includes("--memory-guard-mb") && memoryGuardMbRaw === undefined)
+    throw new Error("Missing --memory-guard-mb value");
+  const maxStates =
+    maxStatesRaw !== undefined
+      ? parsePositiveIntegerValue("--max-states", maxStatesRaw)
+      : undefined;
+  const maxEdges =
+    maxEdgesRaw !== undefined
+      ? parsePositiveIntegerValue("--max-edges", maxEdgesRaw)
+      : undefined;
+  const maxFrontier =
+    maxFrontierRaw !== undefined
+      ? parsePositiveIntegerValue("--max-frontier", maxFrontierRaw)
+      : undefined;
+  const memoryGuardMb =
+    memoryGuardMbRaw !== undefined
+      ? parsePositiveIntegerValue("--memory-guard-mb", memoryGuardMbRaw)
+      : undefined;
   const tracesDir = tracesFlag ?? defaultTracesDir;
   const replayTestsDir = replayTestsFlag ?? defaultReplayTestsDir;
   const actionReplayTestsDir =
@@ -343,6 +391,10 @@ async function main(): Promise<void> {
     "--replay-tests",
     "--action-replay-tests",
     "--states",
+    "--max-states",
+    "--max-edges",
+    "--max-frontier",
+    "--memory-guard-mb",
   ]);
   const [modelPath, ...propsPaths] = positional;
   const overlayPath = flagValue(args, "--overlay");
@@ -361,6 +413,32 @@ async function main(): Promise<void> {
     throw new Error("Missing --action-replay-tests path");
   if (args.includes("--states") && !statesPath)
     throw new Error("Missing --states path");
+  let searchLimits:
+    | {
+        maxStates?: number;
+        maxEdges?: number;
+        maxFrontier?: number;
+        memoryGuardBytes?: number;
+      }
+    | false
+    | undefined;
+  if (noSearchLimits) {
+    searchLimits = false;
+  } else if (
+    maxStates !== undefined ||
+    maxEdges !== undefined ||
+    maxFrontier !== undefined ||
+    memoryGuardMb !== undefined
+  ) {
+    searchLimits = {
+      ...(maxStates !== undefined ? { maxStates } : {}),
+      ...(maxEdges !== undefined ? { maxEdges } : {}),
+      ...(maxFrontier !== undefined ? { maxFrontier } : {}),
+      ...(memoryGuardMb !== undefined
+        ? { memoryGuardBytes: memoryGuardMb * 1024 * 1024 }
+        : {}),
+    };
+  }
   const result = await runCheckCommand({
     modelPath: effectiveModelPath,
     propsPaths: effectivePropsPaths,
@@ -370,6 +448,7 @@ async function main(): Promise<void> {
     replayTestsDir,
     actionReplayTestsDir,
     statesPath,
+    searchLimits,
   });
   for (const line of result.lines) console.log(line);
   process.exit(result.exitCode);

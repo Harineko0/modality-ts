@@ -567,6 +567,88 @@ describe("runCheckCommand", () => {
     expect(report.trustLedger.ignoredVars).toEqual([]);
   });
 
+  it("uses slicing by default when property reads are declared", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.check.diagnostics?.slicing?.enabled).toBe(true);
+    expect(result.lines.some((line) => line.startsWith("slicing=slices:"))).toBe(
+      true,
+    );
+  });
+
+  it("reports search-limit diagnostics when configured", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      reportPath,
+      searchLimits: { maxStates: 1 },
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.check.verdicts.some((verdict) => verdict.status === "error")).toBe(
+      true,
+    );
+    const errorVerdict = result.check.verdicts.find(
+      (verdict) => verdict.status === "error",
+    );
+    expect(errorVerdict?.message).toContain("maxStates=1");
+    expect(result.check.diagnostics?.limits?.maxStates).toBe(1);
+    expect(result.report.diagnostics?.limits?.maxStates).toBe(1);
+    expect(
+      result.lines.some((line) => line.startsWith("search-limit=maxStates")),
+    ).toBe(true);
+  });
+
+  it("does not apply search limits when searchLimits is false", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      searchLimits: false,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.check.diagnostics?.limits).toBeUndefined();
+  });
+
   it("rejects unsupported model artifact versions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
