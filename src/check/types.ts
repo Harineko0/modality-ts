@@ -56,6 +56,12 @@ export interface StorageDiagnostics {
   edgeRecordingMode: EdgeRecordingMode;
 }
 
+export interface HotPathDiagnostics {
+  canonicalCache: boolean;
+  transitionIndex: boolean;
+  internalTransitionIndex: boolean;
+}
+
 export interface CheckDiagnostics {
   slicing?: {
     enabled: boolean;
@@ -79,6 +85,7 @@ export interface CheckDiagnostics {
   };
   dominantVars?: readonly { varId: string; distinctValues: number }[];
   storage?: StorageDiagnostics;
+  hotPath?: HotPathDiagnostics;
 }
 
 export interface CheckResult {

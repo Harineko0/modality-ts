@@ -30,10 +30,15 @@ import { initialStates } from "./initial-states.js";
 import { stabilize } from "./stabilize.js";
 import {
   changedVars,
-  compareStates,
   initialChangedVars,
+  sortStatesByCanon,
 } from "./state-utils.js";
-import { enabledTransitions, installEnabledHook } from "./transitions.js";
+import {
+  buildTransitionIndex,
+  enabledTransitions,
+  installEnabledHook,
+  type TransitionIndex,
+} from "./transitions.js";
 
 interface SearchTracker {
   maxFrontier: number;
@@ -197,6 +202,15 @@ function checkModelCore(
 
   const startedAt = options.trackElapsed ? Date.now() : undefined;
   installEnabledHook(model);
+  const transitionIndex = buildTransitionIndex(model);
+  const canonCache = new WeakMap<ModelState, string>();
+  const canon = (state: ModelState): string => {
+    const cached = canonCache.get(state);
+    if (cached !== undefined) return cached;
+    const encoded = canonicalState(model, state);
+    canonCache.set(state, encoded);
+    return encoded;
+  };
   const parents = new Map<string, Parent>();
   const states = new Map<string, ModelState>();
   const graph = createGraphRecording(resolveEdgeRecordingMode(properties));
@@ -204,7 +218,14 @@ function checkModelCore(
   const enabledTransitionIds = new Set<string>();
   const boundHits = new Set<string>();
   const tracker = createSearchTracker(model);
-  let frontier = seedFrontier(model, parents, states, tracker);
+  let frontier = seedFrontier(
+    model,
+    parents,
+    states,
+    tracker,
+    transitionIndex,
+    canon,
+  );
   const verdicts = new Map<string, PropertyVerdict>();
   let depth = 0;
   let edgeCount = 0;
@@ -245,6 +266,8 @@ function checkModelCore(
       options,
       edgeCount,
       depth,
+      transitionIndex,
+      canon,
     );
     frontier = result.next;
     edgeCount += result.edges;
@@ -273,7 +296,13 @@ function checkModelCore(
     }
   }
 
-  recordMaxDepthBoundHits(model, frontier, enabledTransitionIds, boundHits);
+  recordMaxDepthBoundHits(
+    model,
+    frontier,
+    enabledTransitionIds,
+    boundHits,
+    transitionIndex,
+  );
   if (tracker.limitHit) {
     applySearchLimitVerdicts(properties, verdicts, tracker.limitHit);
   } else {
@@ -295,6 +324,7 @@ function checkModelCore(
       tracker,
       startedAt,
       buildStorageDiagnostics(parents, states, graph),
+      transitionIndex,
     ),
   };
 }
@@ -342,6 +372,7 @@ function buildSearchDiagnostics(
   tracker: SearchTracker,
   startedAt: number | undefined,
   storage: StorageDiagnostics,
+  transitionIndex: TransitionIndex,
 ): CheckDiagnostics {
   const dominantVars = [...tracker.dominantVarValues.entries()]
     .map(([varId, values]) => ({ varId, distinctValues: values.size }))
@@ -359,6 +390,11 @@ function buildSearchDiagnostics(
   return {
     search,
     storage,
+    hotPath: {
+      canonicalCache: true,
+      transitionIndex: true,
+      internalTransitionIndex: transitionIndex.internalTransitions.length > 0,
+    },
     ...(tracker.limitHit ? { limits: tracker.limitHit } : {}),
     ...(dominantVars.length > 0 ? { dominantVars } : {}),
   };
@@ -444,17 +480,22 @@ function seedFrontier(
   parents: Map<string, Parent>,
   states: Map<string, ModelState>,
   tracker: SearchTracker,
+  index: TransitionIndex,
+  canon: (state: ModelState) => string,
 ): ModelState[] {
-  const frontier = initialStates(model)
-    .flatMap((state) => stabilize(model, state, initialChangedVars(model)))
-    .sort(compareStates(model));
+  const frontier = sortStatesByCanon(
+    initialStates(model).flatMap((state) =>
+      stabilize(model, state, initialChangedVars(model), index, canon),
+    ),
+    canon,
+  );
   tracker.maxFrontier = Math.max(tracker.maxFrontier, frontier.length);
   tracker.finalFrontier = frontier.length;
   for (const state of frontier) {
-    const canon = canonicalState(model, state);
-    if (!parents.has(canon)) {
-      parents.set(canon, { parent: null, transitionId: null });
-      states.set(canon, state);
+    const key = canon(state);
+    if (!parents.has(key)) {
+      parents.set(key, { parent: null, transitionId: null });
+      states.set(key, state);
     }
   }
   return frontier;
@@ -475,13 +516,15 @@ function exploreDepth(
   options: CheckOptions,
   startingEdgeCount: number,
   depth: number,
+  index: TransitionIndex,
+  canon: (state: ModelState) => string,
 ): { next: ModelState[]; edges: number } {
   const next: ModelState[] = [];
   let edgeCount = 0;
   for (const pre of frontier) {
     if (tracker.limitHit !== null) break;
-    const preCanon = canonicalState(model, pre);
-    for (const transition of enabledTransitions(model, pre)) {
+    const preCanon = canon(pre);
+    for (const transition of enabledTransitions(model, pre, index)) {
       enabledTransitionIds.add(transition.id);
       const rawPosts = applyEffect(model, pre, transition.effect, {
         onBoundHit: (hit) => {
@@ -499,10 +542,12 @@ function exploreDepth(
         for (const post of stabilize(
           model,
           rawPost,
-          changedVars(pre, rawPost),
+          changedVars(pre, rawPost, model),
+          index,
+          canon,
         )) {
           edgeCount += 1;
-          const postCanon = canonicalState(model, post);
+          const postCanon = canon(post);
           const step = facts(pre, post, transition);
           recordExploredEdge(
             graph,
@@ -564,7 +609,7 @@ function exploreDepth(
     }
     if (tracker.limitHit !== null) break;
   }
-  return { next: next.sort(compareStates(model)), edges: edgeCount };
+  return { next: sortStatesByCanon(next, canon), edges: edgeCount };
 }
 
 function checkModelSliced(
@@ -689,6 +734,7 @@ function mergeDiagnostics(
     limits: overlay?.limits ?? base?.limits,
     dominantVars: overlay?.dominantVars ?? base?.dominantVars,
     storage: overlay?.storage ?? base?.storage,
+    hotPath: overlay?.hotPath ?? base?.hotPath,
   };
 }
 
@@ -722,6 +768,7 @@ function mergeSearchDiagnostics(
     limits: left.limits ?? right.limits,
     dominantVars: dominant,
     storage: mergeStorageDiagnostics(left.storage, right.storage),
+    hotPath: left.hotPath ?? right.hotPath,
   };
 }
 

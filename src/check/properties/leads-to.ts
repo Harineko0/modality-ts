@@ -1,6 +1,9 @@
 import { canonicalState } from "modality-ts/core";
 import type { Model, ModelState, Property, Transition } from "modality-ts/core";
-import { enabledTransitions } from "../engine/transitions.js";
+import {
+  buildTransitionIndex,
+  enabledTransitions,
+} from "../engine/transitions.js";
 import { changedVars } from "../engine/state-utils.js";
 import { stabilize } from "../engine/stabilize.js";
 import { applyEffect } from "../runtime/effects.js";
@@ -54,13 +57,19 @@ function schedulerSuccessors(
   property: LeadsToWithin,
   pre: ModelState,
 ): Edge[] {
+  const index = buildTransitionIndex(model);
   const preCanon = canonicalState(model, pre);
   const out: Edge[] = [];
-  for (const transition of enabledTransitions(model, pre).filter((candidate) =>
-    schedulerAllows(property, candidate),
+  for (const transition of enabledTransitions(model, pre, index).filter(
+    (candidate) => schedulerAllows(property, candidate),
   )) {
     for (const rawPost of applyEffect(model, pre, transition.effect)) {
-      for (const post of stabilize(model, rawPost, changedVars(pre, rawPost))) {
+      for (const post of stabilize(
+        model,
+        rawPost,
+        changedVars(pre, rawPost, model),
+        index,
+      )) {
         out.push({
           preCanon,
           postCanon: canonicalState(model, post),

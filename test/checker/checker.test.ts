@@ -2972,6 +2972,319 @@ describe("checker", () => {
     expect(result.diagnostics?.search?.maxFrontier).toBeLessThan(10);
     expect(result.stats.states).toBeLessThanOrEqual(3);
   });
+
+  it("pins deterministic state and edge counts for many independent toggles", () => {
+    const toggleCount = 8;
+    const toggleIds = Array.from({ length: toggleCount }, (_, index) => `t${index}`);
+    const m: Model = {
+      schemaVersion: 1,
+      id: "hot-path-independent-toggles",
+      bounds: {
+        maxDepth: toggleCount,
+        maxPending: 0,
+        maxInternalSteps: 4,
+      },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...toggleIds.map((id) => ({
+          id,
+          domain: bool,
+          origin: "system" as const,
+          scope: { kind: "global" as const },
+          initial: false,
+        })),
+      ],
+      transitions: toggleIds.map((id) => ({
+        id: `flip${id}`,
+        cls: "user" as const,
+        label: { kind: "click" as const, text: id },
+        source: [],
+        guard: { kind: "not" as const, args: [read(id)] },
+        effect: { kind: "assign" as const, var: id, expr: lit(true) },
+        reads: [id],
+        writes: [id],
+        confidence: "exact" as const,
+      })),
+    };
+    const result = checkModel(m, [
+      reachable(
+        m,
+        (state) => toggleIds.every((id) => state[id] === true),
+        { name: "allToggled", reads: toggleIds },
+      ),
+    ]);
+    expect(result.stats).toEqual({ states: 256, edges: 1024, depth: 8 });
+    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.diagnostics?.hotPath).toMatchObject({
+      canonicalCache: true,
+      transitionIndex: true,
+      internalTransitionIndex: false,
+    });
+  });
+
+  it("keeps indexed guard transitions as candidates when guards become true later", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "indexed-guard-later-true",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "armed",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "done",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "arm",
+          cls: "user",
+          label: { kind: "click", text: "Arm" },
+          source: [],
+          guard: { kind: "not", args: [read("armed")] },
+          effect: { kind: "assign", var: "armed", expr: lit(true) },
+          reads: ["armed"],
+          writes: ["armed"],
+          confidence: "exact",
+        },
+        {
+          id: "finish",
+          cls: "user",
+          label: { kind: "click", text: "Finish" },
+          source: [],
+          guard: read("armed"),
+          effect: { kind: "assign", var: "done", expr: lit(true) },
+          reads: ["armed"],
+          writes: ["done"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      reachable(m, (state) => state.done === true, {
+        name: "canFinishAfterArm",
+        reads: ["done"],
+      }),
+    ]);
+    expect(result.stats).toEqual({ states: 3, edges: 2, depth: 2 });
+    expect(result.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("still stabilizes internal transitions without triggeredBy on every pass", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "always-triggered-internal",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "stamped",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "stamp",
+          cls: "internal",
+          label: { kind: "internal", text: "stamp" },
+          source: [],
+          guard: { kind: "not", args: [read("stamped")] },
+          effect: { kind: "assign", var: "stamped", expr: lit(true) },
+          reads: ["stamped"],
+          writes: ["stamped"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      reachable(m, (state) => state.stamped === true, {
+        name: "stampedOnInit",
+        reads: ["stamped"],
+      }),
+    ]);
+    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 1 });
+    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.diagnostics?.hotPath?.internalTransitionIndex).toBe(true);
+  });
+
+  it("fires triggeredBy internal transitions only when the triggering var changes", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "triggered-by-internal-only-on-change",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "source",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "derived",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "kick",
+          cls: "user",
+          label: { kind: "click", text: "Kick" },
+          source: [],
+          guard: { kind: "not", args: [read("source")] },
+          effect: { kind: "assign", var: "source", expr: lit(true) },
+          reads: ["source"],
+          writes: ["source"],
+          confidence: "exact",
+        },
+        {
+          id: "flipNoise",
+          cls: "user",
+          label: { kind: "click", text: "Noise" },
+          source: [],
+          guard: read("source"),
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["source", "noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+        {
+          id: "derive",
+          cls: "internal",
+          label: { kind: "internal", text: "derive" },
+          source: [],
+          triggeredBy: ["source"],
+          guard: read("source"),
+          effect: { kind: "assign", var: "derived", expr: lit(true) },
+          reads: ["source"],
+          writes: ["derived"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      reachable(m, (state) => state.derived === true, {
+        name: "derivedFromSource",
+        reads: ["derived"],
+      }),
+      reachable(m, (state) => state.noise === true, {
+        name: "noiseReachable",
+        reads: ["noise"],
+      }),
+    ]);
+    expect(result.stats).toEqual({ states: 3, edges: 2, depth: 2 });
+    expect(
+      result.verdicts.find((verdict) => verdict.property === "derivedFromSource")
+        ?.status,
+    ).toBe("reachable");
+    expect(
+      result.verdicts.find((verdict) => verdict.property === "noiseReachable")
+        ?.status,
+    ).toBe("reachable");
+  });
 });
 
 function highBranchingModel(): Model {

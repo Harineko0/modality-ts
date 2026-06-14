@@ -2,6 +2,7 @@ import type { Model, ModelState, Transition } from "modality-ts/core";
 import { applyEffect, guardHolds } from "../runtime/effects.js";
 import { routeLocalMounted } from "./mounts.js";
 import { changedVars, uniqueStabilizingStates } from "./state-utils.js";
+import type { TransitionIndex } from "./transitions.js";
 
 interface StabilizingState {
   state: ModelState;
@@ -12,16 +13,21 @@ export function stabilize(
   model: Model,
   state: ModelState,
   changed: ReadonlySet<string>,
+  index?: TransitionIndex,
+  canon?: (state: ModelState) => string,
 ): ModelState[] {
   let states: StabilizingState[] = [{ state, changed }];
   for (let i = 0; i < model.bounds.maxInternalSteps; i += 1) {
     const next: StabilizingState[] = [];
-    let changed = false;
+    let changedThisRound = false;
     for (const candidate of states) {
-      const internal = model.transitions
+      const candidates = indexedInternalCandidates(index, candidate.changed);
+      const internal = (index
+        ? candidates
+        : model.transitions.filter((transition) => transition.cls === "internal")
+      )
         .filter(
           (transition) =>
-            transition.cls === "internal" &&
             routeLocalMounted(model, transition, candidate.state) &&
             internalTriggered(transition, candidate.changed) &&
             guardHolds(model, transition, candidate.state),
@@ -29,18 +35,40 @@ export function stabilize(
         .sort((a, b) => a.id.localeCompare(b.id));
       if (internal.length === 0) next.push(candidate);
       else {
-        changed = true;
+        changedThisRound = true;
         for (const sequence of stabilizingSequences(internal)) {
           next.push(...applyInternalSequence(model, candidate.state, sequence));
         }
       }
     }
-    states = uniqueStabilizingStates(model, next);
-    if (!changed) return states.map((candidate) => candidate.state);
+    states = uniqueStabilizingStates(model, next, canon);
+    if (!changedThisRound) return states.map((candidate) => candidate.state);
   }
   throw new Error(
     `Internal transitions did not stabilize within ${model.bounds.maxInternalSteps} steps`,
   );
+}
+
+function indexedInternalCandidates(
+  index: TransitionIndex | undefined,
+  changed: ReadonlySet<string>,
+): Transition[] {
+  if (!index) return [];
+  const seen = new Set<string>();
+  const out: Transition[] = [];
+  const add = (transition: Transition) => {
+    if (!seen.has(transition.id)) {
+      seen.add(transition.id);
+      out.push(transition);
+    }
+  };
+  for (const transition of index.alwaysTriggeredInternal) add(transition);
+  for (const varId of changed) {
+    for (const transition of index.internalByTriggeredVar.get(varId) ?? []) {
+      add(transition);
+    }
+  }
+  return out;
 }
 
 function internalTriggered(
@@ -76,7 +104,7 @@ function applyInternalSequence(
         return applyEffect(model, candidate.state, transition.effect).map(
           (post) => ({
             state: post,
-            changed: changedVars(state, post),
+            changed: changedVars(state, post, model),
           }),
         );
       }),

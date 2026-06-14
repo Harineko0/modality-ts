@@ -6,21 +6,25 @@ import {
   compareStates,
   initialChangedVars,
 } from "./state-utils.js";
-import { enabledTransitions } from "./transitions.js";
+import { buildTransitionIndex, enabledTransitions } from "./transitions.js";
 import { initialStates } from "./initial-states.js";
 import { stabilize } from "./stabilize.js";
 
 export function modelInitialStates(model: Model): ModelState[] {
+  const index = buildTransitionIndex(model);
   return initialStates(model)
-    .flatMap((state) => stabilize(model, state, initialChangedVars(model)))
+    .flatMap((state) =>
+      stabilize(model, state, initialChangedVars(model), index),
+    )
     .sort(compareStates(model));
 }
 
 export function modelSuccessors(model: Model, pre: ModelState): TraceStep[] {
-  return enabledTransitions(model, pre).flatMap((transition) =>
+  const index = buildTransitionIndex(model);
+  return enabledTransitions(model, pre, index).flatMap((transition) =>
     applyEffect(model, pre, transition.effect).flatMap((rawPost) =>
-      stabilize(model, rawPost, changedVars(pre, rawPost)).map((post) =>
-        makeTraceStep(pre, post, transition),
+      stabilize(model, rawPost, changedVars(pre, rawPost, model), index).map(
+        (post) => makeTraceStep(pre, post, transition),
       ),
     ),
   );

@@ -243,6 +243,12 @@ export function renderCheckResult(check: CheckResult): string[] {
       `storage=mode:${storage.edgeRecordingMode} recordedEdges:${storage.recordedEdges} storedStates:${storage.storedStates} parentEntries:${storage.parentEntries}`,
     );
   }
+  const hotPath = check.diagnostics?.hotPath;
+  if (hotPath) {
+    lines.push(
+      `hotPath=canonicalCache:${hotPath.canonicalCache} transitionIndex:${hotPath.transitionIndex} internalTransitionIndex:${hotPath.internalTransitionIndex}`,
+    );
+  }
   return lines;
 }
 

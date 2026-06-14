@@ -1,16 +1,20 @@
 import type { Model, ModelState, Transition } from "modality-ts/core";
-import { enabledTransitions } from "../engine/transitions.js";
+import {
+  enabledTransitions,
+  type TransitionIndex,
+} from "../engine/transitions.js";
 
 export function recordMaxDepthBoundHits(
   model: Model,
   frontier: readonly ModelState[],
   enabledTransitionIds: Set<string>,
   boundHits: Set<string>,
+  index?: TransitionIndex,
 ): void {
   if (frontier.length === 0) return;
   const blockedTransitions = new Set<string>();
   for (const state of frontier) {
-    for (const transition of enabledTransitions(model, state)) {
+    for (const transition of enabledTransitions(model, state, index)) {
       enabledTransitionIds.add(transition.id);
       blockedTransitions.add(transition.id);
     }
