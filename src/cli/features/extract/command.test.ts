@@ -129,20 +129,29 @@ describe("runExtractCommand", () => {
     });
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const report = JSON.parse(await readFile(reportPath, "utf8"));
-    const caveat = {
-      id: "App.onClick",
-      reason: "Unextractable handler App.onClick",
-    };
-    expect(report.warnings).toContain("Unextractable handler App.onClick");
+    const caveat =
+      model.metadata?.extractionCaveats?.unextractableHandlers?.[0];
+    expect(caveat?.id).toBe("App.onClick");
+    expect(caveat?.reason).toContain("no-extractable-effect");
+    expect(caveat?.source).toMatch(/App\.tsx:\d+:\d+$/);
+    expect(
+      report.warnings.some((warning: string) =>
+        warning.includes("Unextractable handler App.onClick"),
+      ),
+    ).toBe(true);
     expect(report.handlers).toEqual([
       {
         id: "App.onClick",
         classification: "unextractable",
-        reasons: ["Unextractable handler App.onClick"],
+        reasons: [caveat?.reason],
       },
     ]);
     expect(model.metadata?.extractionCaveats?.unextractableHandlers).toEqual([
-      caveat,
+      {
+        id: "App.onClick",
+        reason: caveat?.reason,
+        source: caveat?.source,
+      },
     ]);
     expect(report.coverage).toEqual({
       handlersTotal: 1,
@@ -151,6 +160,78 @@ describe("runExtractCommand", () => {
       ignoredVars: 0,
       percentExactOrOverlay: 0,
     });
+  });
+
+  it("reports await-in-loop handlers with a specific category and dedupes caveats", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        const items = ['a'];
+        return <button onClick={async () => {
+          for (const item of items) {
+            await api.save(item);
+            setSaveStatus('posting');
+          }
+        }}>Save</button>;
+      }
+      `,
+      "utf8",
+    );
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      effectApis: ["api.save"],
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    const caveats =
+      model.metadata?.extractionCaveats?.unextractableHandlers ?? [];
+    expect(caveats).toHaveLength(1);
+    expect(caveats[0]?.id).toBe("App.onClick");
+    expect(caveats[0]?.reason).toContain("await-in-loop");
+    expect(caveats[0]?.source).toMatch(/App\.tsx:\d+:\d+$/);
+  });
+
+  it("does not classify list-rendered or effect warnings as unextractable handlers", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useEffect, useMemo, useState } from 'react';
+      export function App({ external }: { external: string }) {
+        const initialRange = useMemo(() => external, [external]);
+        const [range, setRange] = useState<string | null>(null);
+        useEffect(() => {
+          setRange(initialRange);
+        }, [initialRange]);
+        return range;
+      }
+      `,
+      "utf8",
+    );
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(report.warnings).toContain("Unextractable effect App.useEffect");
+    expect(model.metadata?.extractionCaveats?.unextractableHandlers).toEqual(
+      [],
+    );
   });
 
   it("reports unsupported useReducer state sources", async () => {
@@ -178,13 +259,11 @@ describe("runExtractCommand", () => {
     });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.warnings).toContain("Unsupported useReducer App.useReducer");
-    expect(report.handlers).toEqual([
-      {
-        id: "App.onClick",
-        classification: "unextractable",
-        reasons: ["Unextractable handler App.onClick"],
-      },
-    ]);
+    const unextractable = report.handlers.find(
+      (handler: { id: string }) => handler.id === "App.onClick",
+    );
+    expect(unextractable?.classification).toBe("unextractable");
+    expect(unextractable?.reasons[0]).toContain("no-extractable-effect");
     expect(report.coverage).toEqual({
       handlersTotal: 1,
       exactOrOverlay: 0,
@@ -1382,7 +1461,7 @@ describe("runExtractCommand", () => {
         id: "App.onClick.saveStatus.escaped",
         classification: "over-approx",
         reasons: [
-          "havoc write to local:App.saveStatus",
+          "domain-wide havoc: havoc write to local:App.saveStatus",
           "setter escaped to unanalyzed call",
         ],
       },
@@ -1421,7 +1500,7 @@ describe("runExtractCommand", () => {
       {
         id: "App.onClick.saveStatus.loop",
         classification: "over-approx",
-        reasons: ["havoc write to local:App.saveStatus"],
+        reasons: ["domain-wide havoc: havoc write to local:App.saveStatus"],
       },
     ]);
   });

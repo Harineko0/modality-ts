@@ -277,9 +277,10 @@ export function transitionsFromResolvedHandler(
   warnings: ExtractionWarning[],
 ): Transition[] {
   if (containsAwaitInLoop(handler)) {
+    const { line, column } = lineAndColumn(source, handler);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr}`,
-      ...lineAndColumn(source, handler),
+      message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${line}:${column})`,
+      line,
     });
     return [];
   }
@@ -302,9 +303,10 @@ export function transitionsFromResolvedHandler(
     ts.isBlock(handler.body) &&
     containsAwaitedEffect(handler.body.statements, effectApis)
   ) {
+    const { line, column } = lineAndColumn(source, handler);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr}`,
-      ...lineAndColumn(source, handler),
+      message: `Unextractable handler ${component}.${attr} [awaited-effect-in-block] (${fileName}:${line}:${column})`,
+      line,
     });
     return [];
   }

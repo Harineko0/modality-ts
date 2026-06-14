@@ -253,7 +253,8 @@ function normalizedSourcePaths(options: ExtractCommandOptions): string[] {
 async function loadExtractionProject(
   sourcePaths: readonly string[],
 ): Promise<ExtractionProject> {
-  if (sourcePaths.length > 1) return loadMultiFileExtractionProject(sourcePaths);
+  if (sourcePaths.length > 1)
+    return loadMultiFileExtractionProject(sourcePaths);
   const resolved = sourcePaths[0]!;
   const info = await stat(resolved);
   if (!info.isDirectory()) {
@@ -810,6 +811,9 @@ function createExtractionReport(
   now: Date,
 ): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
+  const varDomains = new Map(
+    model.vars.map((decl) => [decl.id, decl.domain] as const),
+  );
   const transitionHandlers = model.transitions.map((transition) => ({
     id: transition.id,
     classification:
@@ -818,17 +822,13 @@ function createExtractionReport(
         : transition.confidence,
     reasons:
       transition.confidence === "over-approx"
-        ? overApproxReasons(transition)
+        ? overApproxReasons(transition, varDomains)
         : ([] as string[]),
   }));
   const transitionIds = new Set(
     transitionHandlers.map((handler) => handler.id),
   );
-  const unextractableHandlers = warnings
-    .map(unextractableHandlerFromWarning)
-    .filter((handler): handler is { id: string; reason: string } =>
-      Boolean(handler),
-    )
+  const unextractableHandlers = dedupeUnextractableHandlers(warnings)
     .filter((handler) => !transitionIds.has(handler.id))
     .map((handler) => ({
       id: handler.id,
@@ -906,10 +906,7 @@ function createExtractionCaveats(
       .map(unhandledRejectionFromWarning)
       .filter(isCaveat)
       .sort(compareCaveats),
-    unextractableHandlers: warnings
-      .map(unextractableHandlerFromWarning)
-      .filter(isCaveat)
-      .sort(compareCaveats),
+    unextractableHandlers: dedupeUnextractableHandlers(warnings),
   };
 }
 
@@ -1033,12 +1030,19 @@ function transitionNavigatedRoutes(
   return [...routes].sort();
 }
 
-function overApproxReasons(transition: Model["transitions"][number]): string[] {
+function overApproxReasons(
+  transition: Model["transitions"][number],
+  varDomains: ReadonlyMap<string, StateVarDecl["domain"]> = new Map(),
+): string[] {
   const reasons = new Set<string>();
   if (transition.id.endsWith(".escaped"))
     reasons.add("setter escaped to unanalyzed call");
-  for (const variable of havocWrites(transition.effect))
-    reasons.add(`havoc write to ${variable}`);
+  for (const variable of havocWrites(transition.effect)) {
+    const domain = varDomains.get(variable);
+    const prefix =
+      domain?.kind === "bool" ? "safe local toggle" : "domain-wide havoc";
+    reasons.add(`${prefix}: havoc write to ${variable}`);
+  }
   if (reasons.size === 0) reasons.add("transition confidence is over-approx");
   return [...reasons].sort();
 }
@@ -1125,11 +1129,68 @@ function havocWrites(effect: EffectIR): string[] {
   return [];
 }
 
+const GENERIC_UNEXTRACTABLE_CATEGORIES = new Set([
+  "no-extractable-effect",
+  "unextractable",
+]);
+
+function dedupeUnextractableHandlers(
+  warnings: readonly string[],
+): ExtractionCaveat[] {
+  const parsed = warnings.map(unextractableHandlerFromWarning).filter(
+    (
+      handler,
+    ): handler is {
+      id: string;
+      reason: string;
+      source?: string;
+      category: string;
+    } => Boolean(handler),
+  );
+  const byId = new Map<
+    string,
+    { id: string; reason: string; source?: string; category: string }
+  >();
+  for (const handler of parsed) {
+    const existing = byId.get(handler.id);
+    if (!existing) {
+      byId.set(handler.id, handler);
+      continue;
+    }
+    const existingIsGeneric = GENERIC_UNEXTRACTABLE_CATEGORIES.has(
+      existing.category,
+    );
+    const incomingIsGeneric = GENERIC_UNEXTRACTABLE_CATEGORIES.has(
+      handler.category,
+    );
+    if (existingIsGeneric && !incomingIsGeneric) byId.set(handler.id, handler);
+  }
+  return [...byId.values()]
+    .map(({ id, reason, source }) =>
+      source ? { id, reason, source } : { id, reason },
+    )
+    .sort(compareCaveats);
+}
+
 function unextractableHandlerFromWarning(
   warning: string,
-): { id: string; reason: string } | undefined {
-  const match = /^Unextractable handler (.+)$/.exec(warning);
-  return match?.[1] ? { id: match[1], reason: warning } : undefined;
+):
+  | { id: string; reason: string; source?: string; category: string }
+  | undefined {
+  const rich = /^Unextractable handler (\S+) \[([^\]]+)\] \((.+)\)$/.exec(
+    warning,
+  );
+  if (rich)
+    return {
+      id: rich[1]!,
+      category: rich[2]!,
+      reason: `${rich[2]!} at ${rich[3]!}`,
+      source: rich[3]!,
+    };
+  const bare = /^Unextractable handler (\S+)$/.exec(warning);
+  return bare?.[1]
+    ? { id: bare[1], category: "unextractable", reason: bare[0] }
+    : undefined;
 }
 
 function pendingVars(

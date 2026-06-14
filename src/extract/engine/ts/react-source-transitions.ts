@@ -312,9 +312,10 @@ export function extractReactSourceTransitions(
       );
       transitions.push(...extracted);
       if (extracted.length === 0) {
+        const { line, column } = lineAndColumn(source, node);
         warnings.push({
-          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`,
-          ...lineAndColumn(source, node),
+          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text} [no-extractable-effect] (${fileName}:${line}:${column})`,
+          line,
         });
       }
     }
@@ -403,9 +404,10 @@ export function extractReactSourceTransitions(
         ) &&
         !handlerSchedulesModeledTimer(node, handlers, scopedSetters)
       ) {
+        const { line, column } = lineAndColumn(source, node);
         warnings.push({
-          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text}`,
-          ...lineAndColumn(source, node),
+          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text} [no-extractable-effect] (${fileName}:${line}:${column})`,
+          line,
         });
       }
     }

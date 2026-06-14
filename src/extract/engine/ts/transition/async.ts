@@ -1,10 +1,5 @@
 import * as ts from "typescript";
-import {
-  callName,
-  lineAndColumn,
-  literalValue,
-  propertyName,
-} from "../ast.js";
+import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import { templateRoutePattern } from "../routes.js";
 import type {
@@ -42,9 +37,10 @@ export function transitionsFromAsyncHandler(
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
   if (containsAwaitInLoop(expression.body)) {
+    const { line, column } = lineAndColumn(source, expression);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr}`,
-      ...lineAndColumn(source, expression),
+      message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${line}:${column})`,
+      line,
     });
     return [];
   }
@@ -99,9 +95,10 @@ export function transitionsFromAsyncHandler(
         effectApis,
       ))
   ) {
+    const { line, column } = lineAndColumn(source, awaitStatement);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr}`,
-      ...lineAndColumn(source, awaitStatement),
+      message: `Unextractable handler ${component}.${attr} [awaited-effect-in-async] (${fileName}:${line}:${column})`,
+      line,
     });
     return [];
   }

@@ -646,9 +646,11 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Unextractable handler App.onPress",
-    );
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Unextractable handler App.onPress"),
+      ),
+    ).toBe(true);
   });
 
   it("reports stateful components rendered from list maps as unextractable", () => {
@@ -671,7 +673,7 @@ describe("useState inventory", () => {
     expect(result.warnings.map((warning) => warning.message)).toEqual(
       expect.arrayContaining([
         "Unextractable stateful list item Row",
-        "Unextractable handler Row.onClick",
+        expect.stringMatching(/^Unextractable handler Row\.onClick/),
       ]),
     );
   });
@@ -2751,9 +2753,11 @@ describe("useState inventory", () => {
       },
     );
     expect(variableAwait.transitions).toEqual([]);
-    expect(variableAwait.warnings.map((warning) => warning.message)).toContain(
-      "Unextractable handler App.onClick",
-    );
+    expect(
+      variableAwait.warnings.some((warning) =>
+        warning.message.includes("Unextractable handler App.onClick"),
+      ),
+    ).toBe(true);
 
     const promiseAllAwait = extractUseStateSkeleton(
       `
@@ -3047,9 +3051,11 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Unextractable handler App.onClick",
-    );
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Unextractable handler App.onClick"),
+      ),
+    ).toBe(true);
   });
 
   it("reports useReducer as an unsupported v1 state source", () => {
