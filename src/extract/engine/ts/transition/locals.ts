@@ -75,27 +75,36 @@ export function callSummaryFromHandler(
     return { call: body, locals: new Map(initialLocals) };
   if (ts.isVoidExpression(body) && ts.isCallExpression(body.expression))
     return { call: body.expression, locals: new Map(initialLocals) };
-  if (ts.isBlock(body)) {
-    const locals = new Map<string, BoundExpr>(initialLocals);
-    for (let index = 0; index < body.statements.length; index += 1) {
-      const statement = body.statements[index];
-      const isLast = index === body.statements.length - 1;
-      if (
-        isLast &&
-        ts.isExpressionStatement(statement) &&
-        ts.isCallExpression(statement.expression)
-      )
-        return { call: statement.expression, locals };
-      if (
-        isLast &&
-        ts.isExpressionStatement(statement) &&
-        ts.isVoidExpression(statement.expression) &&
-        ts.isCallExpression(statement.expression.expression)
-      )
-        return { call: statement.expression.expression, locals };
-      if (!bindConstStatement(statement, setters, locals)) return undefined;
+  return ts.isBlock(body)
+    ? callSummaryFromStatements(body.statements, setters, initialLocals)
+    : undefined;
+}
+
+export function callSummaryFromStatements(
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
+): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
+  const locals = new Map<string, BoundExpr>(initialLocals);
+  for (let index = 0; index < statements.length; index += 1) {
+    const statement = statements[index];
+    const isLast = index === statements.length - 1;
+    if (ts.isEmptyStatement(statement)) continue;
+    if (isLast && ts.isBlock(statement))
+      return callSummaryFromStatements(statement.statements, setters, locals);
+    if (isLast && ts.isExpressionStatement(statement)) {
+      const call = callExpression(statement.expression);
+      if (call) return { call, locals };
     }
+    if (!bindConstStatement(statement, setters, locals)) return undefined;
   }
+  return undefined;
+}
+
+function callExpression(expression: ts.Expression): ts.CallExpression | undefined {
+  if (ts.isCallExpression(expression)) return expression;
+  if (ts.isVoidExpression(expression) && ts.isCallExpression(expression.expression))
+    return expression.expression;
   return undefined;
 }
 

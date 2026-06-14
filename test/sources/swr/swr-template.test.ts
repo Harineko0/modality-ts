@@ -4,6 +4,7 @@ import { always, reachable, type Model } from "modality-ts/core";
 import {
   createSwrKeyWindowTemplate,
   createSwrTemplate,
+  extractSwrSkeleton,
   swrSource,
   swrVarId,
   swrView,
@@ -514,5 +515,111 @@ describe("SWR template", () => {
       error: false,
       loadedEmpty: true,
     });
+  });
+
+  it("extracts simple mutate writes through the shared transition adapter", () => {
+    const result = extractSwrSkeleton(
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <button onClick={() => mutate('full')}>Fill</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api_todos",
+        effect: {
+          kind: "assign",
+          var: "swr:api_todos:data",
+          expr: { kind: "lit", value: "full" },
+        },
+        writes: ["swr:api_todos:data"],
+      }),
+    );
+  });
+
+  it("places async mutate writes in modeled effect success continuations", () => {
+    const result = extractSwrSkeleton(
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <button onClick={async () => {
+          await api.refresh();
+          mutate('empty');
+        }}>Refresh</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", effectApis: ["api.refresh"] },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api.refresh.success",
+        effect: expect.objectContaining({
+          kind: "seq",
+          effects: expect.arrayContaining([
+            {
+              kind: "assign",
+              var: "swr:api_todos:data",
+              expr: { kind: "lit", value: "empty" },
+            },
+          ]),
+        }),
+        writes: ["sys:pending", "swr:api_todos:data"],
+      }),
+    );
+  });
+
+  it("havocs SWR mutate writes inside loops through the shared transition adapter", () => {
+    const result = extractSwrSkeleton(
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <button onClick={() => {
+          for (const item of items) mutate(item.done ? 'full' : 'empty');
+        }}>Loop</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api_todos.loop",
+        effect: { kind: "havoc", var: "swr:api_todos:data" },
+        writes: ["swr:api_todos:data"],
+        confidence: "over-approx",
+      }),
+    );
+  });
+
+  it("unwraps TypeScript expression wrappers on SWR mutate arguments", () => {
+    const result = extractSwrSkeleton(
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <button onClick={() => {
+          mutate(('full' as const) satisfies 'empty' | 'full');
+        }}>Fill</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api_todos",
+        effect: {
+          kind: "assign",
+          var: "swr:api_todos:data",
+          expr: { kind: "lit", value: "full" },
+        },
+        writes: ["swr:api_todos:data"],
+        confidence: "exact",
+      }),
+    );
   });
 });

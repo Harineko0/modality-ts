@@ -94,6 +94,8 @@ export function valueExpr(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
 ): BoundExpr | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression) return valueExpr(unwrapped, setters, locals);
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
@@ -221,6 +223,8 @@ export function nullishOptionalReadExpr(
 export function optionalReadPath(
   expression: ts.Expression,
 ): OptionalReadPath | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression) return optionalReadPath(unwrapped);
   if (ts.isIdentifier(expression))
     return { base: expression.text, path: [], optional: false };
   if (isPropertyAccessLike(expression)) {
@@ -248,6 +252,8 @@ export function booleanExpr(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
 ): BoundExpr | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression) return booleanExpr(unwrapped, setters, locals);
   if (expression.kind === ts.SyntaxKind.TrueKeyword)
     return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword)
@@ -436,10 +442,24 @@ export function isEventAttribute(name: string): boolean {
 }
 
 export function propertyAccessPath(node: ts.Expression): string[] | undefined {
+  const unwrapped = unwrapTsExpression(node);
+  if (unwrapped !== node) return propertyAccessPath(unwrapped);
   if (ts.isIdentifier(node)) return [node.text];
   if (isPropertyAccessLike(node)) {
     const base = propertyAccessPath(node.expression);
     return base ? [...base, node.name.text] : undefined;
   }
   return undefined;
+}
+
+export function unwrapTsExpression(expression: ts.Expression): ts.Expression {
+  if (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isTypeAssertionExpression(expression) ||
+    ts.isNonNullExpression(expression) ||
+    ts.isSatisfiesExpression(expression)
+  )
+    return unwrapTsExpression(expression.expression);
+  return expression;
 }

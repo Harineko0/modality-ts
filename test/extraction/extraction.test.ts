@@ -2338,7 +2338,7 @@ describe("useState inventory", () => {
     });
   });
 
-  it("does not partially extract unsupported useEffect bodies", () => {
+  it("skips external no-channel calls in useEffect bodies", () => {
     const result = extractUseStateSkeleton(
       `
       import { useEffect, useState } from 'react';
@@ -2353,10 +2353,20 @@ describe("useState inventory", () => {
       `,
       { route: "/", fileName: "App.tsx" },
     );
-    expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Unextractable effect App.useEffect",
-    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.useEffect.screen",
+      cls: "internal",
+      effect: {
+        kind: "assign",
+        var: "local:App.screen",
+        expr: { kind: "lit", value: "checkout" },
+      },
+      reads: ["local:App.screen"],
+      writes: ["local:App.screen"],
+      confidence: "exact",
+    });
   });
 
   it("havocs modeled state when a setter escapes to an unanalyzed call", () => {
@@ -3211,7 +3221,7 @@ describe("useState inventory", () => {
     });
   });
 
-  it("reports non-M0 timer-held setters as global taints", () => {
+  it("skips external no-channel calls in timer callbacks", () => {
     const result = extractUseStateSkeleton(
       `
       import { useState } from 'react';
@@ -3227,10 +3237,20 @@ describe("useState inventory", () => {
       `,
       { route: "/", fileName: "App.tsx" },
     );
-    expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Global taint local:App.saveStatus",
-    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.setTimeout.saveStatus",
+      cls: "env",
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      reads: [],
+      writes: ["local:App.saveStatus"],
+      confidence: "exact",
+    });
   });
 
   it("havocs modeled state written inside loops", () => {
@@ -3259,5 +3279,141 @@ describe("useState inventory", () => {
         confidence: "over-approx",
       }),
     ]);
+  });
+
+  it("extracts switch branches as precise conditional effects", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [screen, setScreen] = useState<'home' | 'checkout'>('home');
+        const save = () => {
+          switch (screen) {
+            case 'home':
+              setScreen('checkout');
+              break;
+            default:
+              setScreen('home');
+          }
+        };
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.screen.seq",
+      effect: {
+        kind: "if",
+        cond: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "local:App.screen" },
+            { kind: "lit", value: "home" },
+          ],
+        },
+        then: {
+          kind: "assign",
+          var: "local:App.screen",
+          expr: { kind: "lit", value: "checkout" },
+        },
+        else: {
+          kind: "assign",
+          var: "local:App.screen",
+          expr: { kind: "lit", value: "home" },
+        },
+      },
+      reads: ["local:App.screen"],
+      writes: ["local:App.screen"],
+      confidence: "exact",
+    });
+  });
+
+  it("extracts nested blocks, guard returns, and TS expression wrappers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [draft, setDraft] = useState<'empty' | 'nonEmpty'>('nonEmpty');
+        const [saved, setSaved] = useState<'empty' | 'nonEmpty'>('empty');
+        const save = () => {
+          {
+            const next = (draft satisfies 'empty' | 'nonEmpty');
+            if (draft === 'empty') return;
+            setSaved(next!);
+          }
+        };
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.saved.seq",
+      effect: {
+        kind: "if",
+        cond: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "local:App.draft" },
+            { kind: "lit", value: "empty" },
+          ],
+        },
+        then: { kind: "seq", effects: [] },
+        else: {
+          kind: "assign",
+          var: "local:App.saved",
+          expr: { kind: "read", var: "local:App.draft" },
+        },
+      },
+      reads: ["local:App.draft"],
+      writes: ["local:App.saved"],
+      confidence: "exact",
+    });
+  });
+
+  it("havocs nested loop writes while preserving surrounding exact writes", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'posting'>('idle');
+        const [saved, setSaved] = useState<'empty' | 'nonEmpty'>('empty');
+        const save = () => {
+          setSaved('nonEmpty');
+          if (items.length > 0) {
+            while (items.shift()) {
+              setStatus(computeStatus());
+            }
+          }
+        };
+        return <button onClick={save}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.saved_status.seq",
+      effect: {
+        kind: "seq",
+        effects: [
+          {
+            kind: "assign",
+            var: "local:App.saved",
+            expr: { kind: "lit", value: "nonEmpty" },
+          },
+          { kind: "havoc", var: "local:App.status" },
+        ],
+      },
+      reads: [],
+      writes: ["local:App.saved", "local:App.status"],
+      confidence: "over-approx",
+    });
   });
 });

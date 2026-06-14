@@ -41,6 +41,13 @@ export function transitionsFromAsyncHandler(
   warnings: ExtractionWarning[],
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
+  if (containsAwaitInLoop(expression.body)) {
+    warnings.push({
+      message: `Unextractable handler ${component}.${attr}`,
+      ...lineAndColumn(source, expression),
+    });
+    return [];
+  }
   const statements = expression.body.statements;
   const tryStatement = statements.find(ts.isTryStatement);
   const awaitStatement = tryStatement
@@ -222,6 +229,29 @@ export function transitionsFromAsyncHandler(
     ...transition,
     writes: [...new Set(transition.writes)],
   }));
+}
+
+export function containsAwaitInLoop(node: ts.Node): boolean {
+  let loopDepth = 0;
+  let found = false;
+  const visit = (candidate: ts.Node): void => {
+    if (found) return;
+    const isLoop =
+      ts.isForStatement(candidate) ||
+      ts.isForInStatement(candidate) ||
+      ts.isForOfStatement(candidate) ||
+      ts.isWhileStatement(candidate) ||
+      ts.isDoStatement(candidate);
+    if (isLoop) loopDepth += 1;
+    if (loopDepth > 0 && ts.isAwaitExpression(candidate)) {
+      found = true;
+    } else {
+      ts.forEachChild(candidate, visit);
+    }
+    if (isLoop) loopDepth -= 1;
+  };
+  visit(node);
+  return found;
 }
 
 export function transitionsFromSequentialAwait(

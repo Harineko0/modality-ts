@@ -6,7 +6,7 @@ import {
 } from "../ast.js";
 import type { ExprIR, Transition } from "modality-ts/core";
 import type { BoundExpr, ExtractionWarning, SetterBinding } from "../types.js";
-import { valueExpr } from "./expressions.js";
+import { unwrapTsExpression, valueExpr } from "./expressions.js";
 import { stringAttribute } from "./ui.js";
 
 export interface ParsedGuard {
@@ -232,6 +232,9 @@ export function parseGuardExpression(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
 ): ParsedGuard | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression)
+    return parseGuardExpression(unwrapped, setters, locals);
   if (expression.kind === ts.SyntaxKind.TrueKeyword)
     return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword)
@@ -309,6 +312,8 @@ export function parseGuardOperand(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
 ): ParsedGuard | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression) return parseGuardOperand(unwrapped, setters, locals);
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
@@ -321,6 +326,9 @@ export function parseConjunctiveGuardExpression(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
 ): ParsedGuard | undefined {
+  const unwrapped = unwrapTsExpression(expression);
+  if (unwrapped !== expression)
+    return parseConjunctiveGuardExpression(unwrapped, setters, locals);
   if (ts.isParenthesizedExpression(expression))
     return parseConjunctiveGuardExpression(
       expression.expression,

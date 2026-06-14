@@ -1,4 +1,4 @@
-import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
+import { extractSharedReactTransitionInventory } from "../shared/react-transition-extract.js";
 import type {
   ExtractedModelSkeleton,
   UseStateExtractionOptions,
@@ -18,15 +18,22 @@ export function extractUseStateSkeleton(
 ): ExtractedModelSkeleton {
   const fileName = options.fileName ?? "App.tsx";
   const route = options.route ?? "/";
-  return extractReactSourceTransitions(sourceText, {
-    route,
+  const ctx = {
+    sourceText,
     fileName,
-    effectApis: options.effectApis,
-    routePatterns: options.routePatterns,
+    route,
+    effectApis: options.effectApis ?? [],
+    routePatterns: options.routePatterns ?? [],
     asyncOutcomes: options.asyncOutcomes,
-    stateVars: options.stateVars,
-    writeChannels: options.writeChannels,
-    sourcePlugins: options.sourcePlugins,
+    sourcePlugins: options.sourcePlugins ?? [],
+    ...(options.stateVars ? { stateVars: options.stateVars } : {}),
+    ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
-  });
+  };
+  const result = extractSharedReactTransitionInventory(ctx);
+  return {
+    vars: result.vars,
+    transitions: result.transitions,
+    warnings: result.warnings,
+  };
 }

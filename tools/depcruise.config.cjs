@@ -60,7 +60,7 @@ module.exports = {
       from: { path: "^src/extract/sources/([^/]+)", pathNot: "^src/.*/test/" },
       to: {
         path: "^src/extract/sources/([^/]+)",
-        pathNot: "^src/extract/sources/$1",
+        pathNot: "^src/extract/sources/(?:$1|shared)",
       },
     },
     {

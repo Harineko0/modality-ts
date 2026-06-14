@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import {
+  extractJotaiSkeleton,
+  jotaiSource,
+} from "modality-ts/extract/sources/jotai";
 import { observe, setup } from "../../../src/extract/sources/jotai/harness.js";
 
 describe("Jotai source plugin", () => {
@@ -178,5 +181,131 @@ describe("Jotai source plugin", () => {
         source: { file: "state.ts", line: 2, column: 16 },
       },
     ]);
+  });
+
+  it("extracts async Jotai writes through the shared transition adapter", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useSetAtom } from 'jotai';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const setAuth = useSetAtom(authAtom);
+        return <button onClick={async () => {
+          await api.login();
+          setAuth('user');
+        }}>Login</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", effectApis: ["api.login"] },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api.login.success",
+        cls: "env",
+        effect: expect.objectContaining({
+          kind: "seq",
+          effects: expect.arrayContaining([
+            {
+              kind: "assign",
+              var: "atom:authAtom",
+              expr: { kind: "lit", value: "user" },
+            },
+          ]),
+        }),
+        writes: ["sys:pending", "atom:authAtom"],
+      }),
+    );
+  });
+
+  it("havocs Jotai writes inside loops through the shared transition adapter", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useSetAtom } from 'jotai';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const setAuth = useSetAtom(authAtom);
+        return <button onClick={() => {
+          for (const item of items) setAuth(item.ok ? 'user' : 'guest');
+        }}>Sync</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.authAtom.loop",
+        effect: { kind: "havoc", var: "atom:authAtom" },
+        writes: ["atom:authAtom"],
+        confidence: "over-approx",
+      }),
+    );
+  });
+
+  it("extracts guard-return Jotai handlers with shared statement summarization", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useAtom } from 'jotai';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const [auth, setAuth] = useAtom(authAtom);
+        return <button onClick={() => {
+          if (auth === 'guest') return;
+          setAuth('user');
+        }}>Login</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      id: "App.onClick.authAtom.seq",
+      effect: {
+        kind: "if",
+        cond: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "atom:authAtom" },
+            { kind: "lit", value: "guest" },
+          ],
+        },
+        then: { kind: "seq", effects: [] },
+        else: {
+          kind: "assign",
+          var: "atom:authAtom",
+          expr: { kind: "lit", value: "user" },
+        },
+      },
+      reads: ["atom:authAtom"],
+      writes: ["atom:authAtom"],
+      confidence: "exact",
+    });
+  });
+
+  it("unwraps TypeScript expression wrappers on Jotai setter arguments", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useSetAtom } from 'jotai';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const setAuth = useSetAtom(authAtom);
+        return <button onClick={() => {
+          setAuth(('user' as const) satisfies 'guest' | 'user');
+        }}>Login</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.authAtom",
+        effect: {
+          kind: "assign",
+          var: "atom:authAtom",
+          expr: { kind: "lit", value: "user" },
+        },
+        writes: ["atom:authAtom"],
+        confidence: "exact",
+      }),
+    );
   });
 });

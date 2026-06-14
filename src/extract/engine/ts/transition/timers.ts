@@ -15,11 +15,10 @@ import type {
 import {
   effectWriteVars,
   settersWrittenIn,
-  summarizeSetterCall,
-  summarizeSetterStatement,
   uniqueSetters,
 } from "./effects.js";
 import { stateNameForVar } from "./handlers.js";
+import { summarizeHandlerStatements } from "./statement-summary.js";
 
 export function refSetterTaint(
   node: ts.Node,
@@ -112,19 +111,7 @@ export function timerCallbackSummaries(
   callback: ExtractableHandler,
   setters: Map<string, SetterBinding>,
 ): EffectSummary[] | undefined {
-  if (ts.isCallExpression(callback.body)) {
-    const summary = summarizeSetterCall(callback.body, setters);
-    return summary ? [summary] : undefined;
-  }
-  if (!ts.isBlock(callback.body) || callback.body.statements.length === 0)
-    return undefined;
-  const summaries: EffectSummary[] = [];
-  for (const statement of callback.body.statements) {
-    const summary = summarizeSetterStatement(statement, setters);
-    if (!summary) return undefined;
-    summaries.push(summary);
-  }
-  return summaries;
+  return summarizeHandlerStatements(callback, setters);
 }
 
 export function handlerSchedulesModeledTimer(
