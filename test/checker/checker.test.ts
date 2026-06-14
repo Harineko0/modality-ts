@@ -972,11 +972,10 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(toggleLoop, [
-      alwaysStep(
-        toggleLoop,
-        (_pre, _step, post) => post.a === true,
-        { name: "aMustStayTrue", reads: ["a"] },
-      ),
+      alwaysStep(toggleLoop, (_pre, _step, post) => post.a === true, {
+        name: "aMustStayTrue",
+        reads: ["a"],
+      }),
     ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
@@ -2975,7 +2974,10 @@ describe("checker", () => {
 
   it("pins deterministic state and edge counts for many independent toggles", () => {
     const toggleCount = 8;
-    const toggleIds = Array.from({ length: toggleCount }, (_, index) => `t${index}`);
+    const toggleIds = Array.from(
+      { length: toggleCount },
+      (_, index) => `t${index}`,
+    );
     const m: Model = {
       schemaVersion: 1,
       id: "hot-path-independent-toggles",
@@ -3027,11 +3029,10 @@ describe("checker", () => {
       })),
     };
     const result = checkModel(m, [
-      reachable(
-        m,
-        (state) => toggleIds.every((id) => state[id] === true),
-        { name: "allToggled", reads: toggleIds },
-      ),
+      reachable(m, (state) => toggleIds.every((id) => state[id] === true), {
+        name: "allToggled",
+        reads: toggleIds,
+      }),
     ]);
     expect(result.stats).toEqual({ states: 256, edges: 1024, depth: 8 });
     expect(result.verdicts[0]?.status).toBe("reachable");
@@ -3277,8 +3278,9 @@ describe("checker", () => {
     ]);
     expect(result.stats).toEqual({ states: 3, edges: 2, depth: 2 });
     expect(
-      result.verdicts.find((verdict) => verdict.property === "derivedFromSource")
-        ?.status,
+      result.verdicts.find(
+        (verdict) => verdict.property === "derivedFromSource",
+      )?.status,
     ).toBe("reachable");
     expect(
       result.verdicts.find((verdict) => verdict.property === "noiseReachable")

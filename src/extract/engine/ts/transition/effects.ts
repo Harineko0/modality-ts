@@ -1,20 +1,12 @@
 import * as ts from "typescript";
-import {
-  lineAndColumn,
-} from "../ast.js";
+import { lineAndColumn } from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
-import type {
-  EffectSummary,
-  SetterBinding,
-} from "../types.js";
+import type { EffectSummary, SetterBinding } from "../types.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { labelForEvent } from "./ui.js";
-import {
-  effectWriteVars,
-  summarizeStatements,
-} from "./statement-summary.js";
+import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
 export {
   effectWriteVars,
   escapedSetters,

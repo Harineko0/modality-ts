@@ -8,9 +8,9 @@ export function changedVars(
   post: ModelState,
   model?: Model,
 ): ReadonlySet<string> {
-  const varIds =
-    model?.vars.map((decl) => decl.id) ??
-    [...new Set([...Object.keys(pre), ...Object.keys(post)])];
+  const varIds = model?.vars.map((decl) => decl.id) ?? [
+    ...new Set([...Object.keys(pre), ...Object.keys(post)]),
+  ];
   const changed = varIds.filter(
     (id) => JSON.stringify(pre[id]) !== JSON.stringify(post[id]),
   );

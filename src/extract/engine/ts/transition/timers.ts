@@ -1,9 +1,5 @@
 import * as ts from "typescript";
-import {
-  callName,
-  isUseRefCall,
-  lineAndColumn,
-} from "../ast.js";
+import { callName, isUseRefCall, lineAndColumn } from "../ast.js";
 import { handlerExpression } from "../components.js";
 import { safeId, uniqueStrings } from "../ids.js";
 import type { Transition } from "modality-ts/core";
@@ -12,11 +8,7 @@ import type {
   EffectSummary,
   SetterBinding,
 } from "../types.js";
-import {
-  effectWriteVars,
-  settersWrittenIn,
-  uniqueSetters,
-} from "./effects.js";
+import { effectWriteVars, settersWrittenIn, uniqueSetters } from "./effects.js";
 import { stateNameForVar } from "./handlers.js";
 import { summarizeHandlerStatements } from "./statement-summary.js";
 

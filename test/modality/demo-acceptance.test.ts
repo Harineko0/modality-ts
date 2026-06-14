@@ -911,9 +911,9 @@ function expectSlicedStats(
   expect(check.stats).toEqual(stats);
   expect(check.diagnostics?.slicing).toMatchObject({ enabled: true });
   expect(check.diagnostics?.slicing?.slices ?? 0).toBeGreaterThan(0);
-  expect(check.diagnostics?.slicing?.sliceSummaries?.length ?? 0).toBeGreaterThan(
-    0,
-  );
+  expect(
+    check.diagnostics?.slicing?.sliceSummaries?.length ?? 0,
+  ).toBeGreaterThan(0);
 }
 
 function verdictSummary(

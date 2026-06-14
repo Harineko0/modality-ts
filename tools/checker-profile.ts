@@ -13,7 +13,10 @@ function lit(value: unknown) {
 }
 
 function independentToggleModel(toggleCount: number): Model {
-  const toggleIds = Array.from({ length: toggleCount }, (_, index) => `t${index}`);
+  const toggleIds = Array.from(
+    { length: toggleCount },
+    (_, index) => `t${index}`,
+  );
   return {
     schemaVersion: 1,
     id: "checker-profile-independent-toggles",
@@ -79,14 +82,16 @@ function independentToggleModel(toggleCount: number): Model {
 
 const toggleCount = Number(process.argv[2] ?? 10);
 const model = independentToggleModel(toggleCount);
-const toggleIds = Array.from({ length: toggleCount }, (_, index) => `t${index}`);
+const toggleIds = Array.from(
+  { length: toggleCount },
+  (_, index) => `t${index}`,
+);
 const startedAt = performance.now();
 const result = checkModel(model, [
-  reachable(
-    model,
-    (state) => toggleIds.every((id) => state[id] === true),
-    { name: "allToggled", reads: toggleIds },
-  ),
+  reachable(model, (state) => toggleIds.every((id) => state[id] === true), {
+    name: "allToggled",
+    reads: toggleIds,
+  }),
 ]);
 const elapsedMs = performance.now() - startedAt;
 

@@ -41,10 +41,7 @@ export function extractJotaiSkeleton(
     ...discoverJotaiWriteChannels(sourceText, fileName),
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [
-    jotaiSource(),
-    ...(options.sourcePlugins ?? []),
-  ];
+  const sourcePlugins = [jotaiSource(), ...(options.sourcePlugins ?? [])];
   const safetyWarnings = discoverJotaiSafetyWarnings(sourceText, fileName).map(
     (warning) => ({
       message: warning.message,

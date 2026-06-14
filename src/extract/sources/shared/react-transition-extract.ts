@@ -15,9 +15,7 @@ export type SharedReactTransitionCtx = Omit<
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
 };
 
-function reactSourceTransitionOptions(
-  ctx: SharedReactTransitionCtx,
-) {
+function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
   return {
     route: ctx.route,
     fileName: ctx.fileName,

@@ -3320,6 +3320,7 @@ describe("useState inventory", () => {
             { kind: "lit", value: "home" },
           ],
         },
+        // biome-ignore lint/suspicious/noThenProperty: IR conditional field name
         then: {
           kind: "assign",
           var: "local:App.screen",
@@ -3369,6 +3370,7 @@ describe("useState inventory", () => {
             { kind: "lit", value: "empty" },
           ],
         },
+        // biome-ignore lint/suspicious/noThenProperty: IR conditional field name
         then: { kind: "seq", effects: [] },
         else: {
           kind: "assign",

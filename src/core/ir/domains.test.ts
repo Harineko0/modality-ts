@@ -45,12 +45,9 @@ describe("domainCardinality", () => {
     },
   ];
 
-  it.each(cases)(
-    "matches enumerateDomain length for $label",
-    ({ domain }) => {
-      expect(domainCardinality(domain)).toBe(enumerateDomain(domain).length);
-    },
-  );
+  it.each(cases)("matches enumerateDomain length for $label", ({ domain }) => {
+    expect(domainCardinality(domain)).toBe(enumerateDomain(domain).length);
+  });
 
   it("boundedList bool maxLen 2 has cardinality 7", () => {
     const domain: AbstractDomain = {

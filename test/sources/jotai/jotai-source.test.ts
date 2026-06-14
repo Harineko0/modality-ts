@@ -268,6 +268,7 @@ describe("Jotai source plugin", () => {
             { kind: "lit", value: "guest" },
           ],
         },
+        // biome-ignore lint/suspicious/noThenProperty: IR conditional field name
         then: { kind: "seq", effects: [] },
         else: {
           kind: "assign",

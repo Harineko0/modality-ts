@@ -1,9 +1,5 @@
 import * as ts from "typescript";
-import {
-  isPropertyAccessLike,
-  literalValue,
-  propertyName,
-} from "../ast.js";
+import { isPropertyAccessLike, literalValue, propertyName } from "../ast.js";
 import { firstValue } from "../domains.js";
 import type { AbstractDomain, ExprIR, Value } from "modality-ts/core";
 import type { BoundExpr, SetterBinding } from "../types.js";

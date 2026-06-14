@@ -1,9 +1,5 @@
 import * as ts from "typescript";
-import {
-  isPropertyAccessLike,
-  lineAndColumn,
-  literalValue,
-} from "../ast.js";
+import { isPropertyAccessLike, lineAndColumn, literalValue } from "../ast.js";
 import type { ExprIR, Transition } from "modality-ts/core";
 import type { BoundExpr, ExtractionWarning, SetterBinding } from "../types.js";
 import { unwrapTsExpression, valueExpr } from "./expressions.js";
@@ -313,7 +309,8 @@ export function parseGuardOperand(
   locals: Map<string, BoundExpr> = new Map(),
 ): ParsedGuard | undefined {
   const unwrapped = unwrapTsExpression(expression);
-  if (unwrapped !== expression) return parseGuardOperand(unwrapped, setters, locals);
+  if (unwrapped !== expression)
+    return parseGuardOperand(unwrapped, setters, locals);
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))

@@ -1,5 +1,11 @@
 import { canonicalState, validateModel } from "modality-ts/core";
-import type { Model, ModelState, Property, StepFacts, Transition } from "modality-ts/core";
+import type {
+  Model,
+  ModelState,
+  Property,
+  StepFacts,
+  Transition,
+} from "modality-ts/core";
 import {
   effectContainsEnqueue,
   recordMaxDepthBoundHits,
@@ -104,7 +110,9 @@ function recordExploredEdge(
         transitionId: transition.id,
         triggeredProperties: properties
           .filter(
-            (property): property is Extract<Property, { kind: "leadsToWithin" }> =>
+            (
+              property,
+            ): property is Extract<Property, { kind: "leadsToWithin" }> =>
               property.kind === "leadsToWithin",
           )
           .filter((property) => property.trigger(step))
@@ -631,7 +639,11 @@ function checkModelSliced(
     if (group) {
       group.properties.push(property);
     } else {
-      groups.set(key, { model: slice, properties: [property], index: sliceIndex });
+      groups.set(key, {
+        model: slice,
+        properties: [property],
+        index: sliceIndex,
+      });
       sliceIndex += 1;
     }
   }
@@ -725,8 +737,7 @@ function mergeDiagnostics(
             skipReason:
               overlay?.slicing?.skipReason ?? base?.slicing?.skipReason,
             sliceSummaries:
-              overlay?.slicing?.sliceSummaries ??
-              base?.slicing?.sliceSummaries,
+              overlay?.slicing?.sliceSummaries ?? base?.slicing?.sliceSummaries,
           }
         : undefined,
     search: overlay?.search ?? base?.search,
@@ -760,7 +771,8 @@ function mergeSearchDiagnostics(
         right.search?.expandedDepths ?? 0,
       ),
       elapsedMs:
-        left.search?.elapsedMs !== undefined || right.search?.elapsedMs !== undefined
+        left.search?.elapsedMs !== undefined ||
+        right.search?.elapsedMs !== undefined
           ? (left.search?.elapsedMs ?? 0) + (right.search?.elapsedMs ?? 0)
           : undefined,
     },

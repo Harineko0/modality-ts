@@ -41,7 +41,9 @@ export function sliceModelForProperty(
 
   for (const id of forcedTransitions) {
     neededTransitions.add(id);
-    const transition = model.transitions.find((candidate) => candidate.id === id);
+    const transition = model.transitions.find(
+      (candidate) => candidate.id === id,
+    );
     if (!transition) continue;
     for (const varId of [...transition.reads, ...transition.writes]) {
       neededVars.add(varId);

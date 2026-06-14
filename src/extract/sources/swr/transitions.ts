@@ -29,9 +29,7 @@ export function extractSwrSkeleton(
   const fileName = options.fileName ?? "App.tsx";
   const route = options.route ?? "/";
   const decls = discoverSwrHooks(sourceText, fileName);
-  const templateFragments = decls.map((decl) =>
-    templateForSwrDecl(decl),
-  );
+  const templateFragments = decls.map((decl) => templateForSwrDecl(decl));
   const vars = [
     ...decls
       .map((decl) => decl.var)

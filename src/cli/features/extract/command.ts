@@ -824,10 +824,8 @@ function buildStateContributors(
 ): StateSpaceContributors {
   const contributors = model.vars.map((decl) => {
     const cardinality = domainCardinality(decl.domain);
-    const bits =
-      cardinality < 1 ? 0 : round2(Math.log2(cardinality));
-    const scope =
-      decl.scope.kind === "global" ? "global" : decl.scope.route;
+    const bits = cardinality < 1 ? 0 : round2(Math.log2(cardinality));
+    const scope = decl.scope.kind === "global" ? "global" : decl.scope.route;
     const origin =
       typeof decl.origin === "string" ? decl.origin : decl.origin.file;
     return {
@@ -840,21 +838,18 @@ function buildStateContributors(
   });
   const totalBits = round2(contributors.reduce((sum, c) => sum + c.bits, 0));
   const topVars = [...contributors]
-    .sort(
-      (a, b) =>
-        b.bits - a.bits || a.varId.localeCompare(b.varId),
-    )
+    .sort((a, b) => b.bits - a.bits || a.varId.localeCompare(b.varId))
     .slice(0, limit);
   const bySourceMap = new Map<string, number>();
   for (const c of contributors) {
-    bySourceMap.set(c.origin, round2((bySourceMap.get(c.origin) ?? 0) + c.bits));
+    bySourceMap.set(
+      c.origin,
+      round2((bySourceMap.get(c.origin) ?? 0) + c.bits),
+    );
   }
   const bySource = [...bySourceMap.entries()]
     .map(([source, bits]) => ({ source, bits }))
-    .sort(
-      (a, b) =>
-        b.bits - a.bits || a.source.localeCompare(b.source),
-    );
+    .sort((a, b) => b.bits - a.bits || a.source.localeCompare(b.source));
   return { totalBits, topVars, bySource };
 }
 

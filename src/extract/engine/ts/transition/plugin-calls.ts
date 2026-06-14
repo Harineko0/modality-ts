@@ -1,10 +1,5 @@
 import * as ts from "typescript";
-import {
-  callName,
-  lineAndColumn,
-  literalValue,
-  propertyName,
-} from "../ast.js";
+import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
 import { safeId } from "../ids.js";
 import {
   effectReads,
@@ -12,11 +7,7 @@ import {
   type Locator,
   type Transition,
 } from "modality-ts/core";
-import type {
-  CallSite,
-  M0Ctx,
-  StateSourcePlugin,
-} from "../../spi/index.js";
+import type { CallSite, M0Ctx, StateSourcePlugin } from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { stateVarForName } from "./expressions.js";
 import { labelForEvent } from "./ui.js";

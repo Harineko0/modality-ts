@@ -219,9 +219,7 @@ export function renderCheckResult(check: CheckResult): string[] {
       `slicing=slices:${slicing.slices ?? 0} vars:${totalVars} transitions:${totalTransitions} skipped:0`,
     );
   } else if (slicing?.skipped) {
-    lines.push(
-      `slicing=skipped reason:${slicing.skipReason ?? "unknown"}`,
-    );
+    lines.push(`slicing=skipped reason:${slicing.skipReason ?? "unknown"}`);
   }
   const limits = check.diagnostics?.limits;
   if (limits) {
@@ -261,7 +259,10 @@ function defaultMemoryGuardBytes(): number | undefined {
 
 function resolveCheckSearchLimits(
   searchLimits?: CheckCommandOptions["searchLimits"],
-): Pick<CheckOptions, "maxStates" | "maxEdges" | "maxFrontier" | "memoryGuard"> {
+): Pick<
+  CheckOptions,
+  "maxStates" | "maxEdges" | "maxFrontier" | "memoryGuard"
+> {
   if (searchLimits === false) {
     return {};
   }

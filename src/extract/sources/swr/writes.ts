@@ -1,6 +1,10 @@
 import type { WriteChannel } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
-import { keyFromExpression, swrIdFromKey, useSwrImportNames } from "./discover.js";
+import {
+  keyFromExpression,
+  swrIdFromKey,
+  useSwrImportNames,
+} from "./discover.js";
 import { swrVarId } from "./template.js";
 
 export function discoverSwrReadChannels(
@@ -43,8 +47,8 @@ export function discoverSwrReadChannels(
               id: `swr:${id}.${property}.read`,
               varId: swrVarId(id, property === "data" ? "data" : property),
               symbolName: element.name.text,
-                source: { file: fileName, ...lineAndColumn(source, node) },
-              });
+              source: { file: fileName, ...lineAndColumn(source, node) },
+            });
           }
           if (property === "mutate") {
             channels.push({

@@ -586,9 +586,9 @@ describe("runCheckCommand", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expect(result.check.diagnostics?.slicing?.enabled).toBe(true);
-    expect(result.lines.some((line) => line.startsWith("slicing=slices:"))).toBe(
-      true,
-    );
+    expect(
+      result.lines.some((line) => line.startsWith("slicing=slices:")),
+    ).toBe(true);
   });
 
   it("reports search-limit diagnostics when configured", async () => {
@@ -613,9 +613,9 @@ describe("runCheckCommand", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expect(result.exitCode).toBe(2);
-    expect(result.check.verdicts.some((verdict) => verdict.status === "error")).toBe(
-      true,
-    );
+    expect(
+      result.check.verdicts.some((verdict) => verdict.status === "error"),
+    ).toBe(true);
     const errorVerdict = result.check.verdicts.find(
       (verdict) => verdict.status === "error",
     );
@@ -699,7 +699,9 @@ describe("runCheckCommand", () => {
       transitionIndex: true,
     });
     expect(
-      result.lines.some((line) => line.startsWith("hotPath=canonicalCache:true")),
+      result.lines.some((line) =>
+        line.startsWith("hotPath=canonicalCache:true"),
+      ),
     ).toBe(true);
   });
 

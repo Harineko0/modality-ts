@@ -20,7 +20,9 @@ export function buildTransitionIndex(model: Model): TransitionIndex {
   const internalTransitions = sorted.filter(
     (transition) => transition.cls === "internal",
   );
-  const transitionsById = new Map(sorted.map((transition) => [transition.id, transition]));
+  const transitionsById = new Map(
+    sorted.map((transition) => [transition.id, transition]),
+  );
   const internalByTriggeredVar = new Map<string, Transition[]>();
   const alwaysTriggeredInternal: Transition[] = [];
   for (const transition of internalTransitions) {

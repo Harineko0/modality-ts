@@ -101,9 +101,14 @@ export function callSummaryFromStatements(
   return undefined;
 }
 
-function callExpression(expression: ts.Expression): ts.CallExpression | undefined {
+function callExpression(
+  expression: ts.Expression,
+): ts.CallExpression | undefined {
   if (ts.isCallExpression(expression)) return expression;
-  if (ts.isVoidExpression(expression) && ts.isCallExpression(expression.expression))
+  if (
+    ts.isVoidExpression(expression) &&
+    ts.isCallExpression(expression.expression)
+  )
     return expression.expression;
   return undefined;
 }

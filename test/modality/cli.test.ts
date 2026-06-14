@@ -181,7 +181,9 @@ describe("modality CLI", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.diagnostics.limits.maxStates).toBe(1);
     expect(
-      report.verdicts.some((verdict: { status: string }) => verdict.status === "error"),
+      report.verdicts.some(
+        (verdict: { status: string }) => verdict.status === "error",
+      ),
     ).toBe(true);
   });
 
@@ -193,9 +195,13 @@ describe("modality CLI", () => {
     await writeFile(propsPath, "export const properties = [];", "utf8");
 
     await expect(
-      execFileAsync(tsxBin, [cliPath, "check", modelPath, propsPath, "--max-states", "nope"], {
-        cwd: dir,
-      }),
+      execFileAsync(
+        tsxBin,
+        [cliPath, "check", modelPath, propsPath, "--max-states", "nope"],
+        {
+          cwd: dir,
+        },
+      ),
     ).rejects.toMatchObject({
       stderr: expect.stringContaining("Invalid --max-states value"),
     });
@@ -211,7 +217,15 @@ describe("modality CLI", () => {
     await expect(
       execFileAsync(
         tsxBin,
-        [cliPath, "check", modelPath, propsPath, "--no-search-limits", "--max-states", "1"],
+        [
+          cliPath,
+          "check",
+          modelPath,
+          propsPath,
+          "--no-search-limits",
+          "--max-states",
+          "1",
+        ],
         { cwd: dir },
       ),
     ).rejects.toMatchObject({
@@ -238,7 +252,10 @@ function tinyCheckModel() {
       {
         id: "setFlag",
         cls: "user",
-        label: { kind: "click", locator: { kind: "testId", value: "set-flag" } },
+        label: {
+          kind: "click",
+          locator: { kind: "testId", value: "set-flag" },
+        },
         source: [],
         guard: { kind: "not", args: [{ kind: "read", var: "flag" }] },
         effect: {

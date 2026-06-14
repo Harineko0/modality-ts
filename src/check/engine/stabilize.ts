@@ -22,9 +22,12 @@ export function stabilize(
     let changedThisRound = false;
     for (const candidate of states) {
       const candidates = indexedInternalCandidates(index, candidate.changed);
-      const internal = (index
-        ? candidates
-        : model.transitions.filter((transition) => transition.cls === "internal")
+      const internal = (
+        index
+          ? candidates
+          : model.transitions.filter(
+              (transition) => transition.cls === "internal",
+            )
       )
         .filter(
           (transition) =>
