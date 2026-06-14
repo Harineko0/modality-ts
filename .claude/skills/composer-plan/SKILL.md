@@ -1,0 +1,34 @@
+---
+name: composer-plan
+description: Create implementation plans optimized for Cursor Composer 2 execution. Use when the user wants Codex to inspect a repo and produce a handoff plan for Cursor/Composer.
+---
+
+# Composer 2 Implementation Plan Skill
+
+Do not edit code.
+
+Inspect the repository and produce a implementation plan as .cursor/plans/<YYMMdd-plan-name>.md intended for Cursor Composer 2. e.g. .cursor/plans/260614-provider-shared-transition-engine.md
+
+The plan must include:
+
+1. Goal
+2. Non-goals
+3. Current-state findings
+4. Exact file paths and relevant symbols
+5. Existing patterns to follow
+6. Atomic implementation steps
+7. Per-step files to edit
+8. Acceptance criteria
+9. Tests to add or update
+10. Verification commands
+11. Risks, ambiguities, and stop conditions
+
+Optimize for an implementation agent:
+
+- Be explicit.
+- Avoid broad refactors.
+- Prefer minimal diffs.
+- State what must not be changed.
+- Include “stop and ask/report” conditions if the repo differs from assumptions.
+
+Output only the plan.
