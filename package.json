@@ -130,6 +130,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run test/modality/demo-acceptance.test.ts",
+    "fix": "biome lint --write . && biome format --write .",
     "phase7": "tsx tools/phase7-differential.ts",
     "publish:npm": "npm publish --access public",
     "test": "vitest run",
@@ -140,6 +141,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.0",
     "@types/node": "^24.10.1",
     "dependency-cruiser": "^17.4.3",
     "tsx": "^4.20.6",
