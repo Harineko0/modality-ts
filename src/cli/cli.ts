@@ -1,9 +1,23 @@
 #!/usr/bin/env node
+import {
+  defaultActionReplayTestsDir,
+  defaultAppModelPath,
+  defaultConformReportPath,
+  defaultModelPath,
+  defaultReplayReportPath,
+  defaultReplayTestsDir,
+  defaultReportPath,
+  defaultTlaPath,
+  defaultTracesDir,
+  discoverPropsFiles,
+  inferSourceFilesFromProps,
+} from "./defaults.js";
 import { runCheckCommand } from "./features/check/index.js";
 import { runCiCommand } from "./features/ci/index.js";
 import { runConformCommand } from "./features/conform/index.js";
 import { runExportTlaCommand } from "./features/export/index.js";
 import { runExtractCommand } from "./features/extract/index.js";
+import { runInitCommand } from "./features/init/index.js";
 import { runReplayCommand } from "./features/replay/index.js";
 
 function flagValue(args: readonly string[], flag: string): string | undefined {
@@ -37,13 +51,15 @@ async function main(): Promise<void> {
     command !== "conform" &&
     command !== "export" &&
     command !== "extract" &&
+    command !== "init" &&
     command !== "replay"
   ) {
+    console.log("Usage: modality init");
     console.log(
-      "Usage: modality extract <source.tsx> --out model.json [--app-model app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
+      "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
     );
     console.log(
-      "Usage: modality check <model.json> [props.ts] [--report report.json]",
+      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json]",
     );
     console.log(
       "       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]",
@@ -55,12 +71,17 @@ async function main(): Promise<void> {
       "       modality conform <walks.json> [--mode abstract|action] [--harness harness.ts] [--report conform-report.json]",
     );
     console.log(
-      "       modality conform --model model.json [--count 8] [--depth 4] [--seed 1] [--mode abstract|action] [--harness harness.ts] [--report conform-report.json]",
+      "       modality conform [--model .modality/model.json] [--count 8] [--depth 4] [--seed 1] [--mode abstract|action] [--harness harness.ts] [--report .modality/conform-report.json]",
     );
     console.log(
-      "       modality export <model.json> --format tla --out model.tla",
+      "       modality export [model.json] [--format tla] [--out .modality/model.tla]",
     );
     process.exit(command ? 1 : 0);
+  }
+  if (command === "init") {
+    const result = await runInitCommand();
+    for (const line of result.lines) console.log(line);
+    process.exit(0);
   }
   if (command === "ci") {
     const artifactDir = flagValue(args, "--artifacts");
@@ -139,7 +160,8 @@ async function main(): Promise<void> {
     process.exit(result.exitCode);
   }
   if (command === "conform") {
-    const reportPath = flagValue(args, "--report");
+    const reportFlag = flagValue(args, "--report");
+    const reportPath = reportFlag ?? defaultConformReportPath;
     const modelPath = flagValue(args, "--model");
     const flaggedWalksPath = flagValue(args, "--walks");
     const countValue = flagValue(args, "--count");
@@ -162,9 +184,10 @@ async function main(): Promise<void> {
         "--mode",
         "--harness",
       ])[0];
-    if (!walksPath && !modelPath)
-      throw new Error("Missing walks.json path or --model path");
-    if (args.includes("--report") && !reportPath)
+    const effectiveModelPath = walksPath
+      ? modelPath
+      : (modelPath ?? defaultModelPath);
+    if (args.includes("--report") && !reportFlag)
       throw new Error("Missing --report path");
     if (args.includes("--model") && !modelPath)
       throw new Error("Missing --model path");
@@ -172,7 +195,7 @@ async function main(): Promise<void> {
       throw new Error("Missing --walks path");
     const result = await runConformCommand({
       walksPath,
-      modelPath,
+      modelPath: effectiveModelPath,
       reportPath,
       walkCount,
       depth,
@@ -184,14 +207,20 @@ async function main(): Promise<void> {
     process.exit(result.exitCode);
   }
   if (command === "export") {
-    const outPath = flagValue(args, "--out");
-    const format = flagValue(args, "--format") ?? "tla";
+    const outFlag = flagValue(args, "--out");
+    const outPath = outFlag ?? defaultTlaPath;
+    const formatFlag = flagValue(args, "--format");
+    const format = formatFlag ?? "tla";
     const moduleName = flagValue(args, "--module");
-    const modelPath = positionals(args, ["--out", "--format", "--module"])[0];
-    if (!modelPath) throw new Error("Missing model.json path");
-    if (!outPath) throw new Error("Missing --out path");
+    const modelPath =
+      positionals(args, ["--out", "--format", "--module"])[0] ??
+      defaultModelPath;
     if (format !== "tla")
       throw new Error(`Unsupported export format ${format}`);
+    if (args.includes("--out") && !outFlag)
+      throw new Error("Missing --out path");
+    if (args.includes("--format") && !formatFlag)
+      throw new Error("Missing --format value");
     if (args.includes("--module") && !moduleName)
       throw new Error("Missing --module path");
     const result = await runExportTlaCommand({
@@ -210,7 +239,7 @@ async function main(): Promise<void> {
     const disabledPlugins = args.flatMap((arg, index) =>
       arg === "--disable-plugin" && args[index + 1] ? [args[index + 1]!] : [],
     );
-    const sourcePath = positionals(
+    const sourcePaths = positionals(
       args,
       [
         "--out",
@@ -222,17 +251,19 @@ async function main(): Promise<void> {
         "--package-json",
       ],
       ["--effect-api", "--disable-plugin"],
-    )[0];
-    const modelPath = flagValue(args, "--out");
-    const appModelPath = flagValue(args, "--app-model");
+    );
+    const outFlag = flagValue(args, "--out");
+    const appModelFlag = flagValue(args, "--app-model");
+    const modelPath = outFlag ?? defaultModelPath;
+    const appModelPath = appModelFlag ?? defaultAppModelPath;
     const reportPath = flagValue(args, "--report");
     const overlayPath = flagValue(args, "--overlay");
     const expectModelPath = flagValue(args, "--expect-model");
     const configPath = flagValue(args, "--config");
     const packageJsonPath = flagValue(args, "--package-json");
-    if (!sourcePath) throw new Error("Missing source.tsx path");
-    if (!modelPath) throw new Error("Missing --out path");
-    if (args.includes("--app-model") && !appModelPath)
+    if (args.includes("--out") && !outFlag)
+      throw new Error("Missing --out path");
+    if (args.includes("--app-model") && !appModelFlag)
       throw new Error("Missing --app-model path");
     if (args.includes("--report") && !reportPath)
       throw new Error("Missing --report path");
@@ -246,8 +277,10 @@ async function main(): Promise<void> {
       throw new Error("Missing --package-json path");
     if (args.includes("--disable-plugin") && disabledPlugins.length === 0)
       throw new Error("Missing --disable-plugin id");
+    const effectiveSourcePaths =
+      sourcePaths.length > 0 ? sourcePaths : await inferSourceFilesFromProps();
     const result = await runExtractCommand({
-      sourcePath,
+      sourcePaths: effectiveSourcePaths,
       modelPath,
       appModelPath,
       reportPath,
@@ -263,7 +296,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   if (command === "replay") {
-    const reportPath = flagValue(args, "--report");
+    const reportFlag = flagValue(args, "--report");
+    const reportPath = reportFlag ?? defaultReplayReportPath;
     const statesPath = flagValue(args, "--states");
     const observedPath = flagValue(args, "--observed");
     const mode = flagValue(args, "--mode") as "abstract" | "action" | undefined;
@@ -276,7 +310,7 @@ async function main(): Promise<void> {
       "--harness",
     ])[0];
     if (!tracePath) throw new Error("Missing trace.json path");
-    if (args.includes("--report") && !reportPath)
+    if (args.includes("--report") && !reportFlag)
       throw new Error("Missing --report path");
     if (args.includes("--states") && !statesPath)
       throw new Error("Missing --states path");
@@ -294,9 +328,13 @@ async function main(): Promise<void> {
     process.exit(result.exitCode);
   }
   const reportPath = flagValue(args, "--report");
-  const tracesDir = flagValue(args, "--traces");
-  const replayTestsDir = flagValue(args, "--replay-tests");
-  const actionReplayTestsDir = flagValue(args, "--action-replay-tests");
+  const tracesFlag = flagValue(args, "--traces");
+  const replayTestsFlag = flagValue(args, "--replay-tests");
+  const actionReplayTestsFlag = flagValue(args, "--action-replay-tests");
+  const tracesDir = tracesFlag ?? defaultTracesDir;
+  const replayTestsDir = replayTestsFlag ?? defaultReplayTestsDir;
+  const actionReplayTestsDir =
+    actionReplayTestsFlag ?? defaultActionReplayTestsDir;
   const statesPath = flagValue(args, "--states");
   const positional = positionals(args, [
     "--report",
@@ -306,25 +344,27 @@ async function main(): Promise<void> {
     "--action-replay-tests",
     "--states",
   ]);
-  const [modelPath, propsPath] = positional;
+  const [modelPath, ...propsPaths] = positional;
   const overlayPath = flagValue(args, "--overlay");
-  if (!modelPath) throw new Error("Missing model.json path");
+  const effectiveModelPath = modelPath ?? defaultModelPath;
+  const effectivePropsPaths =
+    propsPaths.length > 0 ? propsPaths : await discoverPropsFiles();
   if (args.includes("--report") && !reportPath)
     throw new Error("Missing --report path");
   if (args.includes("--overlay") && !overlayPath)
     throw new Error("Missing --overlay path");
-  if (args.includes("--traces") && !tracesDir)
+  if (args.includes("--traces") && !tracesFlag)
     throw new Error("Missing --traces path");
-  if (args.includes("--replay-tests") && !replayTestsDir)
+  if (args.includes("--replay-tests") && !replayTestsFlag)
     throw new Error("Missing --replay-tests path");
-  if (args.includes("--action-replay-tests") && !actionReplayTestsDir)
+  if (args.includes("--action-replay-tests") && !actionReplayTestsFlag)
     throw new Error("Missing --action-replay-tests path");
   if (args.includes("--states") && !statesPath)
     throw new Error("Missing --states path");
   const result = await runCheckCommand({
-    modelPath,
-    propsPath,
-    reportPath,
+    modelPath: effectiveModelPath,
+    propsPaths: effectivePropsPaths,
+    reportPath: reportPath ?? defaultReportPath,
     overlayPath,
     tracesDir,
     replayTestsDir,

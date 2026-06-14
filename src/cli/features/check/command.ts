@@ -26,6 +26,7 @@ import { loadAndApplyOverlay } from "../../overlay.js";
 export interface CheckCommandOptions {
   modelPath: string;
   propsPath?: string;
+  propsPaths?: readonly string[];
   reportPath?: string;
   overlayPath?: string;
   tracesDir?: string;
@@ -53,7 +54,10 @@ export async function runCheckCommand(
     throw new Error(`Overlay merge failed: ${overlay.errors.join("; ")}`);
   }
   const model = overlay.model;
-  const properties = await loadProperties(model, options.propsPath);
+  const properties = await loadProperties(model, [
+    ...(options.propsPaths ?? []),
+    ...(options.propsPath ? [options.propsPath] : []),
+  ]);
   const check = checkModel(model, properties);
   const report = createCheckReport(
     model,
@@ -184,20 +188,25 @@ export function renderCheckResult(check: CheckResult): string[] {
 
 async function loadProperties(
   model: Model,
-  propsPath: string | undefined,
+  propsPaths: readonly string[],
 ): Promise<Property[]> {
-  if (!propsPath) return [];
-  const modulePath = await importableCopy(propsPath);
-  const module = (await import(
-    /* @vite-ignore */ pathToFileURL(modulePath).href
-  )) as {
-    properties?: Property[] | ((model: Model) => Property[]);
-    propertiesFor?: (model: Model) => Property[];
-  };
-  if (typeof module.propertiesFor === "function")
-    return module.propertiesFor(model);
-  if (typeof module.properties === "function") return module.properties(model);
-  return module.properties ?? [];
+  const properties = await Promise.all(
+    propsPaths.map(async (propsPath) => {
+      const modulePath = await importableCopy(propsPath);
+      const module = (await import(
+        /* @vite-ignore */ pathToFileURL(modulePath).href
+      )) as {
+        properties?: Property[] | ((model: Model) => Property[]);
+        propertiesFor?: (model: Model) => Property[];
+      };
+      if (typeof module.propertiesFor === "function")
+        return module.propertiesFor(model);
+      if (typeof module.properties === "function")
+        return module.properties(model);
+      return module.properties ?? [];
+    }),
+  );
+  return properties.flat();
 }
 
 async function importableCopy(path: string): Promise<string> {

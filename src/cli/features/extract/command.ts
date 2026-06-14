@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, join, parse, resolve } from "node:path";
+import { dirname, extname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
@@ -35,7 +35,8 @@ export interface ModalityConfig {
 }
 
 export interface ExtractCommandOptions {
-  sourcePath: string;
+  sourcePath?: string;
+  sourcePaths?: readonly string[];
   modelPath: string;
   appModelPath?: string;
   reportPath?: string;
@@ -62,7 +63,8 @@ export interface ExtractCommandResult {
 export async function runExtractCommand(
   options: ExtractCommandOptions,
 ): Promise<ExtractCommandResult> {
-  const project = await loadExtractionProject(options.sourcePath);
+  const sourcePaths = normalizedSourcePaths(options);
+  const project = await loadExtractionProject(sourcePaths);
   const config = await loadModalityConfig(
     options.configPath ?? (await findNearestConfig(project.configStartDir)),
   );
@@ -238,10 +240,21 @@ interface TsConfigResolution {
   paths: Array<{ prefix: string; suffix: string; targets: string[] }>;
 }
 
+function normalizedSourcePaths(options: ExtractCommandOptions): string[] {
+  const sourcePaths = options.sourcePaths ?? [];
+  const paths = [
+    ...sourcePaths,
+    ...(options.sourcePath ? [options.sourcePath] : []),
+  ];
+  if (paths.length === 0) throw new Error("Missing source.tsx path");
+  return uniqueStrings(paths.map((path) => resolve(path)));
+}
+
 async function loadExtractionProject(
-  sourcePath: string,
+  sourcePaths: readonly string[],
 ): Promise<ExtractionProject> {
-  const resolved = resolve(sourcePath);
+  if (sourcePaths.length > 1) return loadMultiFileExtractionProject(sourcePaths);
+  const resolved = sourcePaths[0]!;
   const info = await stat(resolved);
   if (!info.isDirectory()) {
     const source = await readFile(resolved, "utf8");
@@ -290,6 +303,38 @@ async function loadExtractionProject(
     routes: uniqueStrings(routeEntries.map((entry) => entry.pattern)),
     effectApis: fetchEffectApis(sourceText),
     configStartDir: resolved,
+  };
+}
+
+async function loadMultiFileExtractionProject(
+  sourcePaths: readonly string[],
+): Promise<ExtractionProject> {
+  const projects = await Promise.all(
+    sourcePaths.map((sourcePath) => loadExtractionProject([sourcePath])),
+  );
+  const sourcesByPath = new Map<string, { path: string; text: string }>();
+  for (const project of projects) {
+    for (const source of project.sources) {
+      sourcesByPath.set(source.path, source);
+    }
+  }
+  const sources = [...sourcesByPath.values()].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
+  const sourceText = sources.map((entry) => entry.text).join("\n");
+  return {
+    entryFile: projects.map((project) => project.entryFile).join(","),
+    sourceText,
+    sourceFiles: sources.map((entry) => entry.path),
+    sources,
+    routes: uniqueStrings(projects.flatMap((project) => project.routes)),
+    effectApis: uniqueStrings([
+      ...projects.flatMap((project) => project.effectApis),
+      ...fetchEffectApis(sourceText),
+    ]),
+    configStartDir: commonAncestor(
+      projects.map((project) => project.configStartDir),
+    ),
   };
 }
 
@@ -630,14 +675,29 @@ async function loadModalityConfig(
   configPath: string | undefined,
 ): Promise<ModalityConfig> {
   if (!configPath) return {};
-  const module = (await import(
-    `${pathToFileURL(configPath).href}?t=${Date.now()}`
-  )) as {
+  const module = (await importConfigModule(configPath)) as {
     default?: ModalityConfig | (() => ModalityConfig | Promise<ModalityConfig>);
     config?: ModalityConfig | (() => ModalityConfig | Promise<ModalityConfig>);
   };
   const exported = module.default ?? module.config ?? {};
   return typeof exported === "function" ? await exported() : exported;
+}
+
+async function importConfigModule(configPath: string): Promise<unknown> {
+  if (extname(configPath) === ".ts" || extname(configPath) === ".mts") {
+    const source = await readFile(configPath, "utf8");
+    const transpiled = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.ESNext,
+        target: ts.ScriptTarget.ES2022,
+        importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+      },
+    }).outputText;
+    const encoded = Buffer.from(transpiled).toString("base64");
+    const url = `data:text/javascript;base64,${encoded}`;
+    return import(url);
+  }
+  return import(`${pathToFileURL(configPath).href}?t=${Date.now()}`);
 }
 
 async function findNearestConfig(
@@ -668,6 +728,24 @@ async function findNearestConfig(
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function commonAncestor(paths: readonly string[]): string {
+  if (paths.length === 0) return process.cwd();
+  const [first, ...rest] = paths.map((path) => resolve(path).split(/[\\/]+/));
+  if (!first) return process.cwd();
+  let length = first.length;
+  for (const parts of rest) {
+    length = Math.min(length, parts.length);
+    for (let index = 0; index < length; index += 1) {
+      if (first[index] !== parts[index]) {
+        length = index;
+        break;
+      }
+    }
+  }
+  const prefix = first.slice(0, length).join("/");
+  return prefix === "" ? parse(paths[0]!).root : prefix;
 }
 
 async function findNearestPackageJson(

@@ -20,19 +20,20 @@ npm install -g modality-ts
 Start by extracting a model from a React component:
 
 ```bash
-modality extract src/App.tsx --out .modality/model.json
+modality init
+modality extract
 ```
 
 If your component calls side-effect APIs that should appear in the model, name them explicitly:
 
 ```bash
-modality extract src/App.tsx --out .modality/model.json --effect-api api.placeOrder
+modality extract --effect-api api.placeOrder
 ```
 
 Check the extracted model against a property file:
 
 ```bash
-modality check .modality/model.json src/app.props.mjs --report .modality/report.json --traces .modality/traces
+modality check
 ```
 
 When a property fails, replay the generated counterexample trace:
@@ -50,11 +51,12 @@ modality ci .modality/model.json src/app.props.mjs --artifacts .modality
 Useful commands:
 
 ```bash
-modality extract <source.tsx> --out model.json
-modality check <model.json> [props.ts] --report report.json
+modality init
+modality extract [source.tsx ...]
+modality check [model.json] [props.mjs ...]
 modality replay <trace.json>
-modality conform --model model.json --count 8 --depth 4
-modality export <model.json> --format tla --out model.tla
+modality conform --count 8 --depth 4
+modality export
 modality ci <model.json> [props.ts] --artifacts .modality
 ```
 

@@ -13,34 +13,47 @@ The built-in extraction pipeline can model React local state plus supported sour
 
 ## Workflow
 
-1. Pick a target component or entry file whose important behavior is finite enough to model.
-2. Extract a model:
+1. Pick target components whose important behavior is finite enough to model.
+2. Initialize the project when no Modality config exists:
 
 ```bash
-modality extract src/App.tsx --out .modality/model.json
+modality init
 ```
 
-3. Name modeled side-effect APIs when user flows depend on them:
+3. Create `*.props.mjs` files next to target components when you want default source inference. `src/App.props.mjs` maps to `src/App.tsx`; multiple props files map to multiple sources.
+4. Extract a model. With colocated props files, let the CLI infer sources and write `.modality/model.json` plus `.modality/app.model.ts`:
 
 ```bash
-modality extract src/App.tsx --out .modality/model.json --effect-api api.placeOrder
+modality extract
 ```
 
-4. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
-5. Write a property file that exports `properties()` and returns checks over model state. Avoid putting conditionals or branching logic in props.mjs files.
-6. Check the model and write reports/traces:
+Use explicit sources when inference is not desired:
 
 ```bash
-modality check .modality/model.json src/app.props.mjs --report .modality/report.json --traces .modality/traces
+modality extract src/App.tsx src/HomePage.tsx
 ```
 
-7. Replay a failing counterexample when a property is violated:
+5. Name modeled side-effect APIs when user flows depend on them:
+
+```bash
+modality extract --effect-api api.placeOrder
+```
+
+6. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
+7. Write property files that export `properties()` and return checks over model state. Avoid putting conditionals or branching logic in props.mjs files.
+8. Check the model. With default paths, `modality check` reads `.modality/model.json`, loads all discovered `*.props.mjs`, and writes `.modality/report.json`, `.modality/traces`, `.modality/replay-tests`, and `.modality/action-replay-tests`:
+
+```bash
+modality check
+```
+
+9. Replay a failing counterexample when a property is violated. The trace path remains mandatory:
 
 ```bash
 modality replay .modality/traces/noDoubleSubmit.violated.trace.json
 ```
 
-8. Prefer CI artifacts when automating verification:
+10. Prefer CI artifacts when automating verification:
 
 ```bash
 modality ci .modality/model.json src/app.props.mjs --artifacts .modality
@@ -94,10 +107,11 @@ Extraction caveats matter. An `Unextractable handler` means the flow is not repr
 
 ```bash
 npm install -g modality-ts
-modality extract <source.tsx> --out model.json
-modality check <model.json> [props.mjs] --report report.json --traces traces
+modality init
+modality extract [source.tsx ...]
+modality check [model.json] [props.mjs ...]
 modality replay <trace.json>
-modality conform --model model.json --count 8 --depth 4
-modality export <model.json> --format tla --out model.tla
+modality conform --count 8 --depth 4
+modality export
 modality ci <model.json> [props.mjs] --artifacts .modality
 ```

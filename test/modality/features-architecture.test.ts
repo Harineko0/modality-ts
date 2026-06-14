@@ -7,6 +7,7 @@ import { runCiCommand } from "../../src/cli/features/ci/index.js";
 import { runConformCommand } from "../../src/cli/features/conform/index.js";
 import { runExportTlaCommand } from "../../src/cli/features/export/index.js";
 import { runExtractCommand } from "../../src/cli/features/extract/index.js";
+import { runInitCommand } from "../../src/cli/features/init/index.js";
 import { runReplayCommand } from "../../src/cli/features/replay/index.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -18,6 +19,7 @@ const featureNames = [
   "conform",
   "export",
   "extract",
+  "init",
   "replay",
 ] as const;
 
@@ -28,6 +30,7 @@ describe("modality feature slices", () => {
     expect(runConformCommand).toBeTypeOf("function");
     expect(runExportTlaCommand).toBeTypeOf("function");
     expect(runExtractCommand).toBeTypeOf("function");
+    expect(runInitCommand).toBeTypeOf("function");
     expect(runReplayCommand).toBeTypeOf("function");
   });
 
