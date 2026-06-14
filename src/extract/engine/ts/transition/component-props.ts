@@ -1,11 +1,11 @@
 import * as ts from "typescript";
-import { isExtractableHandler } from "../../../engine/ts/ast.js";
+import { isExtractableHandler } from "../ast.js";
 import {
   componentName,
   handlerExpression,
   isForwardablePropName,
   isIntrinsicJsxAttribute,
-} from "../../../engine/ts/components.js";
+} from "../components.js";
 import type { Locator } from "modality-ts/core";
 import type {
   ComponentDecl,

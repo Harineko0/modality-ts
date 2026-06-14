@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { bindContextHookObjectDeclaration } from "../../../engine/ts/context.js";
+import { bindContextHookObjectDeclaration } from "../context.js";
 import type {
   BoundExpr,
   ContextBindings,

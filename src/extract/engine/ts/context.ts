@@ -22,10 +22,11 @@ export function emptyContextBindings(): ContextBindings {
 export function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
   const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
   const atomMatch = /^atom:(.+)$/.exec(decl.id);
+  const swrMatch = /^swr:(.+):data$/.exec(decl.id);
   return {
     varId: decl.id,
     component: localMatch?.[1] ?? "Anonymous",
-    stateName: localMatch?.[2] ?? atomMatch?.[1] ?? decl.id,
+    stateName: localMatch?.[2] ?? atomMatch?.[1] ?? swrMatch?.[1] ?? decl.id,
     domain: decl.domain,
   };
 }

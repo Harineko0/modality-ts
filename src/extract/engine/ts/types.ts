@@ -47,6 +47,11 @@ export interface ContextBindings {
   hookReturns: Map<string, Map<string, SetterBinding>>;
 }
 
+export interface ExtractionWarning {
+  message: string;
+  line?: number;
+}
+
 export type StaticValue =
   | string
   | number

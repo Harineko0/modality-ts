@@ -11,6 +11,7 @@ import type {
   RouterPlugin,
   WriteChannel,
 } from "../spi/index.js";
+import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -131,6 +132,16 @@ export function runExtractionPipeline(
     sourcePlugins,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
   };
+  const genericExtraction = extractReactSourceTransitions(options.sourceText, {
+    route: options.route,
+    fileName: options.fileName,
+    effectApis: options.effectApis ?? [],
+    routePatterns: options.routePatterns ?? [],
+    stateVars: extractionCtx.stateVars,
+    writeChannels,
+    sourcePlugins,
+    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+  });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
       plugin.extract?.(extractionCtx) ?? { transitions: [], warnings: [] },
@@ -142,6 +153,7 @@ export function runExtractionPipeline(
     (result) => result.warnings ?? [],
   );
   const transitions = [
+    ...genericExtraction.transitions,
     ...extractedTransitions,
     ...templateFragments.flatMap((fragment) => fragment.transitions),
   ];
@@ -153,6 +165,7 @@ export function runExtractionPipeline(
     transitions,
     warnings: [
       ...extractedWarnings.map((warning) => warning.message),
+      ...genericExtraction.warnings.map((warning) => warning.message),
       ...pluginWarnings.map((warning) => warning.message),
     ].sort(),
     stateVars,

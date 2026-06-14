@@ -3,8 +3,8 @@ import {
   isPropertyAccessLike,
   literalValue,
   propertyName,
-} from "../../../engine/ts/ast.js";
-import { firstValue } from "../../../engine/ts/domains.js";
+} from "../ast.js";
+import { firstValue } from "../domains.js";
 import type { AbstractDomain, ExprIR, Value } from "modality-ts/core";
 import type { BoundExpr, SetterBinding } from "../types.js";
 

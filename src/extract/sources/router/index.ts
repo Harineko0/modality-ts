@@ -1,9 +1,7 @@
-import type {
-  RouterPlugin,
-  ResolvedOptions,
-} from "modality-ts/extract/engine/spi";
-import type { AbstractDomain, StateVarDecl } from "modality-ts/core";
+import type { RouterPlugin } from "modality-ts/extract/engine/spi";
 import * as harness from "./harness.js";
+import { navigationCall } from "./navigation.js";
+import { routeVars } from "./routes.js";
 
 export interface RouterSourceOptions {
   id?: string;
@@ -31,58 +29,3 @@ export function routerSource(options: RouterSourceOptions = {}): RouterPlugin {
 }
 
 export default routerSource;
-
-function routeVars(
-  routes: readonly string[],
-  options: ResolvedOptions,
-): readonly StateVarDecl[] {
-  const values = uniqueRoutes(routes, options.route);
-  const routeDomain: AbstractDomain = { kind: "enum", values };
-  return [
-    {
-      id: "sys:route",
-      domain: routeDomain,
-      origin: "system",
-      scope: { kind: "global" },
-      initial: options.route,
-    },
-    {
-      id: "sys:history",
-      domain: {
-        kind: "boundedList",
-        inner: routeDomain,
-        maxLen: options.bounds?.maxHistory ?? 4,
-      },
-      origin: "system",
-      scope: { kind: "global" },
-      initial: [],
-    },
-  ];
-}
-
-function navigationCall(
-  callee: string,
-  args: readonly unknown[],
-): { mode: "push" | "replace" | "back"; to?: string } | "unsupported" {
-  if (callee === "navigate" && args.length === 1 && typeof args[0] === "string")
-    return { mode: "push", to: args[0] };
-  if (
-    (callee.endsWith(".push") || callee.endsWith(".replace")) &&
-    args.length === 1 &&
-    typeof args[0] === "string"
-  ) {
-    return {
-      mode: callee.endsWith(".replace") ? "replace" : "push",
-      to: args[0],
-    };
-  }
-  if (callee.endsWith(".back") && args.length === 0) return { mode: "back" };
-  return "unsupported";
-}
-
-function uniqueRoutes(
-  routes: readonly string[],
-  initialRoute: string,
-): string[] {
-  return [...new Set([initialRoute, ...routes])];
-}

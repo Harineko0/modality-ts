@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { isPropertyAccessLike } from "../../../engine/ts/ast.js";
+import { isPropertyAccessLike } from "../ast.js";
 import type { Locator, Transition } from "modality-ts/core";
 
 export function isEventAttribute(name: string): boolean {

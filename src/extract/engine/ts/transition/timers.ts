@@ -3,9 +3,9 @@ import {
   callName,
   isUseRefCall,
   lineAndColumn,
-} from "../../../engine/ts/ast.js";
-import { handlerExpression } from "../../../engine/ts/components.js";
-import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
+} from "../ast.js";
+import { handlerExpression } from "../components.js";
+import { safeId, uniqueStrings } from "../ids.js";
 import type { Transition } from "modality-ts/core";
 import type {
   ExtractableHandler,

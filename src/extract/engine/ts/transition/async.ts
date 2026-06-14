@@ -4,9 +4,9 @@ import {
   lineAndColumn,
   literalValue,
   propertyName,
-} from "../../../engine/ts/ast.js";
-import { uniqueStrings } from "../../../engine/ts/ids.js";
-import { templateRoutePattern } from "../../../engine/ts/routes.js";
+} from "../ast.js";
+import { uniqueStrings } from "../ids.js";
+import { templateRoutePattern } from "../routes.js";
 import type {
   EffectIR,
   ExprIR,
@@ -127,7 +127,16 @@ export function transitionsFromAsyncHandler(
     ...catchSummaries.flatMap((summary) => summary.reads),
     ...finallySummaries.flatMap((summary) => summary.reads),
   ]);
-  if (successEffects.length === 0 && catchEffects.length === 0) return [];
+  const successNavigate = firstNavigationInStatements(
+    successStatements,
+    routePatterns,
+  );
+  if (
+    successEffects.length === 0 &&
+    catchEffects.length === 0 &&
+    !successNavigate
+  )
+    return [];
   const baseId = `${component}.${attr}.${op}`;
   for (const read of uniqueStrings([...successReads, ...catchReads])) {
     warnings.push({
@@ -179,10 +188,6 @@ export function transitionsFromAsyncHandler(
     ],
     confidence: confidenceForEffects(successEffects),
   };
-  const successNavigate = firstNavigationInStatements(
-    successStatements,
-    routePatterns,
-  );
   const transitions = [
     enqueue,
     successNavigate

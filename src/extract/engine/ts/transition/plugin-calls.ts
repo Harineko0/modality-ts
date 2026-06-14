@@ -4,8 +4,8 @@ import {
   lineAndColumn,
   literalValue,
   propertyName,
-} from "../../../engine/ts/ast.js";
-import { safeId } from "../../../engine/ts/ids.js";
+} from "../ast.js";
+import { safeId } from "../ids.js";
 import {
   effectReads,
   effectWrites,
@@ -16,7 +16,7 @@ import type {
   CallSite,
   M0Ctx,
   StateSourcePlugin,
-} from "../../../engine/spi/index.js";
+} from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { stateVarForName } from "./expressions.js";
 import { labelForEvent } from "./ui.js";
@@ -105,7 +105,11 @@ export function swrMutateTransition(
   call: ts.CallExpression,
   locator: Locator | undefined,
 ): Transition | undefined {
-  if (!ts.isIdentifier(call.expression) || call.expression.text !== "mutate")
+  if (
+    !ts.isIdentifier(call.expression) ||
+    call.expression.text !== "mutate" ||
+    call.arguments.length !== 0
+  )
     return undefined;
   return {
     id: `${component}.${attr}.mutate`,

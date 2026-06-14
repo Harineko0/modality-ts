@@ -1,14 +1,14 @@
 import * as ts from "typescript";
-import { callName, lineAndColumn } from "../../../engine/ts/ast.js";
-import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
+import { callName, lineAndColumn } from "../ast.js";
+import { safeId, uniqueStrings } from "../ids.js";
 import {
   jsxRouteTarget,
   routeMountGuard,
   routeMountReads,
   routeTargetValue,
-} from "../../../engine/ts/routes.js";
+} from "../routes.js";
 import type { EffectIR, Locator, Transition } from "modality-ts/core";
-import type { RouterPlugin } from "../../../engine/spi/index.js";
+import type { RouterPlugin } from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { effectWriteVars } from "./effects.js";
 import { callArgumentValue } from "./plugin-calls.js";

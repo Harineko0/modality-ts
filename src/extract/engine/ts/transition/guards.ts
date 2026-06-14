@@ -3,7 +3,7 @@ import {
   isPropertyAccessLike,
   lineAndColumn,
   literalValue,
-} from "../../../engine/ts/ast.js";
+} from "../ast.js";
 import type { ExprIR, Transition } from "modality-ts/core";
 import type { BoundExpr, ExtractionWarning, SetterBinding } from "../types.js";
 import { valueExpr } from "./expressions.js";

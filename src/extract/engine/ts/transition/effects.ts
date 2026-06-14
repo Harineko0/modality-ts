@@ -3,8 +3,8 @@ import {
   callName,
   lineAndColumn,
   literalValue,
-} from "../../../engine/ts/ast.js";
-import { uniqueStrings } from "../../../engine/ts/ids.js";
+} from "../ast.js";
+import { uniqueStrings } from "../ids.js";
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
 import type {
   BoundExpr,

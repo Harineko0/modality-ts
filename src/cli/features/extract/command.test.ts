@@ -776,6 +776,214 @@ describe("runExtractCommand", () => {
     ]);
   });
 
+  it("extracts Jotai writes inside async handlers and loops through the shared transition extractor", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { atom, useSetAtom } from 'jotai';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const setAuth = useSetAtom(authAtom);
+        return <>
+          <button onClick={async () => {
+            await api.login();
+            setAuth('user');
+          }}>Login</button>
+          <button onClick={() => {
+            for (const item of items) setAuth(item.ok ? 'user' : 'guest');
+          }}>Sync</button>
+        </>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      effectApis: ["api.login"],
+    });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api.login.success",
+        cls: "env",
+        effect: expect.objectContaining({
+          kind: "seq",
+          effects: expect.arrayContaining([
+            {
+              kind: "assign",
+              var: "atom:authAtom",
+              expr: { kind: "lit", value: "user" },
+            },
+          ]),
+        }),
+        writes: ["sys:pending", "atom:authAtom"],
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.authAtom.loop",
+        effect: { kind: "havoc", var: "atom:authAtom" },
+        writes: ["atom:authAtom"],
+        confidence: "over-approx",
+      }),
+    );
+  });
+
+  it("extracts SWR mutate writes inside simple, async, and loop handlers", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <>
+          <button onClick={() => mutate('full')}>Fill</button>
+          <button onClick={async () => {
+            await api.refresh();
+            mutate('empty');
+          }}>Refresh</button>
+          <button onClick={() => {
+            for (const item of items) mutate(item.done ? 'full' : 'empty');
+          }}>Loop</button>
+        </>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      effectApis: ["api.refresh"],
+    });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api_todos",
+        effect: {
+          kind: "assign",
+          var: "swr:api_todos:data",
+          expr: { kind: "lit", value: "full" },
+        },
+        writes: ["swr:api_todos:data"],
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api.refresh.success",
+        effect: expect.objectContaining({
+          kind: "seq",
+          effects: expect.arrayContaining([
+            {
+              kind: "assign",
+              var: "swr:api_todos:data",
+              expr: { kind: "lit", value: "empty" },
+            },
+          ]),
+        }),
+        writes: ["sys:pending", "swr:api_todos:data"],
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api_todos.loop",
+        effect: { kind: "havoc", var: "swr:api_todos:data" },
+        writes: ["swr:api_todos:data"],
+        confidence: "over-approx",
+      }),
+    );
+  });
+
+  it("extracts router navigation inside async continuations through the shared transition extractor", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useNavigate } from 'react-router';
+      export function App() {
+        const navigate = useNavigate();
+        return <button onClick={async () => {
+          await api.save();
+          navigate('/done');
+        }}>Save</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      effectApis: ["api.save"],
+    });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.api.save.success",
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "dequeue", index: 0 },
+            {
+              kind: "navigate",
+              mode: "push",
+              to: { kind: "lit", value: "/done" },
+            },
+          ],
+        },
+        writes: expect.arrayContaining([
+          "sys:pending",
+          "sys:route",
+          "sys:history",
+        ]),
+      }),
+    );
+    expect(
+      result.model.vars.find((decl) => decl.id === "sys:route")?.domain,
+    ).toEqual({ kind: "enum", values: ["/", "/done"] });
+  });
+
+  it("does not duplicate shared handler transitions when useState, Jotai, and SWR are enabled together", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import { atom, useSetAtom } from 'jotai';
+      import useSWR from 'swr';
+      export const authAtom = atom<'guest' | 'user'>('guest');
+      export function App() {
+        const [phase, setPhase] = useState<'idle' | 'done'>('idle');
+        const setAuth = useSetAtom(authAtom);
+        const { mutate } = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <button onClick={() => {
+          setPhase('done');
+          setAuth('user');
+          mutate('full');
+        }}>Apply</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const userTransitionIds = result.model.transitions
+      .filter((transition) => transition.cls === "user")
+      .map((transition) => transition.id);
+    expect(userTransitionIds).toEqual([
+      "App.onClick.authAtom_phase_api_todos.seq",
+    ]);
+  });
+
   it("writes app.model.ts to an explicit path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
