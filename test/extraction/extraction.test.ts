@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { checkModel } from "modality-ts/checker";
-import { always, reachable, type Model } from "modality-ts/kernel";
-import { extractUseStateSkeleton, extractUseStateVars } from "modality-ts/extraction";
-import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extraction/spi";
+import { checkModel } from "modality-ts/check";
+import { always, reachable, type Model } from "modality-ts/core";
+import { extractUseStateSkeleton, extractUseStateVars } from "../../src/extract/sources/use-state/transitions.js";
+import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extract/engine/spi";
 
 describe("useState inventory", () => {
   it("extracts route-local state declarations with stable ids", () => {

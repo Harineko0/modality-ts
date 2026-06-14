@@ -8,107 +8,119 @@
     "url": "git+https://github.com/Harineko0/modality-ts.git"
   },
   "type": "module",
-  "types": "./dist/modality/cli.d.ts",
+  "types": "./dist/cli/cli.d.ts",
   "files": [
     "dist/**",
     "README.md",
     "LICENSE"
   ],
   "bin": {
-    "modality": "dist/modality/cli.js"
+    "modality": "dist/cli/cli.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/modality/cli.d.ts",
-      "default": "./dist/modality/cli.js"
+      "types": "./dist/cli/cli.d.ts",
+      "default": "./dist/cli/cli.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/cli.d.ts",
+      "default": "./dist/cli/cli.js"
+    },
+    "./cli/check": {
+      "types": "./dist/cli/check.d.ts",
+      "default": "./dist/cli/check.js"
+    },
+    "./cli/ci": {
+      "types": "./dist/cli/ci.d.ts",
+      "default": "./dist/cli/ci.js"
+    },
+    "./cli/conform": {
+      "types": "./dist/cli/conform.d.ts",
+      "default": "./dist/cli/conform.js"
+    },
+    "./cli/extract": {
+      "types": "./dist/cli/extract.d.ts",
+      "default": "./dist/cli/extract.js"
+    },
+    "./cli/replay": {
+      "types": "./dist/cli/replay.d.ts",
+      "default": "./dist/cli/replay.js"
+    },
+    "./cli/export-tla": {
+      "types": "./dist/cli/export-tla.d.ts",
+      "default": "./dist/cli/export-tla.js"
+    },
+    "./cli/overlay": {
+      "types": "./dist/cli/overlay.d.ts",
+      "default": "./dist/cli/overlay.js"
+    },
+    "./cli/harness": {
+      "types": "./dist/cli/harness/index.d.ts",
+      "default": "./dist/cli/harness/index.js"
+    },
+    "./cli/runtime": {
+      "types": "./dist/cli/runtime/index.d.ts",
+      "default": "./dist/cli/runtime/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./core/props": {
+      "types": "./dist/core/props/index.d.ts",
+      "default": "./dist/core/props/index.js"
     },
     "./check": {
-      "types": "./dist/modality/check.d.ts",
-      "default": "./dist/modality/check.js"
-    },
-    "./ci": {
-      "types": "./dist/modality/ci.d.ts",
-      "default": "./dist/modality/ci.js"
-    },
-    "./conform": {
-      "types": "./dist/modality/conform.d.ts",
-      "default": "./dist/modality/conform.js"
+      "types": "./dist/check/index.d.ts",
+      "default": "./dist/check/index.js"
     },
     "./extract": {
-      "types": "./dist/modality/extract.d.ts",
-      "default": "./dist/modality/extract.js"
+      "types": "./dist/extract/index.d.ts",
+      "default": "./dist/extract/index.js"
     },
-    "./replay": {
-      "types": "./dist/modality/replay.d.ts",
-      "default": "./dist/modality/replay.js"
+    "./extract/engine": {
+      "types": "./dist/extract/engine/index.d.ts",
+      "default": "./dist/extract/engine/index.js"
     },
-    "./export-tla": {
-      "types": "./dist/modality/export-tla.d.ts",
-      "default": "./dist/modality/export-tla.js"
+    "./extract/engine/pipeline": {
+      "types": "./dist/extract/engine/pipeline/index.d.ts",
+      "default": "./dist/extract/engine/pipeline/index.js"
     },
-    "./kernel": {
-      "types": "./dist/kernel/index.d.ts",
-      "default": "./dist/kernel/index.js"
+    "./extract/engine/spi": {
+      "types": "./dist/extract/engine/spi/index.d.ts",
+      "default": "./dist/extract/engine/spi/index.js"
     },
-    "./kernel/props": {
-      "types": "./dist/kernel/props/index.d.ts",
-      "default": "./dist/kernel/props/index.js"
+    "./extract/sources/jotai": {
+      "types": "./dist/extract/sources/jotai/index.d.ts",
+      "default": "./dist/extract/sources/jotai/index.js"
     },
-    "./checker": {
-      "types": "./dist/checker/index.d.ts",
-      "default": "./dist/checker/index.js"
+    "./extract/sources/jotai/harness": {
+      "types": "./dist/extract/sources/jotai/harness.d.ts",
+      "default": "./dist/extract/sources/jotai/harness.js"
     },
-    "./extraction": {
-      "types": "./dist/extraction/index.d.ts",
-      "default": "./dist/extraction/index.js"
+    "./extract/sources/router": {
+      "types": "./dist/extract/sources/router/index.d.ts",
+      "default": "./dist/extract/sources/router/index.js"
     },
-    "./extraction/pipeline": {
-      "types": "./dist/extraction/pipeline/index.d.ts",
-      "default": "./dist/extraction/pipeline/index.js"
+    "./extract/sources/router/harness": {
+      "types": "./dist/extract/sources/router/harness.d.ts",
+      "default": "./dist/extract/sources/router/harness.js"
     },
-    "./extraction/spi": {
-      "types": "./dist/extraction/spi/index.d.ts",
-      "default": "./dist/extraction/spi/index.js"
+    "./extract/sources/swr": {
+      "types": "./dist/extract/sources/swr/index.d.ts",
+      "default": "./dist/extract/sources/swr/index.js"
     },
-    "./harness": {
-      "types": "./dist/harness/index.d.ts",
-      "default": "./dist/harness/index.js"
+    "./extract/sources/swr/harness": {
+      "types": "./dist/extract/sources/swr/harness.d.ts",
+      "default": "./dist/extract/sources/swr/harness.js"
     },
-    "./runtime": {
-      "types": "./dist/runtime/index.d.ts",
-      "default": "./dist/runtime/index.js"
+    "./extract/sources/use-state": {
+      "types": "./dist/extract/sources/use-state/index.d.ts",
+      "default": "./dist/extract/sources/use-state/index.js"
     },
-    "./source-jotai": {
-      "types": "./dist/sources/jotai/index.d.ts",
-      "default": "./dist/sources/jotai/index.js"
-    },
-    "./source-jotai/harness": {
-      "types": "./dist/sources/jotai/harness.d.ts",
-      "default": "./dist/sources/jotai/harness.js"
-    },
-    "./source-router": {
-      "types": "./dist/sources/router/index.d.ts",
-      "default": "./dist/sources/router/index.js"
-    },
-    "./source-router/harness": {
-      "types": "./dist/sources/router/harness.d.ts",
-      "default": "./dist/sources/router/harness.js"
-    },
-    "./source-swr": {
-      "types": "./dist/sources/swr/index.d.ts",
-      "default": "./dist/sources/swr/index.js"
-    },
-    "./source-swr/harness": {
-      "types": "./dist/sources/swr/harness.d.ts",
-      "default": "./dist/sources/swr/harness.js"
-    },
-    "./source-use-state": {
-      "types": "./dist/sources/use-state/index.d.ts",
-      "default": "./dist/sources/use-state/index.js"
-    },
-    "./source-use-state/harness": {
-      "types": "./dist/sources/use-state/harness.d.ts",
-      "default": "./dist/sources/use-state/harness.js"
+    "./extract/sources/use-state/harness": {
+      "types": "./dist/extract/sources/use-state/harness.d.ts",
+      "default": "./dist/extract/sources/use-state/harness.js"
     }
   },
   "packageManager": "pnpm@10.12.4",

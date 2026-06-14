@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { discoverJotaiAtoms, discoverJotaiSafetyWarnings, discoverJotaiWriteChannels, jotaiSource } from "modality-ts/source-jotai";
-import { observe, setup } from "../../../src/sources/jotai/harness.js";
+import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { observe, setup } from "../../../src/extract/sources/jotai/harness.js";
 
 describe("Jotai source plugin", () => {
   it("exposes a StateSourcePlugin-compatible source slice", () => {
@@ -34,7 +34,7 @@ describe("Jotai source plugin", () => {
       export const authAtom = atom<'guest' | 'user'>('guest');
       export const countAtom = atom(0);
     `;
-    expect(discoverJotaiAtoms(source, "state.ts")).toEqual([
+    expect(jotaiSource().discover({ sourceText: source, fileName: "state.ts", route: "/" })).toEqual([
       {
         id: "atom:authAtom",
         kind: "jotai/atom",
@@ -70,7 +70,7 @@ describe("Jotai source plugin", () => {
       const authAtom = atom<{ kind: 'guest' } | { kind: 'user'; name: 'Ada' }>({ kind: 'guest' });
       const draftAtom = atom({ text: '', dirty: false });
     `;
-    const decls = discoverJotaiAtoms(source, "state.ts");
+    const decls = jotaiSource().discover({ sourceText: source, fileName: "state.ts", route: "/" });
     expect(decls[0]?.var?.domain).toEqual({
       kind: "tagged",
       tag: "kind",
@@ -96,7 +96,7 @@ describe("Jotai source plugin", () => {
       const [auth, setAuth] = useAtom(authAtom);
       const setCount = useSetAtom(countAtom);
     `;
-    expect(discoverJotaiWriteChannels(source, "App.tsx")).toEqual([
+    expect(jotaiSource().writeChannels({ sourceText: source, fileName: "App.tsx" })).toEqual([
       {
         id: "atom:authAtom.read",
         varId: "atom:authAtom",
@@ -124,7 +124,7 @@ describe("Jotai source plugin", () => {
       const store = getDefaultStore();
       store.set(authAtom, 'user');
     `;
-    expect(discoverJotaiWriteChannels(source, "state.ts")).toEqual([
+    expect(jotaiSource().writeChannels({ sourceText: source, fileName: "state.ts" })).toEqual([
       {
         id: "atom:authAtom.store-set",
         varId: "atom:authAtom",
@@ -139,7 +139,7 @@ describe("Jotai source plugin", () => {
       import { getDefaultStore as getStore } from 'jotai';
       const store = getStore();
     `;
-    expect(discoverJotaiSafetyWarnings(source, "state.ts")).toEqual([
+    expect(jotaiSource().safetyWarnings?.({ sourceText: source, fileName: "state.ts" })).toEqual([
       {
         message: "Global taint jotai:getDefaultStore",
         source: { file: "state.ts", line: 2, column: 16 }

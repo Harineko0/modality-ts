@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const todoDir = join(repoRoot, "examples", "todo-app");
 const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
-const cliPath = join(repoRoot, "src", "modality", "cli.ts");
+const cliPath = join(repoRoot, "src", "cli", "cli.ts");
 
 describe("modality CLI", () => {
   it("accepts the README extract command from an example app directory", async () => {

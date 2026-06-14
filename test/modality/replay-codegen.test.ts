@@ -4,8 +4,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Trace } from "modality-ts/kernel";
-import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../../src/modality/codegen/replay-test.js";
+import type { Trace } from "modality-ts/core";
+import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../../src/cli/codegen/replay-test.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -85,7 +85,7 @@ describe("generateAbstractReplayTest", () => {
         }
       ]
     };
-    const dir = resolve(repoRoot, "src/modality/.tmp-generated-replay");
+    const dir = resolve(repoRoot, "src/cli/.tmp-generated-replay");
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const harness = generateReplayHarness();
@@ -124,7 +124,7 @@ describe("generateAbstractReplayTest", () => {
         }
       ]
     };
-    const dir = resolve(repoRoot, "src/modality/.tmp-generated-async-replay");
+    const dir = resolve(repoRoot, "src/cli/.tmp-generated-async-replay");
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const harness = generateReplayHarness();

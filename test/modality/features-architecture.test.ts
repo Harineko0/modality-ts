@@ -2,15 +2,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { runCheckCommand } from "../../src/modality/features/check/index.js";
-import { runCiCommand } from "../../src/modality/features/ci/index.js";
-import { runConformCommand } from "../../src/modality/features/conform/index.js";
-import { runExportTlaCommand } from "../../src/modality/features/export/index.js";
-import { runExtractCommand } from "../../src/modality/features/extract/index.js";
-import { runReplayCommand } from "../../src/modality/features/replay/index.js";
+import { runCheckCommand } from "../../src/cli/features/check/index.js";
+import { runCiCommand } from "../../src/cli/features/ci/index.js";
+import { runConformCommand } from "../../src/cli/features/conform/index.js";
+import { runExportTlaCommand } from "../../src/cli/features/export/index.js";
+import { runExtractCommand } from "../../src/cli/features/extract/index.js";
+import { runReplayCommand } from "../../src/cli/features/replay/index.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const modalitySrc = resolve(repoRoot, "src/modality");
+const modalitySrc = resolve(repoRoot, "src/cli");
 const featuresSrc = resolve(modalitySrc, "features");
 const featureNames = ["check", "ci", "conform", "export", "extract", "replay"] as const;
 

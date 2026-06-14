@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { always, alwaysStep, canonicalJson, canonicalState, enabled, enumerateDomain, reachableFrom, validateModel, validateValue, type AbstractDomain, type Model } from "modality-ts/kernel";
+import { always, alwaysStep, canonicalJson, canonicalState, enabled, enumerateDomain, reachableFrom, validateModel, validateValue, type AbstractDomain, type Model } from "modality-ts/core";
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;

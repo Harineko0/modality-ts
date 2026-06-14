@@ -7,7 +7,7 @@ import {
   parseReplayReportArtifact,
   parseTraceArtifact,
   traceArtifact
-} from "modality-ts/kernel";
+} from "modality-ts/core";
 
 describe("artifact parsers", () => {
   const checkReport = {

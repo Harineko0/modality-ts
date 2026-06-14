@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Trace } from "modality-ts/kernel";
-import { ActionReplayDriver, createDomReplayActor, dispatchReplayStep, inputWitness, ObservableActionReplayDriver, observationSource, observeModelState, replayTrace, StateSequenceDriver, statesFromTrace, TraceBackedActionReplayDriver, witnessValue } from "modality-ts/harness";
-import * as jotaiHarness from "../../src/sources/jotai/harness.js";
-import * as routerHarness from "../../src/sources/router/harness.js";
-import * as swrHarness from "../../src/sources/swr/harness.js";
-import * as useStateHarness from "../../src/sources/use-state/harness.js";
+import type { Trace } from "modality-ts/core";
+import { ActionReplayDriver, createDomReplayActor, dispatchReplayStep, inputWitness, ObservableActionReplayDriver, observationSource, observeModelState, replayTrace, StateSequenceDriver, statesFromTrace, TraceBackedActionReplayDriver, witnessValue } from "modality-ts/cli/harness";
+import * as jotaiHarness from "../../src/extract/sources/jotai/harness.js";
+import * as routerHarness from "../../src/extract/sources/router/harness.js";
+import * as swrHarness from "../../src/extract/sources/swr/harness.js";
+import * as useStateHarness from "../../src/extract/sources/use-state/harness.js";
 
 const trace: Trace = {
   steps: [

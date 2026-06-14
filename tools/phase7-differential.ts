@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { checkModel, modelInitialStates } from "../src/checker/index.ts";
-import { type ExprIR, type Model, type StateVarDecl, type Transition, type Value } from "../src/kernel/index.ts";
-import { generateTlaModule } from "../src/modality/features/export/command.ts";
+import { checkModel, modelInitialStates } from "../src/check/index.ts";
+import { type ExprIR, type Model, type StateVarDecl, type Transition, type Value } from "../src/core/index.ts";
+import { generateTlaModule } from "../src/cli/features/export/command.ts";
 import { checkoutHandModel } from "../test/modality/fixtures/checkout-hand-model.ts";
 import { todoHandModel } from "../test/modality/fixtures/todo-hand-model.ts";
 

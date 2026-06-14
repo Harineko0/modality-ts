@@ -1,7 +1,7 @@
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import type { Model } from "modality-ts/kernel";
-import { emitAppModel } from "../../src/modality/codegen/model.js";
+import type { Model } from "modality-ts/core";
+import { emitAppModel } from "../../src/cli/codegen/model.js";
 
 describe("emitAppModel", () => {
   it("emits a type-checkable app.model.ts with typed vars and initial state", () => {

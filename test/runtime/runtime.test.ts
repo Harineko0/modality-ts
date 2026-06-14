@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { always, reachable, type Model } from "modality-ts/kernel";
-import { assertObservableInvariantsOrThrow, assertObservableState, assertObservableStateOrThrow, createModalityAssertions, evaluateObservableInvariants, observable } from "modality-ts/runtime";
+import { always, reachable, type Model } from "modality-ts/core";
+import { assertObservableInvariantsOrThrow, assertObservableState, assertObservableStateOrThrow, createModalityAssertions, evaluateObservableInvariants, observable } from "modality-ts/cli/runtime";
 
 const model = {} as Model;
 
-describe("modality-ts/runtime observable assertions", () => {
+describe("modality-ts/cli/runtime observable assertions", () => {
   it("compares observable app values against a model state", () => {
     const result = assertObservableState(
       { "local:App.status": "idle", "swr:todos:data": "many" },

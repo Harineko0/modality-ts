@@ -7,20 +7,23 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "modality-ts/kernel/props": new URL("./src/kernel/props/index.ts", import.meta.url).pathname,
-      "modality-ts/kernel": new URL("./src/kernel/index.ts", import.meta.url).pathname,
-      "modality-ts/checker": new URL("./src/checker/index.ts", import.meta.url).pathname,
-      "modality-ts/extraction/spi": new URL("./src/extraction/spi/index.ts", import.meta.url).pathname,
-      "modality-ts/extraction": new URL("./src/extraction/index.ts", import.meta.url).pathname,
-      "modality-ts/harness": new URL("./src/harness/index.ts", import.meta.url).pathname,
-      "modality-ts/source-jotai": new URL("./src/sources/jotai/index.ts", import.meta.url).pathname,
-      "modality-ts/source-jotai/harness": new URL("./src/sources/jotai/harness.ts", import.meta.url).pathname,
-      "modality-ts/source-router": new URL("./src/sources/router/index.ts", import.meta.url).pathname,
-      "modality-ts/source-router/harness": new URL("./src/sources/router/harness.ts", import.meta.url).pathname,
-      "modality-ts/source-swr": new URL("./src/sources/swr/index.ts", import.meta.url).pathname,
-      "modality-ts/source-swr/harness": new URL("./src/sources/swr/harness.ts", import.meta.url).pathname,
-      "modality-ts/source-use-state": new URL("./src/sources/use-state/index.ts", import.meta.url).pathname,
-      "modality-ts/source-use-state/harness": new URL("./src/sources/use-state/harness.ts", import.meta.url).pathname
+      "modality-ts/core/props": new URL("./src/core/props/index.ts", import.meta.url).pathname,
+      "modality-ts/core": new URL("./src/core/index.ts", import.meta.url).pathname,
+      "modality-ts/check": new URL("./src/check/index.ts", import.meta.url).pathname,
+      "modality-ts/cli/harness": new URL("./src/cli/harness/index.ts", import.meta.url).pathname,
+      "modality-ts/cli/runtime": new URL("./src/cli/runtime/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/jotai/harness": new URL("./src/extract/sources/jotai/harness.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/jotai": new URL("./src/extract/sources/jotai/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/router/harness": new URL("./src/extract/sources/router/harness.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/router": new URL("./src/extract/sources/router/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/swr/harness": new URL("./src/extract/sources/swr/harness.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/swr": new URL("./src/extract/sources/swr/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/use-state/harness": new URL("./src/extract/sources/use-state/harness.ts", import.meta.url).pathname,
+      "modality-ts/extract/sources/use-state": new URL("./src/extract/sources/use-state/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/engine/pipeline": new URL("./src/extract/engine/pipeline/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/engine/spi": new URL("./src/extract/engine/spi/index.ts", import.meta.url).pathname,
+      "modality-ts/extract/engine": new URL("./src/extract/engine/index.ts", import.meta.url).pathname,
+      "modality-ts/extract": new URL("./src/extract/index.ts", import.meta.url).pathname
     }
   }
 });

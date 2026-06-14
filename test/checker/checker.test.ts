@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkModel, modelInitialStates, sliceModel } from "modality-ts/checker";
-import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "modality-ts/kernel";
+import { checkModel, modelInitialStates, sliceModel } from "modality-ts/check";
+import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "modality-ts/core";
 import { checkerOracleCorpus } from "./oracle-corpus.js";
 
 const bool = { kind: "bool" } as const;

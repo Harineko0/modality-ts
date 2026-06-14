@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkModel } from "modality-ts/checker";
-import { always, alwaysStep, reachableFrom, type ExprIR, type Model, type Property, type Value } from "modality-ts/kernel";
+import { checkModel } from "modality-ts/check";
+import { always, alwaysStep, reachableFrom, type ExprIR, type Model, type Property, type Value } from "modality-ts/core";
 
 const route = { kind: "enum", values: ["/checkout"] } as const;
 const pendingOrder = {

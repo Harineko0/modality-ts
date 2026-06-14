@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { navigationCall, routeVars, routerSource } from "modality-ts/source-router";
-import { navigate, observe, setup } from "../../../src/sources/router/harness.js";
+import { routerSource } from "modality-ts/extract/sources/router";
+import { navigate, observe, setup } from "../../../src/extract/sources/router/harness.js";
 
 describe("router source plugin", () => {
   it("exposes a RouterPlugin-compatible source slice", () => {
@@ -22,7 +22,7 @@ describe("router source plugin", () => {
   });
 
   it("owns route and history system vars", () => {
-    expect(routeVars(["/checkout", "/"], { route: "/", bounds: { maxHistory: 3 } })).toEqual([
+    expect(routerSource().routeVars(["/checkout", "/"], { route: "/", bounds: { maxHistory: 3 } })).toEqual([
       { id: "sys:route", domain: { kind: "enum", values: ["/", "/checkout"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
       {
         id: "sys:history",
@@ -35,9 +35,10 @@ describe("router source plugin", () => {
   });
 
   it("classifies supported navigation call shapes", () => {
-    expect(navigationCall("navigate", ["/settings"])).toEqual({ mode: "push", to: "/settings" });
-    expect(navigationCall("router.replace", ["/login"])).toEqual({ mode: "replace", to: "/login" });
-    expect(navigationCall("router.back", [])).toEqual({ mode: "back" });
-    expect(navigationCall("router.push", [42])).toBe("unsupported");
+    const plugin = routerSource();
+    expect(plugin.navigationCall("navigate", ["/settings"])).toEqual({ mode: "push", to: "/settings" });
+    expect(plugin.navigationCall("router.replace", ["/login"])).toEqual({ mode: "replace", to: "/login" });
+    expect(plugin.navigationCall("router.back", [])).toEqual({ mode: "back" });
+    expect(plugin.navigationCall("router.push", [42])).toBe("unsupported");
   });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { checkModel } from "modality-ts/checker";
-import { always, reachable, type Model } from "modality-ts/kernel";
-import { createSwrKeyWindowTemplate, createSwrTemplate, discoverSwrHooks, swrSource, swrVarId, swrView, swrWindowEvictedSummaryId, swrWindowView } from "modality-ts/source-swr";
-import { observe, setup } from "../../../src/sources/swr/harness.js";
+import { checkModel } from "modality-ts/check";
+import { always, reachable, type Model } from "modality-ts/core";
+import { createSwrKeyWindowTemplate, createSwrTemplate, swrSource, swrVarId, swrView, swrWindowEvictedSummaryId, swrWindowView } from "modality-ts/extract/sources/swr";
+import { observe, setup } from "../../../src/extract/sources/swr/harness.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -79,7 +79,7 @@ describe("SWR template", () => {
         return data?.length;
       }
     `;
-    const decls = discoverSwrHooks(source, "App.tsx");
+    const decls = swrSource().discover({ sourceText: source, fileName: "App.tsx", route: "/" });
     expect(decls).toEqual([
       {
         id: "swr:api_todos",
@@ -106,7 +106,7 @@ describe("SWR template", () => {
         useSWR(isLoggedIn ? '/api/me' : null);
       }
     `;
-    const decl = discoverSwrHooks(source, "App.tsx")[0];
+    const decl = swrSource().discover({ sourceText: source, fileName: "App.tsx", route: "/" })[0];
     expect(decl).toMatchObject({
       id: "swr:api_me",
       metadata: {
@@ -124,7 +124,7 @@ describe("SWR template", () => {
         useSWR(isPaused ? null : ['/api/search', query]);
       }
     `;
-    const decl = discoverSwrHooks(source, "App.tsx")[0];
+    const decl = swrSource().discover({ sourceText: source, fileName: "App.tsx", route: "/" })[0];
     expect(decl).toMatchObject({
       id: "swr:api_search_query",
       metadata: {

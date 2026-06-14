@@ -22,7 +22,7 @@ separate workspaces:
 ```
 modality-ts/
 ├── src/
-│   ├── kernel/                  # modality-ts/kernel — the stable center (§3)
+│   ├── core/                    # modality-ts/core — the stable center (§3)
 │   │   ├── ir/                  #   domains, state vars, transitions, ExprIR/EffectIR (Spec 01)
 │   │   ├── trace/               #   Trace, Step, EventLabel, verdicts
 │   │   ├── props/               #   always/leadsToWithin/reachable combinators (user-facing DSL)
@@ -30,52 +30,45 @@ modality-ts/
 │   │   ├── report/              #   report + trust-ledger schemas (versioned)
 │   │   └── artifacts/           #   .modality/ artifact IO, schema versioning, model hashing
 │   │
-│   ├── checker/                 # modality-ts/checker — Spec 03; Node-only
+│   ├── check/                   # modality-ts/check — Spec 03; Node-only
 │   │   ├── encode/              #   canonical encoders, token renaming
 │   │   ├── search/              #   BFS core, stabilization, enabledness
 │   │   ├── monitors/            #   invariant, bounded-response, vacuity
 │   │   ├── slicing/             #   cone-of-influence, recording proxy
 │   │   └── traces/              #   parent map, reconstruction, hint passes
 │   │
-│   ├── extraction/              # modality-ts/extraction — Spec 02 engine; Node-only (ts-morph)
-│   │   ├── pipeline/            #   P0–P7 orchestration; owns phase ordering & fixpoints
-│   │   ├── tsq/                 #   shared TS-analysis utilities (symbol resolution, JSX walk,
-│   │   │                        #   call-graph, M0 expression compiler, escape analysis core)
-│   │   ├── spi/                 #   ★ StateSourcePlugin + RouterPlugin interfaces (§4)
-│   │   └── report/              #   extraction report assembly
+│   ├── extract/                 # TS/TSX → IR/model extraction boundary
+│   │   ├── engine/              # modality-ts/extract — Spec 02 engine; Node-only
+│   │   │   ├── pipeline/        #   P0–P7 orchestration; owns phase ordering & fixpoints
+│   │   │   ├── ts/              #   shared TS-analysis utilities (symbol resolution, JSX walk,
+│   │   │   │                    #   call-graph, M0 expression compiler, escape analysis core)
+│   │   │   ├── spi/             #   ★ StateSourcePlugin + RouterPlugin interfaces (§4)
+│   │   │   └── report/          #   extraction report assembly
+│   │   └── sources/             # ★ vertical slices, axis 1: one module per state library (§5)
+│   │       ├── use-state/       # modality-ts/extract/sources/use-state
+│   │       ├── jotai/           # modality-ts/extract/sources/jotai      (peerDep: jotai)
+│   │       ├── swr/             # modality-ts/extract/sources/swr        (peerDep: swr)
+│   │       └── router/          # modality-ts/extract/sources/router     (peerDep: react-router)
 │   │
-│   ├── sources/                 # ★ vertical slices, axis 1: one module per state library (§5)
-│   │   ├── use-state/           # modality-ts/source-use-state
-│   │   ├── jotai/               # modality-ts/source-jotai      (peerDep: jotai)
-│   │   ├── swr/                 # modality-ts/source-swr        (peerDep: swr)
-│   │   └── router/              # modality-ts/source-router     (peerDep: react-router)
-│   │
-│   ├── harness/                 # modality-ts/harness — Spec 04 §3 runtime for generated tests;
-│   │                            # jsdom context (RTL, MSW gating, stabilization barrier,
-│   │                            # witness engine, observation registry)
-│   │
-│   ├── runtime/                 # modality-ts/runtime — Spec 04 §6 dev-build assertions;
-│   │                            # browser context; tiny, zero deps, no kernel import —
-│   │                            # only the props/ DSL re-exported via a subpath
-│   │
-│   ├── modality/                # `modality` — the product shell (§6)
+│   ├── cli/                     # `modality` product shell and generated-test runtimes (§6)
 │   │   ├── features/            # ★ vertical slices, axis 2: extract/ check/ replay/ conform/
 │   │   ├── registry/            #   plugin registry; built-in source registration; config loading
 │   │   ├── codegen/             #   app.model.ts + *.replay.test.tsx emitters
+│   │   ├── harness/             #   modality-ts/cli/harness — Spec 04 §3 generated-test runtime
+│   │   ├── runtime/             #   modality-ts/cli/runtime — Spec 04 §6 dev-build assertions
+│   │   ├── types/               #   ambient declaration shims only; not semantic model types
 │   │   └── cli.ts               #   thin commander shell (arg parsing only)
-│   │
-│   └── types/                   # ambient declaration shims only; not semantic model types
 │
 ├── examples/demo-app/           # MVP demo with the three seeded bugs (design §8)
 ├── tools/                       # dependency-cruiser config (§7), differential-test runner vs TLC
 └── docs/
 ```
 
-What is deliberately **not** here: a `utils/` package (utilities live in the slice that needs them until two slices prove the need — then they move to the *narrowest* shared home), and a semantic `types/` package (types live with the code that owns their semantics; cross-cutting types are kernel by definition). The existing `src/types/` directory is limited to ambient declarations for external packages missing local typings; it must not grow domain, IR, report, or plugin types.
+What is deliberately **not** here: a `utils/` package (utilities live in the slice that needs them until two slices prove the need — then they move to the *narrowest* shared home), and a semantic `types/` package (types live with the code that owns their semantics; cross-cutting types are kernel by definition). The existing `src/cli/types/` directory is limited to ambient declarations for external packages missing local typings; it must not grow domain, IR, report, or plugin types.
 
-## 3. The kernel: small by policy, versioned by schema
+## 3. The core/kernel: small by policy, versioned by schema
 
-The kernel is the only package every other package may depend on, so it is governed restrictively:
+The physical `src/core/` directory publishes the `modality-ts/core` API. It is the only package-like boundary every other boundary may depend on, so it is governed restrictively:
 
 - **Contents test**: a thing enters the kernel only if ≥2 packages in *different runtime contexts* need it, and it has no dependencies of its own (the kernel depends on nothing but TypeScript).
 - **Schema versioning**: `model.json`, `trace.json`, `report.json` carry `schemaVersion`; readers reject newer-major artifacts with a "re-run extract" message. Artifact compatibility *is* the tool's compatibility story, because feature slices communicate through artifacts, not function calls (§6).
@@ -83,7 +76,7 @@ The kernel is the only package every other package may depend on, so it is gover
 
 ## 4. The `StateSourcePlugin` contract (axis 1 extension point)
 
-Defined in `modality-ts/extraction/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
+Defined in `modality-ts/extract/engine/spi`, consumed by the pipeline, the harness, and conformance. One interface, grouped by pipeline phase; every method receives narrow context objects (never the whole pipeline) so the contract stays implementable out-of-tree:
 
 ```ts
 interface StateSourcePlugin {
@@ -107,7 +100,7 @@ interface StateSourcePlugin {
   template?(decl: SourceDecl, options: ResolvedOptions): TemplateFragment;
                                                // library-behavior model (Spec 01 §9); vars +
                                                //     transitions in plain IR. SWR: yes; Jotai: no
-  // ── replay side (jsdom; exported from 'modality-ts/source-*/harness') ───
+  // ── replay side (jsdom; exported from 'modality-ts/extract/sources/*/harness') ───
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;      // providers/store creation, handles for observation
     observe(varId: string, handles: HarnessHooks): ObservedRead | 'unobservable';
@@ -133,20 +126,17 @@ Design notes on why this shape:
 Each source package owns its concern end-to-end — discovery to replay to conformance — so adding a library never fans out across the repo:
 
 ```
-src/sources/jotai/
-├── src/
-│   ├── discover.ts          # P1: atom() resolution through aliasing/re-exports
-│   ├── domains.ts           # P2 hints (derived-atom inlining decisions)
-│   ├── writes.ts            # P5 channels (useSetAtom, useAtom[1], store.set,
-│   │                        #   getDefaultStore taint source) + P4 summarizeWrite
-│   ├── harness.ts           # './harness': createStore + Provider, store.get observation
-│   ├── conformance.ts       # testedVersions; (no template → no probes)
-│   └── index.ts             # assembles and exports the plugin object
-├── fixtures/                # mini React apps used by this slice's tests only
-└── __tests__/               # unit tests + golden extraction outputs (model.json snapshots)
+src/extract/sources/jotai/
+├── discover.ts              # P1: atom() resolution through aliasing/re-exports
+├── domains.ts               # P2 hints (derived-atom inlining decisions)
+├── writes.ts                # P5 channels (useSetAtom, useAtom[1], store.set,
+│                            #   getDefaultStore taint source) + P4 summarizeWrite
+├── harness.ts               # './harness': createStore + Provider, store.get observation
+├── conformance.ts           # testedVersions; (no template → no probes)
+└── index.ts                 # assembles and exports the plugin object
 ```
 
-The litmus test the architecture must keep passing: **supporting Zustand = writing one new package in `sources/`, zero diffs elsewhere.** Projected mapping for likely future sources, as a design check that the contract is sufficient:
+The litmus test the architecture must keep passing: **supporting Zustand = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Projected mapping for likely future sources, as a design check that the contract is sufficient:
 
 | Future source | discover | writeChannels / summarize | template | harness.observe | Verdict |
 |---|---|---|---|---|---|
@@ -158,13 +148,13 @@ The litmus test the architecture must keep passing: **supporting Zustand = writi
 
 ## 6. Feature slices (axis 2) and artifact-mediated coupling
 
-Inside the `modality` package, each user capability is a self-contained slice:
+Inside `src/cli/`, each user capability is a self-contained slice:
 
 ```
-src/modality/features/
+src/cli/features/
 ├── extract/    # orchestrates extraction pipeline + registry → .modality/model.json,
 │               #   app.model.ts (via codegen/), extraction report; --explain-drift
-├── check/      # loads model + props → modality-ts/checker → traces, report rendering,
+├── check/      # loads model + props → modality-ts/check → traces, report rendering,
 │               #   replay-test emission (via codegen/)
 ├── replay/     # runs one generated test file, classifies the Spec 04 §1 verdict
 ├── conform/    # MBT walks (Spec 04 §5), per-transition pass-rate aggregation
@@ -180,21 +170,21 @@ Rules that keep these vertical rather than layered:
 ## 7. Dependency rules (enforced, not advised)
 
 ```
-kernel        → (nothing)
-checker       → kernel
-extraction    → kernel
-sources/*     → kernel, extraction(spi only), harness(spi only); never each other; never features
-harness       → kernel
-runtime       → kernel/props subpath only
-modality      → everything above (features/* additionally: never each other)
-examples/*    → modality, runtime, harness (as a real app would)
+core                 → (nothing)
+check                → core
+extract/engine       → core
+extract/sources/*    → core, extract/engine(spi only); never each other; never cli features
+cli/harness          → core
+cli/runtime          → core/props subpath only
+cli/features         → everything above (features/* additionally: never each other)
+examples/*           → cli, runtime, harness (as a real app would)
 ```
 
-Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/types/`, and the "features don't import features" rule. Violations fail the build — architecture that is only documented decays in months.
+Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`extract/sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/cli/types/`, and the "features don't import features" rule. Violations fail the build — architecture that is only documented decays in months.
 
 Two asymmetries worth stating explicitly:
 
-- `sources/*` depend on extraction's **SPI module only**, not its pipeline — the pipeline calls plugins, never the reverse (standard inversion; keeps plugins implementable out-of-tree against a small, stable surface).
+- `extract/sources/*` depend on extraction's **SPI module only**, not its pipeline — the pipeline calls plugins, never the reverse (standard inversion; keeps plugins implementable out-of-tree against a small, stable surface).
 - `runtime` (in the app's dev bundle) must stay dependency-free and kernel-light; it gets the property-combinator types through a dedicated subpath export so bundlers tree-shake everything else. A bloated runtime package is an adoption killer (Spec 04 §6 is the on-ramp feature).
 
 ## 8. Testing strategy per slice kind
@@ -202,7 +192,7 @@ Two asymmetries worth stating explicitly:
 | Slice kind | Test style | Lives where |
 |---|---|---|
 | source package | golden extraction snapshots over `fixtures/` mini-apps; harness tests in jsdom; conformance probes against pinned library versions (CI matrix per `testedVersions`) | inside the package |
-| checker | the Spec 03 §9 suite: differential vs TLC, metamorphic, oracle models, canonicalization property tests | inside `checker`; TLC corpus runner in `tools/` |
+| checker | the Spec 03 §9 suite: differential vs TLC, metamorphic, oracle models, canonicalization property tests | inside `check`; TLC corpus runner in `tools/` |
 | feature slice | artifact-in/artifact-out tests with fixture `model.json`/traces — no TS analysis or React involved | inside the slice |
 | cross-cutting | `examples/demo-app` end-to-end: extract → check → replay finds the three seeded bugs (design §8 PoC criteria, automated) | repo-level CI job |
 
@@ -213,7 +203,7 @@ The demo app doubles as the living acceptance test for the *architecture* itself
 | Decision | Alternative rejected | Why |
 |---|---|---|
 | Packages per runtime context; slices as folders within | one package per slice everywhere | publishing/bundling constraints are real boundaries; folder-slices keep refactoring cheap where constraints don't differ |
-| Source plugins as separate packages | folders inside extraction | peer-dependency isolation (jotai/swr never burden the core) and proof the public contract suffices |
+| Source plugins as source slices under `extract/` | folders inside the extraction engine | peer-dependency isolation (jotai/swr never burden the core) and proof the public contract suffices |
 | Artifact-mediated feature coupling | in-process pipeline objects | reproducibility, independent re-runs, scriptability; matches the CLI's user model |
 | Plugins contribute IR instances, never IR semantics | extensible IR node kinds | preserves the meaning of "verified" across the plugin ecosystem (§3) |
 | Built-ins on the public SPI | privileged built-ins | the contract rots the day the first private hook lands |

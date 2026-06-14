@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPluginRegistry, extractionPipelinePhases, runExtractionPipeline, type StateSourcePlugin } from "modality-ts/extraction";
-import type { RouterPlugin } from "modality-ts/extraction/spi";
+import { createPluginRegistry, extractionPipelinePhases, runExtractionPipeline, type StateSourcePlugin } from "modality-ts/extract";
+import type { RouterPlugin } from "modality-ts/extract/engine/spi";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(testDir, "../../src");
@@ -35,6 +35,13 @@ describe("extraction architecture surface", () => {
       ["P6", "overlay-merge"],
       ["P7", "emit-artifacts"]
     ]);
+  });
+
+  it("keeps the extraction engine entry point as a thin barrel", () => {
+    const indexText = readFileSync(resolve(srcDir, "extract/engine/index.ts"), "utf8");
+    expect(indexText.split("\n").length).toBeLessThanOrEqual(20);
+    expect(indexText).not.toContain("typescript");
+    expect(indexText).not.toContain("use-state");
   });
 
   it("validates source plugin ids through the public registry surface", () => {
@@ -70,6 +77,20 @@ describe("extraction architecture surface", () => {
           writes: ["lib:ready"],
           confidence: "exact"
         }]
+      }),
+      extract: (options) => ({
+        warnings: [],
+        transitions: [{
+          id: "Demo.onClick",
+          cls: "user",
+          label: { kind: "event", locator: { role: "button" } },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/next" } },
+          reads: [],
+          writes: ["sys:route"],
+          confidence: options.writeChannels[0]?.symbolName === "setFlag" ? "exact" : "over-approx"
+        }]
       })
     };
     const routerPlugin: RouterPlugin = {
@@ -85,21 +106,7 @@ describe("extraction architecture surface", () => {
       fileName: "Demo.tsx",
       route: "/",
       sourcePlugins: [sourcePlugin],
-      routerPlugin,
-      extractHandlers: (_sourceText, options) => ({
-        warnings: [],
-        transitions: [{
-          id: "Demo.onClick",
-          cls: "user",
-          label: { kind: "event", locator: { role: "button" } },
-          source: [],
-          guard: { kind: "lit", value: true },
-          effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/next" } },
-          reads: [],
-          writes: ["sys:route"],
-          confidence: options.writeChannels[0]?.symbolName === "setFlag" ? "exact" : "over-approx"
-        }]
-      })
+      routerPlugin
     });
 
     expect(result.plugins).toEqual({
@@ -114,24 +121,24 @@ describe("extraction architecture surface", () => {
 
   it("root package exports source harness entry points", () => {
     const packageJson = JSON.parse(readFileSync(resolve(testDir, "../../package.json"), "utf8"));
-    for (const source of ["source-use-state", "source-jotai", "source-swr", "source-router"]) {
-      expect(packageJson.exports[`./${source}`]).toBeTruthy();
-      expect(packageJson.exports[`./${source}/harness`]).toBeTruthy();
+    for (const source of ["use-state", "jotai", "swr", "router"]) {
+      expect(packageJson.exports[`./extract/sources/${source}`]).toBeTruthy();
+      expect(packageJson.exports[`./extract/sources/${source}/harness`]).toBeTruthy();
     }
   });
 
   it("built-in source slices import extraction through the public SPI only", async () => {
-    const sourcesDir = resolve(srcDir, "sources");
+    const sourcesDir = resolve(srcDir, "extract/sources");
     const files = await sourceFiles(sourcesDir);
     const violations: string[] = [];
 
     for (const file of files) {
       const text = await readFile(file, "utf8");
       for (const specifier of importSpecifiers(text)) {
-        if (specifier === "modality-ts/extraction" || specifier.startsWith("modality-ts/extraction/") && specifier !== "modality-ts/extraction/spi") {
+        if (specifier === "modality-ts/extract" || specifier.startsWith("modality-ts/extract/") && !specifier.startsWith("modality-ts/extract/engine/")) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
         }
-        if (specifier.startsWith("../../extraction") || specifier.startsWith("../extraction")) {
+        if ((specifier.startsWith("../../engine") || specifier.startsWith("../engine")) && !specifier.includes("/engine/ts/") && !specifier.includes("/engine/spi/")) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
         }
       }
@@ -140,8 +147,8 @@ describe("extraction architecture surface", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps src/types limited to ambient declaration shims", async () => {
-    const typesDir = resolve(srcDir, "types");
+  it("keeps src/cli/types limited to ambient declaration shims", async () => {
+    const typesDir = resolve(srcDir, "cli/types");
     const entries = await readdir(typesDir, { withFileTypes: true });
     expect(entries.every((entry) => entry.isFile() && entry.name.endsWith(".d.ts"))).toBe(true);
   });

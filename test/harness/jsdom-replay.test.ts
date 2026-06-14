@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { Trace } from "modality-ts/kernel";
-import { createDeterministicReplayAsyncController, createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "modality-ts/harness";
+import type { Trace } from "modality-ts/core";
+import { createDeterministicReplayAsyncController, createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "modality-ts/cli/harness";
 
 describe("jsdom replay", () => {
   afterEach(() => {

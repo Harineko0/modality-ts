@@ -1,4 +1,4 @@
-import type { Model, ModelState } from "modality-ts/kernel";
+import type { Model, ModelState } from "modality-ts/core";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as ts from "typescript";
-import { inferDomainFromTypeNode, useStateSource } from "modality-ts/source-use-state";
-import { observe, setup } from "../../../src/sources/use-state/harness.js";
+import { inferDomainFromTypeNode } from "modality-ts/extract/engine";
+import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { observe, setup } from "../../../src/extract/sources/use-state/harness.js";
 
 function typeNode(source: string): ts.TypeNode {
   const file = ts.createSourceFile("fixture.ts", `type T = ${source};`, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
