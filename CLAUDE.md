@@ -27,7 +27,7 @@ Use `pnpm install` to install dependencies. Important checks:
 
 - `pnpm typecheck` or `pnpm build`: run `tsc -b`; `build` emits `dist/`.
 - `pnpm test`: run the full Vitest suite.
-- `pnpm demo`: run the demo acceptance test only.
+- `pnpm fix`: run `biome lint --write . && biome format --write .`.
 - `pnpm architecture`: validate dependency rules with dependency-cruiser.
 - `pnpm ci:examples`: run example-app integration checks.
 - `pnpm phase7`: run differential checks for checker semantics, model generation, or TLA+ parity changes.
@@ -39,7 +39,7 @@ Use strict TypeScript with NodeNext ESM imports. Keep modules small and colocate
 
 ## Testing Guidelines
 
-Vitest is configured for `test/**/*.test.ts` and `src/**/*.test.ts`. Add focused tests next to the affected subsystem under `test/<area>/`. Update or add coverage when changing extraction, checking, replay, reporting, source adapters, or CLI behavior. For architecture-sensitive imports, run `pnpm architecture`; for semantics-sensitive work, also run `pnpm phase7`.
+Vitest is configured for `test/**/*.test.ts` and `src/**/*.test.ts`. Add focused tests next to the affected subsystem under `test/<area>/`. Update or add coverage when changing extraction, checking, replay, reporting, source adapters, or CLI behavior. For architecture-sensitive imports, run `pnpm architecture`; for semantics-sensitive work, also run `pnpm phase7`. Also run `pnpm fix` to lint and format code.
 
 ## Commit & Pull Request Guidelines
 
