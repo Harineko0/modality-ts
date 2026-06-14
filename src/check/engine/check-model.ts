@@ -17,7 +17,6 @@ import type { TraceContext } from "../traces/trace.js";
 import type {
   CheckDiagnostics,
   CheckOptions,
-  CheckProgress,
   CheckResult,
   EdgeRecordingMode,
   GraphRecording,

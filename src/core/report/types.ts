@@ -118,6 +118,20 @@ export interface ReplayReport {
   };
 }
 
+export interface StateSpaceContributor {
+  varId: string;
+  domainKind: string;
+  bits: number;
+  scope: string;
+  origin: string;
+}
+
+export interface StateSpaceContributors {
+  totalBits: number;
+  topVars: readonly StateSpaceContributor[];
+  bySource: readonly { source: string; bits: number }[];
+}
+
 export interface ExtractionReport {
   schemaVersion: 1;
   kind: "extraction-report";
@@ -133,6 +147,7 @@ export interface ExtractionReport {
   staleReads: readonly ExtractionCaveat[];
   unhandledRejections: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
+  stateContributors?: StateSpaceContributors;
   coverage: {
     handlersTotal: number;
     exactOrOverlay: number;

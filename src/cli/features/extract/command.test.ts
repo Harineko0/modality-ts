@@ -35,6 +35,7 @@ describe("runExtractCommand", () => {
     const appModel = await readFile(appModelPath, "utf8");
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.lines[0]).toBe("extracted vars=1 transitions=1");
+    expect(result.lines.some((l) => l.startsWith("state-space≈"))).toBe(true);
     expect(result.lines).toContain(`appModel=${appModelPath}`);
     expect(
       model.vars.find((decl) => decl.id === "local:App.saveStatus"),
@@ -86,6 +87,20 @@ describe("runExtractCommand", () => {
         percentExactOrOverlay: 1,
       },
     });
+    expect(report.stateContributors?.topVars[0]?.varId).toBeTruthy();
+    expect(typeof report.stateContributors?.topVars[0]?.bits).toBe("number");
+    const topBits = report.stateContributors?.topVars.map(
+      (v: { bits: number }) => v.bits,
+    );
+    for (let i = 1; i < (topBits?.length ?? 0); i += 1) {
+      expect(topBits![i]).toBeLessThanOrEqual(topBits![i - 1]!);
+    }
+    expect(
+      report.stateContributors?.bySource.some(
+        (entry: { source: string; bits: number }) =>
+          entry.source === sourcePath && entry.bits > 0,
+      ),
+    ).toBe(true);
     expect(model.metadata?.extractionCaveats).toEqual({
       globalTaints: [],
       staleReads: [],

@@ -2,6 +2,54 @@ import type { AbstractDomain, Value } from "./types.js";
 
 export const UNMOUNTED = "__modality_unmounted__";
 
+const CARDINALITY_CAP = Number.MAX_SAFE_INTEGER;
+
+function clamp(n: number): number {
+  return Math.min(n, CARDINALITY_CAP);
+}
+
+export function domainCardinality(domain: AbstractDomain): number {
+  switch (domain.kind) {
+    case "bool":
+      return 2;
+    case "enum":
+      return clamp(domain.values.length);
+    case "boundedInt":
+      return clamp(domain.max - domain.min + 1);
+    case "option":
+      return clamp(1 + domainCardinality(domain.inner));
+    case "record": {
+      const entries = Object.entries(domain.fields);
+      if (entries.length === 0) return 1;
+      return entries.reduce(
+        (acc, [, d]) => clamp(acc * domainCardinality(d)),
+        1,
+      );
+    }
+    case "tagged":
+      return clamp(
+        Object.values(domain.variants).reduce(
+          (acc, d) => clamp(acc + domainCardinality(d)),
+          0,
+        ),
+      );
+    case "tokens":
+      return clamp(domain.names?.length ?? domain.count);
+    case "lengthCat":
+      return 3;
+    case "boundedList": {
+      const inner = domainCardinality(domain.inner);
+      let sum = 1;
+      let power = 1;
+      for (let len = 1; len <= domain.maxLen; len += 1) {
+        power = clamp(power * inner);
+        sum = clamp(sum + power);
+      }
+      return sum;
+    }
+  }
+}
+
 export function enumerateDomain(domain: AbstractDomain): Value[] {
   switch (domain.kind) {
     case "bool":

@@ -1,4 +1,4 @@
-import type { Model, ModelState, Property } from "modality-ts/core";
+import type { Model, Property } from "modality-ts/core";
 import type {
   CompactEdge,
   Edge,

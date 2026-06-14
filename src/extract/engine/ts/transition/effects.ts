@@ -1,6 +1,5 @@
 import * as ts from "typescript";
 import {
-  callName,
   lineAndColumn,
 } from "../ast.js";
 import { uniqueStrings } from "../ids.js";

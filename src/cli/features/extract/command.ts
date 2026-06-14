@@ -6,12 +6,14 @@ import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import {
   canonicalJson,
+  domainCardinality,
   parseModelArtifact,
   type EffectIR,
   type ExtractionCaveat,
   type ExtractionReport,
   type Model,
   type OverlaySpec,
+  type StateSpaceContributors,
   type StateVarDecl,
 } from "modality-ts/core";
 import type { Bounds } from "modality-ts/core";
@@ -202,11 +204,20 @@ export async function runExtractCommand(
   if (options.expectModelPath) {
     await assertMatchesExpectedModel(model, options.expectModelPath);
   }
+  const stateSpaceLine = (() => {
+    const { totalBits, topVars } = report.stateContributors!;
+    const top = topVars
+      .slice(0, 3)
+      .map((v) => `${v.varId}(${v.bits.toFixed(1)})`)
+      .join(",");
+    return `state-space≈${totalBits.toFixed(1)}bits top:${top}`;
+  })();
   return {
     model,
     report,
     lines: [
       `extracted vars=${pipeline.stateVars.length + pipeline.templateFragments.flatMap((fragment) => fragment.vars).length} transitions=${transitions.length}`,
+      stateSpaceLine,
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
@@ -803,6 +814,50 @@ async function assertMatchesExpectedModel(
   }
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function buildStateContributors(
+  model: Model,
+  limit = 20,
+): StateSpaceContributors {
+  const contributors = model.vars.map((decl) => {
+    const cardinality = domainCardinality(decl.domain);
+    const bits =
+      cardinality < 1 ? 0 : round2(Math.log2(cardinality));
+    const scope =
+      decl.scope.kind === "global" ? "global" : decl.scope.route;
+    const origin =
+      typeof decl.origin === "string" ? decl.origin : decl.origin.file;
+    return {
+      varId: decl.id,
+      domainKind: decl.domain.kind,
+      bits,
+      scope,
+      origin,
+    };
+  });
+  const totalBits = round2(contributors.reduce((sum, c) => sum + c.bits, 0));
+  const topVars = [...contributors]
+    .sort(
+      (a, b) =>
+        b.bits - a.bits || a.varId.localeCompare(b.varId),
+    )
+    .slice(0, limit);
+  const bySourceMap = new Map<string, number>();
+  for (const c of contributors) {
+    bySourceMap.set(c.origin, round2((bySourceMap.get(c.origin) ?? 0) + c.bits));
+  }
+  const bySource = [...bySourceMap.entries()]
+    .map(([source, bits]) => ({ source, bits }))
+    .sort(
+      (a, b) =>
+        b.bits - a.bits || a.source.localeCompare(b.source),
+    );
+  return { totalBits, topVars, bySource };
+}
+
 function createExtractionReport(
   sourceFiles: readonly string[],
   model: Model,
@@ -867,6 +922,7 @@ function createExtractionReport(
               ? "default-token"
               : "type-derived"),
     })),
+    stateContributors: buildStateContributors(model),
     coverage: {
       handlersTotal: handlers.length,
       exactOrOverlay,

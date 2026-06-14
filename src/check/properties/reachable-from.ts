@@ -1,5 +1,4 @@
 import type { Model, ModelState, Property } from "modality-ts/core";
-import type { Edge } from "../types.js";
 import { checkedState } from "./checked-state.js";
 
 type ReachableFrom = Extract<Property, { kind: "reachableFrom" }>;
