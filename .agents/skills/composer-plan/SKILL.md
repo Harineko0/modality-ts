@@ -7,7 +7,7 @@ description: Create implementation plans optimized for Cursor Composer 2 executi
 
 Do not edit code.
 
-Inspect the repository and produce a implementation plan as .cursor/plans/<plan-name>.md intended for Cursor Composer 2.
+Inspect the repository and produce a implementation plan as .cursor/plans/<YYMMdd-plan-name>.md intended for Cursor Composer 2. e.g. .cursor/plans/260614-provider-shared-transition-engine.md
 
 The plan must include:
 
