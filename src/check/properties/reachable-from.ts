@@ -8,10 +8,12 @@ export function unreachableWitness(
   model: Model,
   property: ReachableFrom,
   states: Map<string, ModelState>,
-  edges: readonly Edge[]
+  edges: readonly Edge[],
 ): [string, ModelState] | undefined {
   const goalCanons = [...states]
-    .filter(([, state]) => property.goal(checkedState(model, property, state, "reachableFrom goal")))
+    .filter(([, state]) =>
+      property.goal(checkedState(model, property, state, "reachableFrom goal")),
+    )
     .map(([canon]) => canon);
   const backward = new Set(goalCanons);
   let changed = true;
@@ -24,5 +26,10 @@ export function unreachableWitness(
       }
     }
   }
-  return [...states].find(([canon, state]) => property.when(checkedState(model, property, state, "reachableFrom when")) && !backward.has(canon));
+  return [...states].find(
+    ([canon, state]) =>
+      property.when(
+        checkedState(model, property, state, "reachableFrom when"),
+      ) && !backward.has(canon),
+  );
 }

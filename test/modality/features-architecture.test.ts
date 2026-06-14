@@ -12,7 +12,14 @@ import { runReplayCommand } from "../../src/cli/features/replay/index.js";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const modalitySrc = resolve(repoRoot, "src/cli");
 const featuresSrc = resolve(modalitySrc, "features");
-const featureNames = ["check", "ci", "conform", "export", "extract", "replay"] as const;
+const featureNames = [
+  "check",
+  "ci",
+  "conform",
+  "export",
+  "extract",
+  "replay",
+] as const;
 
 describe("modality feature slices", () => {
   it("publish command entry points from feature directories", () => {
@@ -25,7 +32,9 @@ describe("modality feature slices", () => {
   });
 
   it("keep feature slices isolated except for documented ci orchestration", async () => {
-    const files = (await sourceFiles(featuresSrc)).filter((file) => !file.endsWith(".test.ts"));
+    const files = (await sourceFiles(featuresSrc)).filter(
+      (file) => !file.endsWith(".test.ts"),
+    );
     const violations: string[] = [];
 
     for (const file of files) {
@@ -34,7 +43,11 @@ describe("modality feature slices", () => {
       for (const specifier of importSpecifiers(text)) {
         const targetFeature = importedFeature(specifier);
         if (!targetFeature || targetFeature === feature) continue;
-        if (feature === "ci" && (specifier === "../../check.js" || specifier === "../../conform.js")) continue;
+        if (
+          feature === "ci" &&
+          (specifier === "../../check.js" || specifier === "../../conform.js")
+        )
+          continue;
         violations.push(`${relativeToModality(file)} imports ${specifier}`);
       }
     }
@@ -45,12 +58,14 @@ describe("modality feature slices", () => {
 
 async function sourceFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const path = resolve(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    if (entry.isFile() && path.endsWith(".ts")) return [path];
-    return [];
-  }));
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const path = resolve(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(path);
+      if (entry.isFile() && path.endsWith(".ts")) return [path];
+      return [];
+    }),
+  );
   return files.flat().sort();
 }
 
@@ -64,12 +79,18 @@ function importedFeature(specifier: string): string | undefined {
   if (directMatch?.[1]) return directMatch[1];
 
   const siblingMatch = specifier.match(/^\.\.\/([^/.]+)/);
-  if (siblingMatch?.[1] && featureNames.includes(siblingMatch[1] as typeof featureNames[number])) {
+  if (
+    siblingMatch?.[1] &&
+    featureNames.includes(siblingMatch[1] as (typeof featureNames)[number])
+  ) {
     return siblingMatch[1];
   }
 
   const wrapperMatch = specifier.match(/^\.\.\/\.\.\/([^/.]+)\.js$/);
-  if (wrapperMatch?.[1] && featureNames.includes(wrapperMatch[1] as typeof featureNames[number])) {
+  if (
+    wrapperMatch?.[1] &&
+    featureNames.includes(wrapperMatch[1] as (typeof featureNames)[number])
+  ) {
     return wrapperMatch[1];
   }
 
@@ -77,7 +98,11 @@ function importedFeature(specifier: string): string | undefined {
 }
 
 function importSpecifiers(text: string): string[] {
-  return [...text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g)]
+  return [
+    ...text.matchAll(
+      /\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g,
+    ),
+  ]
     .map((match) => match[1] ?? match[2])
     .filter((specifier): specifier is string => specifier !== undefined);
 }

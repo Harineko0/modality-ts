@@ -9,22 +9,33 @@ export function enumerateDomain(domain: AbstractDomain): Value[] {
     case "enum":
       return [...domain.values];
     case "boundedInt":
-      return Array.from({ length: domain.max - domain.min + 1 }, (_, i) => domain.min + i);
+      return Array.from(
+        { length: domain.max - domain.min + 1 },
+        (_, i) => domain.min + i,
+      );
     case "option":
       return [null, ...enumerateDomain(domain.inner)];
     case "record": {
       const entries = Object.entries(domain.fields);
-      return cartesian(entries.map(([, d]) => enumerateDomain(d))).map((values) =>
-        Object.fromEntries(entries.map(([key], i) => [key, values[i]]))
+      return cartesian(entries.map(([, d]) => enumerateDomain(d))).map(
+        (values) =>
+          Object.fromEntries(entries.map(([key], i) => [key, values[i]])),
       );
     }
     case "tagged": {
-      return Object.entries(domain.variants).flatMap(([tagValue, recordDomain]) => {
-        if (recordDomain.kind !== "record") {
-          throw new Error(`Tagged variant ${tagValue} must be a record domain`);
-        }
-        return enumerateDomain(recordDomain).map((v) => ({ ...(v as object), [domain.tag]: tagValue }));
-      });
+      return Object.entries(domain.variants).flatMap(
+        ([tagValue, recordDomain]) => {
+          if (recordDomain.kind !== "record") {
+            throw new Error(
+              `Tagged variant ${tagValue} must be a record domain`,
+            );
+          }
+          return enumerateDomain(recordDomain).map((v) => ({
+            ...(v as object),
+            [domain.tag]: tagValue,
+          }));
+        },
+      );
     }
     case "tokens":
       return tokenNames(domain);
@@ -34,7 +45,9 @@ export function enumerateDomain(domain: AbstractDomain): Value[] {
       const itemValues = enumerateDomain(domain.inner);
       const lists: Value[] = [[]];
       for (let len = 1; len <= domain.maxLen; len += 1) {
-        for (const list of cartesian(Array.from({ length: len }, () => itemValues))) {
+        for (const list of cartesian(
+          Array.from({ length: len }, () => itemValues),
+        )) {
           lists.push(list);
         }
       }
@@ -51,29 +64,49 @@ export function validateValue(domain: AbstractDomain, value: Value): boolean {
     case "enum":
       return typeof value === "string" && domain.values.includes(value);
     case "boundedInt":
-      return typeof value === "number" && Number.isInteger(value) && value >= domain.min && value <= domain.max;
+      return (
+        typeof value === "number" &&
+        Number.isInteger(value) &&
+        value >= domain.min &&
+        value <= domain.max
+      );
     case "option":
       return value === null || validateValue(domain.inner, value);
     case "record":
-      return isRecord(value) && Object.entries(domain.fields).every(([k, d]) => validateValue(d, value[k]));
-    case "tagged":
-      if (!isRecord(value) || typeof value[domain.tag] !== "string") return false;
+      return (
+        isRecord(value) &&
+        Object.entries(domain.fields).every(([k, d]) =>
+          validateValue(d, value[k]),
+        )
+      );
+    case "tagged": {
+      if (!isRecord(value) || typeof value[domain.tag] !== "string")
+        return false;
       const tagValue = value[domain.tag] as string;
       return (
         Object.hasOwn(domain.variants, tagValue) &&
         validateValue(domain.variants[tagValue], value)
       );
+    }
     case "tokens":
       return typeof value === "string" && tokenNames(domain).includes(value);
     case "lengthCat":
       return value === "0" || value === "1" || value === "many";
     case "boundedList":
-      return Array.isArray(value) && value.length <= domain.maxLen && value.every((v) => validateValue(domain.inner, v));
+      return (
+        Array.isArray(value) &&
+        value.length <= domain.maxLen &&
+        value.every((v) => validateValue(domain.inner, v))
+      );
   }
 }
 
-export function tokenNames(domain: Extract<AbstractDomain, { kind: "tokens" }>): string[] {
-  return domain.names ? [...domain.names] : Array.from({ length: domain.count }, (_, i) => `tok${i + 1}`);
+export function tokenNames(
+  domain: Extract<AbstractDomain, { kind: "tokens" }>,
+): string[] {
+  return domain.names
+    ? [...domain.names]
+    : Array.from({ length: domain.count }, (_, i) => `tok${i + 1}`);
 }
 
 export function domainFingerprint(domain: AbstractDomain): string {
@@ -105,7 +138,10 @@ export function domainFingerprint(domain: AbstractDomain): string {
 }
 
 function cartesian<T>(sets: readonly (readonly T[])[]): T[][] {
-  return sets.reduce<T[][]>((acc, set) => acc.flatMap((prefix) => set.map((item) => [...prefix, item])), [[]]);
+  return sets.reduce<T[][]>(
+    (acc, set) => acc.flatMap((prefix) => set.map((item) => [...prefix, item])),
+    [[]],
+  );
 }
 
 function isRecord(value: Value): value is Record<string, Value> {

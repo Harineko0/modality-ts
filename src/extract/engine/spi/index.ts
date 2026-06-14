@@ -1,4 +1,14 @@
-import type { AbstractDomain, EffectIR, ExprIR, Locator, ModelState, SourceAnchor, StateVarDecl, TemplateFragment, Value } from "modality-ts/core";
+import type {
+  AbstractDomain,
+  EffectIR,
+  ExprIR,
+  Locator,
+  ModelState,
+  SourceAnchor,
+  StateVarDecl,
+  TemplateFragment,
+  Value,
+} from "modality-ts/core";
 
 export interface SourceDecl {
   id: string;
@@ -106,7 +116,10 @@ export interface StateSourcePlugin {
   template?(decl: SourceDecl, options: ResolvedOptions): TemplateFragment;
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
-    observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable";
+    observe(
+      varId: string,
+      handles: HarnessHooks,
+    ): ObservedRead | "unobservable";
     witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
   };
   conformance?: {
@@ -119,11 +132,21 @@ export interface RouterPlugin {
   id: string;
   version?: string;
   packageNames: readonly string[];
-  routeVars(routes: readonly string[], options: ResolvedOptions): readonly StateVarDecl[];
-  navigationCall(callee: string, args: readonly unknown[]): { mode: "push" | "replace" | "back"; to?: string } | "unsupported";
+  routeVars(
+    routes: readonly string[],
+    options: ResolvedOptions,
+  ): readonly StateVarDecl[];
+  navigationCall(
+    callee: string,
+    args: readonly unknown[],
+  ): { mode: "push" | "replace" | "back"; to?: string } | "unsupported";
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
     observe(handles: HarnessHooks): ObservedRead | "unobservable";
-    navigate(handles: HarnessHooks, mode: "push" | "replace" | "back", to?: string): Promise<void> | void;
+    navigate(
+      handles: HarnessHooks,
+      mode: "push" | "replace" | "back",
+      to?: string,
+    ): Promise<void> | void;
   };
 }

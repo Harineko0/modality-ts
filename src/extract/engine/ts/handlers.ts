@@ -1,10 +1,6 @@
 export {
   extractableHandlerInitializer,
-  isExtractableHandler
+  isExtractableHandler,
 } from "./ast.js";
-export {
-  handlerExpression
-} from "./components.js";
-export type {
-  ExtractableHandler
-} from "./types.js";
+export { handlerExpression } from "./components.js";
+export type { ExtractableHandler } from "./types.js";

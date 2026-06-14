@@ -4,9 +4,21 @@ import { dirname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
-import { canonicalJson, parseModelArtifact, type EffectIR, type ExtractionCaveat, type ExtractionReport, type Model, type OverlaySpec, type StateVarDecl } from "modality-ts/core";
+import {
+  canonicalJson,
+  parseModelArtifact,
+  type EffectIR,
+  type ExtractionCaveat,
+  type ExtractionReport,
+  type Model,
+  type OverlaySpec,
+  type StateVarDecl,
+} from "modality-ts/core";
 import type { Bounds } from "modality-ts/core";
-import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import type {
+  RouterPlugin,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
 import { routerSource } from "modality-ts/extract/sources/router";
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
@@ -47,21 +59,45 @@ export interface ExtractCommandResult {
   lines: string[];
 }
 
-export async function runExtractCommand(options: ExtractCommandOptions): Promise<ExtractCommandResult> {
+export async function runExtractCommand(
+  options: ExtractCommandOptions,
+): Promise<ExtractCommandResult> {
   const project = await loadExtractionProject(options.sourcePath);
-  const config = await loadModalityConfig(options.configPath ?? await findNearestConfig(project.configStartDir));
+  const config = await loadModalityConfig(
+    options.configPath ?? (await findNearestConfig(project.configStartDir)),
+  );
   const route = options.route ?? config.route ?? "/";
-  const appModelPath = options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
-  const packageJsonPath = options.packageJsonPath ?? config.packageJsonPath ?? await findNearestPackageJson(project.configStartDir);
+  const appModelPath =
+    options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
+  const packageJsonPath =
+    options.packageJsonPath ??
+    config.packageJsonPath ??
+    (await findNearestPackageJson(project.configStartDir));
   const dependencies = await readPackageDependencies(packageJsonPath);
   const registry = createBuiltinModalityRegistry({
     dependencies,
-    disabledPlugins: [...(config.disabledPlugins ?? []), ...(options.disabledPlugins ?? [])],
-    extraSourcePlugins: [...(config.plugins ?? []), ...(options.sourcePlugins ?? [])],
-    routerPlugin: options.routerPlugin ?? config.routerPlugin
+    disabledPlugins: [
+      ...(config.disabledPlugins ?? []),
+      ...(options.disabledPlugins ?? []),
+    ],
+    extraSourcePlugins: [
+      ...(config.plugins ?? []),
+      ...(options.sourcePlugins ?? []),
+    ],
+    routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
-  const effectApis = uniqueStrings([...(config.effectApis ?? []), ...(options.effectApis ?? []), ...project.effectApis]);
-  const bounds = { maxDepth: 12, maxPending: 3, maxInternalSteps: 16, ...(config.bounds ?? {}), ...(options.bounds ?? {}) };
+  const effectApis = uniqueStrings([
+    ...(config.effectApis ?? []),
+    ...(options.effectApis ?? []),
+    ...project.effectApis,
+  ]);
+  const bounds = {
+    maxDepth: 12,
+    maxPending: 3,
+    maxInternalSteps: 16,
+    ...(config.bounds ?? {}),
+    ...(options.bounds ?? {}),
+  };
   const pipeline = runExtractionPipeline({
     sourceText: project.sourceText,
     fileName: project.entryFile,
@@ -69,44 +105,90 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
     routePatterns: project.routes,
     effectApis,
     sourcePlugins: registry.sourcePlugins,
-    routerPlugin: registry.routerPlugin
+    routerPlugin: registry.routerPlugin,
   });
   const transitions = [...pipeline.transitions];
-  const discoveredRoutes = uniqueStrings([route, ...project.routes, ...transitionNavigatedRoutes(transitions)]);
+  const discoveredRoutes = uniqueStrings([
+    route,
+    ...project.routes,
+    ...transitionNavigatedRoutes(transitions),
+  ]);
   const defaultRouter = routerSource();
   const routeVars = registry.routerPlugin
-    ? registry.routerPlugin.routeVars(discoveredRoutes, { route, bounds: { maxHistory: 4 } })
-    : defaultRouter.routeVars(discoveredRoutes, { route, bounds: { maxHistory: 4 } });
-  const templateVars = pipeline.templateFragments.flatMap((fragment) => fragment.vars);
-  const stateVars = refineAssignedLiteralDomains([...pipeline.stateVars, ...templateVars], transitions);
+    ? registry.routerPlugin.routeVars(discoveredRoutes, {
+        route,
+        bounds: { maxHistory: 4 },
+      })
+    : defaultRouter.routeVars(discoveredRoutes, {
+        route,
+        bounds: { maxHistory: 4 },
+      });
+  const templateVars = pipeline.templateFragments.flatMap(
+    (fragment) => fragment.vars,
+  );
+  const stateVars = refineAssignedLiteralDomains(
+    [...pipeline.stateVars, ...templateVars],
+    transitions,
+  );
   const extractedModel: Model = {
     schemaVersion: 1,
     id: "extracted-model",
     bounds,
-    metadata: { sourceHashes: sourceHashes(project.sources), plugins: pluginProvenance(pipeline.plugins) },
-    vars: [...routeVars, ...pendingVars(effectApis, transitions, [...routeVars, ...stateVars], bounds.maxPending), ...stateVars],
-    transitions
+    metadata: {
+      sourceHashes: sourceHashes(project.sources),
+      plugins: pluginProvenance(pipeline.plugins),
+    },
+    vars: [
+      ...routeVars,
+      ...pendingVars(
+        effectApis,
+        transitions,
+        [...routeVars, ...stateVars],
+        bounds.maxPending,
+      ),
+      ...stateVars,
+    ],
+    transitions,
   };
-  const overlaySpec = options.explainDrift && options.overlayPath ? await readOverlaySpec(extractedModel, options.overlayPath) : undefined;
-  const driftLines = overlaySpec ? explainOverlayDrift(extractedModel, overlaySpec) : [];
-  const overlay = await loadAndApplyOverlay(extractedModel, options.overlayPath);
+  const overlaySpec =
+    options.explainDrift && options.overlayPath
+      ? await readOverlaySpec(extractedModel, options.overlayPath)
+      : undefined;
+  const driftLines = overlaySpec
+    ? explainOverlayDrift(extractedModel, overlaySpec)
+    : [];
+  const overlay = await loadAndApplyOverlay(
+    extractedModel,
+    options.overlayPath,
+  );
   if (overlay.errors.length > 0) {
-    throw new Error([`Overlay merge failed: ${overlay.errors.join("; ")}`, ...driftLines].join("\n"));
+    throw new Error(
+      [
+        `Overlay merge failed: ${overlay.errors.join("; ")}`,
+        ...driftLines,
+      ].join("\n"),
+    );
   }
   const warnings = [
     ...pipeline.warnings,
     ...overlay.warnings,
-    ...pluginConformanceWarnings(registry.sourcePlugins, dependencies)
+    ...pluginConformanceWarnings(registry.sourcePlugins, dependencies),
   ];
   const extractionCaveats = createExtractionCaveats(warnings);
   const model: Model = {
     ...overlay.model,
     metadata: {
       ...overlay.model.metadata,
-      extractionCaveats
-    }
+      extractionCaveats,
+    },
   };
-  const report = createExtractionReport(project.sourceFiles, model, warnings, overlay.ignoredVars, options.now ?? new Date());
+  const report = createExtractionReport(
+    project.sourceFiles,
+    model,
+    warnings,
+    overlay.ignoredVars,
+    options.now ?? new Date(),
+  );
   await mkdir(dirname(options.modelPath), { recursive: true });
   await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
   await mkdir(dirname(appModelPath), { recursive: true });
@@ -127,11 +209,17 @@ export async function runExtractCommand(options: ExtractCommandOptions): Promise
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
       ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
-      ...(options.explainDrift ? (driftLines.length > 0 ? driftLines : ["overlay-drift=none"]) : []),
+      ...(options.explainDrift
+        ? driftLines.length > 0
+          ? driftLines
+          : ["overlay-drift=none"]
+        : []),
       ...(options.configPath ? [`config=${options.configPath}`] : []),
-      ...(options.expectModelPath ? [`expectedModel=${options.expectModelPath}`] : []),
-      ...(options.reportPath ? [`report=${options.reportPath}`] : [])
-    ]
+      ...(options.expectModelPath
+        ? [`expectedModel=${options.expectModelPath}`]
+        : []),
+      ...(options.reportPath ? [`report=${options.reportPath}`] : []),
+    ],
   };
 }
 
@@ -150,30 +238,46 @@ interface TsConfigResolution {
   paths: Array<{ prefix: string; suffix: string; targets: string[] }>;
 }
 
-async function loadExtractionProject(sourcePath: string): Promise<ExtractionProject> {
+async function loadExtractionProject(
+  sourcePath: string,
+): Promise<ExtractionProject> {
   const resolved = resolve(sourcePath);
   const info = await stat(resolved);
   if (!info.isDirectory()) {
     const source = await readFile(resolved, "utf8");
     const tsconfig = await readTsConfigResolution(dirname(resolved));
-    const imported = await sourceWithLocalImports([{ path: resolved, text: source }], tsconfig);
+    const imported = await sourceWithLocalImports(
+      [{ path: resolved, text: source }],
+      tsconfig,
+    );
     return {
       entryFile: resolved,
       sourceText: imported.sources.map((entry) => entry.text).join("\n"),
       sourceFiles: imported.sources.map((entry) => entry.path),
       sources: imported.sources,
       routes: [],
-      effectApis: fetchEffectApis(imported.sources.map((entry) => entry.text).join("\n")),
-      configStartDir: dirname(resolved)
+      effectApis: fetchEffectApis(
+        imported.sources.map((entry) => entry.text).join("\n"),
+      ),
+      configStartDir: dirname(resolved),
     };
   }
   const routesPath = join(resolved, "app", "routes.ts");
-  const routeEntries = parseReactRouterRoutes(await readFile(routesPath, "utf8"));
+  const routeEntries = parseReactRouterRoutes(
+    await readFile(routesPath, "utf8"),
+  );
   const rootPath = join(resolved, "app", "root.tsx");
   const roots = await existingFiles([rootPath]);
   const entries = [
-    ...await Promise.all(roots.map(async (path) => ({ path, text: await readFile(path, "utf8") }))),
-    ...await Promise.all(routeEntries.map(async (entry) => ({ path: resolve(dirname(routesPath), entry.file), text: await readFile(resolve(dirname(routesPath), entry.file), "utf8") })))
+    ...(await Promise.all(
+      roots.map(async (path) => ({ path, text: await readFile(path, "utf8") })),
+    )),
+    ...(await Promise.all(
+      routeEntries.map(async (entry) => ({
+        path: resolve(dirname(routesPath), entry.file),
+        text: await readFile(resolve(dirname(routesPath), entry.file), "utf8"),
+      })),
+    )),
   ];
   const tsconfig = await readTsConfigResolution(resolved);
   const imported = await sourceWithLocalImports(entries, tsconfig);
@@ -185,11 +289,14 @@ async function loadExtractionProject(sourcePath: string): Promise<ExtractionProj
     sources: imported.sources,
     routes: uniqueStrings(routeEntries.map((entry) => entry.pattern)),
     effectApis: fetchEffectApis(sourceText),
-    configStartDir: resolved
+    configStartDir: resolved,
   };
 }
 
-async function sourceWithLocalImports(entries: Array<{ path: string; text: string }>, tsconfig: TsConfigResolution): Promise<{ sources: Array<{ path: string; text: string }> }> {
+async function sourceWithLocalImports(
+  entries: Array<{ path: string; text: string }>,
+  tsconfig: TsConfigResolution,
+): Promise<{ sources: Array<{ path: string; text: string }> }> {
   const seen = new Set<string>();
   const sources: Array<{ path: string; text: string }> = [];
   const queue = [...entries];
@@ -200,8 +307,13 @@ async function sourceWithLocalImports(entries: Array<{ path: string; text: strin
     seen.add(canonical);
     sources.push({ path: canonical, text: next.text });
     for (const specifier of localImportSpecifiers(next.text)) {
-      const imported = await resolveImportPath(dirname(canonical), specifier, tsconfig);
-      if (imported) queue.push({ path: imported, text: await readFile(imported, "utf8") });
+      const imported = await resolveImportPath(
+        dirname(canonical),
+        specifier,
+        tsconfig,
+      );
+      if (imported)
+        queue.push({ path: imported, text: await readFile(imported, "utf8") });
     }
   }
   return { sources };
@@ -211,7 +323,11 @@ function localImportSpecifiers(source: string): string[] {
   const specs: string[] = [];
   const parsed = tsCreateSourceFile(source);
   const visit = (node: import("typescript").Node): void => {
-    if (tsIsImportDeclaration(node) && tsIsStringLiteral(node.moduleSpecifier) && isLocalImportSpecifier(node.moduleSpecifier.text)) {
+    if (
+      tsIsImportDeclaration(node) &&
+      tsIsStringLiteral(node.moduleSpecifier) &&
+      isLocalImportSpecifier(node.moduleSpecifier.text)
+    ) {
       specs.push(node.moduleSpecifier.text);
     }
     tsForEachChild(node, visit);
@@ -221,18 +337,31 @@ function localImportSpecifiers(source: string): string[] {
 }
 
 function tsCreateSourceFile(source: string): import("typescript").SourceFile {
-  return ts.createSourceFile("imports.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  return ts.createSourceFile(
+    "imports.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
 }
 
-function tsIsImportDeclaration(node: import("typescript").Node): node is import("typescript").ImportDeclaration {
+function tsIsImportDeclaration(
+  node: import("typescript").Node,
+): node is import("typescript").ImportDeclaration {
   return ts.isImportDeclaration(node);
 }
 
-function tsIsStringLiteral(node: import("typescript").Node): node is import("typescript").StringLiteral {
+function tsIsStringLiteral(
+  node: import("typescript").Node,
+): node is import("typescript").StringLiteral {
   return ts.isStringLiteral(node);
 }
 
-function tsForEachChild(node: import("typescript").Node, cb: (node: import("typescript").Node) => void): void {
+function tsForEachChild(
+  node: import("typescript").Node,
+  cb: (node: import("typescript").Node) => void,
+): void {
   ts.forEachChild(node, cb);
 }
 
@@ -240,8 +369,13 @@ function isLocalImportSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("~/");
 }
 
-async function resolveImportPath(baseDir: string, specifier: string, tsconfig: TsConfigResolution): Promise<string | undefined> {
-  if (specifier.startsWith("./+types/") || specifier.startsWith("../+types/")) return undefined;
+async function resolveImportPath(
+  baseDir: string,
+  specifier: string,
+  tsconfig: TsConfigResolution,
+): Promise<string | undefined> {
+  if (specifier.startsWith("./+types/") || specifier.startsWith("../+types/"))
+    return undefined;
   const bases = importBases(baseDir, specifier, tsconfig);
   for (const base of bases) {
     const resolved = await firstExistingModulePath(base);
@@ -250,21 +384,41 @@ async function resolveImportPath(baseDir: string, specifier: string, tsconfig: T
   return undefined;
 }
 
-function importBases(baseDir: string, specifier: string, tsconfig: TsConfigResolution): string[] {
+function importBases(
+  baseDir: string,
+  specifier: string,
+  tsconfig: TsConfigResolution,
+): string[] {
   if (specifier.startsWith(".")) return [resolve(baseDir, specifier)];
   const matches = tsconfig.paths.flatMap((entry) => {
-    if (!specifier.startsWith(entry.prefix) || !specifier.endsWith(entry.suffix)) return [];
-    const star = specifier.slice(entry.prefix.length, specifier.length - entry.suffix.length);
+    if (
+      !specifier.startsWith(entry.prefix) ||
+      !specifier.endsWith(entry.suffix)
+    )
+      return [];
+    const star = specifier.slice(
+      entry.prefix.length,
+      specifier.length - entry.suffix.length,
+    );
     return entry.targets.map((target) => resolve(target.replace("*", star)));
   });
   if (matches.length > 0) return matches;
   return tsconfig.baseUrl ? [resolve(tsconfig.baseUrl, specifier)] : [];
 }
 
-async function firstExistingModulePath(base: string): Promise<string | undefined> {
+async function firstExistingModulePath(
+  base: string,
+): Promise<string | undefined> {
   const candidates = /\.[cm]?[jt]sx?$/.test(base)
     ? [base]
-    : [`${base}.ts`, `${base}.tsx`, `${base}.mts`, `${base}.cts`, join(base, "index.ts"), join(base, "index.tsx")];
+    : [
+        `${base}.ts`,
+        `${base}.tsx`,
+        `${base}.mts`,
+        `${base}.cts`,
+        join(base, "index.ts"),
+        join(base, "index.tsx"),
+      ];
   for (const candidate of candidates) {
     try {
       const candidateStat = await stat(candidate);
@@ -276,22 +430,36 @@ async function firstExistingModulePath(base: string): Promise<string | undefined
   return undefined;
 }
 
-async function readTsConfigResolution(startDir: string): Promise<TsConfigResolution> {
+async function readTsConfigResolution(
+  startDir: string,
+): Promise<TsConfigResolution> {
   const tsconfigPath = await findNearestTsConfig(startDir);
   if (!tsconfigPath) return { paths: [] };
-  const parsed = JSON.parse(await readFile(tsconfigPath, "utf8")) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
+  const parsed = JSON.parse(await readFile(tsconfigPath, "utf8")) as {
+    compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
+  };
   const configDir = dirname(tsconfigPath);
-  const baseUrl = parsed.compilerOptions?.baseUrl ? resolve(configDir, parsed.compilerOptions.baseUrl) : configDir;
-  const paths = Object.entries(parsed.compilerOptions?.paths ?? {}).map(([key, targets]) => {
-    const star = key.indexOf("*");
-    const prefix = star >= 0 ? key.slice(0, star) : key;
-    const suffix = star >= 0 ? key.slice(star + 1) : "";
-    return { prefix, suffix, targets: targets.map((target) => resolve(baseUrl, target)) };
-  });
+  const baseUrl = parsed.compilerOptions?.baseUrl
+    ? resolve(configDir, parsed.compilerOptions.baseUrl)
+    : configDir;
+  const paths = Object.entries(parsed.compilerOptions?.paths ?? {}).map(
+    ([key, targets]) => {
+      const star = key.indexOf("*");
+      const prefix = star >= 0 ? key.slice(0, star) : key;
+      const suffix = star >= 0 ? key.slice(star + 1) : "";
+      return {
+        prefix,
+        suffix,
+        targets: targets.map((target) => resolve(baseUrl, target)),
+      };
+    },
+  );
   return { baseUrl, paths };
 }
 
-async function findNearestTsConfig(startDir: string): Promise<string | undefined> {
+async function findNearestTsConfig(
+  startDir: string,
+): Promise<string | undefined> {
   let dir = startDir;
   while (true) {
     const candidate = join(dir, "tsconfig.json");
@@ -320,16 +488,28 @@ async function existingFiles(paths: readonly string[]): Promise<string[]> {
   return found;
 }
 
-function parseReactRouterRoutes(source: string): Array<{ pattern: string; file: string }> {
+function parseReactRouterRoutes(
+  source: string,
+): Array<{ pattern: string; file: string }> {
   const routes: Array<{ pattern: string; file: string }> = [];
   const parsed = tsCreateSourceFile(source);
   const visit = (node: import("typescript").Node): void => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      if (node.expression.text === "index" && ts.isStringLiteral(node.arguments[0])) {
+      if (
+        node.expression.text === "index" &&
+        ts.isStringLiteral(node.arguments[0])
+      ) {
         routes.push({ pattern: "/", file: node.arguments[0].text });
       }
-      if (node.expression.text === "route" && ts.isStringLiteral(node.arguments[0]) && ts.isStringLiteral(node.arguments[1])) {
-        routes.push({ pattern: reactRouterPathPattern(node.arguments[0].text), file: node.arguments[1].text });
+      if (
+        node.expression.text === "route" &&
+        ts.isStringLiteral(node.arguments[0]) &&
+        ts.isStringLiteral(node.arguments[1])
+      ) {
+        routes.push({
+          pattern: reactRouterPathPattern(node.arguments[0].text),
+          file: node.arguments[1].text,
+        });
       }
     }
     tsForEachChild(node, visit);
@@ -343,15 +523,23 @@ function reactRouterPathPattern(pattern: string): string {
   return normalized.replace(/\$([A-Za-z0-9_]+)/g, ":$1").replace(/\*$/, "*");
 }
 
-function sourceHashes(sources: readonly { path: string; text: string }[]): Record<string, string> {
-  return Object.fromEntries(sources.map((source) => [source.path, sha256(source.text)]));
+function sourceHashes(
+  sources: readonly { path: string; text: string }[],
+): Record<string, string> {
+  return Object.fromEntries(
+    sources.map((source) => [source.path, sha256(source.text)]),
+  );
 }
 
 function fetchEffectApis(sourceText: string): string[] {
   const source = tsCreateSourceFile(sourceText);
   const ops = new Set<string>();
   const visit = (node: import("typescript").Node): void => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "fetch") {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "fetch"
+    ) {
       const op = fetchOpId(node);
       if (op) ops.add(op);
     }
@@ -361,7 +549,9 @@ function fetchEffectApis(sourceText: string): string[] {
   return [...ops].sort();
 }
 
-function fetchOpId(call: import("typescript").CallExpression): string | undefined {
+function fetchOpId(
+  call: import("typescript").CallExpression,
+): string | undefined {
   const first = call.arguments[0];
   if (!first) return undefined;
   const path = fetchPathValue(first);
@@ -370,45 +560,79 @@ function fetchOpId(call: import("typescript").CallExpression): string | undefine
   return `${method} ${path}`;
 }
 
-function fetchPathValue(expression: import("typescript").Expression): string | undefined {
-  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return normalizeFetchPath(expression.text);
+function fetchPathValue(
+  expression: import("typescript").Expression,
+): string | undefined {
+  if (
+    ts.isStringLiteral(expression) ||
+    ts.isNoSubstitutionTemplateLiteral(expression)
+  )
+    return normalizeFetchPath(expression.text);
   if (ts.isTemplateExpression(expression)) {
     let value = expression.head.text;
-    for (const span of expression.templateSpans) value += ":id" + span.literal.text;
+    for (const span of expression.templateSpans)
+      value += `:id${span.literal.text}`;
     return normalizeFetchPath(value);
   }
   return undefined;
 }
 
 function normalizeFetchPath(path: string): string {
-  return (path.startsWith("/") ? path : `/${path}`).replace(/\/:param(?=\/|$)/g, "/:id");
+  return (path.startsWith("/") ? path : `/${path}`).replace(
+    /\/:param(?=\/|$)/g,
+    "/:id",
+  );
 }
 
-function fetchMethodValue(expression: import("typescript").Expression | undefined): string | undefined {
-  if (!expression || !ts.isObjectLiteralExpression(expression)) return undefined;
-  const method = expression.properties.find((property): property is import("typescript").PropertyAssignment =>
-    ts.isPropertyAssignment(property) && propertyName(property.name) === "method"
+function fetchMethodValue(
+  expression: import("typescript").Expression | undefined,
+): string | undefined {
+  if (!expression || !ts.isObjectLiteralExpression(expression))
+    return undefined;
+  const method = expression.properties.find(
+    (property): property is import("typescript").PropertyAssignment =>
+      ts.isPropertyAssignment(property) &&
+      propertyName(property.name) === "method",
   );
   const value = method ? literalString(method.initializer) : undefined;
   return value?.toUpperCase();
 }
 
-function literalString(expression: import("typescript").Expression): string | undefined {
-  return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression) ? expression.text : undefined;
+function literalString(
+  expression: import("typescript").Expression,
+): string | undefined {
+  return ts.isStringLiteral(expression) ||
+    ts.isNoSubstitutionTemplateLiteral(expression)
+    ? expression.text
+    : undefined;
 }
 
-function propertyName(name: import("typescript").PropertyName): string | undefined {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+function propertyName(
+  name: import("typescript").PropertyName,
+): string | undefined {
+  if (
+    ts.isIdentifier(name) ||
+    ts.isStringLiteral(name) ||
+    ts.isNumericLiteral(name)
+  )
+    return name.text;
   return undefined;
 }
 
-async function readOverlaySpec(model: Model, overlayPath: string): Promise<OverlaySpec> {
+async function readOverlaySpec(
+  model: Model,
+  overlayPath: string,
+): Promise<OverlaySpec> {
   return loadOverlaySpec(model, overlayPath);
 }
 
-async function loadModalityConfig(configPath: string | undefined): Promise<ModalityConfig> {
+async function loadModalityConfig(
+  configPath: string | undefined,
+): Promise<ModalityConfig> {
   if (!configPath) return {};
-  const module = (await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`)) as {
+  const module = (await import(
+    `${pathToFileURL(configPath).href}?t=${Date.now()}`
+  )) as {
     default?: ModalityConfig | (() => ModalityConfig | Promise<ModalityConfig>);
     config?: ModalityConfig | (() => ModalityConfig | Promise<ModalityConfig>);
   };
@@ -416,8 +640,15 @@ async function loadModalityConfig(configPath: string | undefined): Promise<Modal
   return typeof exported === "function" ? await exported() : exported;
 }
 
-async function findNearestConfig(startDir: string): Promise<string | undefined> {
-  const names = ["modality.config.ts", "modality.config.mts", "modality.config.js", "modality.config.mjs"];
+async function findNearestConfig(
+  startDir: string,
+): Promise<string | undefined> {
+  const names = [
+    "modality.config.ts",
+    "modality.config.mts",
+    "modality.config.js",
+    "modality.config.mjs",
+  ];
   let dir = startDir;
   while (true) {
     for (const name of names) {
@@ -439,7 +670,9 @@ function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-async function findNearestPackageJson(startDir: string): Promise<string | undefined> {
+async function findNearestPackageJson(
+  startDir: string,
+): Promise<string | undefined> {
   let dir = startDir;
   while (true) {
     const candidate = join(dir, "package.json");
@@ -455,7 +688,9 @@ async function findNearestPackageJson(startDir: string): Promise<string | undefi
   }
 }
 
-async function readPackageDependencies(packageJsonPath: string | undefined): Promise<Record<string, string> | undefined> {
+async function readPackageDependencies(
+  packageJsonPath: string | undefined,
+): Promise<Record<string, string> | undefined> {
   if (!packageJsonPath) return undefined;
   const manifest = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
     dependencies?: Record<string, string>;
@@ -465,7 +700,7 @@ async function readPackageDependencies(packageJsonPath: string | undefined): Pro
   return {
     ...(manifest.peerDependencies ?? {}),
     ...(manifest.devDependencies ?? {}),
-    ...(manifest.dependencies ?? {})
+    ...(manifest.dependencies ?? {}),
   };
 }
 
@@ -473,35 +708,64 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function assertMatchesExpectedModel(model: Model, expectedModelPath: string): Promise<void> {
-  const expected = parseModelArtifact(await readFile(expectedModelPath, "utf8"));
+async function assertMatchesExpectedModel(
+  model: Model,
+  expectedModelPath: string,
+): Promise<void> {
+  const expected = parseModelArtifact(
+    await readFile(expectedModelPath, "utf8"),
+  );
   const actualText = canonicalJson(model);
   const expectedText = canonicalJson(expected);
   if (actualText !== expectedText) {
-    throw new Error(`Extracted model differs from expected snapshot ${expectedModelPath}`);
+    throw new Error(
+      `Extracted model differs from expected snapshot ${expectedModelPath}`,
+    );
   }
 }
 
-function createExtractionReport(sourceFiles: readonly string[], model: Model, warnings: readonly string[], ignoredVars: readonly string[], now: Date): ExtractionReport {
+function createExtractionReport(
+  sourceFiles: readonly string[],
+  model: Model,
+  warnings: readonly string[],
+  ignoredVars: readonly string[],
+  now: Date,
+): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
   const transitionHandlers = model.transitions.map((transition) => ({
     id: transition.id,
-    classification: transition.confidence === "manual" ? "overlay" as const : transition.confidence,
-    reasons: transition.confidence === "over-approx" ? overApproxReasons(transition) : [] as string[]
+    classification:
+      transition.confidence === "manual"
+        ? ("overlay" as const)
+        : transition.confidence,
+    reasons:
+      transition.confidence === "over-approx"
+        ? overApproxReasons(transition)
+        : ([] as string[]),
   }));
-  const transitionIds = new Set(transitionHandlers.map((handler) => handler.id));
+  const transitionIds = new Set(
+    transitionHandlers.map((handler) => handler.id),
+  );
   const unextractableHandlers = warnings
     .map(unextractableHandlerFromWarning)
-    .filter((handler): handler is { id: string; reason: string } => Boolean(handler))
+    .filter((handler): handler is { id: string; reason: string } =>
+      Boolean(handler),
+    )
     .filter((handler) => !transitionIds.has(handler.id))
     .map((handler) => ({
       id: handler.id,
       classification: "unextractable" as const,
-      reasons: [handler.reason]
+      reasons: [handler.reason],
     }));
   const handlers = [...transitionHandlers, ...unextractableHandlers];
-  const exactOrOverlay = handlers.filter((handler) => handler.classification === "exact" || handler.classification === "overlay").length;
-  const unextractable = handlers.filter((handler) => handler.classification === "unextractable").length;
+  const exactOrOverlay = handlers.filter(
+    (handler) =>
+      handler.classification === "exact" ||
+      handler.classification === "overlay",
+  ).length;
+  const unextractable = handlers.filter(
+    (handler) => handler.classification === "unextractable",
+  ).length;
   return {
     schemaVersion: 1,
     kind: "extraction-report",
@@ -515,29 +779,59 @@ function createExtractionReport(sourceFiles: readonly string[], model: Model, wa
     domains: model.vars.map((decl) => ({
       varId: decl.id,
       domainKind: decl.domain.kind,
-      provenance: model.metadata?.domainProvenance?.[decl.id] ?? (decl.origin === "system" ? "system" : decl.origin === "library-template" ? "template" : decl.domain.kind === "tokens" ? "default-token" : "type-derived")
+      provenance:
+        model.metadata?.domainProvenance?.[decl.id] ??
+        (decl.origin === "system"
+          ? "system"
+          : decl.origin === "library-template"
+            ? "template"
+            : decl.domain.kind === "tokens"
+              ? "default-token"
+              : "type-derived"),
     })),
     coverage: {
       handlersTotal: handlers.length,
       exactOrOverlay,
       unextractable,
       ignoredVars: ignoredVars.length,
-      percentExactOrOverlay: handlers.length === 0 ? 1 : exactOrOverlay / handlers.length
+      percentExactOrOverlay:
+        handlers.length === 0 ? 1 : exactOrOverlay / handlers.length,
     },
-    warnings
+    warnings,
   };
 }
 
-function emptyExtractionCaveats(): NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]> {
-  return { globalTaints: [], staleReads: [], unhandledRejections: [], unextractableHandlers: [] };
+function emptyExtractionCaveats(): NonNullable<
+  NonNullable<Model["metadata"]>["extractionCaveats"]
+> {
+  return {
+    globalTaints: [],
+    staleReads: [],
+    unhandledRejections: [],
+    unextractableHandlers: [],
+  };
 }
 
-function createExtractionCaveats(warnings: readonly string[]): NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]> {
+function createExtractionCaveats(
+  warnings: readonly string[],
+): NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]> {
   return {
-    globalTaints: warnings.map(globalTaintFromWarning).filter(isCaveat).sort(compareCaveats),
-    staleReads: warnings.map(staleReadFromWarning).filter(isCaveat).sort(compareCaveats),
-    unhandledRejections: warnings.map(unhandledRejectionFromWarning).filter(isCaveat).sort(compareCaveats),
-    unextractableHandlers: warnings.map(unextractableHandlerFromWarning).filter(isCaveat).sort(compareCaveats)
+    globalTaints: warnings
+      .map(globalTaintFromWarning)
+      .filter(isCaveat)
+      .sort(compareCaveats),
+    staleReads: warnings
+      .map(staleReadFromWarning)
+      .filter(isCaveat)
+      .sort(compareCaveats),
+    unhandledRejections: warnings
+      .map(unhandledRejectionFromWarning)
+      .filter(isCaveat)
+      .sort(compareCaveats),
+    unextractableHandlers: warnings
+      .map(unextractableHandlerFromWarning)
+      .filter(isCaveat)
+      .sort(compareCaveats),
   };
 }
 
@@ -551,20 +845,32 @@ function staleReadFromWarning(warning: string): ExtractionCaveat | undefined {
   return match?.[1] ? { id: match[1], reason: warning } : undefined;
 }
 
-function unhandledRejectionFromWarning(warning: string): ExtractionCaveat | undefined {
+function unhandledRejectionFromWarning(
+  warning: string,
+): ExtractionCaveat | undefined {
   const match = /^Unhandled rejection (.+)$/.exec(warning);
   return match?.[1] ? { id: match[1], reason: warning } : undefined;
 }
 
-function isCaveat(value: ExtractionCaveat | undefined): value is ExtractionCaveat {
+function isCaveat(
+  value: ExtractionCaveat | undefined,
+): value is ExtractionCaveat {
   return Boolean(value);
 }
 
-function compareCaveats(left: ExtractionCaveat, right: ExtractionCaveat): number {
-  return left.id.localeCompare(right.id) || left.reason.localeCompare(right.reason);
+function compareCaveats(
+  left: ExtractionCaveat,
+  right: ExtractionCaveat,
+): number {
+  return (
+    left.id.localeCompare(right.id) || left.reason.localeCompare(right.reason)
+  );
 }
 
-function pluginConformanceWarnings(sourcePlugins: readonly StateSourcePlugin[], dependencies: Record<string, string> | undefined): string[] {
+function pluginConformanceWarnings(
+  sourcePlugins: readonly StateSourcePlugin[],
+  dependencies: Record<string, string> | undefined,
+): string[] {
   if (!dependencies) return [];
   const warnings: string[] = [];
   for (const plugin of sourcePlugins) {
@@ -572,28 +878,41 @@ function pluginConformanceWarnings(sourcePlugins: readonly StateSourcePlugin[], 
     if (!testedVersions) continue;
     const requirement = parseTestedVersionRange(testedVersions);
     if (!requirement) {
-      warnings.push(`Plugin ${plugin.id} has unsupported testedVersions range ${testedVersions}`);
+      warnings.push(
+        `Plugin ${plugin.id} has unsupported testedVersions range ${testedVersions}`,
+      );
       continue;
     }
-    const packageName = plugin.packageNames.find((candidate) => candidate === requirement.packageName) ?? plugin.packageNames[0];
+    const packageName =
+      plugin.packageNames.find(
+        (candidate) => candidate === requirement.packageName,
+      ) ?? plugin.packageNames[0];
     const actual = packageName ? dependencies[packageName] : undefined;
     if (!packageName || actual === undefined) {
-      warnings.push(`Plugin ${plugin.id} tested against ${testedVersions}, but no matching app dependency was found`);
+      warnings.push(
+        `Plugin ${plugin.id} tested against ${testedVersions}, but no matching app dependency was found`,
+      );
       continue;
     }
     const actualMajor = firstSemverMajor(actual);
     if (actualMajor === undefined) {
-      warnings.push(`Plugin ${plugin.id} tested against ${testedVersions}, but app dependency ${packageName}@${actual} could not be parsed`);
+      warnings.push(
+        `Plugin ${plugin.id} tested against ${testedVersions}, but app dependency ${packageName}@${actual} could not be parsed`,
+      );
       continue;
     }
     if (actualMajor < requirement.minimumMajor) {
-      warnings.push(`Plugin ${plugin.id} tested against ${testedVersions}, but app uses ${packageName}@${actual}`);
+      warnings.push(
+        `Plugin ${plugin.id} tested against ${testedVersions}, but app uses ${packageName}@${actual}`,
+      );
     }
   }
   return warnings.sort();
 }
 
-function parseTestedVersionRange(range: string): { packageName: string; minimumMajor: number } | undefined {
+function parseTestedVersionRange(
+  range: string,
+): { packageName: string; minimumMajor: number } | undefined {
   const match = /^([a-zA-Z0-9@/_-]+)>=([0-9]+)/.exec(range.trim());
   if (!match?.[1] || !match[2]) return undefined;
   return { packageName: match[1], minimumMajor: Number(match[2]) };
@@ -604,34 +923,52 @@ function firstSemverMajor(range: string): number | undefined {
   return match ? Number(match[0]) : undefined;
 }
 
-function pluginProvenance(plugins: ReturnType<typeof runExtractionPipeline>["plugins"]): NonNullable<Model["metadata"]>["plugins"] {
-  return [...plugins.sources, ...(plugins.router ? [plugins.router] : [])].sort((left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id));
+function pluginProvenance(
+  plugins: ReturnType<typeof runExtractionPipeline>["plugins"],
+): NonNullable<Model["metadata"]>["plugins"] {
+  return [...plugins.sources, ...(plugins.router ? [plugins.router] : [])].sort(
+    (left, right) =>
+      left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
+  );
 }
 
-function transitionNavigatedRoutes(transitions: readonly Model["transitions"][number][]): string[] {
+function transitionNavigatedRoutes(
+  transitions: readonly Model["transitions"][number][],
+): string[] {
   const routes = new Set<string>();
   const visit = (effect: EffectIR): void => {
-    if (effect.kind === "navigate" && effect.to?.kind === "lit" && typeof effect.to.value === "string") routes.add(effect.to.value);
-    if (effect.kind === "seq") effect.effects.forEach(visit);
+    if (
+      effect.kind === "navigate" &&
+      effect.to?.kind === "lit" &&
+      typeof effect.to.value === "string"
+    )
+      routes.add(effect.to.value);
+    if (effect.kind === "seq") {
+      for (const child of effect.effects) visit(child);
+    }
     if (effect.kind === "if") {
       visit(effect.then);
       visit(effect.else);
     }
   };
-  transitions.forEach((transition) => visit(transition.effect));
+  for (const transition of transitions) visit(transition.effect);
   return [...routes].sort();
 }
 
 function overApproxReasons(transition: Model["transitions"][number]): string[] {
   const reasons = new Set<string>();
-  if (transition.id.endsWith(".escaped")) reasons.add("setter escaped to unanalyzed call");
-  for (const variable of havocWrites(transition.effect)) reasons.add(`havoc write to ${variable}`);
+  if (transition.id.endsWith(".escaped"))
+    reasons.add("setter escaped to unanalyzed call");
+  for (const variable of havocWrites(transition.effect))
+    reasons.add(`havoc write to ${variable}`);
   if (reasons.size === 0) reasons.add("transition confidence is over-approx");
   return [...reasons].sort();
 }
 
 function explainOverlayDrift(model: Model, overlay: OverlaySpec): string[] {
-  const transitionIds = model.transitions.map((transition) => transition.id).sort();
+  const transitionIds = model.transitions
+    .map((transition) => transition.id)
+    .sort();
   const varIds = model.vars.map((decl) => decl.id).sort();
   const lines: string[] = [];
   for (const transition of overlay.transitions ?? []) {
@@ -649,17 +986,31 @@ function explainOverlayDrift(model: Model, overlay: OverlaySpec): string[] {
   return lines.sort();
 }
 
-function formatDrift(kind: string, id: string, candidates: readonly string[]): string {
+function formatDrift(
+  kind: string,
+  id: string,
+  candidates: readonly string[],
+): string {
   const suggestions = nearestCandidates(id, candidates);
   return suggestions.length > 0
     ? `overlay-drift: ${kind} ${id} has no match; nearest=${suggestions.join(",")}`
     : `overlay-drift: ${kind} ${id} has no match; nearest=none`;
 }
 
-function nearestCandidates(id: string, candidates: readonly string[]): string[] {
+function nearestCandidates(
+  id: string,
+  candidates: readonly string[],
+): string[] {
   return candidates
-    .map((candidate) => ({ candidate, distance: editDistance(normalizeId(id), normalizeId(candidate)) }))
-    .sort((left, right) => left.distance - right.distance || left.candidate.localeCompare(right.candidate))
+    .map((candidate) => ({
+      candidate,
+      distance: editDistance(normalizeId(id), normalizeId(candidate)),
+    }))
+    .sort(
+      (left, right) =>
+        left.distance - right.distance ||
+        left.candidate.localeCompare(right.candidate),
+    )
     .slice(0, 3)
     .map(({ candidate, distance }) => `${candidate}(${distance})`);
 }
@@ -669,14 +1020,18 @@ function normalizeId(id: string): string {
 }
 
 function editDistance(left: string, right: string): number {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const previous = Array.from(
+    { length: right.length + 1 },
+    (_, index) => index,
+  );
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
     let diagonal = previous[0]!;
     previous[0] = leftIndex;
     for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
       const up = previous[rightIndex]! + 1;
       const leftCost = previous[rightIndex - 1]! + 1;
-      const subst = diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+      const subst =
+        diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
       diagonal = previous[rightIndex]!;
       previous[rightIndex] = Math.min(up, leftCost, subst);
     }
@@ -687,17 +1042,27 @@ function editDistance(left: string, right: string): number {
 function havocWrites(effect: EffectIR): string[] {
   if (effect.kind === "havoc") return [effect.var];
   if (effect.kind === "seq") return effect.effects.flatMap(havocWrites);
-  if (effect.kind === "if") return [...havocWrites(effect.then), ...havocWrites(effect.else)];
+  if (effect.kind === "if")
+    return [...havocWrites(effect.then), ...havocWrites(effect.else)];
   return [];
 }
 
-function unextractableHandlerFromWarning(warning: string): { id: string; reason: string } | undefined {
+function unextractableHandlerFromWarning(
+  warning: string,
+): { id: string; reason: string } | undefined {
   const match = /^Unextractable handler (.+)$/.exec(warning);
   return match?.[1] ? { id: match[1], reason: warning } : undefined;
 }
 
-function pendingVars(effectApis: readonly string[], transitions: readonly Model["transitions"][number][] = [], vars: readonly StateVarDecl[] = [], maxPending = 3): StateVarDecl[] {
-  const enqueues = transitions.flatMap((transition) => enqueueOps(transition.effect));
+function pendingVars(
+  effectApis: readonly string[],
+  transitions: readonly Model["transitions"][number][] = [],
+  vars: readonly StateVarDecl[] = [],
+  maxPending = 3,
+): StateVarDecl[] {
+  const enqueues = transitions.flatMap((transition) =>
+    enqueueOps(transition.effect),
+  );
   const opValues = new Set(effectApis);
   const continuationValues = new Set<string>();
   const argFields: Record<string, StateVarDecl["domain"]> = {};
@@ -729,26 +1094,37 @@ function pendingVars(effectApis: readonly string[], transitions: readonly Model[
           fields: {
             opId: { kind: "enum", values: ops },
             continuation: { kind: "enum", values: continuations },
-            args: { kind: "record", fields: argFields }
-          }
+            args: { kind: "record", fields: argFields },
+          },
         },
-        maxLen: maxPending
+        maxLen: maxPending,
       },
       origin: "system",
       scope: { kind: "global" },
-      initial: []
-    }
+      initial: [],
+    },
   ];
 }
 
-function enqueueOps(effect: EffectIR): { op: string; continuation: string; args: Extract<EffectIR, { kind: "enqueue" }>["args"] }[] {
-  if (effect.kind === "enqueue") return [{ op: effect.op, continuation: effect.continuation, args: effect.args }];
+function enqueueOps(effect: EffectIR): {
+  op: string;
+  continuation: string;
+  args: Extract<EffectIR, { kind: "enqueue" }>["args"];
+}[] {
+  if (effect.kind === "enqueue")
+    return [
+      { op: effect.op, continuation: effect.continuation, args: effect.args },
+    ];
   if (effect.kind === "seq") return effect.effects.flatMap(enqueueOps);
-  if (effect.kind === "if") return [...enqueueOps(effect.then), ...enqueueOps(effect.else)];
+  if (effect.kind === "if")
+    return [...enqueueOps(effect.then), ...enqueueOps(effect.else)];
   return [];
 }
 
-function pendingArgDomain(expr: Extract<EffectIR, { kind: "enqueue" }>["args"][string], varsById: ReadonlyMap<string, StateVarDecl>): StateVarDecl["domain"] | undefined {
+function pendingArgDomain(
+  expr: Extract<EffectIR, { kind: "enqueue" }>["args"][string],
+  varsById: ReadonlyMap<string, StateVarDecl>,
+): StateVarDecl["domain"] | undefined {
   if (expr.kind === "lit") return domainForLiteral(expr.value);
   if (expr.kind !== "read") return { kind: "tokens", count: 1 };
   const domain = varsById.get(expr.var)?.domain;
@@ -756,7 +1132,10 @@ function pendingArgDomain(expr: Extract<EffectIR, { kind: "enqueue" }>["args"][s
   return expr.path?.length ? { kind: "tokens", count: 1 } : domain;
 }
 
-function refineAssignedLiteralDomains(vars: readonly StateVarDecl[], transitions: readonly Model["transitions"][number][]): StateVarDecl[] {
+function refineAssignedLiteralDomains(
+  vars: readonly StateVarDecl[],
+  transitions: readonly Model["transitions"][number][],
+): StateVarDecl[] {
   const refinements = new Map<string, StateVarDecl["domain"]>();
   for (const transition of transitions) {
     for (const [varId, domain] of assignedLiteralDomains(transition.effect)) {
@@ -766,41 +1145,73 @@ function refineAssignedLiteralDomains(vars: readonly StateVarDecl[], transitions
   return vars.map((decl) => {
     if (decl.origin === "library-template") return decl;
     const refinement = refinements.get(decl.id);
-    return refinement ? { ...decl, domain: mergeAssignedDomain(decl.domain, refinement) } : decl;
+    return refinement
+      ? { ...decl, domain: mergeAssignedDomain(decl.domain, refinement) }
+      : decl;
   });
 }
 
-function mergeAssignedDomain(left: StateVarDecl["domain"], right: StateVarDecl["domain"]): StateVarDecl["domain"] {
-  if (left.kind === "enum" && right.kind === "enum") return mergeArgDomains(left, right);
-  if (left.kind === "boundedInt" && right.kind === "boundedInt") return mergeArgDomains(left, right);
+function mergeAssignedDomain(
+  left: StateVarDecl["domain"],
+  right: StateVarDecl["domain"],
+): StateVarDecl["domain"] {
+  if (left.kind === "enum" && right.kind === "enum")
+    return mergeArgDomains(left, right);
+  if (left.kind === "boundedInt" && right.kind === "boundedInt")
+    return mergeArgDomains(left, right);
   if (left.kind === "tokens") return right;
   return left;
 }
 
-function assignedLiteralDomains(effect: EffectIR): Array<[string, StateVarDecl["domain"]]> {
-  if (effect.kind === "assign" && effect.expr.kind === "lit") return [[effect.var, domainForLiteral(effect.expr.value)]];
+function assignedLiteralDomains(
+  effect: EffectIR,
+): Array<[string, StateVarDecl["domain"]]> {
+  if (effect.kind === "assign" && effect.expr.kind === "lit")
+    return [[effect.var, domainForLiteral(effect.expr.value)]];
   if (effect.kind === "choose") {
     return effect.among
-      .filter((expr): expr is Extract<typeof expr, { kind: "lit" }> => expr.kind === "lit")
+      .filter(
+        (expr): expr is Extract<typeof expr, { kind: "lit" }> =>
+          expr.kind === "lit",
+      )
       .map((expr) => [effect.var, domainForLiteral(expr.value)]);
   }
-  if (effect.kind === "seq") return effect.effects.flatMap(assignedLiteralDomains);
-  if (effect.kind === "if") return [...assignedLiteralDomains(effect.then), ...assignedLiteralDomains(effect.else)];
+  if (effect.kind === "seq")
+    return effect.effects.flatMap(assignedLiteralDomains);
+  if (effect.kind === "if")
+    return [
+      ...assignedLiteralDomains(effect.then),
+      ...assignedLiteralDomains(effect.else),
+    ];
   return [];
 }
 
 function domainForLiteral(value: unknown): StateVarDecl["domain"] {
   if (typeof value === "boolean") return { kind: "bool" };
-  if (typeof value === "number") return { kind: "boundedInt", min: value, max: value };
+  if (typeof value === "number")
+    return { kind: "boundedInt", min: value, max: value };
   if (typeof value === "string") return { kind: "enum", values: [value] };
-  if (value === null) return { kind: "option", inner: { kind: "tokens", count: 1 } };
+  if (value === null)
+    return { kind: "option", inner: { kind: "tokens", count: 1 } };
   return { kind: "tokens", count: 1 };
 }
 
-function mergeArgDomains(left: StateVarDecl["domain"] | undefined, right: StateVarDecl["domain"]): StateVarDecl["domain"] {
+function mergeArgDomains(
+  left: StateVarDecl["domain"] | undefined,
+  right: StateVarDecl["domain"],
+): StateVarDecl["domain"] {
   if (!left) return right;
-  if (left.kind === "enum" && right.kind === "enum") return { kind: "enum", values: [...new Set([...left.values, ...right.values])].sort() };
-  if (left.kind === "boundedInt" && right.kind === "boundedInt") return { kind: "boundedInt", min: Math.min(left.min, right.min), max: Math.max(left.max, right.max) };
+  if (left.kind === "enum" && right.kind === "enum")
+    return {
+      kind: "enum",
+      values: [...new Set([...left.values, ...right.values])].sort(),
+    };
+  if (left.kind === "boundedInt" && right.kind === "boundedInt")
+    return {
+      kind: "boundedInt",
+      min: Math.min(left.min, right.min),
+      max: Math.max(left.max, right.max),
+    };
   if (left.kind === right.kind) return left;
   return { kind: "tokens", count: 1 };
 }

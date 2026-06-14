@@ -1,9 +1,26 @@
-import type { ModelState, StepFacts, Trace, Transition } from "modality-ts/core";
+import type {
+  ModelState,
+  StepFacts,
+  Trace,
+  Transition,
+} from "modality-ts/core";
 
 export type PropertyVerdict =
   | { status: "verified-within-bounds"; property: string }
-  | { status: "violated"; property: string; trace: Trace; replayable?: boolean; replayBlockedReason?: string }
-  | { status: "reachable"; property: string; trace: Trace; replayable?: boolean; replayBlockedReason?: string }
+  | {
+      status: "violated";
+      property: string;
+      trace: Trace;
+      replayable?: boolean;
+      replayBlockedReason?: string;
+    }
+  | {
+      status: "reachable";
+      property: string;
+      trace: Trace;
+      replayable?: boolean;
+      replayBlockedReason?: string;
+    }
   | { status: "vacuous-warning"; property: string; message: string }
   | { status: "error"; property: string; message: string };
 

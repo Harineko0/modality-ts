@@ -17,9 +17,13 @@ describe("modality CLI", () => {
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(artifactDir, "model.json");
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract", "App.tsx", "--out", modelPath], {
-      cwd: todoDir
-    });
+    const { stdout } = await execFileAsync(
+      tsxBin,
+      [cliPath, "extract", "App.tsx", "--out", modelPath],
+      {
+        cwd: todoDir,
+      },
+    );
 
     const model = JSON.parse(await readFile(modelPath, "utf8"));
     expect(stdout).toContain(`model=${modelPath}`);

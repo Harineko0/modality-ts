@@ -5,7 +5,11 @@ import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Trace } from "modality-ts/core";
-import { generateAbstractReplayTest, generateActionReplayTest, generateReplayHarness } from "../../src/cli/codegen/replay-test.js";
+import {
+  generateAbstractReplayTest,
+  generateActionReplayTest,
+  generateReplayHarness,
+} from "../../src/cli/codegen/replay-test.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -19,14 +23,16 @@ describe("generateAbstractReplayTest", () => {
           label: { kind: "click", text: "Set flag" },
           pre: { flag: false },
           post: { flag: true },
-          diff: { flag: { before: false, after: true } }
-        }
-      ]
+          diff: { flag: { before: false, after: true } },
+        },
+      ],
     };
     const artifact = generateAbstractReplayTest("flag starts false", trace);
     expect(artifact.fileName).toBe("flag_starts_false.replay.test.ts");
     expect(artifact.source).toContain('describe("replay flag starts false"');
-    expect(artifact.source).toContain('expect(verdict.status).toBe("reproduced");');
+    expect(artifact.source).toContain(
+      'expect(verdict.status).toBe("reproduced");',
+    );
     expect(artifact.source).toContain("statesFromTrace(trace)");
     expect(artifact.source).toContain('"transitionId":"setFlag"');
   });
@@ -36,12 +42,16 @@ describe("generateAbstractReplayTest", () => {
       steps: [
         {
           transitionId: "edit",
-          label: { kind: "input", locator: { kind: "testId", value: "draft" }, valueClass: "nonEmpty" },
+          label: {
+            kind: "input",
+            locator: { kind: "testId", value: "draft" },
+            valueClass: "nonEmpty",
+          },
           pre: { draft: "empty" },
           post: { draft: "nonEmpty" },
-          diff: { draft: { before: "empty", after: "nonEmpty" } }
-        }
-      ]
+          diff: { draft: { before: "empty", after: "nonEmpty" } },
+        },
+      ],
     };
     const artifact = generateActionReplayTest("draft can change", trace);
     expect(artifact.fileName).toBe("draft_can_change.action.replay.test.ts");
@@ -53,9 +63,13 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("renderModalityReplay(trace)");
     expect(artifact.source).toContain("observeModalityReplay(replayHarness)");
     expect(artifact.source).toContain("...(replayHarness.sources ?? [])");
-    expect(artifact.source).toContain("replayHarness.observedVars ?? observedVars");
+    expect(artifact.source).toContain(
+      "replayHarness.observedVars ?? observedVars",
+    );
     expect(artifact.source).toContain("beforeStep: replayHarness.beforeStep");
-    expect(artifact.source).toContain('"locator":{"kind":"testId","value":"draft"}');
+    expect(artifact.source).toContain(
+      '"locator":{"kind":"testId","value":"draft"}',
+    );
     expect(artifact.source).toContain('"valueClass":"nonEmpty"');
   });
 
@@ -68,7 +82,9 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("data-modality-var");
     expect(artifact.source).toContain("dom-projection");
     expect(artifact.source).toContain("__modalityRenderReplayApp");
-    expect(artifact.source).toContain("createDeterministicReplayAsyncController");
+    expect(artifact.source).toContain(
+      "createDeterministicReplayAsyncController",
+    );
     expect(artifact.source).toContain("replayAsync");
     expect(artifact.source).toContain("resolve: replayAsync.resolve");
   });
@@ -78,27 +94,38 @@ describe("generateAbstractReplayTest", () => {
       steps: [
         {
           transitionId: "setFlag",
-          label: { kind: "click", locator: { kind: "testId", value: "set-flag" } },
+          label: {
+            kind: "click",
+            locator: { kind: "testId", value: "set-flag" },
+          },
           pre: { flag: false },
           post: { flag: true },
-          diff: { flag: { before: false, after: true } }
-        }
-      ]
+          diff: { flag: { before: false, after: true } },
+        },
+      ],
     };
     const dir = resolve(repoRoot, "src/cli/.tmp-generated-replay");
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const harness = generateReplayHarness();
     const replay = generateActionReplayTest("flag starts false", trace);
-    await writeFile(resolve(dir, harness.fileName), `${generatedAppHook()}\n${harness.source}`, "utf8");
+    await writeFile(
+      resolve(dir, harness.fileName),
+      `${generatedAppHook()}\n${harness.source}`,
+      "utf8",
+    );
     await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
 
     try {
-      const result = await execFileAsync("pnpm", ["vitest", "run", resolve(dir, replay.fileName)], {
-        cwd: repoRoot,
-        env: { ...process.env, FORCE_COLOR: "0" },
-        timeout: 30_000
-      });
+      const result = await execFileAsync(
+        "pnpm",
+        ["vitest", "run", resolve(dir, replay.fileName)],
+        {
+          cwd: repoRoot,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          timeout: 30_000,
+        },
+      );
       expect(result.stdout).toContain("1 passed");
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -110,34 +137,45 @@ describe("generateAbstractReplayTest", () => {
       steps: [
         {
           transitionId: "submit",
-          label: { kind: "submit", locator: { kind: "testId", value: "checkout" } },
+          label: {
+            kind: "submit",
+            locator: { kind: "testId", value: "checkout" },
+          },
           pre: { status: "idle" },
           post: { status: "submitting" },
-          diff: { status: { before: "idle", after: "submitting" } }
+          diff: { status: { before: "idle", after: "submitting" } },
         },
         {
           transitionId: "submit.resolve",
           label: { kind: "resolve", op: "api.submitOrder", outcome: "success" },
           pre: { status: "submitting" },
           post: { status: "done" },
-          diff: { status: { before: "submitting", after: "done" } }
-        }
-      ]
+          diff: { status: { before: "submitting", after: "done" } },
+        },
+      ],
     };
     const dir = resolve(repoRoot, "src/cli/.tmp-generated-async-replay");
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const harness = generateReplayHarness();
     const replay = generateActionReplayTest("checkout resolves", trace);
-    await writeFile(resolve(dir, harness.fileName), `${generatedAsyncAppHook()}\n${harness.source}`, "utf8");
+    await writeFile(
+      resolve(dir, harness.fileName),
+      `${generatedAsyncAppHook()}\n${harness.source}`,
+      "utf8",
+    );
     await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
 
     try {
-      const result = await execFileAsync("pnpm", ["vitest", "run", resolve(dir, replay.fileName)], {
-        cwd: repoRoot,
-        env: { ...process.env, FORCE_COLOR: "0" },
-        timeout: 30_000
-      });
+      const result = await execFileAsync(
+        "pnpm",
+        ["vitest", "run", resolve(dir, replay.fileName)],
+        {
+          cwd: repoRoot,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          timeout: 30_000,
+        },
+      );
       expect(result.stdout).toContain("1 passed");
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -160,7 +198,7 @@ function generatedAppHook(): string {
     `  document.body.append(button, output);`,
     `  paint();`,
     `  return {};`,
-    `};`
+    `};`,
   ].join("\n");
 }
 
@@ -187,6 +225,6 @@ function generatedAsyncAppHook(): string {
     `  document.body.append(form);`,
     `  paint();`,
     `  return {};`,
-    `};`
+    `};`,
   ].join("\n");
 }

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { checkModel, modelInitialStates, sliceModel } from "modality-ts/check";
-import { always, alwaysStep, enabled, leadsToWithin, reachable, reachableFrom, type Model, type Property } from "modality-ts/core";
+import {
+  always,
+  alwaysStep,
+  enabled,
+  leadsToWithin,
+  reachable,
+  reachableFrom,
+  type Model,
+  type Property,
+} from "modality-ts/core";
 import { checkerOracleCorpus } from "./oracle-corpus.js";
 
 const bool = { kind: "bool" } as const;
@@ -11,8 +20,8 @@ const pendingOp = {
   fields: {
     opId: { kind: "enum", values: ["POST"] },
     continuation: { kind: "enum", values: ["submit#1"] },
-    args: { kind: "record", fields: {} }
-  }
+    args: { kind: "record", fields: {} },
+  },
 } as const;
 
 function lit(value: unknown) {
@@ -29,13 +38,55 @@ function model(): Model {
     id: "oracle",
     bounds: { maxDepth: 6, maxPending: 2, maxInternalSteps: 8 },
     vars: [
-      { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-      { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
-      { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
-      { id: "auth", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-      { id: "draft", domain: { kind: "enum", values: ["empty", "nonEmpty"] }, origin: "system", scope: { kind: "global" }, initial: "empty" },
-      { id: "status", domain: { kind: "enum", values: ["idle", "posting", "failed"] }, origin: "system", scope: { kind: "global" }, initial: "idle" },
-      { id: "done", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+      {
+        id: "sys:route",
+        domain: route,
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "/",
+      },
+      {
+        id: "sys:history",
+        domain: { kind: "boundedList", inner: route, maxLen: 2 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "sys:pending",
+        domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "auth",
+        domain: bool,
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+      {
+        id: "draft",
+        domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "empty",
+      },
+      {
+        id: "status",
+        domain: { kind: "enum", values: ["idle", "posting", "failed"] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "idle",
+      },
+      {
+        id: "done",
+        domain: bool,
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
     ],
     transitions: [
       {
@@ -47,7 +98,7 @@ function model(): Model {
         effect: { kind: "assign", var: "auth", expr: lit(true) },
         reads: ["auth"],
         writes: ["auth"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "input",
@@ -58,57 +109,82 @@ function model(): Model {
         effect: { kind: "assign", var: "draft", expr: lit("nonEmpty") },
         reads: ["auth"],
         writes: ["draft"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "submit",
         cls: "user",
         label: { kind: "submit", text: "Add" },
         source: [],
-        guard: { kind: "and", args: [read("auth"), { kind: "eq", args: [read("draft"), lit("nonEmpty")] }, { kind: "eq", args: [read("status"), lit("idle")] }] },
+        guard: {
+          kind: "and",
+          args: [
+            read("auth"),
+            { kind: "eq", args: [read("draft"), lit("nonEmpty")] },
+            { kind: "eq", args: [read("status"), lit("idle")] },
+          ],
+        },
         effect: {
           kind: "seq",
           effects: [
             { kind: "assign", var: "status", expr: lit("posting") },
-            { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} }
-          ]
+            { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} },
+          ],
         },
         reads: ["auth", "draft", "status"],
         writes: ["status", "sys:pending"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "resolvePostSuccess",
         cls: "env",
         label: { kind: "resolve", op: "POST", outcome: "success" },
         source: [],
-        guard: { kind: "eq", args: [read("sys:pending", ["0", "opId"]), lit("POST")] },
+        guard: {
+          kind: "eq",
+          args: [read("sys:pending", ["0", "opId"]), lit("POST")],
+        },
         effect: {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
             { kind: "assign", var: "draft", expr: lit("empty") },
             { kind: "assign", var: "status", expr: lit("idle") },
-            { kind: "assign", var: "done", expr: lit(true) }
-          ]
+            { kind: "assign", var: "done", expr: lit(true) },
+          ],
         },
         reads: ["sys:pending"],
         writes: ["sys:pending", "draft", "status", "done"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "resolvePostError",
         cls: "env",
         label: { kind: "resolve", op: "POST", outcome: "error" },
         source: [],
-        guard: { kind: "eq", args: [read("sys:pending", ["0", "opId"]), lit("POST")] },
-        effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, { kind: "assign", var: "status", expr: lit("failed") }] },
+        guard: {
+          kind: "eq",
+          args: [read("sys:pending", ["0", "opId"]), lit("POST")],
+        },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "dequeue", index: 0 },
+            { kind: "assign", var: "status", expr: lit("failed") },
+          ],
+        },
         reads: ["sys:pending"],
         writes: ["sys:pending", "status"],
-        confidence: "exact"
-      }
-    ]
+        confidence: "exact",
+      },
+    ],
   };
+}
+
+function firstTransition(model: Model): Model["transitions"][number] {
+  const transition = model.transitions[0];
+  if (!transition) throw new Error("Fixture is missing first transition");
+  return transition;
 }
 
 describe("checker", () => {
@@ -118,10 +194,34 @@ describe("checker", () => {
       id: "route-local-initials",
       bounds: { maxDepth: 3, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "local:Page.choice", domain: { kind: "enum", values: ["x", "y"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: ["x", "y"] }
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:Page.choice",
+          domain: { kind: "enum", values: ["x", "y"] },
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: ["x", "y"],
+        },
       ],
       transitions: [
         {
@@ -133,7 +233,7 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/b") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "goA",
@@ -144,14 +244,27 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/a") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
 
-    expect(modelInitialStates(routeLocalModel).map((state) => state["local:Page.choice"]).sort()).toEqual(["x", "y"]);
-    const check = checkModel(routeLocalModel, [reachable(routeLocalModel, (state) => state["local:Page.choice"] === "y", { name: "canMountY" })]);
-    expect(check.verdicts[0]).toMatchObject({ status: "reachable", property: "canMountY" });
+    expect(
+      modelInitialStates(routeLocalModel)
+        .map((state) => state["local:Page.choice"])
+        .sort(),
+    ).toEqual(["x", "y"]);
+    const check = checkModel(routeLocalModel, [
+      reachable(
+        routeLocalModel,
+        (state) => state["local:Page.choice"] === "y",
+        { name: "canMountY" },
+      ),
+    ]);
+    expect(check.verdicts[0]).toMatchObject({
+      status: "reachable",
+      property: "canMountY",
+    });
   });
 
   it("treats named token values as used when freshToken checks exhaustion", () => {
@@ -160,11 +273,41 @@ describe("checker", () => {
       id: "named-token-exhaustion",
       bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "payload", domain: { kind: "tokens", count: 1, names: ["userA"] }, origin: "system", scope: { kind: "global" }, initial: "userA" },
-        { id: "next", domain: { kind: "tokens", count: 1, names: ["userA"] }, origin: "system", scope: { kind: "global" }, initial: "userA" }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "payload",
+          domain: { kind: "tokens", count: 1, names: ["userA"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "userA",
+        },
+        {
+          id: "next",
+          domain: { kind: "tokens", count: 1, names: ["userA"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "userA",
+        },
       ],
       transitions: [
         {
@@ -173,18 +316,29 @@ describe("checker", () => {
           label: { kind: "click", text: "Fresh" },
           source: [],
           guard: lit(true),
-          effect: { kind: "assign", var: "next", expr: { kind: "freshToken", domainOf: "next" } },
+          effect: {
+            kind: "assign",
+            var: "next",
+            expr: { kind: "freshToken", domainOf: "next" },
+          },
           reads: [],
           writes: ["next"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
 
-    const check = checkModel(tokenModel, [reachable(tokenModel, (state) => state.next !== "userA", { name: "freshGenerated" })]);
+    const check = checkModel(tokenModel, [
+      reachable(tokenModel, (state) => state.next !== "userA", {
+        name: "freshGenerated",
+      }),
+    ]);
     expect(check.stats.edges).toBe(0);
     expect(check.boundHits).toEqual(["token cap exhausted at fresh"]);
-    expect(check.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "freshGenerated" });
+    expect(check.verdicts[0]).toMatchObject({
+      status: "vacuous-warning",
+      property: "freshGenerated",
+    });
   });
 
   it("matches tagIs against the tagged domain discriminant only", () => {
@@ -193,24 +347,51 @@ describe("checker", () => {
       id: "tagged-discriminant",
       bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
         {
           id: "session",
           domain: {
             kind: "tagged",
             tag: "kind",
             variants: {
-              guest: { kind: "record", fields: { role: { kind: "enum", values: ["admin"] } } },
-              admin: { kind: "record", fields: {} }
-            }
+              guest: {
+                kind: "record",
+                fields: { role: { kind: "enum", values: ["admin"] } },
+              },
+              admin: { kind: "record", fields: {} },
+            },
           },
           origin: "system",
           scope: { kind: "global" },
-          initial: { kind: "guest", role: "admin" }
+          initial: { kind: "guest", role: "admin" },
         },
-        { id: "entered", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "entered",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -222,88 +403,173 @@ describe("checker", () => {
           effect: { kind: "assign", var: "entered", expr: lit(true) },
           reads: ["session"],
           writes: ["entered"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
 
-    const check = checkModel(taggedModel, [reachable(taggedModel, (state) => state.entered === true, { name: "enteredAdmin" })]);
-    expect(check.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "enteredAdmin" });
+    const check = checkModel(taggedModel, [
+      reachable(taggedModel, (state) => state.entered === true, {
+        name: "enteredAdmin",
+      }),
+    ]);
+    expect(check.verdicts[0]).toMatchObject({
+      status: "vacuous-warning",
+      property: "enteredAdmin",
+    });
     expect(check.stats.edges).toBe(0);
   });
 
   it("finds shortest traces for state and step violations", () => {
     const m = model();
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), { name: "badDoneInvariant" }),
-      alwaysStep(m, (pre, step) => !(step.enqueued("POST") && pre.auth === false), { name: "guestCannotSubmit" }),
-      reachable(m, (s) => s.done === true, { name: "doneReachable" })
+      always(m, (s) => !(s.done === true && s.draft === "empty"), {
+        name: "badDoneInvariant",
+      }),
+      alwaysStep(
+        m,
+        (pre, step) => !(step.enqueued("POST") && pre.auth === false),
+        { name: "guestCannotSubmit" },
+      ),
+      reachable(m, (s) => s.done === true, { name: "doneReachable" }),
     ];
     const result = checkModel(m, props);
     expect(result.stats.states).toBeGreaterThan(1);
-    expect(result.verdicts.find((v) => v.property === "badDoneInvariant")?.status).toBe("violated");
-    expect(result.verdicts.find((v) => v.property === "guestCannotSubmit")?.status).toBe("verified-within-bounds");
-    const reachableVerdict = result.verdicts.find((v) => v.property === "doneReachable");
+    expect(
+      result.verdicts.find((v) => v.property === "badDoneInvariant")?.status,
+    ).toBe("violated");
+    expect(
+      result.verdicts.find((v) => v.property === "guestCannotSubmit")?.status,
+    ).toBe("verified-within-bounds");
+    const reachableVerdict = result.verdicts.find(
+      (v) => v.property === "doneReachable",
+    );
     expect(reachableVerdict?.status).toBe("reachable");
-    expect(reachableVerdict?.status === "reachable" ? reachableVerdict.trace.steps.map((s) => s.transitionId) : []).toEqual(["login", "input", "submit", "resolvePostSuccess"]);
+    expect(
+      reachableVerdict?.status === "reachable"
+        ? reachableVerdict.trace.steps.map((s) => s.transitionId)
+        : [],
+    ).toEqual(["login", "input", "submit", "resolvePostSuccess"]);
   });
 
   it("checks bounded response and conditional reachability", () => {
     const m = model();
     const props: Property[] = [
-      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true || s.status === "failed", { name: "submitSettles", budget: { environment: 1 } }),
-      reachableFrom(m, (s) => s.status === "failed", (s) => s.auth === true, { name: "failedCanRemainAuthed" })
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (s) => s.done === true || s.status === "failed",
+        { name: "submitSettles", budget: { environment: 1 } },
+      ),
+      reachableFrom(
+        m,
+        (s) => s.status === "failed",
+        (s) => s.auth === true,
+        { name: "failedCanRemainAuthed" },
+      ),
     ];
     const result = checkModel(m, props);
-    expect(result.verdicts.find((v) => v.property === "submitSettles")?.status).toBe("verified-within-bounds");
-    expect(result.verdicts.find((v) => v.property === "failedCanRemainAuthed")?.status).toBe("verified-within-bounds");
+    expect(
+      result.verdicts.find((v) => v.property === "submitSettles")?.status,
+    ).toBe("verified-within-bounds");
+    expect(
+      result.verdicts.find((v) => v.property === "failedCanRemainAuthed")
+        ?.status,
+    ).toBe("verified-within-bounds");
   });
 
   it("checks bounded response beyond the global BFS frontier", () => {
     const m: Model = {
       ...model(),
-      bounds: { ...model().bounds, maxDepth: 3 }
+      bounds: { ...model().bounds, maxDepth: 3 },
     };
     const result = checkModel(m, [
-      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true || s.status === "failed", { name: "submitSettlesAfterFrontier", budget: { environment: 1 } })
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (s) => s.done === true || s.status === "failed",
+        { name: "submitSettlesAfterFrontier", budget: { environment: 1 } },
+      ),
     ]);
 
-    expect(result.boundHits).toContain("maxDepth reached before resolvePostError");
-    expect(result.boundHits).toContain("maxDepth reached before resolvePostSuccess");
-    expect(result.verdicts[0]).toMatchObject({ status: "verified-within-bounds", property: "submitSettlesAfterFrontier" });
+    expect(result.boundHits).toContain(
+      "maxDepth reached before resolvePostError",
+    );
+    expect(result.boundHits).toContain(
+      "maxDepth reached before resolvePostSuccess",
+    );
+    expect(result.verdicts[0]).toMatchObject({
+      status: "verified-within-bounds",
+      property: "submitSettlesAfterFrontier",
+    });
   });
 
   it("marks reachableFrom counterexamples as non-replayable", () => {
     const m = model();
     const result = checkModel(m, [
-      reachableFrom(m, (s) => s.status === "failed", (s) => s.done === true, { name: "failedCannotForceDone", reads: ["status", "done"] })
+      reachableFrom(
+        m,
+        (s) => s.status === "failed",
+        (s) => s.done === true,
+        { name: "failedCannotForceDone", reads: ["status", "done"] },
+      ),
     ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
-    expect(verdict?.status === "violated" ? verdict.replayable : undefined).toBe(false);
-    expect(verdict?.status === "violated" ? verdict.replayBlockedReason : "").toContain("reachableFrom counterexamples");
+    expect(
+      verdict?.status === "violated" ? verdict.replayable : undefined,
+    ).toBe(false);
+    expect(
+      verdict?.status === "violated" ? verdict.replayBlockedReason : "",
+    ).toContain("reachableFrom counterexamples");
   });
 
   it("marks locatorless user-event counterexamples as non-replayable", () => {
     const m = model();
-    const result = checkModel(m, [reachable(m, (s) => s.done === true, { name: "doneReachable", reads: ["done"] })]);
+    const result = checkModel(m, [
+      reachable(m, (s) => s.done === true, {
+        name: "doneReachable",
+        reads: ["done"],
+      }),
+    ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("reachable");
-    expect(verdict?.status === "reachable" ? verdict.replayable : undefined).toBe(false);
-    expect(verdict?.status === "reachable" ? verdict.replayBlockedReason : "").toContain("login:click");
-    expect(verdict?.status === "reachable" ? verdict.replayBlockedReason : "").toContain("input:input");
-    expect(verdict?.status === "reachable" ? verdict.trace.steps.at(-1)?.transitionId : undefined).toBe("resolvePostSuccess");
+    expect(
+      verdict?.status === "reachable" ? verdict.replayable : undefined,
+    ).toBe(false);
+    expect(
+      verdict?.status === "reachable" ? verdict.replayBlockedReason : "",
+    ).toContain("login:click");
+    expect(
+      verdict?.status === "reachable" ? verdict.replayBlockedReason : "",
+    ).toContain("input:input");
+    expect(
+      verdict?.status === "reachable"
+        ? verdict.trace.steps.at(-1)?.transitionId
+        : undefined,
+    ).toBe("resolvePostSuccess");
   });
 
   it("includes the failing bounded-response suffix in leadsToWithin traces", () => {
     const m = model();
     const result = checkModel(m, [
-      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true, { name: "submitDoneImmediately", budget: { environment: 0 } })
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (s) => s.done === true,
+        { name: "submitDoneImmediately", budget: { environment: 0 } },
+      ),
     ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
-    expect(verdict?.status === "violated" ? verdict.trace.steps.map((step) => step.transitionId).slice(0, 3) : []).toEqual(["login", "input", "submit"]);
-    expect(verdict?.status === "violated" ? verdict.trace.steps.length : undefined).toBe(3);
+    expect(
+      verdict?.status === "violated"
+        ? verdict.trace.steps.map((step) => step.transitionId).slice(0, 3)
+        : [],
+    ).toEqual(["login", "input", "submit"]);
+    expect(
+      verdict?.status === "violated" ? verdict.trace.steps.length : undefined,
+    ).toBe(3);
   });
 
   it("excludes user interference from bounded response unless explicitly allowed", () => {
@@ -312,11 +578,41 @@ describe("checker", () => {
       id: "leads-to-scheduler",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "done", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "canceled", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "done",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "canceled",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -325,64 +621,109 @@ describe("checker", () => {
           label: { kind: "click", text: "Start" },
           source: [],
           guard: lit(true),
-          effect: { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} },
+          effect: {
+            kind: "enqueue",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
           reads: [],
           writes: ["sys:pending"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "cancel",
           cls: "user",
           label: { kind: "click", text: "Cancel" },
           source: [],
-          guard: { kind: "eq", args: [read("sys:pending", ["0", "opId"]), lit("POST")] },
+          guard: {
+            kind: "eq",
+            args: [read("sys:pending", ["0", "opId"]), lit("POST")],
+          },
           effect: {
             kind: "seq",
             effects: [
               { kind: "dequeue", index: 0 },
-              { kind: "assign", var: "canceled", expr: lit(true) }
-            ]
+              { kind: "assign", var: "canceled", expr: lit(true) },
+            ],
           },
           reads: ["sys:pending"],
           writes: ["sys:pending", "canceled"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "finish",
           cls: "env",
           label: { kind: "resolve", op: "POST", outcome: "success" },
           source: [],
-          guard: { kind: "eq", args: [read("sys:pending", ["0", "opId"]), lit("POST")] },
+          guard: {
+            kind: "eq",
+            args: [read("sys:pending", ["0", "opId"]), lit("POST")],
+          },
           effect: {
             kind: "seq",
             effects: [
               { kind: "dequeue", index: 0 },
-              { kind: "assign", var: "done", expr: lit(true) }
-            ]
+              { kind: "assign", var: "done", expr: lit(true) },
+            ],
           },
           reads: ["sys:pending"],
           writes: ["sys:pending", "done"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true, { name: "settlesWithoutUserInterference", budget: { environment: 1 }, reads: ["done"] }),
-      leadsToWithin(m, (step) => step.enqueued("POST"), (s) => s.done === true, { name: "adversarialUserCanDelaySettlement", budget: { environment: 1 }, allowUserEvents: true, reads: ["done"] })
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (s) => s.done === true,
+        {
+          name: "settlesWithoutUserInterference",
+          budget: { environment: 1 },
+          reads: ["done"],
+        },
+      ),
+      leadsToWithin(
+        m,
+        (step) => step.enqueued("POST"),
+        (s) => s.done === true,
+        {
+          name: "adversarialUserCanDelaySettlement",
+          budget: { environment: 1 },
+          allowUserEvents: true,
+          reads: ["done"],
+        },
+      ),
     ]);
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
-    expect(byName.get("settlesWithoutUserInterference")?.status).toBe("verified-within-bounds");
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
+    expect(byName.get("settlesWithoutUserInterference")?.status).toBe(
+      "verified-within-bounds",
+    );
     const adversarial = byName.get("adversarialUserCanDelaySettlement");
     expect(adversarial?.status).toBe("violated");
-    expect(adversarial?.status === "violated" ? adversarial.trace.steps.map((step) => step.transitionId) : []).toEqual(["start", "cancel"]);
+    expect(
+      adversarial?.status === "violated"
+        ? adversarial.trace.steps.map((step) => step.transitionId)
+        : [],
+    ).toEqual(["start", "cancel"]);
   });
 
   it("reports validation errors instead of checking malformed models", () => {
     const m = model();
-    const broken: Model = { ...m, transitions: [{ ...m.transitions[0], writes: [] }] };
-    const [verdict] = checkModel(broken, [always(broken, () => true, { name: "p" })]).verdicts;
+    const broken: Model = {
+      ...m,
+      transitions: [{ ...m.transitions[0], writes: [] }],
+    };
+    const [verdict] = checkModel(broken, [
+      always(broken, () => true, { name: "p" }),
+    ]).verdicts;
     expect(verdict.status).toBe("error");
-    expect(verdict.status === "error" ? verdict.message : "").toContain("writes auth");
+    expect(verdict.status === "error" ? verdict.message : "").toContain(
+      "writes auth",
+    );
   });
 
   it("pins oracle micro-model state and edge counts", () => {
@@ -391,11 +732,41 @@ describe("checker", () => {
       id: "oracle-independent-bits",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "a", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "b", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -407,7 +778,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "a", expr: lit(true) },
           reads: ["a"],
           writes: ["a"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "flipB",
@@ -418,11 +789,17 @@ describe("checker", () => {
           effect: { kind: "assign", var: "b", expr: lit(true) },
           reads: ["b"],
           writes: ["b"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
-    const diamond = checkModel(independentBits, [reachable(independentBits, (state) => state.a === true && state.b === true, { name: "bothSet", reads: ["a", "b"] })]);
+    const diamond = checkModel(independentBits, [
+      reachable(
+        independentBits,
+        (state) => state.a === true && state.b === true,
+        { name: "bothSet", reads: ["a", "b"] },
+      ),
+    ]);
     expect(diamond.stats).toEqual({ states: 4, edges: 4, depth: 2 });
     expect(diamond.verdicts[0]?.status).toBe("reachable");
 
@@ -433,20 +810,22 @@ describe("checker", () => {
       vars: independentBits.vars.filter((decl) => decl.id !== "b"),
       transitions: [
         {
-          ...independentBits.transitions[0]!,
+          ...firstTransition(independentBits),
           id: "setTrue",
           guard: { kind: "not", args: [read("a")] },
-          effect: { kind: "assign", var: "a", expr: lit(true) }
+          effect: { kind: "assign", var: "a", expr: lit(true) },
         },
         {
-          ...independentBits.transitions[0]!,
+          ...firstTransition(independentBits),
           id: "setFalse",
           guard: read("a"),
-          effect: { kind: "assign", var: "a", expr: lit(false) }
-        }
-      ]
+          effect: { kind: "assign", var: "a", expr: lit(false) },
+        },
+      ],
     };
-    const loop = checkModel(toggleLoop, [alwaysStep(toggleLoop, () => true, { name: "allEdgesOk", reads: [] })]);
+    const loop = checkModel(toggleLoop, [
+      alwaysStep(toggleLoop, () => true, { name: "allEdgesOk", reads: [] }),
+    ]);
     expect(loop.stats).toEqual({ states: 2, edges: 2, depth: 2 });
   });
 
@@ -460,48 +839,91 @@ describe("checker", () => {
           label: { kind: "click", text: "Opaque" },
           source: [],
           guard: lit(true),
-          effect: { kind: "opaque", ref: { module: "test/checker/opaque-effects.cjs", export: "setDone", declaredReads: [], declaredWrites: ["done"] } },
+          effect: {
+            kind: "opaque",
+            ref: {
+              module: "test/checker/opaque-effects.cjs",
+              export: "setDone",
+              declaredReads: [],
+              declaredWrites: ["done"],
+            },
+          },
           reads: [],
           writes: ["done"],
-          confidence: "manual"
-        }
-      ]
+          confidence: "manual",
+        },
+      ],
     };
-    const result = checkModel(m, [reachable(m, (state) => state.done === true, { name: "doneViaOpaque", reads: ["done"] })]);
+    const result = checkModel(m, [
+      reachable(m, (state) => state.done === true, {
+        name: "doneViaOpaque",
+        reads: ["done"],
+      }),
+    ]);
     expect(result.verdicts[0]?.status).toBe("reachable");
 
     const undeclaredWrite: Model = {
       ...m,
       transitions: [
         {
-          ...m.transitions[0]!,
-          effect: { kind: "opaque", ref: { module: "test/checker/opaque-effects.cjs", export: "writeUndeclared", declaredReads: [], declaredWrites: ["done"] } }
-        }
-      ]
+          ...firstTransition(m),
+          effect: {
+            kind: "opaque",
+            ref: {
+              module: "test/checker/opaque-effects.cjs",
+              export: "writeUndeclared",
+              declaredReads: [],
+              declaredWrites: ["done"],
+            },
+          },
+        },
+      ],
     };
-    expect(() => checkModel(undeclaredWrite, [])).toThrow("wrote undeclared var auth");
+    expect(() => checkModel(undeclaredWrite, [])).toThrow(
+      "wrote undeclared var auth",
+    );
 
     const invalidValue: Model = {
       ...m,
       transitions: [
         {
-          ...m.transitions[0]!,
-          effect: { kind: "opaque", ref: { module: "test/checker/opaque-effects.cjs", export: "invalidDone", declaredReads: [], declaredWrites: ["done"] } }
-        }
-      ]
+          ...firstTransition(m),
+          effect: {
+            kind: "opaque",
+            ref: {
+              module: "test/checker/opaque-effects.cjs",
+              export: "invalidDone",
+              declaredReads: [],
+              declaredWrites: ["done"],
+            },
+          },
+        },
+      ],
     };
-    expect(() => checkModel(invalidValue, [])).toThrow("produced invalid value for done");
+    expect(() => checkModel(invalidValue, [])).toThrow(
+      "produced invalid value for done",
+    );
 
     const nondeterministic: Model = {
       ...m,
       transitions: [
         {
-          ...m.transitions[0]!,
-          effect: { kind: "opaque", ref: { module: "test/checker/opaque-effects.cjs", export: "nondeterministicDone", declaredReads: [], declaredWrites: ["done"] } }
-        }
-      ]
+          ...firstTransition(m),
+          effect: {
+            kind: "opaque",
+            ref: {
+              module: "test/checker/opaque-effects.cjs",
+              export: "nondeterministicDone",
+              declaredReads: [],
+              declaredWrites: ["done"],
+            },
+          },
+        },
+      ],
     };
-    expect(() => checkModel(nondeterministic, [])).toThrow("returned nondeterministic results for identical input");
+    expect(() => checkModel(nondeterministic, [])).toThrow(
+      "returned nondeterministic results for identical input",
+    );
   });
 
   it("reports run-level vacuity warnings", () => {
@@ -509,7 +931,13 @@ describe("checker", () => {
       ...model(),
       vars: [
         ...model().vars,
-        { id: "neverMode", domain: { kind: "enum", values: ["seen", "missing"] }, origin: "system", scope: { kind: "global" }, initial: "seen" }
+        {
+          id: "neverMode",
+          domain: { kind: "enum", values: ["seen", "missing"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "seen",
+        },
       ],
       transitions: [
         ...model().transitions,
@@ -522,13 +950,17 @@ describe("checker", () => {
           effect: { kind: "assign", var: "neverMode", expr: lit("seen") },
           reads: ["neverMode"],
           writes: ["neverMode"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, []);
-    expect(result.vacuityWarnings).toContain("transition never enabled: neverEnabled");
-    expect(result.vacuityWarnings).toContain("enum value never inhabited: neverMode=missing");
+    expect(result.vacuityWarnings).toContain(
+      "transition never enabled: neverEnabled",
+    );
+    expect(result.vacuityWarnings).toContain(
+      "enum value never inhabited: neverMode=missing",
+    );
   });
 
   it("checks properties on conservative slices when reads are declared", () => {
@@ -536,7 +968,13 @@ describe("checker", () => {
       ...model(),
       vars: [
         ...model().vars,
-        { id: "unrelated", domain: { kind: "enum", values: ["cold", "hot"] }, origin: "system", scope: { kind: "global" }, initial: "cold" }
+        {
+          id: "unrelated",
+          domain: { kind: "enum", values: ["cold", "hot"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "cold",
+        },
       ],
       transitions: [
         ...model().transitions,
@@ -549,46 +987,76 @@ describe("checker", () => {
           effect: { kind: "assign", var: "unrelated", expr: lit("hot") },
           reads: ["unrelated"],
           writes: ["unrelated"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), { name: "badDoneInvariant", reads: ["done", "draft"] }),
-      reachable(m, (s) => s.done === true, { name: "doneReachable", reads: ["done"] })
+      always(m, (s) => !(s.done === true && s.draft === "empty"), {
+        name: "badDoneInvariant",
+        reads: ["done", "draft"],
+      }),
+      reachable(m, (s) => s.done === true, {
+        name: "doneReachable",
+        reads: ["done"],
+      }),
     ];
     const sliced = checkModel(m, props, { slicing: true });
     const full = checkModel(m, props);
-    expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(full.verdicts.map((v) => [v.property, v.status]));
-    expect(sliceModel(m, ["done", "draft"]).vars.map((decl) => decl.id)).not.toContain("unrelated");
+    expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(
+      full.verdicts.map((v) => [v.property, v.status]),
+    );
+    expect(
+      sliceModel(m, ["done", "draft"]).vars.map((decl) => decl.id),
+    ).not.toContain("unrelated");
   });
 
   it("checks sliced properties using inferred state reads", () => {
     const m = model();
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), { name: "badDoneInvariant" }),
-      reachable(m, (s) => s.done === true, { name: "doneReachable" })
+      always(m, (s) => !(s.done === true && s.draft === "empty"), {
+        name: "badDoneInvariant",
+      }),
+      reachable(m, (s) => s.done === true, { name: "doneReachable" }),
     ];
     const full = checkModel(m, props);
     const sliced = checkModel(m, props, { slicing: true });
     expect(props.map((property) => [property.name, property.reads])).toEqual([
       ["badDoneInvariant", ["done", "draft"]],
-      ["doneReachable", ["done"]]
+      ["doneReachable", ["done"]],
     ]);
-    expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(full.verdicts.map((v) => [v.property, v.status]));
+    expect(sliced.verdicts.map((v) => [v.property, v.status])).toEqual(
+      full.verdicts.map((v) => [v.property, v.status]),
+    );
   });
 
   it("reports property errors when declared reads omit accessed state vars", () => {
     const m = model();
     const result = checkModel(m, [
-      always(m, (state) => state.done !== true, { name: "badStateReads", reads: [] }),
-      alwaysStep(m, (pre) => pre.auth !== "guest", { name: "badStepReads", reads: [] })
+      always(m, (state) => state.done !== true, {
+        name: "badStateReads",
+        reads: [],
+      }),
+      alwaysStep(m, (pre) => pre.auth !== "guest", {
+        name: "badStepReads",
+        reads: [],
+      }),
     ]);
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
     expect(byName.get("badStateReads")?.status).toBe("error");
-    expect(byName.get("badStateReads")?.status === "error" ? byName.get("badStateReads")?.message : "").toContain("read undeclared var done");
+    expect(
+      byName.get("badStateReads")?.status === "error"
+        ? byName.get("badStateReads")?.message
+        : "",
+    ).toContain("read undeclared var done");
     expect(byName.get("badStepReads")?.status).toBe("error");
-    expect(byName.get("badStepReads")?.status === "error" ? byName.get("badStepReads")?.message : "").toContain("read undeclared var auth");
+    expect(
+      byName.get("badStepReads")?.status === "error"
+        ? byName.get("badStepReads")?.message
+        : "",
+    ).toContain("read undeclared var auth");
   });
 
   it("runs all same-batch non-conflicting internal transitions in deterministic order", () => {
@@ -597,12 +1065,48 @@ describe("checker", () => {
       id: "internal-batch",
       bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "source", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "a", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "b", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "source",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -614,7 +1118,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "source", expr: lit(true) },
           reads: ["source"],
           writes: ["source"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "setA",
@@ -626,7 +1130,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "a", expr: lit(true) },
           reads: ["source"],
           writes: ["a"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "setB",
@@ -638,12 +1142,15 @@ describe("checker", () => {
           effect: { kind: "assign", var: "b", expr: lit(true) },
           reads: ["source"],
           writes: ["b"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      reachable(m, (s) => s.a === true && s.b === true, { name: "bothInternalEffectsRan", reads: ["a", "b"] })
+      reachable(m, (s) => s.a === true && s.b === true, {
+        name: "bothInternalEffectsRan",
+        reads: ["a", "b"],
+      }),
     ]);
     expect(result.verdicts[0]?.status).toBe("reachable");
     expect(result.stats).toEqual({ states: 2, edges: 1, depth: 1 });
@@ -655,12 +1162,48 @@ describe("checker", () => {
       id: "internal-conflict-orders",
       bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "source", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "x", domain: { kind: "enum", values: ["unset", "a", "b"] }, origin: "system", scope: { kind: "global" }, initial: "unset" },
-        { id: "seen", domain: { kind: "enum", values: ["unset", "sawA", "sawB"] }, origin: "system", scope: { kind: "global" }, initial: "unset" }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "source",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "x",
+          domain: { kind: "enum", values: ["unset", "a", "b"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "unset",
+        },
+        {
+          id: "seen",
+          domain: { kind: "enum", values: ["unset", "sawA", "sawB"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "unset",
+        },
       ],
       transitions: [
         {
@@ -672,7 +1215,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "source", expr: lit(true) },
           reads: ["source"],
           writes: ["source"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "setA",
@@ -684,13 +1227,24 @@ describe("checker", () => {
           effect: {
             kind: "seq",
             effects: [
-              { kind: "assign", var: "seen", expr: { kind: "cond", args: [{ kind: "eq", args: [read("x"), lit("b")] }, lit("sawB"), read("seen")] } },
-              { kind: "assign", var: "x", expr: lit("a") }
-            ]
+              {
+                kind: "assign",
+                var: "seen",
+                expr: {
+                  kind: "cond",
+                  args: [
+                    { kind: "eq", args: [read("x"), lit("b")] },
+                    lit("sawB"),
+                    read("seen"),
+                  ],
+                },
+              },
+              { kind: "assign", var: "x", expr: lit("a") },
+            ],
           },
           reads: ["source", "x", "seen"],
           writes: ["x", "seen"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "setB",
@@ -702,23 +1256,42 @@ describe("checker", () => {
           effect: {
             kind: "seq",
             effects: [
-              { kind: "assign", var: "seen", expr: { kind: "cond", args: [{ kind: "eq", args: [read("x"), lit("a")] }, lit("sawA"), read("seen")] } },
-              { kind: "assign", var: "x", expr: lit("b") }
-            ]
+              {
+                kind: "assign",
+                var: "seen",
+                expr: {
+                  kind: "cond",
+                  args: [
+                    { kind: "eq", args: [read("x"), lit("a")] },
+                    lit("sawA"),
+                    read("seen"),
+                  ],
+                },
+              },
+              { kind: "assign", var: "x", expr: lit("b") },
+            ],
           },
           reads: ["source", "x", "seen"],
           writes: ["x", "seen"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      reachable(m, (s) => s.x === "b" && s.seen === "sawA", { name: "aThenBReachable", reads: ["x", "seen"] }),
-      reachable(m, (s) => s.x === "a" && s.seen === "sawB", { name: "bThenAReachable", reads: ["x", "seen"] })
+      reachable(m, (s) => s.x === "b" && s.seen === "sawA", {
+        name: "aThenBReachable",
+        reads: ["x", "seen"],
+      }),
+      reachable(m, (s) => s.x === "a" && s.seen === "sawB", {
+        name: "bThenAReachable",
+        reads: ["x", "seen"],
+      }),
     ]);
-    expect(result.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
+    expect(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual([
       ["aThenBReachable", "reachable"],
-      ["bThenAReachable", "reachable"]
+      ["bThenAReachable", "reachable"],
     ]);
     expect(result.stats).toEqual({ states: 3, edges: 2, depth: 1 });
   });
@@ -729,10 +1302,34 @@ describe("checker", () => {
       id: "route-local",
       bounds: { maxDepth: 5, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "local:A.draft", domain: { kind: "enum", values: ["empty", "nonEmpty"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: "empty" }
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:A.draft",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: "empty",
+        },
       ],
       transitions: [
         {
@@ -741,10 +1338,14 @@ describe("checker", () => {
           label: { kind: "input", valueClass: "nonEmpty" },
           source: [],
           guard: { kind: "eq", args: [read("local:A.draft"), lit("empty")] },
-          effect: { kind: "assign", var: "local:A.draft", expr: lit("nonEmpty") },
+          effect: {
+            kind: "assign",
+            var: "local:A.draft",
+            expr: lit("nonEmpty"),
+          },
           reads: ["local:A.draft"],
           writes: ["local:A.draft"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "goB",
@@ -755,7 +1356,7 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/b") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "back",
@@ -766,18 +1367,39 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "back" },
           reads: ["sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      reachable(m, (s) => s["sys:route"] === "/b" && s["local:A.draft"] === "__modality_unmounted__", { name: "localUnmountsOnB" }),
-      always(m, (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"), { name: "cannotTypeWhileUnmounted" }),
-      alwaysStep(m, (pre, step, post) => step.transition.id !== "back" || pre["sys:route"] !== "/b" || post["local:A.draft"] === "empty", { name: "backRemountResetsDraft" })
+      reachable(
+        m,
+        (s) =>
+          s["sys:route"] === "/b" &&
+          s["local:A.draft"] === "__modality_unmounted__",
+        { name: "localUnmountsOnB" },
+      ),
+      always(
+        m,
+        (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"),
+        { name: "cannotTypeWhileUnmounted" },
+      ),
+      alwaysStep(
+        m,
+        (pre, step, post) =>
+          step.transition.id !== "back" ||
+          pre["sys:route"] !== "/b" ||
+          post["local:A.draft"] === "empty",
+        { name: "backRemountResetsDraft" },
+      ),
     ]);
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict.status]));
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    );
     expect(byName.get("localUnmountsOnB")).toBe("reachable");
-    expect(byName.get("cannotTypeWhileUnmounted")).toBe("verified-within-bounds");
+    expect(byName.get("cannotTypeWhileUnmounted")).toBe(
+      "verified-within-bounds",
+    );
     expect(byName.get("backRemountResetsDraft")).toBe("verified-within-bounds");
   });
 
@@ -787,10 +1409,34 @@ describe("checker", () => {
       id: "route-local-internal",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "local:A.draft", domain: { kind: "enum", values: ["empty", "nonEmpty"] }, origin: "system", scope: { kind: "route-local", route: "/a" }, initial: "empty" }
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:A.draft",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: "empty",
+        },
       ],
       transitions: [
         {
@@ -802,7 +1448,7 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/b") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "offRouteEffect",
@@ -811,19 +1457,43 @@ describe("checker", () => {
           source: [],
           triggeredBy: ["sys:route"],
           guard: lit(true),
-          effect: { kind: "assign", var: "local:A.draft", expr: lit("nonEmpty") },
+          effect: {
+            kind: "assign",
+            var: "local:A.draft",
+            expr: lit("nonEmpty"),
+          },
           reads: ["sys:route"],
           writes: ["local:A.draft"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      always(m, (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"), { name: "offRouteInternalCannotWrite", reads: ["sys:route", "local:A.draft"] }),
-      reachable(m, (s) => s["sys:route"] === "/b" && s["local:A.draft"] === "__modality_unmounted__", { name: "offRouteLocalRemainsUnmounted", reads: ["sys:route", "local:A.draft"] })
+      always(
+        m,
+        (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"),
+        {
+          name: "offRouteInternalCannotWrite",
+          reads: ["sys:route", "local:A.draft"],
+        },
+      ),
+      reachable(
+        m,
+        (s) =>
+          s["sys:route"] === "/b" &&
+          s["local:A.draft"] === "__modality_unmounted__",
+        {
+          name: "offRouteLocalRemainsUnmounted",
+          reads: ["sys:route", "local:A.draft"],
+        },
+      ),
     ]);
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict.status]));
-    expect(byName.get("offRouteInternalCannotWrite")).toBe("verified-within-bounds");
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    );
+    expect(byName.get("offRouteInternalCannotWrite")).toBe(
+      "verified-within-bounds",
+    );
     expect(byName.get("offRouteLocalRemainsUnmounted")).toBe("reachable");
   });
 
@@ -833,9 +1503,27 @@ describe("checker", () => {
       id: "navigation-step-facts",
       bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] }
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
       ],
       transitions: [
         {
@@ -847,15 +1535,24 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/b") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
 
     const result = checkModel(m, [
-      alwaysStep(m, (_pre, step) => step.transition.id !== "pushB" || (step.navigated() && step.navigatedTo("/b")), { name: "pushReportsNavigation", reads: ["sys:route"] })
+      alwaysStep(
+        m,
+        (_pre, step) =>
+          step.transition.id !== "pushB" ||
+          (step.navigated() && step.navigatedTo("/b")),
+        { name: "pushReportsNavigation", reads: ["sys:route"] },
+      ),
     ]);
-    expect(result.verdicts[0]).toMatchObject({ status: "verified-within-bounds", property: "pushReportsNavigation" });
+    expect(result.verdicts[0]).toMatchObject({
+      status: "verified-within-bounds",
+      property: "pushReportsNavigation",
+    });
   });
 
   it("reports pending-cap bound hits", () => {
@@ -865,7 +1562,7 @@ describe("checker", () => {
       vars: model().vars.map((decl) =>
         decl.id === "sys:pending" && decl.domain.kind === "boundedList"
           ? { ...decl, domain: { ...decl.domain, maxLen: 1 } }
-          : decl
+          : decl,
       ),
       transitions: [
         {
@@ -874,14 +1571,25 @@ describe("checker", () => {
           label: { kind: "click", text: "Spam" },
           source: [],
           guard: lit(true),
-          effect: { kind: "enqueue", op: "POST", continuation: "submit#1", args: {} },
+          effect: {
+            kind: "enqueue",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
           reads: [],
           writes: ["sys:pending"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
-    const result = checkModel(m, [reachable(m, (s) => Array.isArray(s["sys:pending"]) && s["sys:pending"].length === 1, { name: "onePendingReachable" })]);
+    const result = checkModel(m, [
+      reachable(
+        m,
+        (s) => Array.isArray(s["sys:pending"]) && s["sys:pending"].length === 1,
+        { name: "onePendingReachable" },
+      ),
+    ]);
     expect(result.boundHits).toContain("pending cap saturated at spam");
   });
 
@@ -891,9 +1599,27 @@ describe("checker", () => {
       id: "history-bound",
       bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: twoRoutes, origin: "system", scope: { kind: "global" }, initial: "/a" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: twoRoutes, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] }
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
       ],
       transitions: [
         {
@@ -905,24 +1631,45 @@ describe("checker", () => {
           effect: { kind: "navigate", mode: "push", to: lit("/b") },
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
 
-    const result = checkModel(m, [reachable(m, (s) => s["sys:route"] === "/b", { name: "pushedB", reads: ["sys:route"] })]);
-    expect(result.verdicts[0]).toMatchObject({ status: "vacuous-warning", property: "pushedB" });
+    const result = checkModel(m, [
+      reachable(m, (s) => s["sys:route"] === "/b", {
+        name: "pushedB",
+        reads: ["sys:route"],
+      }),
+    ]);
+    expect(result.verdicts[0]).toMatchObject({
+      status: "vacuous-warning",
+      property: "pushedB",
+    });
     expect(result.boundHits).toContain("history cap saturated at pushB");
   });
 
   it("reports max-depth bound hits only when enabled transitions remain at the boundary", () => {
-    const bounded: Model = { ...model(), bounds: { ...model().bounds, maxDepth: 0 } };
-    const boundedResult = checkModel(bounded, [always(bounded, () => true, { name: "ok" })]);
+    const bounded: Model = {
+      ...model(),
+      bounds: { ...model().bounds, maxDepth: 0 },
+    };
+    const boundedResult = checkModel(bounded, [
+      always(bounded, () => true, { name: "ok" }),
+    ]);
     expect(boundedResult.boundHits).toEqual(["maxDepth reached before login"]);
-    expect(boundedResult.vacuityWarnings).not.toContain("transition never enabled: login");
+    expect(boundedResult.vacuityWarnings).not.toContain(
+      "transition never enabled: login",
+    );
 
-    const terminal: Model = { ...model(), transitions: [], bounds: { ...model().bounds, maxDepth: 0 } };
-    const terminalResult = checkModel(terminal, [always(terminal, () => true, { name: "ok" })]);
+    const terminal: Model = {
+      ...model(),
+      transitions: [],
+      bounds: { ...model().bounds, maxDepth: 0 },
+    };
+    const terminalResult = checkModel(terminal, [
+      always(terminal, () => true, { name: "ok" }),
+    ]);
     expect(terminalResult.boundHits).toEqual([]);
   });
 
@@ -932,11 +1679,41 @@ describe("checker", () => {
       id: "token-bound",
       bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "current", domain: { kind: "tokens", count: 1 }, origin: "system", scope: { kind: "global" }, initial: "tok1" },
-        { id: "next", domain: { kind: "tokens", count: 1 }, origin: "system", scope: { kind: "global" }, initial: "tok1" }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "current",
+          domain: { kind: "tokens", count: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "tok1",
+        },
+        {
+          id: "next",
+          domain: { kind: "tokens", count: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "tok1",
+        },
       ],
       transitions: [
         {
@@ -945,14 +1722,23 @@ describe("checker", () => {
           label: { kind: "click", text: "Allocate" },
           source: [],
           guard: lit(true),
-          effect: { kind: "assign", var: "next", expr: { kind: "freshToken", domainOf: "current" } },
+          effect: {
+            kind: "assign",
+            var: "next",
+            expr: { kind: "freshToken", domainOf: "current" },
+          },
           reads: [],
           writes: ["next"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
-    const result = checkModel(m, [reachable(m, (state) => state.next === "tok1", { name: "onlyInitialReachable", reads: ["next"] })]);
+    const result = checkModel(m, [
+      reachable(m, (state) => state.next === "tok1", {
+        name: "onlyInitialReachable",
+        reads: ["next"],
+      }),
+    ]);
     expect(result.stats.edges).toBe(0);
     expect(result.boundHits).toContain("token cap exhausted at allocate");
   });
@@ -963,11 +1749,41 @@ describe("checker", () => {
       id: "enabled-slice",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "mode", domain: { kind: "enum", values: ["closed", "open"] }, origin: "system", scope: { kind: "global" }, initial: "closed" },
-        { id: "clicked", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "mode",
+          domain: { kind: "enum", values: ["closed", "open"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "closed",
+        },
+        {
+          id: "clicked",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -979,7 +1795,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "mode", expr: lit("open") },
           reads: ["mode"],
           writes: ["mode"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "go",
@@ -990,21 +1806,39 @@ describe("checker", () => {
           effect: { kind: "assign", var: "clicked", expr: lit(true) },
           reads: ["mode"],
           writes: ["clicked"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const props = [
-      always(m, (state) => !enabled(m, "go")(state), { name: "goNeverEnabled", reads: [] }),
-      reachable(m, (state) => state.clicked === true, { name: "goCanClick", reads: ["clicked"] })
+      always(m, (state) => !enabled(m, "go")(state), {
+        name: "goNeverEnabled",
+        reads: [],
+      }),
+      reachable(m, (state) => state.clicked === true, {
+        name: "goCanClick",
+        reads: ["clicked"],
+      }),
     ];
     const unsliced = checkModel(m, props);
     const sliced = checkModel(m, props, { slicing: true });
-    expect(sliced.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual(
-      unsliced.verdicts.map((verdict) => [verdict.property, verdict.status])
+    expect(
+      sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual(
+      unsliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
-    expect(sliced.verdicts.map((verdict) => ("trace" in verdict ? verdict.trace.steps.map((step) => step.transitionId) : []))).toEqual(
-      unsliced.verdicts.map((verdict) => ("trace" in verdict ? verdict.trace.steps.map((step) => step.transitionId) : []))
+    expect(
+      sliced.verdicts.map((verdict) =>
+        "trace" in verdict
+          ? verdict.trace.steps.map((step) => step.transitionId)
+          : [],
+      ),
+    ).toEqual(
+      unsliced.verdicts.map((verdict) =>
+        "trace" in verdict
+          ? verdict.trace.steps.map((step) => step.transitionId)
+          : [],
+      ),
     );
   });
 
@@ -1014,11 +1848,41 @@ describe("checker", () => {
       id: "internal-conflict",
       bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "flag", domain: bool, origin: "system", scope: { kind: "global" }, initial: true },
-        { id: "value", domain: { kind: "enum", values: ["none", "a", "b"] }, origin: "system", scope: { kind: "global" }, initial: "none" }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: true,
+        },
+        {
+          id: "value",
+          domain: { kind: "enum", values: ["none", "a", "b"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "none",
+        },
       ],
       transitions: [
         {
@@ -1026,32 +1890,52 @@ describe("checker", () => {
           cls: "internal",
           label: { kind: "internal", text: "set a" },
           source: [],
-          guard: { kind: "and", args: [read("flag"), { kind: "eq", args: [read("value"), lit("none")] }] },
+          guard: {
+            kind: "and",
+            args: [
+              read("flag"),
+              { kind: "eq", args: [read("value"), lit("none")] },
+            ],
+          },
           effect: { kind: "assign", var: "value", expr: lit("a") },
           reads: ["flag", "value"],
           writes: ["value"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "internal:setB",
           cls: "internal",
           label: { kind: "internal", text: "set b" },
           source: [],
-          guard: { kind: "and", args: [read("flag"), { kind: "eq", args: [read("value"), lit("none")] }] },
+          guard: {
+            kind: "and",
+            args: [
+              read("flag"),
+              { kind: "eq", args: [read("value"), lit("none")] },
+            ],
+          },
           effect: { kind: "assign", var: "value", expr: lit("b") },
           reads: ["flag", "value"],
           writes: ["value"],
-          confidence: "exact"
-        }
-      ]
+          confidence: "exact",
+        },
+      ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.value === "a", { name: "aReachable", reads: ["value"] }),
-      reachable(m, (state) => state.value === "b", { name: "bReachable", reads: ["value"] })
+      reachable(m, (state) => state.value === "a", {
+        name: "aReachable",
+        reads: ["value"],
+      }),
+      reachable(m, (state) => state.value === "b", {
+        name: "bReachable",
+        reads: ["value"],
+      }),
     ]);
-    expect(result.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
+    expect(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual([
       ["aReachable", "reachable"],
-      ["bReachable", "reachable"]
+      ["bReachable", "reachable"],
     ]);
   });
 
@@ -1061,11 +1945,41 @@ describe("checker", () => {
       id: "triggered-internal",
       bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "source", domain: bool, origin: "system", scope: { kind: "global" }, initial: false },
-        { id: "target", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "source",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "target",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -1077,7 +1991,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "source", expr: lit(true) },
           reads: ["source"],
           writes: ["source"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "resetTarget",
@@ -1088,7 +2002,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "target", expr: lit(false) },
           reads: ["target"],
           writes: ["target"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "internal:copySource",
@@ -1100,17 +2014,25 @@ describe("checker", () => {
           reads: ["source"],
           writes: ["target"],
           confidence: "exact",
-          triggeredBy: ["source"]
-        }
-      ]
+          triggeredBy: ["source"],
+        },
+      ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.source === true && state.target === true, { name: "triggerRuns", reads: ["source", "target"] }),
-      reachable(m, (state) => state.source === true && state.target === false, { name: "unrelatedTargetWriteDoesNotRetrigger", reads: ["source", "target"] })
+      reachable(m, (state) => state.source === true && state.target === true, {
+        name: "triggerRuns",
+        reads: ["source", "target"],
+      }),
+      reachable(m, (state) => state.source === true && state.target === false, {
+        name: "unrelatedTargetWriteDoesNotRetrigger",
+        reads: ["source", "target"],
+      }),
     ]);
-    expect(result.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
+    expect(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual([
       ["triggerRuns", "reachable"],
-      ["unrelatedTargetWriteDoesNotRetrigger", "reachable"]
+      ["unrelatedTargetWriteDoesNotRetrigger", "reachable"],
     ]);
   });
 
@@ -1120,11 +2042,41 @@ describe("checker", () => {
       id: "finite-oracle",
       bounds: { maxDepth: 3, maxPending: 0, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "phase", domain: { kind: "enum", values: ["start", "middle", "done"] }, origin: "system", scope: { kind: "global" }, initial: "start" },
-        { id: "flag", domain: bool, origin: "system", scope: { kind: "global" }, initial: false }
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "phase",
+          domain: { kind: "enum", values: ["start", "middle", "done"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "start",
+        },
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
       ],
       transitions: [
         {
@@ -1136,7 +2088,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "phase", expr: lit("middle") },
           reads: ["phase"],
           writes: ["phase"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "finish",
@@ -1147,7 +2099,7 @@ describe("checker", () => {
           effect: { kind: "assign", var: "phase", expr: lit("done") },
           reads: ["phase"],
           writes: ["phase"],
-          confidence: "exact"
+          confidence: "exact",
         },
         {
           id: "flip",
@@ -1158,48 +2110,99 @@ describe("checker", () => {
           effect: { kind: "havoc", var: "flag" },
           reads: ["phase"],
           writes: ["flag"],
-          confidence: "over-approx"
-        }
-      ]
+          confidence: "over-approx",
+        },
+      ],
     };
     const expected = [
       { phase: "start", flag: false },
       { phase: "middle", flag: false },
       { phase: "done", flag: false },
       { phase: "middle", flag: true },
-      { phase: "done", flag: true }
+      { phase: "done", flag: true },
     ];
     const result = checkModel(m, [
-      ...expected.map((state, index) => reachable(m, (candidate) => candidate.phase === state.phase && candidate.flag === state.flag, { name: `oracle${index}` })),
-      reachable(m, (state) => state.phase === "start" && state.flag === true, { name: "oracleImpossible" })
+      ...expected.map((state, index) =>
+        reachable(
+          m,
+          (candidate) =>
+            candidate.phase === state.phase && candidate.flag === state.flag,
+          { name: `oracle${index}` },
+        ),
+      ),
+      reachable(m, (state) => state.phase === "start" && state.flag === true, {
+        name: "oracleImpossible",
+      }),
     ]);
 
     expect(result.stats).toEqual({ states: 5, edges: 7, depth: 3 });
-    expect(result.verdicts.slice(0, expected.length).every((verdict) => verdict.status === "reachable")).toBe(true);
-    expect(result.verdicts.at(-1)).toMatchObject({ property: "oracleImpossible", status: "vacuous-warning" });
+    expect(
+      result.verdicts
+        .slice(0, expected.length)
+        .every((verdict) => verdict.status === "reachable"),
+    ).toBe(true);
+    expect(result.verdicts.at(-1)).toMatchObject({
+      property: "oracleImpossible",
+      status: "vacuous-warning",
+    });
   });
 
   it("runs reusable structured oracle corpus cases", () => {
     for (const oracle of checkerOracleCorpus()) {
       const reachability = [
-        ...oracle.reachable.map((expected, index) => reachable(oracle.model, (state) => partialStateMatches(state, expected), { name: `${oracle.name}:reachable:${index}` })),
-        ...oracle.unreachable.map((expected, index) => reachable(oracle.model, (state) => partialStateMatches(state, expected), { name: `${oracle.name}:unreachable:${index}` })),
+        ...oracle.reachable.map((expected, index) =>
+          reachable(
+            oracle.model,
+            (state) => partialStateMatches(state, expected),
+            { name: `${oracle.name}:reachable:${index}` },
+          ),
+        ),
+        ...oracle.unreachable.map((expected, index) =>
+          reachable(
+            oracle.model,
+            (state) => partialStateMatches(state, expected),
+            { name: `${oracle.name}:unreachable:${index}` },
+          ),
+        ),
         leadsToWithin(
           oracle.model,
           (step) => step.enqueued(oracle.boundedResponse.triggerOp),
           (state) => state[oracle.boundedResponse.goalVar] === "done",
-          { name: `${oracle.name}:bounded-response`, budget: oracle.boundedResponse.budget }
-        )
+          {
+            name: `${oracle.name}:bounded-response`,
+            budget: oracle.boundedResponse.budget,
+          },
+        ),
       ];
       const result = checkModel(oracle.model, reachability);
       expect(result.stats, oracle.name).toEqual(oracle.stats);
-      expect(result.verdicts.slice(0, oracle.reachable.length).every((verdict) => verdict.status === "reachable"), oracle.name).toBe(true);
-      expect(result.verdicts.slice(oracle.reachable.length, oracle.reachable.length + oracle.unreachable.length).every((verdict) => verdict.status === "vacuous-warning"), oracle.name).toBe(true);
-      expect(result.verdicts.at(-1), oracle.name).toMatchObject({ status: oracle.boundedResponse.status });
+      expect(
+        result.verdicts
+          .slice(0, oracle.reachable.length)
+          .every((verdict) => verdict.status === "reachable"),
+        oracle.name,
+      ).toBe(true);
+      expect(
+        result.verdicts
+          .slice(
+            oracle.reachable.length,
+            oracle.reachable.length + oracle.unreachable.length,
+          )
+          .every((verdict) => verdict.status === "vacuous-warning"),
+        oracle.name,
+      ).toBe(true);
+      expect(result.verdicts.at(-1), oracle.name).toMatchObject({
+        status: oracle.boundedResponse.status,
+      });
     }
   });
 });
 
-function partialStateMatches(state: Record<string, unknown>, expected: Record<string, unknown>): boolean {
-  return Object.entries(expected).every(([key, value]) => JSON.stringify(state[key]) === JSON.stringify(value));
+function partialStateMatches(
+  state: Record<string, unknown>,
+  expected: Record<string, unknown>,
+): boolean {
+  return Object.entries(expected).every(
+    ([key, value]) => JSON.stringify(state[key]) === JSON.stringify(value),
+  );
 }

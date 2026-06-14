@@ -1,7 +1,5 @@
 export {
   isIntrinsicJsxAttribute,
-  jsxTagName
+  jsxTagName,
 } from "./components.js";
-export {
-  jsxRouteTarget
-} from "./routes.js";
+export { jsxRouteTarget } from "./routes.js";

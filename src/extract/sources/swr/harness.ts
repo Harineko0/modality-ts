@@ -1,4 +1,9 @@
-import type { HarnessCtx, HarnessHooks, ObservedRead, WitnessFactory } from "modality-ts/extract/engine/spi";
+import type {
+  HarnessCtx,
+  HarnessHooks,
+  ObservedRead,
+  WitnessFactory,
+} from "modality-ts/extract/engine/spi";
 import type { AbstractDomain, ModelState, Value } from "modality-ts/core";
 
 export interface SwrHarnessHooks extends HarnessHooks {
@@ -6,14 +11,22 @@ export interface SwrHarnessHooks extends HarnessHooks {
   cache: Map<string, Value>;
 }
 
-export function setup(ctx: HarnessCtx & { cache?: Map<string, Value> | Record<string, Value> }): SwrHarnessHooks {
+export function setup(
+  ctx: HarnessCtx & { cache?: Map<string, Value> | Record<string, Value> },
+): SwrHarnessHooks {
   return {
     initialState: ctx.initialState ?? {},
-    cache: ctx.cache instanceof Map ? ctx.cache : new Map(Object.entries(ctx.cache ?? {}))
+    cache:
+      ctx.cache instanceof Map
+        ? ctx.cache
+        : new Map(Object.entries(ctx.cache ?? {})),
   };
 }
 
-export function observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable" {
+export function observe(
+  varId: string,
+  handles: HarnessHooks,
+): ObservedRead | "unobservable" {
   const swr = handles as SwrHarnessHooks;
   if (swr.cache.has(varId)) return { value: swr.cache.get(varId)! };
   const key = cacheKeyForVar(varId);
@@ -22,7 +35,10 @@ export function observe(varId: string, handles: HarnessHooks): ObservedRead | "u
   return "unobservable";
 }
 
-export function witness(_domain: AbstractDomain, _varId: string): WitnessFactory | undefined {
+export function witness(
+  _domain: AbstractDomain,
+  _varId: string,
+): WitnessFactory | undefined {
   return undefined;
 }
 

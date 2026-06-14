@@ -1,5 +1,11 @@
-import * as ts from "typescript";
-import type { AbstractDomain, EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
+import type * as ts from "typescript";
+import type {
+  AbstractDomain,
+  EffectIR,
+  ExprIR,
+  Transition,
+  Value,
+} from "modality-ts/core";
 import type { ExtractableHandler } from "./ast.js";
 
 export interface SetterBinding {
@@ -14,8 +20,14 @@ export interface SetterCall {
   argument: ts.Expression;
 }
 
-export type ComponentDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
-export type CustomHookDecl = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+export type ComponentDecl =
+  | ts.FunctionDeclaration
+  | ts.ArrowFunction
+  | ts.FunctionExpression;
+export type CustomHookDecl =
+  | ts.FunctionDeclaration
+  | ts.ArrowFunction
+  | ts.FunctionExpression;
 export type InternalTransition = Transition & { __stableIdKey?: string };
 
 export interface BoundExpr {
@@ -35,7 +47,13 @@ export interface ContextBindings {
   hookReturns: Map<string, Map<string, SetterBinding>>;
 }
 
-export type StaticValue = string | number | boolean | null | readonly StaticValue[] | { readonly [key: string]: StaticValue };
+export type StaticValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly StaticValue[]
+  | { readonly [key: string]: StaticValue };
 export type StaticEnv = Map<string, readonly StaticValue[]>;
 
 export interface EffectSummary {

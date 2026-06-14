@@ -1,15 +1,18 @@
 import * as ts from "typescript";
-import { callName, componentNameFor, extractableHandlerInitializer, isExtractableHandler, isPropertyAccessLike, isUseEffectCall, isUseReducerCall, isUseRefCall, isUseStateCall, lineAndColumn, literalValue, propertyName, providerComponentNames } from "../../../engine/ts/ast.js";
-import { componentDeclarations, componentName, calledCustomHook, customHookDeclarations, detectStatefulListComponents, handlerExpression, inlineCustomHookState, isCustomHookDeclaration, isForwardablePropName, isIntrinsicJsxAttribute, jsxTagName, listRenderedHandlerInfo } from "../../../engine/ts/components.js";
-import { bindContextHookObjectDeclaration, discoverContextBindings, emptyContextBindings, setterBindingFromDecl, settersForComponent } from "../../../engine/ts/context.js";
-import { safeId, tagStableIdKey, uniqueStrings, withStableTransitionIds } from "../../../engine/ts/ids.js";
-import { inputTransitions } from "../../../engine/ts/input-transitions.js";
-import { jsxRouteTarget, routeMountGuard, routeMountReads, routeTargetValue, templateRoutePattern } from "../../../engine/ts/routes.js";
-import { staticNavigationTransitions } from "../../../engine/ts/static-navigation.js";
-import { firstValue, inferUseStateDomain, initialValueForUseState, typeAliasDeclarations } from "../../../engine/ts/domains.js";
-import { effectReads, effectWrites, type AbstractDomain, type EffectIR, type ExprIR, type Locator, type StateVarDecl, type Transition, type Value } from "modality-ts/core";
-import type { CallSite, M0Ctx, RouterPlugin, StateSourcePlugin } from "../../../engine/spi/index.js";
-import type { BoundExpr, ComponentDecl, ExtractableHandler, ExtractedModelSkeleton, ExtractionWarning, EffectSummary, SetterBinding, SetterCall, UseStateExtractionOptions, UseStateExtractionResult } from "../types.js";
+import { isExtractableHandler } from "../../../engine/ts/ast.js";
+import {
+  componentName,
+  handlerExpression,
+  isForwardablePropName,
+  isIntrinsicJsxAttribute,
+} from "../../../engine/ts/components.js";
+import type { Locator } from "modality-ts/core";
+import type {
+  ComponentDecl,
+  ExtractableHandler,
+  ExtractionWarning,
+  SetterBinding,
+} from "../types.js";
 import { disabledGuardFor, type ParsedGuard } from "./guards.js";
 import { isEventAttribute, locatorForEventAttribute } from "./ui.js";
 
@@ -18,20 +21,41 @@ export function componentPropTrigger(
   component: ComponentDecl,
   propName: string,
   setters: Map<string, SetterBinding>,
-  warnings: ExtractionWarning[]
+  warnings: ExtractionWarning[],
 ): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
   const localHandlers = componentLocalHandlers(component);
-  let trigger: { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined;
+  let trigger:
+    | { attr: string; locator?: Locator; guard?: ParsedGuard }
+    | undefined;
   const visit = (node: ts.Node): void => {
     if (trigger) return;
-    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.initializer && isEventAttribute(node.name.text) && isIntrinsicJsxAttribute(node)) {
-      const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+    if (
+      ts.isJsxAttribute(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isEventAttribute(node.name.text) &&
+      isIntrinsicJsxAttribute(node)
+    ) {
+      const expression = ts.isJsxExpression(node.initializer)
+        ? node.initializer.expression
+        : undefined;
       const handler = handlerExpression(expression, localHandlers);
-      if (expression && (expressionReferencesProp(expression, component, propName) || (handler && handlerCallsProp(handler, component, propName, localHandlers)))) {
+      if (
+        expression &&
+        (expressionReferencesProp(expression, component, propName) ||
+          (handler &&
+            handlerCallsProp(handler, component, propName, localHandlers)))
+      ) {
         trigger = {
           attr: node.name.text,
           locator: locatorForEventAttribute(node),
-          guard: disabledGuardFor(node, setters, warnings, source, componentName(component) ?? "Anonymous")
+          guard: disabledGuardFor(
+            node,
+            setters,
+            warnings,
+            source,
+            componentName(component) ?? "Anonymous",
+          ),
         };
       }
     }
@@ -41,16 +65,28 @@ export function componentPropTrigger(
   return trigger;
 }
 
-export function transparentComponentPropTrigger(component: ComponentDecl, propName: string): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
-  if (!isForwardablePropName(propName) || !componentSpreadsPropsToElement(component)) return undefined;
+export function transparentComponentPropTrigger(
+  component: ComponentDecl,
+  propName: string,
+): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
+  if (
+    !isForwardablePropName(propName) ||
+    !componentSpreadsPropsToElement(component)
+  )
+    return undefined;
   return { attr: propName };
 }
 
-export function componentSpreadsPropsToElement(component: ComponentDecl): boolean {
+export function componentSpreadsPropsToElement(
+  component: ComponentDecl,
+): boolean {
   let found = false;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.attributes.properties.some(ts.isJsxSpreadAttribute)) {
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      node.attributes.properties.some(ts.isJsxSpreadAttribute)
+    ) {
       found = true;
       return;
     }
@@ -60,19 +96,37 @@ export function componentSpreadsPropsToElement(component: ComponentDecl): boolea
   return found;
 }
 
-export function forwardsComponentProp(node: ts.JsxAttribute, handlers: Map<string, ExtractableHandler>, component: ComponentDecl | undefined): boolean {
+export function forwardsComponentProp(
+  node: ts.JsxAttribute,
+  handlers: Map<string, ExtractableHandler>,
+  component: ComponentDecl | undefined,
+): boolean {
   if (!component || !node.initializer) return false;
-  const expression = ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
-  if (expression && expressionReferencesForwardableProp(expression, component)) return true;
+  const expression = ts.isJsxExpression(node.initializer)
+    ? node.initializer.expression
+    : undefined;
+  if (expression && expressionReferencesForwardableProp(expression, component))
+    return true;
   const localHandlers = componentLocalHandlers(component);
-  const handler = handlerExpression(expression, handlers) ?? handlerExpression(expression, localHandlers);
-  return Boolean(handler && handlerCallsForwardableProp(handler, component, localHandlers));
+  const handler =
+    handlerExpression(expression, handlers) ??
+    handlerExpression(expression, localHandlers);
+  return Boolean(
+    handler && handlerCallsForwardableProp(handler, component, localHandlers),
+  );
 }
 
-export function componentLocalHandlers(component: ComponentDecl): Map<string, ExtractableHandler> {
+export function componentLocalHandlers(
+  component: ComponentDecl,
+): Map<string, ExtractableHandler> {
   const localHandlers = new Map<string, ExtractableHandler>();
   const visit = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isExtractableHandler(node.initializer)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isExtractableHandler(node.initializer)
+    ) {
       localHandlers.set(node.name.text, node.initializer);
     }
     ts.forEachChild(node, visit);
@@ -81,7 +135,13 @@ export function componentLocalHandlers(component: ComponentDecl): Map<string, Ex
   return localHandlers;
 }
 
-export function handlerCallsProp(handler: ExtractableHandler, component: ComponentDecl, propName: string, localHandlers: Map<string, ExtractableHandler>, seen = new Set<ExtractableHandler>()): boolean {
+export function handlerCallsProp(
+  handler: ExtractableHandler,
+  component: ComponentDecl,
+  propName: string,
+  localHandlers: Map<string, ExtractableHandler>,
+  seen = new Set<ExtractableHandler>(),
+): boolean {
   if (seen.has(handler)) return false;
   seen.add(handler);
   const aliases = componentPropAliases(component, propName);
@@ -96,7 +156,10 @@ export function handlerCallsProp(handler: ExtractableHandler, component: Compone
       }
       if (ts.isIdentifier(node.expression)) {
         const local = localHandlers.get(node.expression.text);
-        if (local && handlerCallsProp(local, component, propName, localHandlers, seen)) {
+        if (
+          local &&
+          handlerCallsProp(local, component, propName, localHandlers, seen)
+        ) {
           found = true;
           return;
         }
@@ -108,50 +171,98 @@ export function handlerCallsProp(handler: ExtractableHandler, component: Compone
   return found;
 }
 
-export function handlerCallsForwardableProp(handler: ExtractableHandler, component: ComponentDecl, localHandlers: Map<string, ExtractableHandler>): boolean {
-  return forwardableComponentPropNames(component).some((propName) => handlerCallsProp(handler, component, propName, localHandlers));
+export function handlerCallsForwardableProp(
+  handler: ExtractableHandler,
+  component: ComponentDecl,
+  localHandlers: Map<string, ExtractableHandler>,
+): boolean {
+  return forwardableComponentPropNames(component).some((propName) =>
+    handlerCallsProp(handler, component, propName, localHandlers),
+  );
 }
 
-export function expressionReferencesForwardableProp(expression: ts.Expression, component: ComponentDecl): boolean {
-  return forwardableComponentPropNames(component).some((propName) => expressionReferencesProp(expression, component, propName));
+export function expressionReferencesForwardableProp(
+  expression: ts.Expression,
+  component: ComponentDecl,
+): boolean {
+  return forwardableComponentPropNames(component).some((propName) =>
+    expressionReferencesProp(expression, component, propName),
+  );
 }
 
-export function expressionReferencesProp(expression: ts.Expression, component: ComponentDecl, propName: string): boolean {
+export function expressionReferencesProp(
+  expression: ts.Expression,
+  component: ComponentDecl,
+  propName: string,
+): boolean {
   const aliases = componentPropAliases(component, propName);
   const propObjects = componentPropObjectNames(component);
   if (ts.isIdentifier(expression)) return aliases.has(expression.text);
-  if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== propName) return false;
+  if (
+    !ts.isPropertyAccessExpression(expression) ||
+    expression.name.text !== propName
+  )
+    return false;
   if (propObjects.size === 0) return true;
-  return ts.isIdentifier(expression.expression) && propObjects.has(expression.expression.text);
+  return (
+    ts.isIdentifier(expression.expression) &&
+    propObjects.has(expression.expression.text)
+  );
 }
 
-export function callInvokesProp(expression: ts.Expression, propName: string, aliases: Set<string>, propObjects: Set<string>): boolean {
+export function callInvokesProp(
+  expression: ts.Expression,
+  propName: string,
+  aliases: Set<string>,
+  propObjects: Set<string>,
+): boolean {
   if (ts.isIdentifier(expression)) return aliases.has(expression.text);
-  if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== propName) return false;
+  if (
+    !ts.isPropertyAccessExpression(expression) ||
+    expression.name.text !== propName
+  )
+    return false;
   if (propObjects.size === 0) return true;
-  return ts.isIdentifier(expression.expression) && propObjects.has(expression.expression.text);
+  return (
+    ts.isIdentifier(expression.expression) &&
+    propObjects.has(expression.expression.text)
+  );
 }
 
-export function componentPropAliases(component: ComponentDecl, propName: string): Set<string> {
+export function componentPropAliases(
+  component: ComponentDecl,
+  propName: string,
+): Set<string> {
   const aliases = new Set<string>();
   const firstParam = component.parameters[0];
-  if (!firstParam || !ts.isObjectBindingPattern(firstParam.name)) return aliases;
+  if (!firstParam || !ts.isObjectBindingPattern(firstParam.name))
+    return aliases;
   for (const element of firstParam.name.elements) {
     const name = element.name;
     if (!ts.isIdentifier(name)) continue;
-    const propertyName = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : name.text;
+    const propertyName =
+      element.propertyName && ts.isIdentifier(element.propertyName)
+        ? element.propertyName.text
+        : name.text;
     if (propertyName === propName) aliases.add(name.text);
   }
   return aliases;
 }
 
-export function forwardableComponentPropNames(component: ComponentDecl): string[] {
+export function forwardableComponentPropNames(
+  component: ComponentDecl,
+): string[] {
   const names = new Set<string>();
   const firstParam = component.parameters[0];
   if (!firstParam) return [];
   if (ts.isObjectBindingPattern(firstParam.name)) {
     for (const element of firstParam.name.elements) {
-      const name = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : ts.isIdentifier(element.name) ? element.name.text : undefined;
+      const name =
+        element.propertyName && ts.isIdentifier(element.propertyName)
+          ? element.propertyName.text
+          : ts.isIdentifier(element.name)
+            ? element.name.text
+            : undefined;
       if (name && isForwardablePropName(name)) names.add(name);
     }
   }
@@ -159,7 +270,12 @@ export function forwardableComponentPropNames(component: ComponentDecl): string[
     if (!component.body) return [...names].sort();
     const objectName = firstParam.name.text;
     const visit = (node: ts.Node): void => {
-      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === objectName && isForwardablePropName(node.name.text)) {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === objectName &&
+        isForwardablePropName(node.name.text)
+      ) {
         names.add(node.name.text);
       }
       ts.forEachChild(node, visit);
@@ -169,9 +285,13 @@ export function forwardableComponentPropNames(component: ComponentDecl): string[
   return [...names].sort();
 }
 
-export function componentPropObjectNames(component: ComponentDecl): Set<string> {
+export function componentPropObjectNames(
+  component: ComponentDecl,
+): Set<string> {
   const firstParam = component.parameters[0];
-  return new Set(firstParam && ts.isIdentifier(firstParam.name) ? [firstParam.name.text] : []);
+  return new Set(
+    firstParam && ts.isIdentifier(firstParam.name)
+      ? [firstParam.name.text]
+      : [],
+  );
 }
-
-

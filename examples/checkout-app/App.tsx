@@ -4,14 +4,21 @@ export function App() {
   const [auth, setAuth] = useState<"guest" | "user">("guest");
   const [userId, setUserId] = useState<"none" | "u1">("none");
   const [plan, setPlan] = useState<"none" | "starter" | "pro">("none");
-  const [quoteStatus, setQuoteStatus] = useState<"missing" | "loading" | "valid" | "invalid">("missing");
-  const [step, setStep] = useState<"plan" | "billing" | "review" | "success">("plan");
+  const [quoteStatus, setQuoteStatus] = useState<
+    "missing" | "loading" | "valid" | "invalid"
+  >("missing");
+  const [step, setStep] = useState<"plan" | "billing" | "review" | "success">(
+    "plan",
+  );
   const [paymentMethod, setPaymentMethod] = useState<"none" | "valid">("none");
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "failed">("idle");
+  const [submitStatus, setSubmitStatus] = useState<
+    "idle" | "submitting" | "failed"
+  >("idle");
 
   return (
     <main>
       <button
+        type="button"
         disabled={auth !== "guest"}
         onClick={() => {
           setAuth("user");
@@ -21,6 +28,7 @@ export function App() {
         Login
       </button>
       <button
+        type="button"
         onClick={() => {
           setAuth("guest");
           setUserId("none");
@@ -34,6 +42,7 @@ export function App() {
         Logout
       </button>
       <button
+        type="button"
         disabled={auth !== "user"}
         onClick={async () => {
           setPlan("pro");
@@ -45,6 +54,7 @@ export function App() {
         Pro
       </button>
       <button
+        type="button"
         disabled={auth !== "user"}
         onClick={() => {
           setPlan("starter");
@@ -53,12 +63,40 @@ export function App() {
       >
         Starter
       </button>
-      <button disabled={auth !== "user" || plan === "none"} onClick={() => setStep("billing")}>Billing</button>
-      <button disabled={auth !== "user" || step !== "billing"} onClick={() => setPaymentMethod("valid")}>Use card</button>
-      <button disabled={auth !== "user" || step !== "billing" || paymentMethod === "none"} onClick={() => setStep("review")}>Review order</button>
-      <button onClick={() => setStep("plan")}>Back to plans</button>
       <button
-        disabled={auth !== "user" || step !== "review" || submitStatus === "submitting" || plan === "none"}
+        type="button"
+        disabled={auth !== "user" || plan === "none"}
+        onClick={() => setStep("billing")}
+      >
+        Billing
+      </button>
+      <button
+        type="button"
+        disabled={auth !== "user" || step !== "billing"}
+        onClick={() => setPaymentMethod("valid")}
+      >
+        Use card
+      </button>
+      <button
+        type="button"
+        disabled={
+          auth !== "user" || step !== "billing" || paymentMethod === "none"
+        }
+        onClick={() => setStep("review")}
+      >
+        Review order
+      </button>
+      <button type="button" onClick={() => setStep("plan")}>
+        Back to plans
+      </button>
+      <button
+        type="button"
+        disabled={
+          auth !== "user" ||
+          step !== "review" ||
+          submitStatus === "submitting" ||
+          plan === "none"
+        }
         onClick={async () => {
           setSubmitStatus("submitting");
           try {

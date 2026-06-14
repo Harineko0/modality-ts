@@ -54,40 +54,60 @@ export interface ModalityAssertionController {
   start(): () => void;
 }
 
-export function observable<TContext>(varId: string, read: (context: TContext) => Value): Observable<TContext> {
+export function observable<TContext>(
+  varId: string,
+  read: (context: TContext) => Value,
+): Observable<TContext> {
   return { var: varId, read };
 }
 
 export function assertObservableState<TContext>(
   expected: ModelState,
   observables: readonly Observable<TContext>[],
-  context: TContext
+  context: TContext,
 ): ObservableAssertion {
   const mismatches = observables
-    .map((probe) => ({ var: probe.var, expected: expected[probe.var], actual: probe.read(context) }))
-    .filter((mismatch) => stableJson(mismatch.expected) !== stableJson(mismatch.actual));
+    .map((probe) => ({
+      var: probe.var,
+      expected: expected[probe.var],
+      actual: probe.read(context),
+    }))
+    .filter(
+      (mismatch) =>
+        stableJson(mismatch.expected) !== stableJson(mismatch.actual),
+    );
   return { ok: mismatches.length === 0, mismatches };
 }
 
 export function assertObservableStateOrThrow<TContext>(
   expected: ModelState,
   observables: readonly Observable<TContext>[],
-  context: TContext
+  context: TContext,
 ): void {
   const assertion = assertObservableState(expected, observables, context);
   if (!assertion.ok) {
-    throw new Error(`Observable state mismatch: ${assertion.mismatches.map((mismatch) => `${mismatch.var} expected=${stableJson(mismatch.expected)} actual=${stableJson(mismatch.actual)}`).join("; ")}`);
+    throw new Error(
+      `Observable state mismatch: ${assertion.mismatches.map((mismatch) => `${mismatch.var} expected=${stableJson(mismatch.expected)} actual=${stableJson(mismatch.actual)}`).join("; ")}`,
+    );
   }
 }
 
-export function readObservableState<TContext>(observables: readonly Observable<TContext>[], context: TContext): ModelState {
-  return Object.fromEntries(observables.map((probe) => [probe.var, probe.read(context)]));
+export function readObservableState<TContext>(
+  observables: readonly Observable<TContext>[],
+  context: TContext,
+): ModelState {
+  return Object.fromEntries(
+    observables.map((probe) => [probe.var, probe.read(context)]),
+  );
 }
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(",")}}`;
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -101,7 +121,7 @@ class UnobservableReadError extends Error {
 export function evaluateObservableInvariants<TContext>(
   properties: readonly Property[],
   observables: readonly Observable<TContext>[],
-  context: TContext
+  context: TContext,
 ): ObservableInvariantResult {
   const state = readObservableState(observables, context);
   const observableIds = new Set(observables.map((probe) => probe.var));
@@ -109,46 +129,74 @@ export function evaluateObservableInvariants<TContext>(
   const skipped: ObservableInvariantSkip[] = [];
   for (const property of properties) {
     if (property.kind !== "always") {
-      skipped.push({ property: property.name, reason: `unsupported property kind: ${property.kind}` });
+      skipped.push({
+        property: property.name,
+        reason: `unsupported property kind: ${property.kind}`,
+      });
       continue;
     }
-    const missingReads = (property.reads ?? []).filter((read) => !observableIds.has(read));
+    const missingReads = (property.reads ?? []).filter(
+      (read) => !observableIds.has(read),
+    );
     if (missingReads.length > 0) {
-      skipped.push({ property: property.name, reason: `unobservable reads: ${missingReads.join(",")}` });
+      skipped.push({
+        property: property.name,
+        reason: `unobservable reads: ${missingReads.join(",")}`,
+      });
       continue;
     }
     try {
       if (!property.predicate(runtimeCheckedState(state, observableIds))) {
-        violations.push({ property: property.name, message: "observable invariant failed" });
+        violations.push({
+          property: property.name,
+          message: "observable invariant failed",
+        });
       }
     } catch (error) {
       if (error instanceof UnobservableReadError) {
-        skipped.push({ property: property.name, reason: `unobservable reads: ${error.varId}` });
+        skipped.push({
+          property: property.name,
+          reason: `unobservable reads: ${error.varId}`,
+        });
         continue;
       }
-      violations.push({ property: property.name, message: error instanceof Error ? error.message : String(error) });
+      violations.push({
+        property: property.name,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
-  return { ok: violations.length === 0 && skipped.length === 0, state, violations, skipped };
+  return {
+    ok: violations.length === 0 && skipped.length === 0,
+    state,
+    violations,
+    skipped,
+  };
 }
 
-function runtimeCheckedState(state: ModelState, observableIds: ReadonlySet<string>): ModelState {
+function runtimeCheckedState(
+  state: ModelState,
+  observableIds: ReadonlySet<string>,
+): ModelState {
   return new Proxy(state, {
     get(target, key, receiver) {
-      if (typeof key === "string" && !observableIds.has(key)) throw new UnobservableReadError(key);
+      if (typeof key === "string" && !observableIds.has(key))
+        throw new UnobservableReadError(key);
       return Reflect.get(target, key, receiver) as unknown;
-    }
+    },
   });
 }
 
 export function assertObservableInvariantsOrThrow<TContext>(
   properties: readonly Property[],
   observables: readonly Observable<TContext>[],
-  context: TContext
+  context: TContext,
 ): void {
   const result = evaluateObservableInvariants(properties, observables, context);
   if (!result.ok) {
-    throw new Error(`Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`);
+    throw new Error(
+      `Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`,
+    );
   }
 }
 
@@ -156,17 +204,23 @@ export function createModalityAssertions<TContext>(
   properties: readonly Property[],
   observables: readonly Observable<TContext>[],
   store: ModalityAssertionStore<TContext>,
-  options: ModalityAssertionOptions<TContext> = {}
+  options: ModalityAssertionOptions<TContext> = {},
 ): ModalityAssertionController {
   const check = (): ObservableInvariantResult => {
     const context = store.getSnapshot();
-    const result = evaluateObservableInvariants(properties, observables, context);
+    const result = evaluateObservableInvariants(
+      properties,
+      observables,
+      context,
+    );
     const event = { result, context };
     options.onResult?.(event);
     if (!result.ok) {
       options.onViolation?.(event);
       if (options.throwOnViolation) {
-        throw new Error(`Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`);
+        throw new Error(
+          `Observable invariant violation: ${result.violations.map((violation) => `${violation.property}: ${violation.message}`).join("; ")}`,
+        );
       }
     }
     return result;
@@ -178,6 +232,6 @@ export function createModalityAssertions<TContext>(
       return store.subscribe(() => {
         check();
       });
-    }
+    },
   };
 }

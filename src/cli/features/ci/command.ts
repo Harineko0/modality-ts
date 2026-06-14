@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCheckReportArtifact, parseModelArtifact, type CheckReport } from "modality-ts/core";
+import {
+  parseCheckReportArtifact,
+  parseModelArtifact,
+  type CheckReport,
+} from "modality-ts/core";
 import { runCheckCommand } from "../../check.js";
 import { runConformCommand } from "../../conform.js";
 
@@ -31,7 +35,9 @@ export interface CiCommandResult {
   tracesDir: string;
 }
 
-export async function runCiCommand(options: CiCommandOptions): Promise<CiCommandResult> {
+export async function runCiCommand(
+  options: CiCommandOptions,
+): Promise<CiCommandResult> {
   await mkdir(options.artifactDir, { recursive: true });
   const reportPath = join(options.artifactDir, "report.json");
   const tracesDir = join(options.artifactDir, "traces");
@@ -42,21 +48,52 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
     overlayPath: options.overlayPath,
     reportPath,
     tracesDir,
-    now
+    now,
   });
-  const determinism = await checkDeterminism(options, now, reportPath, tracesDir);
-  const violationCount = check.check.verdicts.filter((verdict) => verdict.status === "violated").length;
-  const errorCount = check.check.verdicts.filter((verdict) => verdict.status === "error").length;
-  const trustRegressions = options.baselinePath ? await compareTrustLedger(options.baselinePath, check.report) : [];
-  const staleSource = options.sourcePath ? await checkSourceFreshness(options.modelPath, options.sourcePath) : [];
+  const determinism = await checkDeterminism(
+    options,
+    now,
+    reportPath,
+    tracesDir,
+  );
+  const violationCount = check.check.verdicts.filter(
+    (verdict) => verdict.status === "violated",
+  ).length;
+  const errorCount = check.check.verdicts.filter(
+    (verdict) => verdict.status === "error",
+  ).length;
+  const trustRegressions = options.baselinePath
+    ? await compareTrustLedger(options.baselinePath, check.report)
+    : [];
+  const staleSource = options.sourcePath
+    ? await checkSourceFreshness(options.modelPath, options.sourcePath)
+    : [];
   const conform = await runOptionalConformance(options, now);
   const conformPassRate = conform?.report.metrics.passRate;
   const minConformPassRate = options.minConformPassRate ?? 1;
-  const conformFailed = conformPassRate !== undefined && conformPassRate < minConformPassRate;
-  const minTransitionConformPassRate = options.minTransitionConformPassRate ?? minConformPassRate;
-  const transitionConformFailures = conform ? transitionConformFailuresBelow(conform.report.transitionMetrics, minTransitionConformPassRate) : [];
+  const conformFailed =
+    conformPassRate !== undefined && conformPassRate < minConformPassRate;
+  const minTransitionConformPassRate =
+    options.minTransitionConformPassRate ?? minConformPassRate;
+  const transitionConformFailures = conform
+    ? transitionConformFailuresBelow(
+        conform.report.transitionMetrics,
+        minTransitionConformPassRate,
+      )
+    : [];
   const transitionConformFailed = transitionConformFailures.length > 0;
-  const exitCode = violationCount > 0 || errorCount > 0 ? 2 : trustRegressions.length > 0 ? 3 : determinism.length > 0 ? 4 : conformFailed || transitionConformFailed ? 5 : staleSource.length > 0 ? 6 : 0;
+  const exitCode =
+    violationCount > 0 || errorCount > 0
+      ? 2
+      : trustRegressions.length > 0
+        ? 3
+        : determinism.length > 0
+          ? 4
+          : conformFailed || transitionConformFailed
+            ? 5
+            : staleSource.length > 0
+              ? 6
+              : 0;
   return {
     exitCode,
     reportPath,
@@ -66,37 +103,65 @@ export async function runCiCommand(options: CiCommandOptions): Promise<CiCommand
       `violations=${violationCount} errors=${errorCount}`,
       `determinism=${determinism.length === 0 ? "passed" : "failed"}`,
       ...determinism.map((failure) => `determinism-failure: ${failure}`),
-      ...(options.baselinePath ? [`trust-regressions=${trustRegressions.length}`, ...trustRegressions.map((regression) => `trust-regression: ${regression}`)] : []),
-      ...(options.sourcePath ? [`source-freshness=${staleSource.length === 0 ? "passed" : "failed"}`, ...staleSource.map((failure) => `source-stale: ${failure}`)] : []),
-      ...(conform ? [
-        `conform-pass-rate=${conform.report.metrics.passRate}`,
-        `conform-min-pass-rate=${minConformPassRate}`,
-        `conform-transition-min-pass-rate=${minTransitionConformPassRate}`,
-        ...transitionConformFailures.map((failure) => `conform-transition-failure: ${failure}`),
-        ...conform.lines
-      ] : []),
+      ...(options.baselinePath
+        ? [
+            `trust-regressions=${trustRegressions.length}`,
+            ...trustRegressions.map(
+              (regression) => `trust-regression: ${regression}`,
+            ),
+          ]
+        : []),
+      ...(options.sourcePath
+        ? [
+            `source-freshness=${staleSource.length === 0 ? "passed" : "failed"}`,
+            ...staleSource.map((failure) => `source-stale: ${failure}`),
+          ]
+        : []),
+      ...(conform
+        ? [
+            `conform-pass-rate=${conform.report.metrics.passRate}`,
+            `conform-min-pass-rate=${minConformPassRate}`,
+            `conform-transition-min-pass-rate=${minTransitionConformPassRate}`,
+            ...transitionConformFailures.map(
+              (failure) => `conform-transition-failure: ${failure}`,
+            ),
+            ...conform.lines,
+          ]
+        : []),
       `report=${reportPath}`,
-      `traces=${tracesDir}`
-    ]
+      `traces=${tracesDir}`,
+    ],
   };
 }
 
 function transitionConformFailuresBelow(
-  transitionMetrics: readonly { transitionId: string; passRate: number; walks: number }[],
-  minimum: number
+  transitionMetrics: readonly {
+    transitionId: string;
+    passRate: number;
+    walks: number;
+  }[],
+  minimum: number,
 ): string[] {
   return transitionMetrics
     .filter((metric) => metric.passRate < minimum)
     .sort((left, right) => left.transitionId.localeCompare(right.transitionId))
-    .map((metric) => `${metric.transitionId} passRate=${metric.passRate} walks=${metric.walks}`);
+    .map(
+      (metric) =>
+        `${metric.transitionId} passRate=${metric.passRate} walks=${metric.walks}`,
+    );
 }
 
-async function checkSourceFreshness(modelPath: string, sourcePath: string): Promise<string[]> {
+async function checkSourceFreshness(
+  modelPath: string,
+  sourcePath: string,
+): Promise<string[]> {
   const model = parseModelArtifact(await readFile(modelPath, "utf8"));
   const expected = model.metadata?.sourceHashes?.[sourcePath];
   if (!expected) return [`missing source hash for ${sourcePath}`];
   const actual = sha256(await readFile(sourcePath, "utf8"));
-  return actual === expected ? [] : [`${sourcePath} expected=${expected} actual=${actual}`];
+  return actual === expected
+    ? []
+    : [`${sourcePath} expected=${expected} actual=${actual}`];
 }
 
 function sha256(value: string): string {
@@ -104,7 +169,8 @@ function sha256(value: string): string {
 }
 
 async function runOptionalConformance(options: CiCommandOptions, now: Date) {
-  if (!options.conformWalksPath && options.conformCount === undefined) return undefined;
+  if (!options.conformWalksPath && options.conformCount === undefined)
+    return undefined;
   return runConformCommand({
     walksPath: options.conformWalksPath,
     modelPath: options.conformWalksPath ? undefined : options.modelPath,
@@ -113,11 +179,16 @@ async function runOptionalConformance(options: CiCommandOptions, now: Date) {
     seed: options.conformSeed,
     mode: options.conformMode,
     harnessPath: options.conformHarnessPath,
-    now
+    now,
   });
 }
 
-async function checkDeterminism(options: CiCommandOptions, now: Date, reportPath: string, tracesDir: string): Promise<string[]> {
+async function checkDeterminism(
+  options: CiCommandOptions,
+  now: Date,
+  reportPath: string,
+  tracesDir: string,
+): Promise<string[]> {
   const dir = await mkdtemp(join(tmpdir(), "modality-ci-determinism-"));
   try {
     const secondReportPath = join(dir, "report.json");
@@ -128,11 +199,13 @@ async function checkDeterminism(options: CiCommandOptions, now: Date, reportPath
       overlayPath: options.overlayPath,
       reportPath: secondReportPath,
       tracesDir: secondTracesDir,
-      now
+      now,
     });
     return [
-      ...(await sameFile(reportPath, secondReportPath) ? [] : ["report.json differed between runs"]),
-      ...(await compareTraceDirs(tracesDir, secondTracesDir))
+      ...((await sameFile(reportPath, secondReportPath))
+        ? []
+        : ["report.json differed between runs"]),
+      ...(await compareTraceDirs(tracesDir, secondTracesDir)),
     ];
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -140,15 +213,26 @@ async function checkDeterminism(options: CiCommandOptions, now: Date, reportPath
 }
 
 async function sameFile(leftPath: string, rightPath: string): Promise<boolean> {
-  const [left, right] = await Promise.all([readFile(leftPath, "utf8"), readFile(rightPath, "utf8")]);
+  const [left, right] = await Promise.all([
+    readFile(leftPath, "utf8"),
+    readFile(rightPath, "utf8"),
+  ]);
   return left === right;
 }
 
-async function compareTraceDirs(leftDir: string, rightDir: string): Promise<string[]> {
-  const [leftNames, rightNames] = await Promise.all([sortedDirEntries(leftDir), sortedDirEntries(rightDir)]);
+async function compareTraceDirs(
+  leftDir: string,
+  rightDir: string,
+): Promise<string[]> {
+  const [leftNames, rightNames] = await Promise.all([
+    sortedDirEntries(leftDir),
+    sortedDirEntries(rightDir),
+  ]);
   const failures: string[] = [];
   if (leftNames.join("\0") !== rightNames.join("\0")) {
-    failures.push(`trace set differed: ${leftNames.join(",")} != ${rightNames.join(",")}`);
+    failures.push(
+      `trace set differed: ${leftNames.join(",")} != ${rightNames.join(",")}`,
+    );
     return failures;
   }
   for (const name of leftNames) {
@@ -168,46 +252,115 @@ async function sortedDirEntries(dir: string): Promise<string[]> {
   }
 }
 
-async function compareTrustLedger(baselinePath: string, current: CheckReport): Promise<string[]> {
-  const baseline = parseCheckReportArtifact(await readFile(baselinePath, "utf8"));
+async function compareTrustLedger(
+  baselinePath: string,
+  current: CheckReport,
+): Promise<string[]> {
+  const baseline = parseCheckReportArtifact(
+    await readFile(baselinePath, "utf8"),
+  );
   return [
-    ...increases("plugins", pluginKeys(baseline.trustLedger.plugins ?? []), pluginKeys(current.trustLedger.plugins ?? [])),
-    ...increases("domains", domainKeys(baseline.trustLedger.domains ?? []), domainKeys(current.trustLedger.domains ?? [])),
-    ...increases("manualTransitions", baseline.trustLedger.manualTransitions, current.trustLedger.manualTransitions),
-    ...increases("overApproxTransitions", baseline.trustLedger.overApproxTransitions, current.trustLedger.overApproxTransitions),
-    ...increases("ignoredVars", baseline.trustLedger.ignoredVars ?? [], current.trustLedger.ignoredVars ?? []),
-    ...increases("globalTaints", caveatKeys(baseline.trustLedger.globalTaints), caveatKeys(current.trustLedger.globalTaints)),
-    ...increases("staleReads", caveatKeys(baseline.trustLedger.staleReads), caveatKeys(current.trustLedger.staleReads)),
-    ...increases("unhandledRejections", caveatKeys(baseline.trustLedger.unhandledRejections), caveatKeys(current.trustLedger.unhandledRejections)),
-    ...increases("unextractableHandlers", caveatKeys(baseline.trustLedger.unextractableHandlers), caveatKeys(current.trustLedger.unextractableHandlers)),
-    ...increases("boundHits", baseline.trustLedger.boundHits, current.trustLedger.boundHits),
-    ...increases("vacuityWarnings", baseline.vacuityWarnings, current.vacuityWarnings)
+    ...increases(
+      "plugins",
+      pluginKeys(baseline.trustLedger.plugins ?? []),
+      pluginKeys(current.trustLedger.plugins ?? []),
+    ),
+    ...increases(
+      "domains",
+      domainKeys(baseline.trustLedger.domains ?? []),
+      domainKeys(current.trustLedger.domains ?? []),
+    ),
+    ...increases(
+      "manualTransitions",
+      baseline.trustLedger.manualTransitions,
+      current.trustLedger.manualTransitions,
+    ),
+    ...increases(
+      "overApproxTransitions",
+      baseline.trustLedger.overApproxTransitions,
+      current.trustLedger.overApproxTransitions,
+    ),
+    ...increases(
+      "ignoredVars",
+      baseline.trustLedger.ignoredVars ?? [],
+      current.trustLedger.ignoredVars ?? [],
+    ),
+    ...increases(
+      "globalTaints",
+      caveatKeys(baseline.trustLedger.globalTaints),
+      caveatKeys(current.trustLedger.globalTaints),
+    ),
+    ...increases(
+      "staleReads",
+      caveatKeys(baseline.trustLedger.staleReads),
+      caveatKeys(current.trustLedger.staleReads),
+    ),
+    ...increases(
+      "unhandledRejections",
+      caveatKeys(baseline.trustLedger.unhandledRejections),
+      caveatKeys(current.trustLedger.unhandledRejections),
+    ),
+    ...increases(
+      "unextractableHandlers",
+      caveatKeys(baseline.trustLedger.unextractableHandlers),
+      caveatKeys(current.trustLedger.unextractableHandlers),
+    ),
+    ...increases(
+      "boundHits",
+      baseline.trustLedger.boundHits,
+      current.trustLedger.boundHits,
+    ),
+    ...increases(
+      "vacuityWarnings",
+      baseline.vacuityWarnings,
+      current.vacuityWarnings,
+    ),
   ];
 }
 
-function caveatKeys(caveats: CheckReport["trustLedger"]["globalTaints"]): string[] {
+function caveatKeys(
+  caveats: CheckReport["trustLedger"]["globalTaints"],
+): string[] {
   return caveats
-    .map((caveat) => `${caveat.id}:${caveat.reason}${caveat.source ? `:${caveat.source}` : ""}`)
+    .map(
+      (caveat) =>
+        `${caveat.id}:${caveat.reason}${caveat.source ? `:${caveat.source}` : ""}`,
+    )
     .sort();
 }
 
-function domainKeys(domains: NonNullable<CheckReport["trustLedger"]["domains"]>): string[] {
+function domainKeys(
+  domains: NonNullable<CheckReport["trustLedger"]["domains"]>,
+): string[] {
   return domains
-    .map((domain) => `${domain.varId}:${domain.domainKind}:${domain.provenance}`)
+    .map(
+      (domain) => `${domain.varId}:${domain.domainKind}:${domain.provenance}`,
+    )
     .sort();
 }
 
-function pluginKeys(plugins: NonNullable<CheckReport["trustLedger"]["plugins"]>): string[] {
+function pluginKeys(
+  plugins: NonNullable<CheckReport["trustLedger"]["plugins"]>,
+): string[] {
   return plugins
-    .map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}[${plugin.packageNames.join(",")}]`)
+    .map(
+      (plugin) =>
+        `${plugin.kind}:${plugin.id}@${plugin.version}[${plugin.packageNames.join(",")}]`,
+    )
     .sort();
 }
 
-function increases(label: string, baselineValues: readonly string[], currentValues: readonly string[]): string[] {
+function increases(
+  label: string,
+  baselineValues: readonly string[],
+  currentValues: readonly string[],
+): string[] {
   const baseline = new Set(baselineValues);
   const added = currentValues.filter((value) => !baseline.has(value)).sort();
   const countIncreased = currentValues.length > baselineValues.length;
   if (added.length === 0 && !countIncreased) return [];
   const detail = added.length > 0 ? ` new=${added.join(",")}` : "";
-  return [`${label} ${baselineValues.length}->${currentValues.length}${detail}`];
+  return [
+    `${label} ${baselineValues.length}->${currentValues.length}${detail}`,
+  ];
 }

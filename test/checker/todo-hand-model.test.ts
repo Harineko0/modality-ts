@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, alwaysStep, enabled, reachable, type ExprIR, type Model, type Property, type Value } from "modality-ts/core";
+import {
+  always,
+  alwaysStep,
+  enabled,
+  reachable,
+  type ExprIR,
+  type Model,
+  type Property,
+  type Value,
+} from "modality-ts/core";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -8,14 +17,24 @@ const pendingOp = {
   fields: {
     opId: { kind: "enum", values: ["GET_TODOS", "POST_TODO"] },
     continuation: { kind: "enum", values: ["swr#resolve", "submit#1"] },
-    args: { kind: "record", fields: {} }
-  }
+    args: { kind: "record", fields: {} },
+  },
 } as const;
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
-const read = (id: string, path?: string[]): ExprIR => ({ kind: "read", var: id, path });
-const eq = (left: ExprIR, right: ExprIR): ExprIR => ({ kind: "eq", args: [left, right] });
-const neq = (left: ExprIR, right: ExprIR): ExprIR => ({ kind: "neq", args: [left, right] });
+const read = (id: string, path?: string[]): ExprIR => ({
+  kind: "read",
+  var: id,
+  path,
+});
+const eq = (left: ExprIR, right: ExprIR): ExprIR => ({
+  kind: "eq",
+  args: [left, right],
+});
+const neq = (left: ExprIR, right: ExprIR): ExprIR => ({
+  kind: "neq",
+  args: [left, right],
+});
 const and = (...args: ExprIR[]): ExprIR => ({ kind: "and", args });
 
 function todoModel(): Model {
@@ -24,15 +43,69 @@ function todoModel(): Model {
     id: "todo-hand-model",
     bounds: { maxDepth: 10, maxPending: 3, maxInternalSteps: 8 },
     vars: [
-      { id: "sys:route", domain: route, origin: "system", scope: { kind: "global" }, initial: "/" },
-      { id: "sys:history", domain: { kind: "boundedList", inner: route, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-      { id: "sys:pending", domain: { kind: "boundedList", inner: pendingOp, maxLen: 3 }, origin: "system", scope: { kind: "global" }, initial: [] },
-      { id: "auth", domain: { kind: "enum", values: ["guest", "user"] }, origin: "system", scope: { kind: "global" }, initial: "guest" },
-      { id: "draft", domain: { kind: "enum", values: ["empty", "nonEmpty"] }, origin: "system", scope: { kind: "global" }, initial: "empty" },
-      { id: "saveStatus", domain: { kind: "enum", values: ["idle", "posting", "failed"] }, origin: "system", scope: { kind: "global" }, initial: "idle" },
-      { id: "todosData", domain: { kind: "enum", values: ["none", "0", "1", "many"] }, origin: "library-template", scope: { kind: "global" }, initial: "none" },
-      { id: "todosValidating", domain: { kind: "bool" }, origin: "library-template", scope: { kind: "global" }, initial: false },
-      { id: "todosError", domain: { kind: "bool" }, origin: "library-template", scope: { kind: "global" }, initial: false }
+      {
+        id: "sys:route",
+        domain: route,
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "/",
+      },
+      {
+        id: "sys:history",
+        domain: { kind: "boundedList", inner: route, maxLen: 1 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "sys:pending",
+        domain: { kind: "boundedList", inner: pendingOp, maxLen: 3 },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: [],
+      },
+      {
+        id: "auth",
+        domain: { kind: "enum", values: ["guest", "user"] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "guest",
+      },
+      {
+        id: "draft",
+        domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "empty",
+      },
+      {
+        id: "saveStatus",
+        domain: { kind: "enum", values: ["idle", "posting", "failed"] },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: "idle",
+      },
+      {
+        id: "todosData",
+        domain: { kind: "enum", values: ["none", "0", "1", "many"] },
+        origin: "library-template",
+        scope: { kind: "global" },
+        initial: "none",
+      },
+      {
+        id: "todosValidating",
+        domain: { kind: "bool" },
+        origin: "library-template",
+        scope: { kind: "global" },
+        initial: false,
+      },
+      {
+        id: "todosError",
+        domain: { kind: "bool" },
+        origin: "library-template",
+        scope: { kind: "global" },
+        initial: false,
+      },
     ],
     transitions: [
       {
@@ -48,14 +121,26 @@ function todoModel(): Model {
             {
               kind: "if",
               cond: eq(read("todosData"), lit("none")),
-              then: { kind: "seq", effects: [{ kind: "assign", var: "todosValidating", expr: lit(true) }, { kind: "enqueue", op: "GET_TODOS", continuation: "swr#resolve", args: {} }] },
-              else: { kind: "seq", effects: [] }
-            }
-          ]
+              // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+              then: {
+                kind: "seq",
+                effects: [
+                  { kind: "assign", var: "todosValidating", expr: lit(true) },
+                  {
+                    kind: "enqueue",
+                    op: "GET_TODOS",
+                    continuation: "swr#resolve",
+                    args: {},
+                  },
+                ],
+              },
+              else: { kind: "seq", effects: [] },
+            },
+          ],
         },
         reads: ["auth", "todosData"],
         writes: ["auth", "todosValidating", "sys:pending"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.logout",
@@ -63,32 +148,57 @@ function todoModel(): Model {
         label: { kind: "click", text: "Logout" },
         source: [],
         guard: eq(read("auth"), lit("user")),
-        effect: { kind: "seq", effects: [{ kind: "assign", var: "auth", expr: lit("guest") }, { kind: "assign", var: "draft", expr: lit("empty") }, { kind: "assign", var: "saveStatus", expr: lit("idle") }] },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "assign", var: "auth", expr: lit("guest") },
+            { kind: "assign", var: "draft", expr: lit("empty") },
+            { kind: "assign", var: "saveStatus", expr: lit("idle") },
+          ],
+        },
         reads: ["auth"],
         writes: ["auth", "draft", "saveStatus"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.input.nonEmpty",
         cls: "user",
         label: { kind: "input", valueClass: "nonEmpty" },
         source: [],
-        guard: and(eq(read("auth"), lit("user")), neq(read("todosData"), lit("none"))),
+        guard: and(
+          eq(read("auth"), lit("user")),
+          neq(read("todosData"), lit("none")),
+        ),
         effect: { kind: "assign", var: "draft", expr: lit("nonEmpty") },
         reads: ["auth", "todosData"],
         writes: ["draft"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.submit",
         cls: "user",
         label: { kind: "submit", text: "Add" },
         source: [],
-        guard: and(eq(read("auth"), lit("user")), eq(read("draft"), lit("nonEmpty")), eq(read("saveStatus"), lit("idle"))),
-        effect: { kind: "seq", effects: [{ kind: "assign", var: "saveStatus", expr: lit("posting") }, { kind: "enqueue", op: "POST_TODO", continuation: "submit#1", args: {} }] },
+        guard: and(
+          eq(read("auth"), lit("user")),
+          eq(read("draft"), lit("nonEmpty")),
+          eq(read("saveStatus"), lit("idle")),
+        ),
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "assign", var: "saveStatus", expr: lit("posting") },
+            {
+              kind: "enqueue",
+              op: "POST_TODO",
+              continuation: "submit#1",
+              args: {},
+            },
+          ],
+        },
         reads: ["auth", "draft", "saveStatus"],
         writes: ["saveStatus", "sys:pending"],
-        confidence: "exact"
+        confidence: "exact",
       },
       resolveGet("successEmpty", "0"),
       resolveGet("successSome", "1"),
@@ -106,12 +216,17 @@ function todoModel(): Model {
             { kind: "assign", var: "draft", expr: lit("empty") },
             { kind: "assign", var: "saveStatus", expr: lit("idle") },
             { kind: "assign", var: "todosValidating", expr: lit(true) },
-            { kind: "enqueue", op: "GET_TODOS", continuation: "swr#resolve", args: {} }
-          ]
+            {
+              kind: "enqueue",
+              op: "GET_TODOS",
+              continuation: "swr#resolve",
+              args: {},
+            },
+          ],
         },
         reads: ["sys:pending"],
         writes: ["sys:pending", "draft", "saveStatus", "todosValidating"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "resolve.POST.error",
@@ -119,12 +234,18 @@ function todoModel(): Model {
         label: { kind: "resolve", op: "POST_TODO", outcome: "error" },
         source: [],
         guard: eq(read("sys:pending", ["0", "opId"]), lit("POST_TODO")),
-        effect: { kind: "seq", effects: [{ kind: "dequeue", index: 0 }, { kind: "assign", var: "saveStatus", expr: lit("failed") }] },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "dequeue", index: 0 },
+            { kind: "assign", var: "saveStatus", expr: lit("failed") },
+          ],
+        },
         reads: ["sys:pending"],
         writes: ["sys:pending", "saveStatus"],
-        confidence: "exact"
-      }
-    ]
+        confidence: "exact",
+      },
+    ],
   };
 }
 
@@ -137,25 +258,100 @@ function resolveGet(suffix: string, data: "0" | "1" | null) {
     guard: eq(read("sys:pending", ["0", "opId"]), lit("GET_TODOS")),
     effect:
       data === null
-        ? { kind: "seq" as const, effects: [{ kind: "dequeue" as const, index: 0 }, { kind: "assign" as const, var: "todosValidating", expr: lit(false) }, { kind: "assign" as const, var: "todosError", expr: lit(true) }] }
-        : { kind: "seq" as const, effects: [{ kind: "dequeue" as const, index: 0 }, { kind: "assign" as const, var: "todosData", expr: lit(data) }, { kind: "assign" as const, var: "todosValidating", expr: lit(false) }, { kind: "assign" as const, var: "todosError", expr: lit(false) }] },
+        ? {
+            kind: "seq" as const,
+            effects: [
+              { kind: "dequeue" as const, index: 0 },
+              {
+                kind: "assign" as const,
+                var: "todosValidating",
+                expr: lit(false),
+              },
+              { kind: "assign" as const, var: "todosError", expr: lit(true) },
+            ],
+          }
+        : {
+            kind: "seq" as const,
+            effects: [
+              { kind: "dequeue" as const, index: 0 },
+              { kind: "assign" as const, var: "todosData", expr: lit(data) },
+              {
+                kind: "assign" as const,
+                var: "todosValidating",
+                expr: lit(false),
+              },
+              { kind: "assign" as const, var: "todosError", expr: lit(false) },
+            ],
+          },
     reads: ["sys:pending"],
     writes: ["sys:pending", "todosData", "todosValidating", "todosError"],
-    confidence: "exact" as const
+    confidence: "exact" as const,
   };
 }
 
 function todoProperties(model: Model): Property[] {
   return [
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.auth === "guest"), { name: "guestCannotSubmit", reads: ["auth", "sys:pending"] }),
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.draft === "empty"), { name: "emptyDraftCannotSubmit", reads: ["draft", "sys:pending"] }),
-    alwaysStep(model, (pre, step) => !(step.enqueued("POST_TODO") && pre.saveStatus === "posting"), { name: "noSubmitWhilePosting", reads: ["saveStatus", "sys:pending"] }),
-    alwaysStep(model, (pre, step, post) => !step.resolved("POST_TODO", "error") || (post.draft === pre.draft && post.saveStatus === "failed"), { name: "failedPostKeepsDraft", reads: ["draft", "saveStatus", "sys:pending"] }),
-    alwaysStep(model, (_pre, step, post) => !step.resolved("POST_TODO", "success") || (post.draft === "empty" && post.saveStatus === "idle"), { name: "successResets", reads: ["draft", "saveStatus", "sys:pending"] }),
-    always(model, (s) => !(s.auth === "user" && s.todosError === true) || enabled(model, "App.logout")(s), { name: "logoutAvailableDuringGetError", reads: ["auth", "todosError"] }),
-    reachable(model, (s) => s.auth === "user" && (s.todosData === "1" || s.todosData === "many"), { name: "loadedTodosReachable", reads: ["auth", "todosData"] }),
-    always(model, (s) => postCount(s) <= 1, { name: "naiveNoDoubleSubmitInvariant", reads: ["sys:pending"] }),
-    alwaysStep(model, (pre, step, post) => !(step.resolved("POST_TODO", "success") && pre.saveStatus !== "posting") || post.draft === pre.draft, { name: "staleCompletionIsInert", reads: ["saveStatus", "draft", "sys:pending"] })
+    alwaysStep(
+      model,
+      (pre, step) => !(step.enqueued("POST_TODO") && pre.auth === "guest"),
+      { name: "guestCannotSubmit", reads: ["auth", "sys:pending"] },
+    ),
+    alwaysStep(
+      model,
+      (pre, step) => !(step.enqueued("POST_TODO") && pre.draft === "empty"),
+      { name: "emptyDraftCannotSubmit", reads: ["draft", "sys:pending"] },
+    ),
+    alwaysStep(
+      model,
+      (pre, step) =>
+        !(step.enqueued("POST_TODO") && pre.saveStatus === "posting"),
+      { name: "noSubmitWhilePosting", reads: ["saveStatus", "sys:pending"] },
+    ),
+    alwaysStep(
+      model,
+      (pre, step, post) =>
+        !step.resolved("POST_TODO", "error") ||
+        (post.draft === pre.draft && post.saveStatus === "failed"),
+      {
+        name: "failedPostKeepsDraft",
+        reads: ["draft", "saveStatus", "sys:pending"],
+      },
+    ),
+    alwaysStep(
+      model,
+      (_pre, step, post) =>
+        !step.resolved("POST_TODO", "success") ||
+        (post.draft === "empty" && post.saveStatus === "idle"),
+      { name: "successResets", reads: ["draft", "saveStatus", "sys:pending"] },
+    ),
+    always(
+      model,
+      (s) =>
+        !(s.auth === "user" && s.todosError === true) ||
+        enabled(model, "App.logout")(s),
+      { name: "logoutAvailableDuringGetError", reads: ["auth", "todosError"] },
+    ),
+    reachable(
+      model,
+      (s) =>
+        s.auth === "user" && (s.todosData === "1" || s.todosData === "many"),
+      { name: "loadedTodosReachable", reads: ["auth", "todosData"] },
+    ),
+    always(model, (s) => postCount(s) <= 1, {
+      name: "naiveNoDoubleSubmitInvariant",
+      reads: ["sys:pending"],
+    }),
+    alwaysStep(
+      model,
+      (pre, step, post) =>
+        !(
+          step.resolved("POST_TODO", "success") && pre.saveStatus !== "posting"
+        ) || post.draft === pre.draft,
+      {
+        name: "staleCompletionIsInert",
+        reads: ["saveStatus", "draft", "sys:pending"],
+      },
+    ),
   ];
 }
 
@@ -164,9 +360,18 @@ describe("hand-written ToDo IR", () => {
     const model = todoModel();
     const result = checkModel(model, todoProperties(model));
     expect(result.stats).toEqual({ states: 139, edges: 435, depth: 10 });
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
 
-    for (const name of ["guestCannotSubmit", "emptyDraftCannotSubmit", "noSubmitWhilePosting", "failedPostKeepsDraft", "successResets", "logoutAvailableDuringGetError"]) {
+    for (const name of [
+      "guestCannotSubmit",
+      "emptyDraftCannotSubmit",
+      "noSubmitWhilePosting",
+      "failedPostKeepsDraft",
+      "successResets",
+      "logoutAvailableDuringGetError",
+    ]) {
       expect(byName.get(name)?.status, name).toBe("verified-within-bounds");
     }
     expect(byName.get("loadedTodosReachable")?.status).toBe("reachable");
@@ -177,12 +382,18 @@ describe("hand-written ToDo IR", () => {
   it("pins the walkthrough counterexample shapes", () => {
     const model = todoModel();
     const result = checkModel(model, todoProperties(model));
-    const byName = new Map(result.verdicts.map((verdict) => [verdict.property, verdict]));
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict]),
+    );
     const doubleSubmit = byName.get("naiveNoDoubleSubmitInvariant");
     const staleCompletion = byName.get("staleCompletionIsInert");
 
     expect(doubleSubmit?.status).toBe("violated");
-    expect(doubleSubmit?.status === "violated" ? doubleSubmit.trace.steps.map((step) => step.transitionId) : []).toEqual([
+    expect(
+      doubleSubmit?.status === "violated"
+        ? doubleSubmit.trace.steps.map((step) => step.transitionId)
+        : [],
+    ).toEqual([
       "App.login",
       "resolve.GET.successEmpty",
       "App.input.nonEmpty",
@@ -190,11 +401,15 @@ describe("hand-written ToDo IR", () => {
       "App.logout",
       "App.login",
       "App.input.nonEmpty",
-      "App.submit"
+      "App.submit",
     ]);
 
     expect(staleCompletion?.status).toBe("violated");
-    expect(staleCompletion?.status === "violated" ? staleCompletion.trace.steps.map((step) => step.transitionId) : []).toEqual([
+    expect(
+      staleCompletion?.status === "violated"
+        ? staleCompletion.trace.steps.map((step) => step.transitionId)
+        : [],
+    ).toEqual([
       "App.login",
       "resolve.GET.successEmpty",
       "App.input.nonEmpty",
@@ -202,7 +417,7 @@ describe("hand-written ToDo IR", () => {
       "App.logout",
       "App.login",
       "App.input.nonEmpty",
-      "resolve.POST.success"
+      "resolve.POST.success",
     ]);
   });
 
@@ -217,12 +432,21 @@ describe("hand-written ToDo IR", () => {
     const model = todoModel();
     const full = checkModel(model, todoProperties(model));
     const sliced = checkModel(model, todoProperties(model), { slicing: true });
-    expect(sliced.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual(
-      full.verdicts.map((verdict) => [verdict.property, verdict.status])
+    expect(
+      sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual(
+      full.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
   });
 });
 
 function postCount(state: Record<string, unknown>): number {
-  return Array.isArray(state["sys:pending"]) ? state["sys:pending"].filter((op) => op && typeof op === "object" && (op as { opId?: string }).opId === "POST_TODO").length : 0;
+  return Array.isArray(state["sys:pending"])
+    ? state["sys:pending"].filter(
+        (op) =>
+          op &&
+          typeof op === "object" &&
+          (op as { opId?: string }).opId === "POST_TODO",
+      ).length
+    : 0;
 }

@@ -1,5 +1,10 @@
 import * as ts from "typescript";
-import type { AbstractDomain, Locator, Transition, Value } from "modality-ts/core";
+import type {
+  AbstractDomain,
+  Locator,
+  Transition,
+  Value,
+} from "modality-ts/core";
 import { lineAndColumn } from "./ast.js";
 import type { SetterBinding } from "./types.js";
 
@@ -10,47 +15,72 @@ export function inputTransitions(
   attr: string,
   component: string,
   setter: SetterBinding,
-  locator: Locator | undefined
+  locator: Locator | undefined,
 ): Transition[] {
   const literalValues = literalInputValues(node);
   const finite = literalValues
-    ? finiteInputValues(setter.domain).filter(({ valueClass }) => literalValues.has(valueClass))
+    ? finiteInputValues(setter.domain).filter(({ valueClass }) =>
+        literalValues.has(valueClass),
+      )
     : finiteInputValues(setter.domain);
   if (finite.length > 0) {
     return finite.map(({ value, valueClass }) => ({
       id: `${component}.${attr}.${setter.stateName}.${safeId(valueClass)}`,
       cls: "user" as const,
-      label: { kind: "input" as const, valueClass, ...(locator ? { locator } : {}) },
+      label: {
+        kind: "input" as const,
+        valueClass,
+        ...(locator ? { locator } : {}),
+      },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit" as const, value: true },
-      effect: { kind: "assign" as const, var: setter.varId, expr: { kind: "lit" as const, value } },
+      effect: {
+        kind: "assign" as const,
+        var: setter.varId,
+        expr: { kind: "lit" as const, value },
+      },
       reads: [],
       writes: [setter.varId],
-      confidence: "exact" as const
+      confidence: "exact" as const,
     }));
   }
-  return [{
-    id: `${component}.${attr}.${setter.stateName}`,
-    cls: "user",
-    label: { kind: "input", valueClass: valueClassForDomain(setter.domain), ...(locator ? { locator } : {}) },
-    source: [{ file: fileName, ...lineAndColumn(source, node) }],
-    guard: { kind: "lit", value: true },
-    effect: { kind: "havoc", var: setter.varId },
-    reads: [],
-    writes: [setter.varId],
-    confidence: "over-approx"
-  }];
+  return [
+    {
+      id: `${component}.${attr}.${setter.stateName}`,
+      cls: "user",
+      label: {
+        kind: "input",
+        valueClass: valueClassForDomain(setter.domain),
+        ...(locator ? { locator } : {}),
+      },
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit", value: true },
+      effect: { kind: "havoc", var: setter.varId },
+      reads: [],
+      writes: [setter.varId],
+      confidence: "over-approx",
+    },
+  ];
 }
 
-function literalInputValues(attribute: ts.JsxAttribute): Set<string> | undefined {
+function literalInputValues(
+  attribute: ts.JsxAttribute,
+): Set<string> | undefined {
   return selectOptionValues(attribute) ?? radioInputValue(attribute);
 }
 
-function selectOptionValues(attribute: ts.JsxAttribute): Set<string> | undefined {
+function selectOptionValues(
+  attribute: ts.JsxAttribute,
+): Set<string> | undefined {
   const attrs = attribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
   const opening = attrs.parent;
-  if (!ts.isJsxOpeningElement(opening) || opening.tagName.getText() !== "select" || !ts.isJsxElement(opening.parent)) return undefined;
+  if (
+    !ts.isJsxOpeningElement(opening) ||
+    opening.tagName.getText() !== "select" ||
+    !ts.isJsxElement(opening.parent)
+  )
+    return undefined;
   const values = opening.parent.children
     .filter(ts.isJsxElement)
     .filter((child) => child.openingElement.tagName.getText() === "option")
@@ -69,14 +99,22 @@ function radioInputValue(attribute: ts.JsxAttribute): Set<string> | undefined {
   const attrs = attribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
   const opening = attrs.parent;
-  if (!ts.isJsxOpeningElement(opening) && !ts.isJsxSelfClosingElement(opening)) return undefined;
-  if (opening.tagName.getText() !== "input" || stringAttribute(attrs, "type") !== "radio") return undefined;
+  if (!ts.isJsxOpeningElement(opening) && !ts.isJsxSelfClosingElement(opening))
+    return undefined;
+  if (
+    opening.tagName.getText() !== "input" ||
+    stringAttribute(attrs, "type") !== "radio"
+  )
+    return undefined;
   const value = stringAttribute(attrs, "value");
   return value ? new Set([value]) : undefined;
 }
 
-function finiteInputValues(domain: AbstractDomain): { value: Value; valueClass: string }[] {
-  if (domain.kind === "enum") return domain.values.map((value) => ({ value, valueClass: value }));
+function finiteInputValues(
+  domain: AbstractDomain,
+): { value: Value; valueClass: string }[] {
+  if (domain.kind === "enum")
+    return domain.values.map((value) => ({ value, valueClass: value }));
   if (domain.kind === "boundedInt") {
     return Array.from({ length: domain.max - domain.min + 1 }, (_, index) => {
       const value = domain.min + index;
@@ -86,17 +124,24 @@ function finiteInputValues(domain: AbstractDomain): { value: Value; valueClass: 
   if (domain.kind === "bool") {
     return [
       { value: false, valueClass: "false" },
-      { value: true, valueClass: "true" }
+      { value: true, valueClass: "true" },
     ];
   }
   return [];
 }
 
-function stringAttribute(attrs: ts.JsxAttributes, name: string): string | undefined {
-  const attr = attrs.properties.find((property): property is ts.JsxAttribute =>
-    ts.isJsxAttribute(property) && ts.isIdentifier(property.name) && property.name.text === name
+function stringAttribute(
+  attrs: ts.JsxAttributes,
+  name: string,
+): string | undefined {
+  const attr = attrs.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) &&
+      ts.isIdentifier(property.name) &&
+      property.name.text === name,
   );
-  if (!attr?.initializer || !ts.isStringLiteral(attr.initializer)) return undefined;
+  if (!attr?.initializer || !ts.isStringLiteral(attr.initializer))
+    return undefined;
   return attr.initializer.text;
 }
 
@@ -118,5 +163,7 @@ function valueClassForDomain(domain: AbstractDomain): string {
 }
 
 function safeId(value: string): string {
-  return value.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "event";
+  return (
+    value.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "event"
+  );
 }

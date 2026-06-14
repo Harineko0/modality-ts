@@ -1,19 +1,27 @@
-import { canonicalJson, type AbstractDomain, type Model, type StateVarDecl, type Value } from "modality-ts/core";
+import {
+  canonicalJson,
+  type AbstractDomain,
+  type Model,
+  type StateVarDecl,
+  type Value,
+} from "modality-ts/core";
 
 export function emitAppModel(model: Model): string {
   return [
-    "import type { Model } from \"modality-ts/core\";",
+    'import type { Model } from "modality-ts/core";',
     "",
     `export const M = ${canonicalJson(model)} as const satisfies Model;`,
     "",
     "export type AppState = {",
-    ...model.vars.map((decl) => `  ${quoteProperty(decl.id)}: ${typeForDomain(decl.domain)};`),
+    ...model.vars.map(
+      (decl) => `  ${quoteProperty(decl.id)}: ${typeForDomain(decl.domain)};`,
+    ),
     "};",
     "",
     "export type VarId = keyof AppState;",
     "",
     `export const initialState = ${canonicalJson(initialState(model.vars))} as const satisfies AppState;`,
-    ""
+    "",
   ].join("\n");
 }
 
@@ -22,26 +30,42 @@ function typeForDomain(domain: AbstractDomain): string {
     case "bool":
       return "boolean";
     case "enum":
-      return domain.values.length > 0 ? domain.values.map(stringLiteralType).join(" | ") : "never";
+      return domain.values.length > 0
+        ? domain.values.map(stringLiteralType).join(" | ")
+        : "never";
     case "boundedInt":
       return domain.min === domain.max ? JSON.stringify(domain.min) : "number";
     case "option":
       return `${typeForDomain(domain.inner)} | null`;
     case "record":
-      return `{ ${Object.entries(domain.fields).map(([key, field]) => `${quoteProperty(key)}: ${typeForDomain(field)};`).join(" ")} }`;
+      return `{ ${Object.entries(domain.fields)
+        .map(
+          ([key, field]) => `${quoteProperty(key)}: ${typeForDomain(field)};`,
+        )
+        .join(" ")} }`;
     case "tagged":
-      return Object.entries(domain.variants)
-        .map(([tagValue, variant]) => {
-          const body = variant.kind === "record"
-            ? Object.entries(variant.fields).map(([key, field]) => `${quoteProperty(key)}: ${typeForDomain(field)};`).join(" ")
-            : `value: ${typeForDomain(variant)};`;
-          return `{ ${quoteProperty(domain.tag)}: ${stringLiteralType(tagValue)}; ${body} }`;
-        })
-        .join(" | ") || "never";
+      return (
+        Object.entries(domain.variants)
+          .map(([tagValue, variant]) => {
+            const body =
+              variant.kind === "record"
+                ? Object.entries(variant.fields)
+                    .map(
+                      ([key, field]) =>
+                        `${quoteProperty(key)}: ${typeForDomain(field)};`,
+                    )
+                    .join(" ")
+                : `value: ${typeForDomain(variant)};`;
+            return `{ ${quoteProperty(domain.tag)}: ${stringLiteralType(tagValue)}; ${body} }`;
+          })
+          .join(" | ") || "never"
+      );
     case "tokens":
-      return domain.names?.length ? domain.names.map(stringLiteralType).join(" | ") : "string";
+      return domain.names?.length
+        ? domain.names.map(stringLiteralType).join(" | ")
+        : "string";
     case "lengthCat":
-      return "\"0\" | \"1\" | \"many\"";
+      return '"0" | "1" | "many"';
     case "boundedList":
       return `readonly ${parenthesizeIfUnion(typeForDomain(domain.inner))}[]`;
   }

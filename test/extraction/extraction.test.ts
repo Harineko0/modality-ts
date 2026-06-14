@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import { always, reachable, type Model } from "modality-ts/core";
-import { extractUseStateSkeleton, extractUseStateVars } from "../../src/extract/sources/use-state/transitions.js";
-import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import {
+  extractUseStateSkeleton,
+  extractUseStateVars,
+} from "../../src/extract/sources/use-state/transitions.js";
+import type {
+  RouterPlugin,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
 
 describe("useState inventory", () => {
   it("extracts route-local state declarations with stable ids", () => {
@@ -16,13 +22,35 @@ describe("useState inventory", () => {
         return null;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.vars.map((decl) => [decl.id, decl.domain, decl.initial, decl.scope])).toEqual([
-      ["local:App.draft", { kind: "enum", values: ["empty", "nonEmpty"] }, "empty", { kind: "route-local", route: "/" }],
-      ["local:App.saveStatus", { kind: "enum", values: ["idle", "posting", "failed"] }, "idle", { kind: "route-local", route: "/" }],
-      ["local:App.items", { kind: "lengthCat" }, "0", { kind: "route-local", route: "/" }]
+    expect(
+      result.vars.map((decl) => [
+        decl.id,
+        decl.domain,
+        decl.initial,
+        decl.scope,
+      ]),
+    ).toEqual([
+      [
+        "local:App.draft",
+        { kind: "enum", values: ["empty", "nonEmpty"] },
+        "empty",
+        { kind: "route-local", route: "/" },
+      ],
+      [
+        "local:App.saveStatus",
+        { kind: "enum", values: ["idle", "posting", "failed"] },
+        "idle",
+        { kind: "route-local", route: "/" },
+      ],
+      [
+        "local:App.items",
+        { kind: "lengthCat" },
+        "0",
+        { kind: "route-local", route: "/" },
+      ],
     ]);
   });
 
@@ -35,12 +63,14 @@ describe("useState inventory", () => {
         return null;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.vars.find((decl) => decl.id === "local:App.role")?.domain).toEqual({
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.role")?.domain,
+    ).toEqual({
       kind: "option",
-      inner: { kind: "enum", values: ["guest", "admin"] }
+      inner: { kind: "enum", values: ["guest", "admin"] },
     });
   });
 
@@ -53,17 +83,24 @@ describe("useState inventory", () => {
         return <button data-testid="save-button" onClick={() => setSaveStatus('posting')}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
       cls: "user",
-      label: { kind: "click", locator: { kind: "testId", value: "save-button" } },
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      label: {
+        kind: "click",
+        locator: { kind: "testId", value: "save-button" },
+      },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
       reads: [],
       writes: ["local:App.saveStatus"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -71,15 +108,51 @@ describe("useState inventory", () => {
       id: "extracted-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saveStatus"] === "posting", { name: "postingReachable", reads: ["local:App.saveStatus"] })
+      reachable(model, (state) => state["local:App.saveStatus"] === "posting", {
+        name: "postingReachable",
+        reads: ["local:App.saveStatus"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -94,24 +167,34 @@ describe("useState inventory", () => {
         return <button onClick={() => setRole(user?.role ?? null)}>Copy</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.find((transition) => transition.id === "App.onClick.role")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.role",
+      ),
+    ).toMatchObject({
       effect: {
         kind: "assign",
         var: "local:App.role",
         expr: {
           kind: "cond",
           args: [
-            { kind: "eq", args: [{ kind: "read", var: "local:App.user" }, { kind: "lit", value: null }] },
+            {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "local:App.user" },
+                { kind: "lit", value: null },
+              ],
+            },
             { kind: "lit", value: null },
-            { kind: "read", var: "local:App.user", path: ["role"] }
-          ]
-        }
+            { kind: "read", var: "local:App.user", path: ["role"] },
+          ],
+        },
       },
       reads: ["local:App.user"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -119,15 +202,51 @@ describe("useState inventory", () => {
       id: "optional-chain-extracted-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.role"] === "guest", { name: "roleCopied", reads: ["local:App.role"] })
+      reachable(model, (state) => state["local:App.role"] === "guest", {
+        name: "roleCopied",
+        reads: ["local:App.role"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -149,13 +268,31 @@ describe("useState inventory", () => {
         return <nav>{NAV_GROUPS.map((group) => group.items.map((item) => <SidebarLink key={item.to} item={item} />))}</nav>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/links", "/analytics", "/tags"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/links", "/analytics", "/tags"],
+      },
     );
-    expect(result.transitions.filter((transition) => transition.cls === "nav").map((transition) => transition.effect)).toEqual(expect.arrayContaining([
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/links" } },
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } },
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } }
-    ]));
+    expect(
+      result.transitions
+        .filter((transition) => transition.cls === "nav")
+        .map((transition) => transition.effect),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "navigate",
+          mode: "push",
+          to: { kind: "lit", value: "/links" },
+        },
+        {
+          kind: "navigate",
+          mode: "push",
+          to: { kind: "lit", value: "/analytics" },
+        },
+        { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } },
+      ]),
+    );
   });
 
   it("normalizes query-string Link targets to route patterns", () => {
@@ -166,11 +303,19 @@ describe("useState inventory", () => {
         return <Link to={\`/analytics?linkId=\${id}\`}>Analytics</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] }
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] },
     );
-    expect(result.transitions.find((transition) => transition.id === "App.Link.navigate._analytics")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.Link.navigate._analytics",
+      ),
+    ).toMatchObject({
       cls: "nav",
-      effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } }
+      effect: {
+        kind: "navigate",
+        mode: "push",
+        to: { kind: "lit", value: "/analytics" },
+      },
     });
   });
 
@@ -182,15 +327,22 @@ describe("useState inventory", () => {
         return <Link to="/analytics">Clear</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] }
+      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] },
     );
-    expect(result.transitions.find((transition) => transition.id === "Analytics.Link.navigate._analytics")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "Analytics.Link.navigate._analytics",
+      ),
+    ).toMatchObject({
       cls: "nav",
       guard: {
         kind: "eq",
-        args: [{ kind: "read", var: "sys:route" }, { kind: "lit", value: "/analytics" }]
+        args: [
+          { kind: "read", var: "sys:route" },
+          { kind: "lit", value: "/analytics" },
+        ],
       },
-      reads: ["sys:history", "sys:route"]
+      reads: ["sys:history", "sys:route"],
     });
   });
 
@@ -202,14 +354,32 @@ describe("useState inventory", () => {
         return <Link to={admin ? "/admin" : "/links"}>Go</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/admin", "/links"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/admin", "/links"],
+      },
     );
-    const nav = result.transitions.filter((transition) => transition.cls === "nav");
-    expect(nav.map((transition) => transition.effect)).toEqual(expect.arrayContaining([
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/admin" } },
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/links" } }
-    ]));
-    expect(nav.every((transition) => transition.confidence === "over-approx")).toBe(true);
+    const nav = result.transitions.filter(
+      (transition) => transition.cls === "nav",
+    );
+    expect(nav.map((transition) => transition.effect)).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "navigate",
+          mode: "push",
+          to: { kind: "lit", value: "/admin" },
+        },
+        {
+          kind: "navigate",
+          mode: "push",
+          to: { kind: "lit", value: "/links" },
+        },
+      ]),
+    );
+    expect(
+      nav.every((transition) => transition.confidence === "over-approx"),
+    ).toBe(true);
   });
 
   it("over-approximates unmodeled Link targets across known route patterns", () => {
@@ -220,15 +390,29 @@ describe("useState inventory", () => {
         return <Link to={target}>Go</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics", "/tags"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/analytics", "/tags"],
+      },
     );
-    const nav = result.transitions.filter((transition) => transition.cls === "nav");
-    expect(nav.map((transition) => transition.effect)).toEqual(expect.arrayContaining([
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/" } },
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/analytics" } },
-      { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } }
-    ]));
-    expect(nav.every((transition) => transition.confidence === "over-approx")).toBe(true);
+    const nav = result.transitions.filter(
+      (transition) => transition.cls === "nav",
+    );
+    expect(nav.map((transition) => transition.effect)).toEqual(
+      expect.arrayContaining([
+        { kind: "navigate", mode: "push", to: { kind: "lit", value: "/" } },
+        {
+          kind: "navigate",
+          mode: "push",
+          to: { kind: "lit", value: "/analytics" },
+        },
+        { kind: "navigate", mode: "push", to: { kind: "lit", value: "/tags" } },
+      ]),
+    );
+    expect(
+      nav.every((transition) => transition.confidence === "over-approx"),
+    ).toBe(true);
   });
 
   it("summarizes handlers from externally supplied state vars and write channels", () => {
@@ -249,26 +433,30 @@ describe("useState inventory", () => {
             domain: { kind: "enum", values: ["idle", "posting"] },
             origin: { file: "App.tsx", line: 4, column: 15 },
             scope: { kind: "route-local", route: "/" },
-            initial: "idle"
-          }
+            initial: "idle",
+          },
         ],
         writeChannels: [
           {
             id: "local:App.saveStatus.setter",
             varId: "local:App.saveStatus",
             symbolName: "setSaveStatus",
-            source: { file: "App.tsx", line: 4, column: 15 }
-          }
-        ]
-      }
+            source: { file: "App.tsx", line: 4, column: 15 },
+          },
+        ],
+      },
     );
     expect(result.vars).toHaveLength(1);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
       writes: ["local:App.saveStatus"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -281,11 +469,11 @@ describe("useState inventory", () => {
         return <button onClick={() => setSaveStatus('posting')}>Save now</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions[0]?.label).toEqual({
       kind: "click",
-      locator: { kind: "role", role: "button", name: "Save now" }
+      locator: { kind: "role", role: "button", name: "Save now" },
     });
   });
 
@@ -299,14 +487,18 @@ describe("useState inventory", () => {
         return <button onClick={save}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -320,14 +512,18 @@ describe("useState inventory", () => {
         return <button onClick={() => save()}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -343,15 +539,22 @@ describe("useState inventory", () => {
         return <Button onPress={() => setSaveStatus('posting')} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
-      label: { kind: "click", locator: { kind: "testId", value: "save-button" } },
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      label: {
+        kind: "click",
+        locator: { kind: "testId", value: "save-button" },
+      },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -367,15 +570,22 @@ describe("useState inventory", () => {
         return <Button onPress={() => setSaveStatus('posting')} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saveStatus",
-      label: { kind: "click", locator: { kind: "testId", value: "save-button" } },
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      label: {
+        kind: "click",
+        locator: { kind: "testId", value: "save-button" },
+      },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -391,7 +601,7 @@ describe("useState inventory", () => {
         return <Button disabled={saveStatus === 'posting'} onPress={() => setSaveStatus('idle')} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -399,10 +609,22 @@ describe("useState inventory", () => {
       id: "App.onClick.saveStatus",
       guard: {
         kind: "not",
-        args: [{ kind: "eq", args: [{ kind: "read", var: "local:App.saveStatus" }, { kind: "lit", value: "posting" }] }]
+        args: [
+          {
+            kind: "eq",
+            args: [
+              { kind: "read", var: "local:App.saveStatus" },
+              { kind: "lit", value: "posting" },
+            ],
+          },
+        ],
       },
       reads: ["local:App.saveStatus"],
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "idle" } }
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "idle" },
+      },
     });
   });
 
@@ -421,10 +643,12 @@ describe("useState inventory", () => {
         return <Button onPress={() => setSaveStatus('posting')} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable handler App.onPress");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable handler App.onPress",
+    );
   });
 
   it("reports stateful components rendered from list maps as unextractable", () => {
@@ -440,14 +664,16 @@ describe("useState inventory", () => {
         return <>{items.map(item => <Row key={item} item={item} />)}</>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.vars.map((decl) => decl.id)).not.toContain("local:Row.open");
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toEqual(expect.arrayContaining([
-      "Unextractable stateful list item Row",
-      "Unextractable handler Row.onClick"
-    ]));
+    expect(result.warnings.map((warning) => warning.message)).toEqual(
+      expect.arrayContaining([
+        "Unextractable stateful list item Row",
+        "Unextractable handler Row.onClick",
+      ]),
+    );
   });
 
   it("reports handlers rendered from lengthCat list maps as unextractable", () => {
@@ -460,10 +686,12 @@ describe("useState inventory", () => {
         return <>{items.map(item => <button onClick={() => setSelected('picked')}>{item}</button>)}</>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable list-rendered handler App.onClick over lengthCat local:App.items");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable list-rendered handler App.onClick over lengthCat local:App.items",
+    );
   });
 
   it("extracts boundedList item handlers as indexed transition families", () => {
@@ -481,45 +709,94 @@ describe("useState inventory", () => {
         stateVars: [
           {
             id: "local:App.items",
-            domain: { kind: "boundedList", inner: { kind: "record", fields: { id: { kind: "enum", values: ["a", "b"] } } }, maxLen: 2 },
+            domain: {
+              kind: "boundedList",
+              inner: {
+                kind: "record",
+                fields: { id: { kind: "enum", values: ["a", "b"] } },
+              },
+              maxLen: 2,
+            },
             origin: { file: "App.tsx", line: 3, column: 15 },
             scope: { kind: "route-local", route: "/" },
-            initial: []
+            initial: [],
           },
           {
             id: "local:App.selected",
             domain: { kind: "enum", values: ["none", "a", "b"] },
             origin: { file: "App.tsx", line: 4, column: 15 },
             scope: { kind: "route-local", route: "/" },
-            initial: "none"
-          }
+            initial: "none",
+          },
         ],
         writeChannels: [
           {
             id: "local:App.selected.setter",
             varId: "local:App.selected",
             symbolName: "setSelected",
-            source: { file: "App.tsx", line: 4, column: 15 }
-          }
-        ]
-      }
+            source: { file: "App.tsx", line: 4, column: 15 },
+          },
+        ],
+      },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.guard, transition.effect, transition.reads])).toEqual([
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.label,
+        transition.guard,
+        transition.effect,
+        transition.reads,
+      ]),
+    ).toEqual([
       [
         "App.onClick.selected.0",
-        { kind: "click", locator: { kind: "positional", base: { kind: "role", role: "button" }, index: 0 } },
-        { kind: "neq", args: [{ kind: "lenCat", arg: { kind: "read", var: "local:App.items" } }, { kind: "lit", value: "0" }] },
-        { kind: "assign", var: "local:App.selected", expr: { kind: "read", var: "local:App.items", path: ["0", "id"] } },
-        ["local:App.items"]
+        {
+          kind: "click",
+          locator: {
+            kind: "positional",
+            base: { kind: "role", role: "button" },
+            index: 0,
+          },
+        },
+        {
+          kind: "neq",
+          args: [
+            { kind: "lenCat", arg: { kind: "read", var: "local:App.items" } },
+            { kind: "lit", value: "0" },
+          ],
+        },
+        {
+          kind: "assign",
+          var: "local:App.selected",
+          expr: { kind: "read", var: "local:App.items", path: ["0", "id"] },
+        },
+        ["local:App.items"],
       ],
       [
         "App.onClick.selected.1",
-        { kind: "click", locator: { kind: "positional", base: { kind: "role", role: "button" }, index: 1 } },
-        { kind: "eq", args: [{ kind: "lenCat", arg: { kind: "read", var: "local:App.items" } }, { kind: "lit", value: "many" }] },
-        { kind: "assign", var: "local:App.selected", expr: { kind: "read", var: "local:App.items", path: ["1", "id"] } },
-        ["local:App.items"]
-      ]
+        {
+          kind: "click",
+          locator: {
+            kind: "positional",
+            base: { kind: "role", role: "button" },
+            index: 1,
+          },
+        },
+        {
+          kind: "eq",
+          args: [
+            { kind: "lenCat", arg: { kind: "read", var: "local:App.items" } },
+            { kind: "lit", value: "many" },
+          ],
+        },
+        {
+          kind: "assign",
+          var: "local:App.selected",
+          expr: { kind: "read", var: "local:App.items", path: ["1", "id"] },
+        },
+        ["local:App.items"],
+      ],
     ]);
   });
 
@@ -536,20 +813,28 @@ describe("useState inventory", () => {
         return <button onClick={() => setCount(1)}>{count}</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    expect(result.vars.map((decl) => decl.id)).not.toContain("local:Anonymous.count");
+    expect(result.vars.map((decl) => decl.id)).not.toContain(
+      "local:Anonymous.count",
+    );
     expect(result.warnings).toEqual([]);
-    expect(result.vars.find((decl) => decl.id === "local:App.count")).toMatchObject({
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.count"),
+    ).toMatchObject({
       domain: { kind: "boundedInt", min: 0, max: 1 },
-      initial: 0
+      initial: 0,
     });
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.count",
-      effect: { kind: "assign", var: "local:App.count", expr: { kind: "lit", value: 1 } },
+      effect: {
+        kind: "assign",
+        var: "local:App.count",
+        expr: { kind: "lit", value: 1 },
+      },
       writes: ["local:App.count"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -562,16 +847,20 @@ describe("useState inventory", () => {
         return <button onClick={() => setOpen(prev => !prev)}>Toggle</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.open",
-      effect: { kind: "assign", var: "local:App.open", expr: { kind: "not", args: [{ kind: "read", var: "local:App.open" }] } },
+      effect: {
+        kind: "assign",
+        var: "local:App.open",
+        expr: { kind: "not", args: [{ kind: "read", var: "local:App.open" }] },
+      },
       reads: ["local:App.open"],
       writes: ["local:App.open"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -579,15 +868,51 @@ describe("useState inventory", () => {
       id: "functional-updater-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.open"] === true, { name: "openReachable", reads: ["local:App.open"] })
+      reachable(model, (state) => state["local:App.open"] === true, {
+        name: "openReachable",
+        reads: ["local:App.open"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -602,15 +927,19 @@ describe("useState inventory", () => {
         return <button onClick={() => setSaved(draft)}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saved",
-      effect: { kind: "assign", var: "local:App.saved", expr: { kind: "read", var: "local:App.draft" } },
+      effect: {
+        kind: "assign",
+        var: "local:App.saved",
+        expr: { kind: "read", var: "local:App.draft" },
+      },
       reads: ["local:App.draft"],
       writes: ["local:App.saved"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -627,15 +956,19 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.saved",
-      effect: { kind: "assign", var: "local:App.saved", expr: { kind: "read", var: "local:App.draft" } },
+      effect: {
+        kind: "assign",
+        var: "local:App.saved",
+        expr: { kind: "read", var: "local:App.draft" },
+      },
       reads: ["local:App.draft"],
       writes: ["local:App.saved"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -653,7 +986,7 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -662,13 +995,21 @@ describe("useState inventory", () => {
       effect: {
         kind: "seq",
         effects: [
-          { kind: "assign", var: "local:App.saved", expr: { kind: "read", var: "local:App.draft" } },
-          { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "empty" } }
-        ]
+          {
+            kind: "assign",
+            var: "local:App.saved",
+            expr: { kind: "read", var: "local:App.draft" },
+          },
+          {
+            kind: "assign",
+            var: "local:App.draft",
+            expr: { kind: "lit", value: "empty" },
+          },
+        ],
       },
       reads: ["local:App.draft"],
       writes: ["local:App.draft", "local:App.saved"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -676,18 +1017,57 @@ describe("useState inventory", () => {
       id: "sequential-setter-skeleton",
       bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saved"] === "nonEmpty" && state["local:App.draft"] === "empty", {
-        name: "savedThenDraftCleared",
-        reads: ["local:App.saved", "local:App.draft"]
-      })
+      reachable(
+        model,
+        (state) =>
+          state["local:App.saved"] === "nonEmpty" &&
+          state["local:App.draft"] === "empty",
+        {
+          name: "savedThenDraftCleared",
+          reads: ["local:App.saved", "local:App.draft"],
+        },
+      ),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -702,15 +1082,19 @@ describe("useState inventory", () => {
         return <button onClick={() => setMode(auth.kind)}>Copy</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.mode",
-      effect: { kind: "assign", var: "local:App.mode", expr: { kind: "read", var: "local:App.auth", path: ["kind"] } },
+      effect: {
+        kind: "assign",
+        var: "local:App.mode",
+        expr: { kind: "read", var: "local:App.auth", path: ["kind"] },
+      },
       reads: ["local:App.auth"],
       writes: ["local:App.mode"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -723,7 +1107,7 @@ describe("useState inventory", () => {
         return <button onClick={() => setAuth({ ...auth, kind: 'user', stale: false })}>Login</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
@@ -739,13 +1123,13 @@ describe("useState inventory", () => {
             kind: "updateField",
             target: { kind: "read", var: "local:App.auth" },
             path: ["kind"],
-            value: { kind: "lit", value: "user" }
-          }
-        }
+            value: { kind: "lit", value: "user" },
+          },
+        },
       },
       reads: ["local:App.auth"],
       writes: ["local:App.auth"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -753,18 +1137,58 @@ describe("useState inventory", () => {
       id: "object-spread-update-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => {
-        const auth = state["local:App.auth"] as { kind?: string; stale?: boolean };
-        return auth.kind === "user" && auth.stale === false;
-      }, { name: "updatedAuthReachable", reads: ["local:App.auth"] })
+      reachable(
+        model,
+        (state) => {
+          const auth = state["local:App.auth"] as {
+            kind?: string;
+            stale?: boolean;
+          };
+          return auth.kind === "user" && auth.stale === false;
+        },
+        { name: "updatedAuthReachable", reads: ["local:App.auth"] },
+      ),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -779,7 +1203,7 @@ describe("useState inventory", () => {
         return <button onClick={() => setScreen(auth === 'user' ? 'checkout' : 'home')}>Checkout</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
@@ -790,15 +1214,21 @@ describe("useState inventory", () => {
         expr: {
           kind: "cond",
           args: [
-            { kind: "eq", args: [{ kind: "read", var: "local:App.auth" }, { kind: "lit", value: "user" }] },
+            {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "local:App.auth" },
+                { kind: "lit", value: "user" },
+              ],
+            },
             { kind: "lit", value: "checkout" },
-            { kind: "lit", value: "home" }
-          ]
-        }
+            { kind: "lit", value: "home" },
+          ],
+        },
       },
       reads: ["local:App.auth"],
       writes: ["local:App.screen"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -806,10 +1236,43 @@ describe("useState inventory", () => {
       id: "ternary-setter-skeleton",
       bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
       transitions: [
         {
@@ -818,16 +1281,23 @@ describe("useState inventory", () => {
           label: { kind: "click", text: "Login" },
           source: [],
           guard: { kind: "lit", value: true },
-          effect: { kind: "assign", var: "local:App.auth", expr: { kind: "lit", value: "user" } },
+          effect: {
+            kind: "assign",
+            var: "local:App.auth",
+            expr: { kind: "lit", value: "user" },
+          },
           reads: [],
           writes: ["local:App.auth"],
-          confidence: "exact"
+          confidence: "exact",
         },
-        ...result.transitions
-      ]
+        ...result.transitions,
+      ],
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.screen"] === "checkout", { name: "checkoutReachable", reads: ["local:App.screen"] })
+      reachable(model, (state) => state["local:App.screen"] === "checkout", {
+        name: "checkoutReachable",
+        reads: ["local:App.screen"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -843,7 +1313,7 @@ describe("useState inventory", () => {
         return <button onClick={() => setCanSubmit(hasDraft && !saving)}>Check</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -856,13 +1326,13 @@ describe("useState inventory", () => {
           kind: "and",
           args: [
             { kind: "read", var: "local:App.hasDraft" },
-            { kind: "not", args: [{ kind: "read", var: "local:App.saving" }] }
-          ]
-        }
+            { kind: "not", args: [{ kind: "read", var: "local:App.saving" }] },
+          ],
+        },
       },
       reads: ["local:App.hasDraft", "local:App.saving"],
       writes: ["local:App.canSubmit"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -880,20 +1350,31 @@ describe("useState inventory", () => {
         }}>Checkout</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.screen.if",
       effect: {
         kind: "if",
-        cond: { kind: "eq", args: [{ kind: "read", var: "local:App.auth", path: ["kind"] }, { kind: "lit", value: "user" }] },
-        then: { kind: "assign", var: "local:App.screen", expr: { kind: "lit", value: "checkout" } },
-        else: { kind: "seq", effects: [] }
+        cond: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "local:App.auth", path: ["kind"] },
+            { kind: "lit", value: "user" },
+          ],
+        },
+        // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+        then: {
+          kind: "assign",
+          var: "local:App.screen",
+          expr: { kind: "lit", value: "checkout" },
+        },
+        else: { kind: "seq", effects: [] },
       },
       reads: ["local:App.auth"],
       writes: ["local:App.screen"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -904,7 +1385,7 @@ describe("useState inventory", () => {
         return <button onClick={() => router.push('/checkout')}>Checkout</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -912,10 +1393,14 @@ describe("useState inventory", () => {
       id: "App.onClick.navigate._checkout",
       cls: "nav",
       label: { kind: "navigate", mode: "push", to: "/checkout" },
-      effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: "/checkout" } },
+      effect: {
+        kind: "navigate",
+        mode: "push",
+        to: { kind: "lit", value: "/checkout" },
+      },
       reads: ["sys:route", "sys:history"],
       writes: ["sys:route", "sys:history"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -935,7 +1420,7 @@ describe("useState inventory", () => {
         }}>Checkout</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -943,13 +1428,28 @@ describe("useState inventory", () => {
       id: "App.onClick.screen.if",
       effect: {
         kind: "if",
-        cond: { kind: "eq", args: [{ kind: "read", var: "local:App.auth" }, { kind: "lit", value: "user" }] },
-        then: { kind: "assign", var: "local:App.screen", expr: { kind: "lit", value: "checkout" } },
-        else: { kind: "assign", var: "local:App.screen", expr: { kind: "lit", value: "home" } }
+        cond: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "local:App.auth" },
+            { kind: "lit", value: "user" },
+          ],
+        },
+        // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+        then: {
+          kind: "assign",
+          var: "local:App.screen",
+          expr: { kind: "lit", value: "checkout" },
+        },
+        else: {
+          kind: "assign",
+          var: "local:App.screen",
+          expr: { kind: "lit", value: "home" },
+        },
       },
       reads: ["local:App.auth"],
       writes: ["local:App.screen"],
-      confidence: "exact"
+      confidence: "exact",
     });
 
     const model: Model = {
@@ -957,10 +1457,43 @@ describe("useState inventory", () => {
       id: "if-handler-extracted-skeleton",
       bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
       transitions: [
         {
@@ -969,16 +1502,23 @@ describe("useState inventory", () => {
           label: { kind: "click", text: "Login" },
           source: [],
           guard: { kind: "lit", value: true },
-          effect: { kind: "assign", var: "local:App.auth", expr: { kind: "lit", value: "user" } },
+          effect: {
+            kind: "assign",
+            var: "local:App.auth",
+            expr: { kind: "lit", value: "user" },
+          },
           reads: [],
           writes: ["local:App.auth"],
-          confidence: "exact"
+          confidence: "exact",
         },
-        ...result.transitions
-      ]
+        ...result.transitions,
+      ],
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.screen"] === "checkout", { name: "checkoutReachable", reads: ["local:App.screen"] })
+      reachable(model, (state) => state["local:App.screen"] === "checkout", {
+        name: "checkoutReachable",
+        reads: ["local:App.screen"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -992,16 +1532,24 @@ describe("useState inventory", () => {
         return <button disabled={saveStatus === 'posting'} onClick={() => setSaveStatus('idle')}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       guard: {
         kind: "not",
-        args: [{ kind: "eq", args: [{ kind: "read", var: "local:App.saveStatus" }, { kind: "lit", value: "posting" }] }]
+        args: [
+          {
+            kind: "eq",
+            args: [
+              { kind: "read", var: "local:App.saveStatus" },
+              { kind: "lit", value: "posting" },
+            ],
+          },
+        ],
       },
-      reads: ["local:App.saveStatus"]
+      reads: ["local:App.saveStatus"],
     });
 
     const model: Model = {
@@ -1009,15 +1557,51 @@ describe("useState inventory", () => {
       id: "disabled-guard-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.saveStatus"] !== "idle", { name: "idleNotReachable", reads: ["local:App.saveStatus"] })
+      always(model, (state) => state["local:App.saveStatus"] !== "idle", {
+        name: "idleNotReachable",
+        reads: ["local:App.saveStatus"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
@@ -1036,20 +1620,42 @@ describe("useState inventory", () => {
         }}>Submit</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.submitOrder"] }
+      { route: "/", fileName: "App.tsx", effectApis: ["api.submitOrder"] },
     );
-    expect(result.transitions.find((transition) => transition.id === "App.onClick.api.submitOrder.start")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.submitOrder.start",
+      ),
+    ).toMatchObject({
       cls: "user",
       guard: {
         kind: "not",
-        args: [{ kind: "neq", args: [{ kind: "read", var: "local:App.auth" }, { kind: "lit", value: "user" }] }]
+        args: [
+          {
+            kind: "neq",
+            args: [
+              { kind: "read", var: "local:App.auth" },
+              { kind: "lit", value: "user" },
+            ],
+          },
+        ],
       },
-      reads: ["local:App.auth"]
+      reads: ["local:App.auth"],
     });
-    expect(result.transitions.find((transition) => transition.id === "App.onClick.api.submitOrder.success")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.submitOrder.success",
+      ),
+    ).toMatchObject({
       cls: "env",
-      guard: { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: "api.submitOrder" }] },
-      reads: ["sys:pending"]
+      guard: {
+        kind: "eq",
+        args: [
+          { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+          { kind: "lit", value: "api.submitOrder" },
+        ],
+      },
+      reads: ["sys:pending"],
     });
   });
 
@@ -1063,13 +1669,13 @@ describe("useState inventory", () => {
         return <>{canSave && <button onClick={() => setSaveStatus('posting')}>Save</button>}</>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       guard: { kind: "read", var: "local:App.canSave" },
-      reads: ["local:App.canSave"]
+      reads: ["local:App.canSave"],
     });
 
     const model: Model = {
@@ -1077,15 +1683,51 @@ describe("useState inventory", () => {
       id: "conditional-render-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.saveStatus"] !== "posting", { name: "postingNotReachable", reads: ["local:App.saveStatus"] })
+      always(model, (state) => state["local:App.saveStatus"] !== "posting", {
+        name: "postingNotReachable",
+        reads: ["local:App.saveStatus"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
@@ -1100,15 +1742,19 @@ describe("useState inventory", () => {
         return <>{canSave && <section><button onClick={() => setSaveStatus('posting')}>Save</button></section>}</>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       guard: { kind: "read", var: "local:App.canSave" },
       reads: ["local:App.canSave"],
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -1122,15 +1768,19 @@ describe("useState inventory", () => {
         return locked ? null : <section><button onClick={() => setSaveStatus('posting')}>Save</button></section>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       guard: { kind: "not", args: [{ kind: "read", var: "local:App.locked" }] },
       reads: ["local:App.locked"],
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-      confidence: "exact"
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
     });
   });
 
@@ -1143,22 +1793,45 @@ describe("useState inventory", () => {
         return <input onChange={e => setDraft(e.target.value)} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect, transition.confidence])).toEqual([
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.label,
+        transition.effect,
+        transition.confidence,
+      ]),
+    ).toEqual([
       [
         "App.onChange.draft.empty",
-        { kind: "input", valueClass: "empty", locator: { kind: "role", role: "textbox" } },
-        { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "empty" } },
-        "exact"
+        {
+          kind: "input",
+          valueClass: "empty",
+          locator: { kind: "role", role: "textbox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.draft",
+          expr: { kind: "lit", value: "empty" },
+        },
+        "exact",
       ],
       [
         "App.onChange.draft.nonEmpty",
-        { kind: "input", valueClass: "nonEmpty", locator: { kind: "role", role: "textbox" } },
-        { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "nonEmpty" } },
-        "exact"
-      ]
+        {
+          kind: "input",
+          valueClass: "nonEmpty",
+          locator: { kind: "role", role: "textbox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.draft",
+          expr: { kind: "lit", value: "nonEmpty" },
+        },
+        "exact",
+      ],
     ]);
 
     const model: Model = {
@@ -1166,15 +1839,51 @@ describe("useState inventory", () => {
       id: "input-extracted-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.draft"] === "nonEmpty", { name: "nonEmptyReachable", reads: ["local:App.draft"] })
+      reachable(model, (state) => state["local:App.draft"] === "nonEmpty", {
+        name: "nonEmptyReachable",
+        reads: ["local:App.draft"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -1188,18 +1897,64 @@ describe("useState inventory", () => {
         return <input onChange={e => setSeats(Number(e.target.value))} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.vars[0]).toMatchObject({
       id: "local:App.seats",
       domain: { kind: "boundedInt", min: 0, max: 2 },
-      initial: 0
+      initial: 0,
     });
-    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect, transition.confidence])).toEqual([
-      ["App.onChange.seats.0", { kind: "input", valueClass: "0", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 0 } }, "exact"],
-      ["App.onChange.seats.1", { kind: "input", valueClass: "1", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 1 } }, "exact"],
-      ["App.onChange.seats.2", { kind: "input", valueClass: "2", locator: { kind: "role", role: "textbox" } }, { kind: "assign", var: "local:App.seats", expr: { kind: "lit", value: 2 } }, "exact"]
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.label,
+        transition.effect,
+        transition.confidence,
+      ]),
+    ).toEqual([
+      [
+        "App.onChange.seats.0",
+        {
+          kind: "input",
+          valueClass: "0",
+          locator: { kind: "role", role: "textbox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.seats",
+          expr: { kind: "lit", value: 0 },
+        },
+        "exact",
+      ],
+      [
+        "App.onChange.seats.1",
+        {
+          kind: "input",
+          valueClass: "1",
+          locator: { kind: "role", role: "textbox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.seats",
+          expr: { kind: "lit", value: 1 },
+        },
+        "exact",
+      ],
+      [
+        "App.onChange.seats.2",
+        {
+          kind: "input",
+          valueClass: "2",
+          locator: { kind: "role", role: "textbox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.seats",
+          expr: { kind: "lit", value: 2 },
+        },
+        "exact",
+      ],
     ]);
 
     const model: Model = {
@@ -1207,15 +1962,51 @@ describe("useState inventory", () => {
       id: "numeric-input-extracted-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.seats"] === 2, { name: "twoSeatsReachable", reads: ["local:App.seats"] })
+      reachable(model, (state) => state["local:App.seats"] === 2, {
+        name: "twoSeatsReachable",
+        reads: ["local:App.seats"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
@@ -1229,12 +2020,34 @@ describe("useState inventory", () => {
         return <input onChange={e => setDraft(e.target.value.trim())} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(trimmed.warnings).toEqual([]);
-    expect(trimmed.transitions.map((transition) => [transition.id, transition.effect, transition.confidence])).toEqual([
-      ["App.onChange.draft.empty", { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "empty" } }, "exact"],
-      ["App.onChange.draft.nonEmpty", { kind: "assign", var: "local:App.draft", expr: { kind: "lit", value: "nonEmpty" } }, "exact"]
+    expect(
+      trimmed.transitions.map((transition) => [
+        transition.id,
+        transition.effect,
+        transition.confidence,
+      ]),
+    ).toEqual([
+      [
+        "App.onChange.draft.empty",
+        {
+          kind: "assign",
+          var: "local:App.draft",
+          expr: { kind: "lit", value: "empty" },
+        },
+        "exact",
+      ],
+      [
+        "App.onChange.draft.nonEmpty",
+        {
+          kind: "assign",
+          var: "local:App.draft",
+          expr: { kind: "lit", value: "nonEmpty" },
+        },
+        "exact",
+      ],
     ]);
 
     const stringified = extractUseStateSkeleton(
@@ -1245,12 +2058,12 @@ describe("useState inventory", () => {
         return <input onChange={e => setDraft(String(e.currentTarget.value).toLowerCase())} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(stringified.warnings).toEqual([]);
     expect(stringified.transitions.map((transition) => transition.id)).toEqual([
       "App.onChange.draft.empty",
-      "App.onChange.draft.nonEmpty"
+      "App.onChange.draft.nonEmpty",
     ]);
   });
 
@@ -1266,20 +2079,42 @@ describe("useState inventory", () => {
         </select>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect])).toEqual([
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.label,
+        transition.effect,
+      ]),
+    ).toEqual([
       [
         "App.onChange.cycle.monthly",
-        { kind: "input", valueClass: "monthly", locator: { kind: "role", role: "combobox" } },
-        { kind: "assign", var: "local:App.cycle", expr: { kind: "lit", value: "monthly" } }
+        {
+          kind: "input",
+          valueClass: "monthly",
+          locator: { kind: "role", role: "combobox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.cycle",
+          expr: { kind: "lit", value: "monthly" },
+        },
       ],
       [
         "App.onChange.cycle.yearly",
-        { kind: "input", valueClass: "yearly", locator: { kind: "role", role: "combobox" } },
-        { kind: "assign", var: "local:App.cycle", expr: { kind: "lit", value: "yearly" } }
-      ]
+        {
+          kind: "input",
+          valueClass: "yearly",
+          locator: { kind: "role", role: "combobox" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.cycle",
+          expr: { kind: "lit", value: "yearly" },
+        },
+      ],
     ]);
   });
 
@@ -1292,15 +2127,29 @@ describe("useState inventory", () => {
         return <input type="radio" value="yearly" aria-label="Yearly" onChange={e => setCycle(e.target.value)} />;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.map((transition) => [transition.id, transition.label, transition.effect])).toEqual([
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.label,
+        transition.effect,
+      ]),
+    ).toEqual([
       [
         "App.onChange.cycle.yearly",
-        { kind: "input", valueClass: "yearly", locator: { kind: "role", role: "radio", name: "Yearly" } },
-        { kind: "assign", var: "local:App.cycle", expr: { kind: "lit", value: "yearly" } }
-      ]
+        {
+          kind: "input",
+          valueClass: "yearly",
+          locator: { kind: "role", role: "radio", name: "Yearly" },
+        },
+        {
+          kind: "assign",
+          var: "local:App.cycle",
+          expr: { kind: "lit", value: "yearly" },
+        },
+      ],
     ]);
   });
 
@@ -1317,29 +2166,67 @@ describe("useState inventory", () => {
         return <button onClick={() => setAuth('user')}>Login</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.map((transition) => [transition.id, transition.cls, transition.triggeredBy])).toContainEqual([
-      "App.useEffect.screen",
-      "internal",
-      ["local:App.auth"]
-    ]);
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.cls,
+        transition.triggeredBy,
+      ]),
+    ).toContainEqual(["App.useEffect.screen", "internal", ["local:App.auth"]]);
 
     const model: Model = {
       schemaVersion: 1,
       id: "effect-extracted-skeleton",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["noop"] }, continuation: { kind: "enum", values: ["noop"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.screen"] === "home", { name: "effectStabilizesScreen", reads: ["local:App.screen"] })
+      always(model, (state) => state["local:App.screen"] === "home", {
+        name: "effectStabilizesScreen",
+        reads: ["local:App.screen"],
+      }),
     ]);
     expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
   });
@@ -1357,10 +2244,14 @@ describe("useState inventory", () => {
         return <button onClick={() => setAuth('user')}>Login</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.find((transition) => transition.id === "App.useEffect.screen")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.useEffect.screen",
+      ),
+    ).toMatchObject({
       cls: "internal",
       triggeredBy: ["local:App.auth"],
       reads: ["local:App.auth", "local:App.screen"],
@@ -1370,13 +2261,19 @@ describe("useState inventory", () => {
         expr: {
           kind: "cond",
           args: [
-            { kind: "eq", args: [{ kind: "read", var: "local:App.auth" }, { kind: "lit", value: "user" }] },
+            {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "local:App.auth" },
+                { kind: "lit", value: "user" },
+              ],
+            },
             { kind: "lit", value: "checkout" },
-            { kind: "lit", value: "home" }
-          ]
-        }
+            { kind: "lit", value: "home" },
+          ],
+        },
       },
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -1393,10 +2290,16 @@ describe("useState inventory", () => {
         return range;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    expect(result.transitions.some((transition) => transition.id === "App.useEffect.range")).toBe(false);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable effect App.useEffect");
+    expect(
+      result.transitions.some(
+        (transition) => transition.id === "App.useEffect.range",
+      ),
+    ).toBe(false);
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable effect App.useEffect",
+    );
   });
 
   it("models M0 useEffect cleanup writes as over-approx internal transitions", () => {
@@ -1413,17 +2316,25 @@ describe("useState inventory", () => {
         return <button onClick={() => setSubscribed(true)}>Subscribe</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions.find((transition) => transition.id === "App.useEffect.cleanup.subscribed")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.useEffect.cleanup.subscribed",
+      ),
+    ).toMatchObject({
       cls: "internal",
       label: { kind: "internal", text: "App.useEffect.cleanup" },
       guard: { kind: "lit", value: true },
-      effect: { kind: "assign", var: "local:App.subscribed", expr: { kind: "lit", value: false } },
+      effect: {
+        kind: "assign",
+        var: "local:App.subscribed",
+        expr: { kind: "lit", value: false },
+      },
       writes: ["local:App.subscribed"],
       confidence: "over-approx",
-      triggeredBy: []
+      triggeredBy: [],
     });
   });
 
@@ -1440,10 +2351,12 @@ describe("useState inventory", () => {
         return null;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable effect App.useEffect");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable effect App.useEffect",
+    );
   });
 
   it("havocs modeled state when a setter escapes to an unanalyzed call", () => {
@@ -1455,7 +2368,7 @@ describe("useState inventory", () => {
         return <button onClick={() => callExternal(setSaveStatus)}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -1463,7 +2376,7 @@ describe("useState inventory", () => {
       id: "App.onClick.saveStatus.escaped",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
-      confidence: "over-approx"
+      confidence: "over-approx",
     });
   });
 
@@ -1479,7 +2392,7 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -1487,7 +2400,7 @@ describe("useState inventory", () => {
       id: "App.onClick.saveStatus.escaped",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
-      confidence: "over-approx"
+      confidence: "over-approx",
     });
   });
 
@@ -1508,12 +2421,30 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] }
+      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] },
     );
-    expect(result.transitions.map((transition) => [transition.id, transition.cls, transition.writes])).toEqual([
-      ["App.onClick.api.saveTodo.start", "user", ["local:App.saveStatus", "sys:pending"]],
-      ["App.onClick.api.saveTodo.success", "env", ["sys:pending", "local:App.saveStatus"]],
-      ["App.onClick.api.saveTodo.error", "env", ["sys:pending", "local:App.saveStatus"]]
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.cls,
+        transition.writes,
+      ]),
+    ).toEqual([
+      [
+        "App.onClick.api.saveTodo.start",
+        "user",
+        ["local:App.saveStatus", "sys:pending"],
+      ],
+      [
+        "App.onClick.api.saveTodo.success",
+        "env",
+        ["sys:pending", "local:App.saveStatus"],
+      ],
+      [
+        "App.onClick.api.saveTodo.error",
+        "env",
+        ["sys:pending", "local:App.saveStatus"],
+      ],
     ]);
 
     const model: Model = {
@@ -1521,20 +2452,64 @@ describe("useState inventory", () => {
       id: "async-extracted-skeleton",
       bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
       vars: [
-        { id: "sys:route", domain: { kind: "enum", values: ["/"] }, origin: "system", scope: { kind: "global" }, initial: "/" },
-        { id: "sys:history", domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        { id: "sys:pending", domain: { kind: "boundedList", inner: { kind: "record", fields: { opId: { kind: "enum", values: ["api.saveTodo"] }, continuation: { kind: "enum", values: ["App.onClick.api.saveTodo.cont"] }, args: { kind: "record", fields: {} } } }, maxLen: 1 }, origin: "system", scope: { kind: "global" }, initial: [] },
-        ...result.vars
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["api.saveTodo"] },
+                continuation: {
+                  kind: "enum",
+                  values: ["App.onClick.api.saveTodo.cont"],
+                },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
       ],
-      transitions: result.transitions
+      transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saveStatus"] === "posting", { name: "postingReachable", reads: ["local:App.saveStatus"] }),
-      reachable(model, (state) => state["local:App.saveStatus"] === "failed", { name: "failedReachable", reads: ["local:App.saveStatus"] })
+      reachable(model, (state) => state["local:App.saveStatus"] === "posting", {
+        name: "postingReachable",
+        reads: ["local:App.saveStatus"],
+      }),
+      reachable(model, (state) => state["local:App.saveStatus"] === "failed", {
+        name: "failedReachable",
+        reads: ["local:App.saveStatus"],
+      }),
     ]);
-    expect(check.verdicts.map((verdict) => [verdict.property, verdict.status])).toEqual([
+    expect(
+      check.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual([
       ["postingReachable", "reachable"],
-      ["failedReachable", "reachable"]
+      ["failedReachable", "reachable"],
     ]);
   });
 
@@ -1550,22 +2525,35 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] }
+      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] },
     );
     expect(result.warnings.map((warning) => warning.message)).toEqual([
       "Stale-read risk App.onClick.api.saveTodo:local:App.saveStatus",
-      "Unhandled rejection App.onClick.api.saveTodo"
+      "Unhandled rejection App.onClick.api.saveTodo",
     ]);
-    expect(result.transitions.map((transition) => [transition.id, transition.reads])).toEqual([
+    expect(
+      result.transitions.map((transition) => [transition.id, transition.reads]),
+    ).toEqual([
       ["App.onClick.api.saveTodo.start", []],
-      ["App.onClick.api.saveTodo.success", ["local:App.saveStatus", "sys:pending"]]
+      [
+        "App.onClick.api.saveTodo.success",
+        ["local:App.saveStatus", "sys:pending"],
+      ],
     ]);
-    expect(result.transitions.find((transition) => transition.id.endsWith(".success"))?.effect).toMatchObject({
+    expect(
+      result.transitions.find((transition) =>
+        transition.id.endsWith(".success"),
+      )?.effect,
+    ).toMatchObject({
       kind: "seq",
       effects: [
         { kind: "dequeue", index: 0 },
-        { kind: "assign", var: "local:App.saveStatus", expr: { kind: "read", var: "local:App.saveStatus" } }
-      ]
+        {
+          kind: "assign",
+          var: "local:App.saveStatus",
+          expr: { kind: "read", var: "local:App.saveStatus" },
+        },
+      ],
     });
   });
 
@@ -1584,25 +2572,33 @@ describe("useState inventory", () => {
         }}>Submit</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.submitOrder"] }
+      { route: "/", fileName: "App.tsx", effectApis: ["api.submitOrder"] },
     );
-    expect(result.transitions.find((transition) => transition.id === "App.onClick.api.submitOrder.start")).toMatchObject({
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.submitOrder.start",
+      ),
+    ).toMatchObject({
       reads: ["local:App.plan", "local:App.userId"],
       effect: {
         kind: "seq",
         effects: [
-          { kind: "assign", var: "local:App.status", expr: { kind: "lit", value: "submitting" } },
+          {
+            kind: "assign",
+            var: "local:App.status",
+            expr: { kind: "lit", value: "submitting" },
+          },
           {
             kind: "enqueue",
             op: "api.submitOrder",
             continuation: "App.onClick.api.submitOrder.cont",
             args: {
               userId: { kind: "read", var: "local:App.userId" },
-              plan: { kind: "read", var: "local:App.plan" }
-            }
-          }
-        ]
-      }
+              plan: { kind: "read", var: "local:App.plan" },
+            },
+          },
+        ],
+      },
     });
   });
 
@@ -1618,20 +2614,26 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] }
+      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] },
     );
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unhandled rejection App.onClick.api.saveTodo");
-    expect(result.transitions.find((transition) => transition.id === "App.onClick.api.saveTodo.success")).toMatchObject({
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unhandled rejection App.onClick.api.saveTodo",
+    );
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.saveTodo.success",
+      ),
+    ).toMatchObject({
       cls: "env",
       effect: {
         kind: "seq",
         effects: [
           { kind: "dequeue", index: 0 },
-          { kind: "havoc", var: "local:App.saveStatus" }
-        ]
+          { kind: "havoc", var: "local:App.saveStatus" },
+        ],
       },
       writes: ["sys:pending", "local:App.saveStatus"],
-      confidence: "over-approx"
+      confidence: "over-approx",
     });
   });
 
@@ -1649,23 +2651,42 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo", "api.refreshTodo"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.saveTodo", "api.refreshTodo"],
+      },
     );
     expect(result.warnings.map((warning) => warning.message)).toEqual([
       "Unhandled rejection App.onClick.api.saveTodo",
-      "Unhandled rejection App.onClick.api.refreshTodo"
+      "Unhandled rejection App.onClick.api.refreshTodo",
     ]);
-    expect(result.transitions.map((transition) => [transition.id, transition.effect, transition.writes])).toEqual([
+    expect(
+      result.transitions.map((transition) => [
+        transition.id,
+        transition.effect,
+        transition.writes,
+      ]),
+    ).toEqual([
       [
         "App.onClick.api.saveTodo.start",
         {
           kind: "seq",
           effects: [
-            { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-            { kind: "enqueue", op: "api.saveTodo", continuation: "App.onClick.api.saveTodo.cont", args: {} }
-          ]
+            {
+              kind: "assign",
+              var: "local:App.saveStatus",
+              expr: { kind: "lit", value: "posting" },
+            },
+            {
+              kind: "enqueue",
+              op: "api.saveTodo",
+              continuation: "App.onClick.api.saveTodo.cont",
+              args: {},
+            },
+          ],
         },
-        ["local:App.saveStatus", "sys:pending"]
+        ["local:App.saveStatus", "sys:pending"],
       ],
       [
         "App.onClick.api.saveTodo.success",
@@ -1673,10 +2694,15 @@ describe("useState inventory", () => {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            { kind: "enqueue", op: "api.refreshTodo", continuation: "App.onClick.api.refreshTodo.cont", args: {} }
-          ]
+            {
+              kind: "enqueue",
+              op: "api.refreshTodo",
+              continuation: "App.onClick.api.refreshTodo.cont",
+              args: {},
+            },
+          ],
         },
-        ["sys:pending"]
+        ["sys:pending"],
       ],
       [
         "App.onClick.api.refreshTodo.success",
@@ -1684,11 +2710,15 @@ describe("useState inventory", () => {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "done" } }
-          ]
+            {
+              kind: "assign",
+              var: "local:App.saveStatus",
+              expr: { kind: "lit", value: "done" },
+            },
+          ],
         },
-        ["local:App.saveStatus", "sys:pending"]
-      ]
+        ["local:App.saveStatus", "sys:pending"],
+      ],
     ]);
 
     const variableAwait = extractUseStateSkeleton(
@@ -1704,10 +2734,16 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo", "api.refreshTodo"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.saveTodo", "api.refreshTodo"],
+      },
     );
     expect(variableAwait.transitions).toEqual([]);
-    expect(variableAwait.warnings.map((warning) => warning.message)).toContain("Unextractable handler App.onClick");
+    expect(variableAwait.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable handler App.onClick",
+    );
 
     const promiseAllAwait = extractUseStateSkeleton(
       `
@@ -1722,55 +2758,106 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo", "api.refreshTodo", "api.logAudit"] }
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.saveTodo", "api.refreshTodo", "api.logAudit"],
+      },
     );
     expect(promiseAllAwait.warnings.map((warning) => warning.message)).toEqual([
       "Unhandled rejection App.onClick.api.saveTodo",
       "Unhandled rejection App.onClick.api.refreshTodo",
-      "Unhandled rejection App.onClick.api.logAudit"
+      "Unhandled rejection App.onClick.api.logAudit",
     ]);
-    expect(promiseAllAwait.transitions.map((transition) => [transition.id, transition.guard, transition.effect])).toEqual([
+    expect(
+      promiseAllAwait.transitions.map((transition) => [
+        transition.id,
+        transition.guard,
+        transition.effect,
+      ]),
+    ).toEqual([
       [
         "App.onClick.api.saveTodo.start",
         { kind: "lit", value: true },
         {
           kind: "seq",
           effects: [
-            { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
-            { kind: "enqueue", op: "api.saveTodo", continuation: "App.onClick.api.saveTodo.cont", args: {} }
-          ]
-        }
+            {
+              kind: "assign",
+              var: "local:App.saveStatus",
+              expr: { kind: "lit", value: "posting" },
+            },
+            {
+              kind: "enqueue",
+              op: "api.saveTodo",
+              continuation: "App.onClick.api.saveTodo.cont",
+              args: {},
+            },
+          ],
+        },
       ],
       [
         "App.onClick.api.saveTodo.success",
-        { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: "api.saveTodo" }] },
+        {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+            { kind: "lit", value: "api.saveTodo" },
+          ],
+        },
         {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            { kind: "enqueue", op: "api.refreshTodo", continuation: "App.onClick.Promise_all.cont", args: {} },
-            { kind: "enqueue", op: "api.logAudit", continuation: "App.onClick.Promise_all.cont", args: {} }
-          ]
-        }
+            {
+              kind: "enqueue",
+              op: "api.refreshTodo",
+              continuation: "App.onClick.Promise_all.cont",
+              args: {},
+            },
+            {
+              kind: "enqueue",
+              op: "api.logAudit",
+              continuation: "App.onClick.Promise_all.cont",
+              args: {},
+            },
+          ],
+        },
       ],
       [
         "App.onClick.Promise_all.success",
         {
           kind: "and",
           args: [
-            { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["0", "opId"] }, { kind: "lit", value: "api.refreshTodo" }] },
-            { kind: "eq", args: [{ kind: "read", var: "sys:pending", path: ["1", "opId"] }, { kind: "lit", value: "api.logAudit" }] }
-          ]
+            {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+                { kind: "lit", value: "api.refreshTodo" },
+              ],
+            },
+            {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "sys:pending", path: ["1", "opId"] },
+                { kind: "lit", value: "api.logAudit" },
+              ],
+            },
+          ],
         },
         {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 1 },
             { kind: "dequeue", index: 0 },
-            { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "done" } }
-          ]
-        }
-      ]
+            {
+              kind: "assign",
+              var: "local:App.saveStatus",
+              expr: { kind: "lit", value: "done" },
+            },
+          ],
+        },
+      ],
     ]);
   });
 
@@ -1784,7 +2871,7 @@ describe("useState inventory", () => {
         return <button onClick={save}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -1792,7 +2879,7 @@ describe("useState inventory", () => {
       id: "App.onClick.saveStatus.unrepresentable",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
-      confidence: "over-approx"
+      confidence: "over-approx",
     });
   });
 
@@ -1806,28 +2893,36 @@ describe("useState inventory", () => {
       {
         route: "/",
         fileName: "App.tsx",
-        stateVars: [{
-          id: "atom:authAtom",
-          domain: { kind: "enum", values: ["guest", "user"] },
-          origin: { file: "state.ts", line: 1, column: 1 },
-          scope: { kind: "global" },
-          initial: "guest"
-        }],
-        writeChannels: [{
-          id: "atom:authAtom.setter",
-          varId: "atom:authAtom",
-          symbolName: "setAuth",
-          source: { file: "App.tsx", line: 3, column: 15 }
-        }]
-      }
+        stateVars: [
+          {
+            id: "atom:authAtom",
+            domain: { kind: "enum", values: ["guest", "user"] },
+            origin: { file: "state.ts", line: 1, column: 1 },
+            scope: { kind: "global" },
+            initial: "guest",
+          },
+        ],
+        writeChannels: [
+          {
+            id: "atom:authAtom.setter",
+            varId: "atom:authAtom",
+            symbolName: "setAuth",
+            source: { file: "App.tsx", line: 3, column: 15 },
+          },
+        ],
+      },
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.authAtom",
-      effect: { kind: "assign", var: "atom:authAtom", expr: { kind: "lit", value: "user" } },
+      effect: {
+        kind: "assign",
+        var: "atom:authAtom",
+        expr: { kind: "lit", value: "user" },
+      },
       reads: [],
       writes: ["atom:authAtom"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -1841,28 +2936,36 @@ describe("useState inventory", () => {
       {
         route: "/",
         fileName: "App.tsx",
-        stateVars: [{
-          id: "atom:authAtom",
-          domain: { kind: "enum", values: ["guest", "user"] },
-          origin: { file: "state.ts", line: 1, column: 1 },
-          scope: { kind: "global" },
-          initial: "guest"
-        }],
-        writeChannels: [{
-          id: "atom:authAtom.store-set",
-          varId: "atom:authAtom",
-          symbolName: "store.set:authAtom",
-          source: { file: "App.tsx", line: 3, column: 39 }
-        }]
-      }
+        stateVars: [
+          {
+            id: "atom:authAtom",
+            domain: { kind: "enum", values: ["guest", "user"] },
+            origin: { file: "state.ts", line: 1, column: 1 },
+            scope: { kind: "global" },
+            initial: "guest",
+          },
+        ],
+        writeChannels: [
+          {
+            id: "atom:authAtom.store-set",
+            varId: "atom:authAtom",
+            symbolName: "store.set:authAtom",
+            source: { file: "App.tsx", line: 3, column: 39 },
+          },
+        ],
+      },
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.authAtom",
-      effect: { kind: "assign", var: "atom:authAtom", expr: { kind: "lit", value: "user" } },
+      effect: {
+        kind: "assign",
+        var: "atom:authAtom",
+        expr: { kind: "lit", value: "user" },
+      },
       reads: [],
       writes: ["atom:authAtom"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -1878,13 +2981,19 @@ describe("useState inventory", () => {
         </>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    const login = result.transitions.find((transition) =>
-      transition.effect.kind === "assign" && transition.effect.expr.kind === "lit" && transition.effect.expr.value === "user"
+    const login = result.transitions.find(
+      (transition) =>
+        transition.effect.kind === "assign" &&
+        transition.effect.expr.kind === "lit" &&
+        transition.effect.expr.value === "user",
     );
-    const logout = result.transitions.find((transition) =>
-      transition.effect.kind === "assign" && transition.effect.expr.kind === "lit" && transition.effect.expr.value === "guest"
+    const logout = result.transitions.find(
+      (transition) =>
+        transition.effect.kind === "assign" &&
+        transition.effect.expr.kind === "lit" &&
+        transition.effect.expr.value === "guest",
     );
     expect(login?.id).toMatch(/^App\.onClick\.auth\.[a-z0-9]{6}$/);
     expect(logout?.id).toMatch(/^App\.onClick\.auth\.[a-z0-9]{6}$/);
@@ -1902,10 +3011,13 @@ describe("useState inventory", () => {
         </>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    const insertedLogin = withInsertedDuplicate.transitions.find((transition) =>
-      transition.effect.kind === "assign" && transition.effect.expr.kind === "lit" && transition.effect.expr.value === "user"
+    const insertedLogin = withInsertedDuplicate.transitions.find(
+      (transition) =>
+        transition.effect.kind === "assign" &&
+        transition.effect.expr.kind === "lit" &&
+        transition.effect.expr.value === "user",
     );
     expect(insertedLogin?.id).toBe(login?.id);
   });
@@ -1922,10 +3034,12 @@ describe("useState inventory", () => {
         return <button onClick={save}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unextractable handler App.onClick");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unextractable handler App.onClick",
+    );
   });
 
   it("reports useReducer as an unsupported v1 state source", () => {
@@ -1937,11 +3051,13 @@ describe("useState inventory", () => {
         return <button onClick={() => dispatch({ type: 'save' })}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.vars).toEqual([]);
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Unsupported useReducer App.useReducer");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unsupported useReducer App.useReducer",
+    );
   });
 
   it("uses custom router plugins to summarize navigation calls", () => {
@@ -1949,8 +3065,15 @@ describe("useState inventory", () => {
       id: "custom-router",
       packageNames: ["custom-router"],
       routeVars: () => [],
-      navigationCall: (callee, args) => callee === "go" && typeof args[0] === "string" ? { mode: "replace", to: args[0] } : "unsupported",
-      harness: { setup: () => ({}), observe: () => "unobservable", navigate: () => undefined }
+      navigationCall: (callee, args) =>
+        callee === "go" && typeof args[0] === "string"
+          ? { mode: "replace", to: args[0] }
+          : "unsupported",
+      harness: {
+        setup: () => ({}),
+        observe: () => "unobservable",
+        navigate: () => undefined,
+      },
     };
     const result = extractUseStateSkeleton(
       `
@@ -1958,13 +3081,17 @@ describe("useState inventory", () => {
         return <button onClick={() => go('/next')}>Go</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routerPlugin }
+      { route: "/", fileName: "App.tsx", routerPlugin },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.navigate._next",
       cls: "nav",
-      effect: { kind: "navigate", mode: "replace", to: { kind: "lit", value: "/next" } }
+      effect: {
+        kind: "navigate",
+        mode: "replace",
+        to: { kind: "lit", value: "/next" },
+      },
     });
   });
 
@@ -1974,10 +3101,15 @@ describe("useState inventory", () => {
       packageNames: ["external-state"],
       discover: () => [],
       writeChannels: () => [],
-      summarizeWrite: (call) => call.callee === "externalSet"
-        ? { kind: "assign", var: "external", expr: { kind: "lit", value: "on" } }
-        : "unsupported",
-      harness: { setup: () => ({}), observe: () => "unobservable" }
+      summarizeWrite: (call) =>
+        call.callee === "externalSet"
+          ? {
+              kind: "assign",
+              var: "external",
+              expr: { kind: "lit", value: "on" },
+            }
+          : "unsupported",
+      harness: { setup: () => ({}), observe: () => "unobservable" },
     };
     const result = extractUseStateSkeleton(
       `
@@ -1989,16 +3121,28 @@ describe("useState inventory", () => {
         route: "/",
         fileName: "App.tsx",
         sourcePlugins: [plugin],
-        stateVars: [{ id: "external", domain: { kind: "enum", values: ["off", "on"] }, origin: "system", scope: { kind: "global" }, initial: "off" }]
-      }
+        stateVars: [
+          {
+            id: "external",
+            domain: { kind: "enum", values: ["off", "on"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "off",
+          },
+        ],
+      },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
       id: "App.onClick.external-state.externalSet",
-      effect: { kind: "assign", var: "external", expr: { kind: "lit", value: "on" } },
+      effect: {
+        kind: "assign",
+        var: "external",
+        expr: { kind: "lit", value: "on" },
+      },
       reads: [],
       writes: ["external"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -2012,9 +3156,11 @@ describe("useState inventory", () => {
         return <button onClick={() => setterRef.current('posting')}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    expect(result.warnings.map((warning) => warning.message)).toContain("Global taint local:App.saveStatus");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Global taint local:App.saveStatus",
+    );
   });
 
   it("reports setters assigned into ref.current as global taints", () => {
@@ -2028,9 +3174,11 @@ describe("useState inventory", () => {
         return <button onClick={() => setSaveStatus('posting')}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
-    expect(result.warnings.map((warning) => warning.message)).toContain("Global taint local:App.saveStatus");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Global taint local:App.saveStatus",
+    );
   });
 
   it("models M0 timer callbacks as environment timer transitions", () => {
@@ -2044,7 +3192,7 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -2052,10 +3200,14 @@ describe("useState inventory", () => {
       id: "App.setTimeout.saveStatus",
       cls: "env",
       label: { kind: "timer", key: "App.setTimeout.saveStatus" },
-      effect: { kind: "assign", var: "local:App.saveStatus", expr: { kind: "lit", value: "posting" } },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
       reads: [],
       writes: ["local:App.saveStatus"],
-      confidence: "exact"
+      confidence: "exact",
     });
   });
 
@@ -2073,10 +3225,12 @@ describe("useState inventory", () => {
         }}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.transitions).toEqual([]);
-    expect(result.warnings.map((warning) => warning.message)).toContain("Global taint local:App.saveStatus");
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Global taint local:App.saveStatus",
+    );
   });
 
   it("havocs modeled state written inside loops", () => {
@@ -2093,7 +3247,7 @@ describe("useState inventory", () => {
         return <button onClick={save}>Save</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" }
+      { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toEqual([
@@ -2102,8 +3256,8 @@ describe("useState inventory", () => {
         effect: { kind: "havoc", var: "local:App.saveStatus" },
         reads: [],
         writes: ["local:App.saveStatus"],
-        confidence: "over-approx"
-      })
+        confidence: "over-approx",
+      }),
     ]);
   });
 });

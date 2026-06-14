@@ -1,8 +1,20 @@
-import type { AbstractDomain, Locator, ModelState, Trace, TraceStep, Value } from "modality-ts/core";
+import type {
+  AbstractDomain,
+  Locator,
+  ModelState,
+  Trace,
+  TraceStep,
+  Value,
+} from "modality-ts/core";
 
 export type ReplayVerdict =
   | { status: "reproduced"; stepsRun: number }
-  | { status: "not-reproduced"; stepsRun: number; divergenceStep: number; reason: string }
+  | {
+      status: "not-reproduced";
+      stepsRun: number;
+      divergenceStep: number;
+      reason: string;
+    }
   | { status: "inconclusive"; stepsRun: number; reason: string };
 
 export interface ReplayDriver {
@@ -12,7 +24,10 @@ export interface ReplayDriver {
 }
 
 export interface ReplayOptions {
-  compareState?: (expected: ModelState, actual: ModelState) => string | undefined;
+  compareState?: (
+    expected: ModelState,
+    actual: ModelState,
+  ) => string | undefined;
 }
 
 export interface ReplayStepHookContext {
@@ -23,7 +38,11 @@ export interface ReplayStepHookContext {
 export interface ReplayActor {
   click?(locator: Locator): Promise<void> | void;
   submit?(locator: Locator): Promise<void> | void;
-  input?(locator: Locator, value: string, valueClass: string): Promise<void> | void;
+  input?(
+    locator: Locator,
+    value: string,
+    valueClass: string,
+  ): Promise<void> | void;
   navigate?(mode: "push" | "back", to?: string): Promise<void> | void;
   resolve?(op: string, outcome: string): Promise<void> | void;
   focusRevalidate?(key?: string): Promise<void> | void;
@@ -73,8 +92,17 @@ export interface WitnessOptions {
 }
 
 export interface DeterministicReplayAsyncController {
-  registerResolve(op: string, outcome: string, handler: () => Promise<void> | void): void;
-  registerResponse(op: string, outcome: string, payload: Value, handler?: (payload: Value) => Promise<void> | void): void;
+  registerResolve(
+    op: string,
+    outcome: string,
+    handler: () => Promise<void> | void,
+  ): void;
+  registerResponse(
+    op: string,
+    outcome: string,
+    payload: Value,
+    handler?: (payload: Value) => Promise<void> | void,
+  ): void;
   resolve(op: string, outcome: string): Promise<void>;
   resolveResponse(op: string, outcome: string): Promise<Value>;
   pending(): readonly string[];
@@ -87,7 +115,11 @@ export class ReplayDivergenceError extends Error {
   }
 }
 
-export async function replayTrace(trace: Trace, driver: ReplayDriver, options: ReplayOptions = {}): Promise<ReplayVerdict> {
+export async function replayTrace(
+  trace: Trace,
+  driver: ReplayDriver,
+  options: ReplayOptions = {},
+): Promise<ReplayVerdict> {
   const compare = options.compareState ?? defaultCompareState;
   for (let index = 0; index < trace.steps.length; index += 1) {
     const step = trace.steps[index]!;
@@ -95,36 +127,78 @@ export async function replayTrace(trace: Trace, driver: ReplayDriver, options: R
     try {
       preState = driver.currentState();
     } catch (error) {
-      return { status: "inconclusive", stepsRun: index, reason: error instanceof Error ? error.message : String(error) };
+      return {
+        status: "inconclusive",
+        stepsRun: index,
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
     const preMismatch = compare(step.pre, preState);
-    if (preMismatch) return { status: "not-reproduced", stepsRun: index, divergenceStep: index + 1, reason: `precondition mismatch: ${preMismatch}` };
+    if (preMismatch)
+      return {
+        status: "not-reproduced",
+        stepsRun: index,
+        divergenceStep: index + 1,
+        reason: `precondition mismatch: ${preMismatch}`,
+      };
     try {
       await driver.apply(step);
     } catch (error) {
       if (error instanceof ReplayDivergenceError) {
-        return { status: "not-reproduced", stepsRun: index, divergenceStep: index + 1, reason: error.message };
+        return {
+          status: "not-reproduced",
+          stepsRun: index,
+          divergenceStep: index + 1,
+          reason: error.message,
+        };
       }
-      return { status: "inconclusive", stepsRun: index, reason: error instanceof Error ? error.message : String(error) };
+      return {
+        status: "inconclusive",
+        stepsRun: index,
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
     let postState: ModelState;
     try {
       postState = driver.currentState();
     } catch (error) {
-      return { status: "inconclusive", stepsRun: index + 1, reason: error instanceof Error ? error.message : String(error) };
+      return {
+        status: "inconclusive",
+        stepsRun: index + 1,
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
     const postMismatch = compare(step.post, postState);
-    if (postMismatch) return { status: "not-reproduced", stepsRun: index + 1, divergenceStep: index + 1, reason: `postcondition mismatch: ${postMismatch}` };
+    if (postMismatch)
+      return {
+        status: "not-reproduced",
+        stepsRun: index + 1,
+        divergenceStep: index + 1,
+        reason: `postcondition mismatch: ${postMismatch}`,
+      };
   }
-  const violationObserved = driver.assertViolation ? await driver.assertViolation() : true;
-  return violationObserved ? { status: "reproduced", stepsRun: trace.steps.length } : { status: "not-reproduced", stepsRun: trace.steps.length, divergenceStep: trace.steps.length, reason: "final violation was not observed" };
+  const violationObserved = driver.assertViolation
+    ? await driver.assertViolation()
+    : true;
+  return violationObserved
+    ? { status: "reproduced", stepsRun: trace.steps.length }
+    : {
+        status: "not-reproduced",
+        stepsRun: trace.steps.length,
+        divergenceStep: trace.steps.length,
+        reason: "final violation was not observed",
+      };
 }
 
 export class StateSequenceDriver implements ReplayDriver {
   private index = 0;
 
-  constructor(private readonly states: readonly ModelState[], private readonly failAtStep?: number) {
-    if (states.length === 0) throw new Error("StateSequenceDriver requires at least one state");
+  constructor(
+    private readonly states: readonly ModelState[],
+    private readonly failAtStep?: number,
+  ) {
+    if (states.length === 0)
+      throw new Error("StateSequenceDriver requires at least one state");
   }
 
   currentState(): ModelState {
@@ -140,7 +214,9 @@ export class StateSequenceDriver implements ReplayDriver {
 }
 
 export function statesFromTrace(trace: Trace): ModelState[] {
-  return trace.steps.length === 0 ? [{}] : [trace.steps[0]!.pre, ...trace.steps.map((step) => step.post)];
+  return trace.steps.length === 0
+    ? [{}]
+    : [trace.steps[0]!.pre, ...trace.steps.map((step) => step.post)];
 }
 
 export class ActionReplayDriver implements ReplayDriver {
@@ -149,7 +225,7 @@ export class ActionReplayDriver implements ReplayDriver {
   constructor(
     private readonly actor: ReplayActor,
     private readonly observe: () => ModelState,
-    private readonly options: ActionReplayDriverOptions = {}
+    private readonly options: ActionReplayDriverOptions = {},
   ) {}
 
   currentState(): ModelState {
@@ -157,7 +233,10 @@ export class ActionReplayDriver implements ReplayDriver {
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.stepIndex });
+    await dispatchReplayStep(step, this.actor, {
+      ...this.options,
+      stepIndex: this.stepIndex,
+    });
     this.stepIndex += 1;
   }
 
@@ -173,19 +252,24 @@ export class ObservableActionReplayDriver implements ReplayDriver {
     private readonly actor: ReplayActor,
     private readonly varIds: readonly string[],
     private readonly sources: readonly ObservationSource[],
-    private readonly options: ActionReplayDriverOptions = {}
+    private readonly options: ActionReplayDriverOptions = {},
   ) {}
 
   currentState(): ModelState {
     const observed = observeModelState(this.varIds, this.sources);
     if (observed.unobservable.length > 0) {
-      throw new Error(`Unobservable model vars: ${observed.unobservable.join(", ")}`);
+      throw new Error(
+        `Unobservable model vars: ${observed.unobservable.join(", ")}`,
+      );
     }
     return observed.state;
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.stepIndex });
+    await dispatchReplayStep(step, this.actor, {
+      ...this.options,
+      stepIndex: this.stepIndex,
+    });
     this.stepIndex += 1;
   }
 
@@ -201,7 +285,7 @@ export class TraceBackedActionReplayDriver implements ReplayDriver {
   constructor(
     trace: Trace,
     private readonly actor: ReplayActor,
-    private readonly options: ActionReplayDriverOptions = {}
+    private readonly options: ActionReplayDriverOptions = {},
   ) {
     this.states = statesFromTrace(trace);
   }
@@ -211,7 +295,10 @@ export class TraceBackedActionReplayDriver implements ReplayDriver {
   }
 
   async apply(step: TraceStep): Promise<void> {
-    await dispatchReplayStep(step, this.actor, { ...this.options, stepIndex: this.index });
+    await dispatchReplayStep(step, this.actor, {
+      ...this.options,
+      stepIndex: this.index,
+    });
     this.index = Math.min(this.index + 1, this.states.length - 1);
   }
 
@@ -220,7 +307,10 @@ export class TraceBackedActionReplayDriver implements ReplayDriver {
   }
 }
 
-export function observeModelState(varIds: readonly string[], sources: readonly ObservationSource[]): ObservedModelState {
+export function observeModelState(
+  varIds: readonly string[],
+  sources: readonly ObservationSource[],
+): ObservedModelState {
   const state: ModelState = {};
   const unobservable: string[] = [];
   for (const varId of varIds) {
@@ -234,11 +324,16 @@ export function observeModelState(varIds: readonly string[], sources: readonly O
   return { state, unobservable };
 }
 
-export function observationSource(id: string, observe: (varId: string) => { value: Value } | "unobservable"): ObservationSource {
+export function observationSource(
+  id: string,
+  observe: (varId: string) => { value: Value } | "unobservable",
+): ObservationSource {
   return { id, observe };
 }
 
-export function createDomReplayActor(options: DomReplayActorOptions = {}): ReplayActor {
+export function createDomReplayActor(
+  options: DomReplayActorOptions = {},
+): ReplayActor {
   const doc = options.document ?? globalThis.document;
   if (!doc) throw new Error("createDomReplayActor requires a document");
   return {
@@ -246,17 +341,29 @@ export function createDomReplayActor(options: DomReplayActorOptions = {}): Repla
       const element = locateOne(doc, locator);
       assertEnabled(element, locator);
       if (typeof element.click === "function") element.click();
-      else dispatchDomEvent(doc, element, "click", { bubbles: true, cancelable: true });
+      else
+        dispatchDomEvent(doc, element, "click", {
+          bubbles: true,
+          cancelable: true,
+        });
     },
     submit: async (locator) => {
       const element = locateOne(doc, locator);
       assertEnabled(element, locator);
       const submitTarget = formFor(element);
-      if (submitTarget && typeof submitTarget.requestSubmit === "function") submitTarget.requestSubmit();
-      else dispatchDomEvent(doc, submitTarget ?? element, "submit", { bubbles: true, cancelable: true });
+      if (submitTarget && typeof submitTarget.requestSubmit === "function")
+        submitTarget.requestSubmit();
+      else
+        dispatchDomEvent(doc, submitTarget ?? element, "submit", {
+          bubbles: true,
+          cancelable: true,
+        });
     },
     input: async (locator, value) => {
-      const element = locateOne(doc, locator) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      const element = locateOne(doc, locator) as
+        | HTMLInputElement
+        | HTMLTextAreaElement
+        | HTMLSelectElement;
       assertEnabled(element, locator);
       element.value = value;
       dispatchDomEvent(doc, element, "input", { bubbles: true });
@@ -266,7 +373,7 @@ export function createDomReplayActor(options: DomReplayActorOptions = {}): Repla
     resolve: options.resolve,
     focusRevalidate: options.focusRevalidate,
     timer: options.timer,
-    stabilize: options.stabilize
+    stabilize: options.stabilize,
   };
 }
 
@@ -281,7 +388,9 @@ export function createDeterministicReplayAsyncController(): DeterministicReplayA
     const queue = handlers.get(key) ?? [];
     const resolution = queue.shift();
     if (!resolution) {
-      throw new ReplayDivergenceError(`No pending async resolution for ${op}:${outcome}`);
+      throw new ReplayDivergenceError(
+        `No pending async resolution for ${op}:${outcome}`,
+      );
     }
     if (queue.length === 0) handlers.delete(key);
     else handlers.set(key, queue);
@@ -294,7 +403,10 @@ export function createDeterministicReplayAsyncController(): DeterministicReplayA
     },
     registerResponse(op, outcome, payload, handler = () => undefined) {
       const key = asyncKey(op, outcome);
-      handlers.set(key, [...(handlers.get(key) ?? []), { payload, handler: () => handler(payload) }]);
+      handlers.set(key, [
+        ...(handlers.get(key) ?? []),
+        { payload, handler: () => handler(payload) },
+      ]);
     },
     async resolve(op, outcome) {
       await take(op, outcome).handler();
@@ -305,8 +417,10 @@ export function createDeterministicReplayAsyncController(): DeterministicReplayA
       return resolution.payload ?? null;
     },
     pending() {
-      return [...handlers.entries()].flatMap(([key, queue]) => queue.map(() => key)).sort();
-    }
+      return [...handlers.entries()]
+        .flatMap(([key, queue]) => queue.map(() => key))
+        .sort();
+    },
   };
 }
 
@@ -314,7 +428,10 @@ function asyncKey(op: string, outcome: string): string {
   return `${op}:${outcome}`;
 }
 
-function firstObserved(varId: string, sources: readonly ObservationSource[]): { value: Value } | "unobservable" {
+function firstObserved(
+  varId: string,
+  sources: readonly ObservationSource[],
+): { value: Value } | "unobservable" {
   for (const source of sources) {
     const observed = source.observe(varId);
     if (observed !== "unobservable") return observed;
@@ -325,25 +442,46 @@ function firstObserved(varId: string, sources: readonly ObservationSource[]): { 
 function locateOne(doc: Document, locator: Locator): HTMLElement {
   const matches = locateAll(doc, locator);
   const element = matches[0];
-  if (!element) throw new ReplayDivergenceError(`No element found for ${formatLocator(locator)}`);
+  if (!element)
+    throw new ReplayDivergenceError(
+      `No element found for ${formatLocator(locator)}`,
+    );
   return element;
 }
 
 function locateAll(doc: Document, locator: Locator): HTMLElement[] {
-  if (locator.kind === "positional") return locateAll(doc, locator.base).slice(locator.index, locator.index + 1);
-  if (locator.kind === "testId") return [...doc.querySelectorAll(`[data-testid="${cssString(locator.value)}"]`)] as HTMLElement[];
-  const candidates = [...doc.querySelectorAll(roleSelector(locator.role))] as HTMLElement[];
-  return candidates.filter((element) => elementRole(element) === locator.role && (!locator.name || elementName(element) === locator.name));
+  if (locator.kind === "positional")
+    return locateAll(doc, locator.base).slice(locator.index, locator.index + 1);
+  if (locator.kind === "testId")
+    return [
+      ...doc.querySelectorAll(`[data-testid="${cssString(locator.value)}"]`),
+    ] as HTMLElement[];
+  const candidates = [
+    ...doc.querySelectorAll(roleSelector(locator.role)),
+  ] as HTMLElement[];
+  return candidates.filter(
+    (element) =>
+      elementRole(element) === locator.role &&
+      (!locator.name || elementName(element) === locator.name),
+  );
 }
 
 function roleSelector(role: string): string {
-  const implicit = role === "button" ? "button,input[type=button],input[type=submit]" :
-    role === "textbox" ? "input:not([type]),input[type=text],textarea" :
-    role === "combobox" ? "select" :
-    role === "radio" ? "input[type=radio]" :
-    role === "form" ? "form" :
-    "";
-  return implicit ? `[role="${cssString(role)}"],${implicit}` : `[role="${cssString(role)}"]`;
+  const implicit =
+    role === "button"
+      ? "button,input[type=button],input[type=submit]"
+      : role === "textbox"
+        ? "input:not([type]),input[type=text],textarea"
+        : role === "combobox"
+          ? "select"
+          : role === "radio"
+            ? "input[type=radio]"
+            : role === "form"
+              ? "form"
+              : "";
+  return implicit
+    ? `[role="${cssString(role)}"],${implicit}`
+    : `[role="${cssString(role)}"]`;
 }
 
 function elementRole(element: HTMLElement): string | undefined {
@@ -364,21 +502,40 @@ function elementRole(element: HTMLElement): string | undefined {
 }
 
 function elementName(element: HTMLElement): string {
-  return element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "";
+  return (
+    element.getAttribute("aria-label") ?? element.textContent?.trim() ?? ""
+  );
 }
 
 function assertEnabled(element: HTMLElement, locator: Locator): void {
-  if ((element as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled || element.getAttribute("aria-disabled") === "true") {
-    throw new ReplayDivergenceError(`Element is disabled for ${formatLocator(locator)}`);
+  if (
+    (
+      element as
+        | HTMLButtonElement
+        | HTMLInputElement
+        | HTMLSelectElement
+        | HTMLTextAreaElement
+    ).disabled ||
+    element.getAttribute("aria-disabled") === "true"
+  ) {
+    throw new ReplayDivergenceError(
+      `Element is disabled for ${formatLocator(locator)}`,
+    );
   }
 }
 
 function formFor(element: HTMLElement): HTMLFormElement | undefined {
-  if (element.tagName.toLowerCase() === "form") return element as HTMLFormElement;
+  if (element.tagName.toLowerCase() === "form")
+    return element as HTMLFormElement;
   return (element as HTMLButtonElement | HTMLInputElement).form ?? undefined;
 }
 
-function dispatchDomEvent(doc: Document, element: HTMLElement, type: string, init: EventInit): void {
+function dispatchDomEvent(
+  doc: Document,
+  element: HTMLElement,
+  type: string,
+  init: EventInit,
+): void {
   const EventCtor = doc.defaultView?.Event ?? Event;
   element.dispatchEvent(new EventCtor(type, init));
 }
@@ -391,22 +548,36 @@ function formatLocator(locator: Locator): string {
   return JSON.stringify(locator);
 }
 
-export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, options: ActionReplayDriverOptions & { stepIndex?: number } = {}): Promise<void> {
+export async function dispatchReplayStep(
+  step: TraceStep,
+  actor: ReplayActor,
+  options: ActionReplayDriverOptions & { stepIndex?: number } = {},
+): Promise<void> {
   const stepIndex = options.stepIndex ?? 0;
   await options.beforeStep?.({ step, stepIndex });
   const label = step.label;
   switch (label.kind) {
     case "click":
-      if (!label.locator) throw new Error(`Missing locator for click step ${step.transitionId}`);
+      if (!label.locator)
+        throw new Error(`Missing locator for click step ${step.transitionId}`);
       await callActor("click", actor.click, label.locator);
       break;
     case "submit":
-      if (!label.locator) throw new Error(`Missing locator for submit step ${step.transitionId}`);
+      if (!label.locator)
+        throw new Error(`Missing locator for submit step ${step.transitionId}`);
       await callActor("submit", actor.submit, label.locator);
       break;
     case "input":
-      if (!label.locator) throw new Error(`Missing locator for input step ${step.transitionId}`);
-      await callActor("input", actor.input, label.locator, options.inputValues?.[label.valueClass] ?? inputWitness(label.valueClass), label.valueClass);
+      if (!label.locator)
+        throw new Error(`Missing locator for input step ${step.transitionId}`);
+      await callActor(
+        "input",
+        actor.input,
+        label.locator,
+        options.inputValues?.[label.valueClass] ??
+          inputWitness(label.valueClass),
+        label.valueClass,
+      );
       break;
     case "navigate":
       await callActor("navigate", actor.navigate, label.mode, label.to);
@@ -427,22 +598,43 @@ export async function dispatchReplayStep(step: TraceStep, actor: ReplayActor, op
   await options.afterStep?.({ step, stepIndex });
 }
 
-async function callActor<TArgs extends unknown[]>(name: string, fn: ((...args: TArgs) => Promise<void> | void) | undefined, ...args: TArgs): Promise<void> {
+async function callActor<TArgs extends unknown[]>(
+  name: string,
+  fn: ((...args: TArgs) => Promise<void> | void) | undefined,
+  ...args: TArgs
+): Promise<void> {
   if (!fn) throw new Error(`Replay actor does not support ${name}`);
   await fn(...args);
 }
 
-export function witnessValue(domain: AbstractDomain, value?: Value, options: WitnessOptions = {}): Value {
+export function witnessValue(
+  domain: AbstractDomain,
+  value?: Value,
+  options: WitnessOptions = {},
+): Value {
   if (value !== undefined && value !== null) {
     if (domain.kind === "lengthCat") return witnessLengthCat(value, options);
-    if (domain.kind === "tokens" && typeof value === "string") return options.tokenWitnesses?.[value] ?? value;
-    if (domain.kind === "option") return witnessValue(domain.inner, value, options);
-    if (domain.kind === "record" && isRecord(value)) return witnessRecord(domain.fields, value, options);
-    if (domain.kind === "tagged" && isRecord(value) && typeof value[domain.tag] === "string") {
+    if (domain.kind === "tokens" && typeof value === "string")
+      return options.tokenWitnesses?.[value] ?? value;
+    if (domain.kind === "option")
+      return witnessValue(domain.inner, value, options);
+    if (domain.kind === "record" && isRecord(value))
+      return witnessRecord(domain.fields, value, options);
+    if (
+      domain.kind === "tagged" &&
+      isRecord(value) &&
+      typeof value[domain.tag] === "string"
+    ) {
       const variant = domain.variants[value[domain.tag] as string];
-      return variant ? { ...(witnessValue(variant, value, options) as object), [domain.tag]: value[domain.tag] } : value;
+      return variant
+        ? {
+            ...(witnessValue(variant, value, options) as object),
+            [domain.tag]: value[domain.tag],
+          }
+        : value;
     }
-    if (domain.kind === "boundedList" && Array.isArray(value)) return value.map((item) => witnessValue(domain.inner, item, options));
+    if (domain.kind === "boundedList" && Array.isArray(value))
+      return value.map((item) => witnessValue(domain.inner, item, options));
     return value;
   }
   switch (domain.kind) {
@@ -457,8 +649,14 @@ export function witnessValue(domain: AbstractDomain, value?: Value, options: Wit
     case "record":
       return witnessRecord(domain.fields, undefined, options);
     case "tagged": {
-      const [tagValue, variant] = Object.entries(domain.variants)[0] ?? ["unknown", { kind: "record", fields: {} } as const];
-      return { ...(witnessValue(variant, undefined, options) as object), [domain.tag]: tagValue };
+      const [tagValue, variant] = Object.entries(domain.variants)[0] ?? [
+        "unknown",
+        { kind: "record", fields: {} } as const,
+      ];
+      return {
+        ...(witnessValue(variant, undefined, options) as object),
+        [domain.tag]: tagValue,
+      };
     }
     case "tokens": {
       const token = domain.names?.[0] ?? "tok1";
@@ -484,38 +682,61 @@ export function inputWitness(valueClass: string): string {
     case "invalid":
       return "!";
     default:
-      return valueClass.includes("|") ? inputWitness(valueClass.split("|").find((part) => part !== "empty") ?? valueClass.split("|")[0]!) : valueClass;
+      return valueClass.includes("|")
+        ? inputWitness(
+            valueClass.split("|").find((part) => part !== "empty") ??
+              valueClass.split("|")[0]!,
+          )
+        : valueClass;
   }
 }
 
 function witnessLengthCat(value: Value, options: WitnessOptions): Value {
   if (value === "0") return [];
   if (value === "1") return [elementWitnessAt(options, 0)];
-  if (value === "many") return [0, 1, 2].map((index) => elementWitnessAt(options, index));
+  if (value === "many")
+    return [0, 1, 2].map((index) => elementWitnessAt(options, index));
   return value;
 }
 
 function elementWitnessAt(options: WitnessOptions, index: number): Value {
-  if (typeof options.elementWitness === "function") return options.elementWitness(index);
-  if (options.elementWitness !== undefined) return cloneValue(options.elementWitness);
+  if (typeof options.elementWitness === "function")
+    return options.elementWitness(index);
+  if (options.elementWitness !== undefined)
+    return cloneValue(options.elementWitness);
   return `item${index + 1}`;
 }
 
 function cloneValue(value: Value): Value {
   if (Array.isArray(value)) return value.map((item) => cloneValue(item));
-  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneValue(item)]));
+  if (isRecord(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, cloneValue(item)]),
+    );
   return value;
 }
 
-function witnessRecord(fields: Record<string, AbstractDomain>, value: Record<string, Value> | undefined, options: WitnessOptions): Value {
-  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, witnessValue(field, value?.[key], options)]));
+function witnessRecord(
+  fields: Record<string, AbstractDomain>,
+  value: Record<string, Value> | undefined,
+  options: WitnessOptions,
+): Value {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, field]) => [
+      key,
+      witnessValue(field, value?.[key], options),
+    ]),
+  );
 }
 
 function isRecord(value: Value): value is Record<string, Value> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function defaultCompareState(expected: ModelState, actual: ModelState): string | undefined {
+function defaultCompareState(
+  expected: ModelState,
+  actual: ModelState,
+): string | undefined {
   const keys = new Set([...Object.keys(expected), ...Object.keys(actual)]);
   for (const key of [...keys].sort()) {
     if (JSON.stringify(expected[key]) !== JSON.stringify(actual[key])) {

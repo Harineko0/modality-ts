@@ -3,7 +3,13 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { Trace } from "modality-ts/core";
-import { createDeterministicReplayAsyncController, createDomReplayActor, ObservableActionReplayDriver, observationSource, replayTrace } from "modality-ts/cli/harness";
+import {
+  createDeterministicReplayAsyncController,
+  createDomReplayActor,
+  ObservableActionReplayDriver,
+  observationSource,
+  replayTrace,
+} from "modality-ts/cli/harness";
 
 describe("jsdom replay", () => {
   afterEach(() => {
@@ -14,49 +20,70 @@ describe("jsdom replay", () => {
     const state = renderCheckoutFixture();
     const trace = checkoutTrace({
       afterSubmit: "submitting",
-      afterResolve: "done"
+      afterResolve: "done",
     });
 
-    const verdict = await replayTrace(trace, new ObservableActionReplayDriver(
-      createDomReplayActor({
-        resolve: async (op, outcome) => {
-          expect(`${op}:${outcome}`).toBe("api.submitOrder:success");
-          state.status = "done";
-          state.paint();
-        },
-        stabilize: async () => Promise.resolve()
-      }),
-      ["local:Checkout.status"],
-      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
-    ));
+    const verdict = await replayTrace(
+      trace,
+      new ObservableActionReplayDriver(
+        createDomReplayActor({
+          resolve: async (op, outcome) => {
+            expect(`${op}:${outcome}`).toBe("api.submitOrder:success");
+            state.status = "done";
+            state.paint();
+          },
+          stabilize: async () => Promise.resolve(),
+        }),
+        ["local:Checkout.status"],
+        [
+          observationSource("checkout-dom", (varId) =>
+            varId === "local:Checkout.status"
+              ? { value: state.status }
+              : "unobservable",
+          ),
+        ],
+      ),
+    );
 
     expect(verdict).toEqual({ status: "reproduced", stepsRun: 2 });
-    expect(document.querySelector("[data-testid=\"status\"]")?.textContent).toBe("done");
+    expect(document.querySelector('[data-testid="status"]')?.textContent).toBe(
+      "done",
+    );
   });
 
   it("reports the exact divergence step for a wrong model post-state", async () => {
     const state = renderCheckoutFixture();
     const wrongTrace = checkoutTrace({
       afterSubmit: "done",
-      afterResolve: "done"
+      afterResolve: "done",
     });
 
-    const verdict = await replayTrace(wrongTrace, new ObservableActionReplayDriver(
-      createDomReplayActor({
-        resolve: () => {
-          state.status = "done";
-          state.paint();
-        }
-      }),
-      ["local:Checkout.status"],
-      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
-    ));
+    const verdict = await replayTrace(
+      wrongTrace,
+      new ObservableActionReplayDriver(
+        createDomReplayActor({
+          resolve: () => {
+            state.status = "done";
+            state.paint();
+          },
+        }),
+        ["local:Checkout.status"],
+        [
+          observationSource("checkout-dom", (varId) =>
+            varId === "local:Checkout.status"
+              ? { value: state.status }
+              : "unobservable",
+          ),
+        ],
+      ),
+    );
 
     expect(verdict).toEqual({
       status: "not-reproduced",
       stepsRun: 1,
       divergenceStep: 1,
-      reason: 'postcondition mismatch: local:Checkout.status: expected "done", got "submitting"'
+      reason:
+        'postcondition mismatch: local:Checkout.status: expected "done", got "submitting"',
     });
   });
 
@@ -68,17 +95,26 @@ describe("jsdom replay", () => {
       state.paint();
     });
 
-    const verdict = await replayTrace(checkoutTrace({
-      afterSubmit: "submitting",
-      afterResolve: "done"
-    }), new ObservableActionReplayDriver(
-      createDomReplayActor({
-        resolve: replayAsync.resolve,
-        stabilize: async () => Promise.resolve()
+    const verdict = await replayTrace(
+      checkoutTrace({
+        afterSubmit: "submitting",
+        afterResolve: "done",
       }),
-      ["local:Checkout.status"],
-      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
-    ));
+      new ObservableActionReplayDriver(
+        createDomReplayActor({
+          resolve: replayAsync.resolve,
+          stabilize: async () => Promise.resolve(),
+        }),
+        ["local:Checkout.status"],
+        [
+          observationSource("checkout-dom", (varId) =>
+            varId === "local:Checkout.status"
+              ? { value: state.status }
+              : "unobservable",
+          ),
+        ],
+      ),
+    );
 
     expect(verdict).toEqual({ status: "reproduced", stepsRun: 2 });
     expect(replayAsync.pending()).toEqual([]);
@@ -88,45 +124,74 @@ describe("jsdom replay", () => {
     renderCheckoutFixture();
     const replayAsync = createDeterministicReplayAsyncController();
 
-    const verdict = await replayTrace(checkoutTrace({
-      afterSubmit: "submitting",
-      afterResolve: "done"
-    }), new ObservableActionReplayDriver(
-      createDomReplayActor({ resolve: replayAsync.resolve }),
-      ["local:Checkout.status"],
-      [observationSource("checkout-dom", (varId) => {
-        const text = document.querySelector("[data-testid=\"status\"]")?.textContent;
-        return varId === "local:Checkout.status" && text ? { value: text } : "unobservable";
-      })]
-    ));
+    const verdict = await replayTrace(
+      checkoutTrace({
+        afterSubmit: "submitting",
+        afterResolve: "done",
+      }),
+      new ObservableActionReplayDriver(
+        createDomReplayActor({ resolve: replayAsync.resolve }),
+        ["local:Checkout.status"],
+        [
+          observationSource("checkout-dom", (varId) => {
+            const text = document.querySelector(
+              '[data-testid="status"]',
+            )?.textContent;
+            return varId === "local:Checkout.status" && text
+              ? { value: text }
+              : "unobservable";
+          }),
+        ],
+      ),
+    );
 
     expect(verdict).toEqual({
       status: "not-reproduced",
       stepsRun: 1,
       divergenceStep: 2,
-      reason: "No pending async resolution for api.submitOrder:success"
+      reason: "No pending async resolution for api.submitOrder:success",
     });
   });
 
   it("delivers queued response payload witnesses through deterministic replay", async () => {
     const state = renderCheckoutFixture();
     const replayAsync = createDeterministicReplayAsyncController();
-    replayAsync.registerResponse("api.submitOrder", "success", { status: "done" }, (payload) => {
-      state.status = typeof payload === "object" && payload !== null && !Array.isArray(payload) && payload.status === "done" ? "done" : "failed";
-      state.paint();
-    });
+    replayAsync.registerResponse(
+      "api.submitOrder",
+      "success",
+      { status: "done" },
+      (payload) => {
+        state.status =
+          typeof payload === "object" &&
+          payload !== null &&
+          !Array.isArray(payload) &&
+          payload.status === "done"
+            ? "done"
+            : "failed";
+        state.paint();
+      },
+    );
 
-    const verdict = await replayTrace(checkoutTrace({
-      afterSubmit: "submitting",
-      afterResolve: "done"
-    }), new ObservableActionReplayDriver(
-      createDomReplayActor({
-        resolve: replayAsync.resolve,
-        stabilize: async () => Promise.resolve()
+    const verdict = await replayTrace(
+      checkoutTrace({
+        afterSubmit: "submitting",
+        afterResolve: "done",
       }),
-      ["local:Checkout.status"],
-      [observationSource("checkout-dom", (varId) => varId === "local:Checkout.status" ? { value: state.status } : "unobservable")]
-    ));
+      new ObservableActionReplayDriver(
+        createDomReplayActor({
+          resolve: replayAsync.resolve,
+          stabilize: async () => Promise.resolve(),
+        }),
+        ["local:Checkout.status"],
+        [
+          observationSource("checkout-dom", (varId) =>
+            varId === "local:Checkout.status"
+              ? { value: state.status }
+              : "unobservable",
+          ),
+        ],
+      ),
+    );
 
     expect(verdict).toEqual({ status: "reproduced", stepsRun: 2 });
   });
@@ -138,7 +203,7 @@ function renderCheckoutFixture(): { status: string; paint: () => void } {
     paint: () => {
       status.textContent = state.status;
       submit.disabled = state.status === "submitting";
-    }
+    },
   };
   const form = document.createElement("form");
   form.dataset.testid = "checkout";
@@ -158,23 +223,39 @@ function renderCheckoutFixture(): { status: string; paint: () => void } {
   return state;
 }
 
-function checkoutTrace(states: { afterSubmit: string; afterResolve: string }): Trace {
+function checkoutTrace(states: {
+  afterSubmit: string;
+  afterResolve: string;
+}): Trace {
   return {
     steps: [
       {
         transitionId: "Checkout.onSubmit.api.submitOrder.start",
-        label: { kind: "submit", locator: { kind: "testId", value: "checkout" } },
+        label: {
+          kind: "submit",
+          locator: { kind: "testId", value: "checkout" },
+        },
         pre: { "local:Checkout.status": "idle" },
         post: { "local:Checkout.status": states.afterSubmit },
-        diff: { "local:Checkout.status": { before: "idle", after: states.afterSubmit } }
+        diff: {
+          "local:Checkout.status": {
+            before: "idle",
+            after: states.afterSubmit,
+          },
+        },
       },
       {
         transitionId: "Checkout.onSubmit.api.submitOrder.cont.success",
         label: { kind: "resolve", op: "api.submitOrder", outcome: "success" },
         pre: { "local:Checkout.status": states.afterSubmit },
         post: { "local:Checkout.status": states.afterResolve },
-        diff: { "local:Checkout.status": { before: states.afterSubmit, after: states.afterResolve } }
-      }
-    ]
+        diff: {
+          "local:Checkout.status": {
+            before: states.afterSubmit,
+            after: states.afterResolve,
+          },
+        },
+      },
+    ],
   };
 }

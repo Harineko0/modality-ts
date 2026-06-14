@@ -1,8 +1,15 @@
 import type { ExprIR, Model, Value } from "modality-ts/core";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
-const read = (id: string, path?: string[]): ExprIR => ({ kind: "read", var: id, path });
-const eq = (left: ExprIR, right: ExprIR): ExprIR => ({ kind: "eq", args: [left, right] });
+const read = (id: string, path?: string[]): ExprIR => ({
+  kind: "read",
+  var: id,
+  path,
+});
+const eq = (left: ExprIR, right: ExprIR): ExprIR => ({
+  kind: "eq",
+  args: [left, right],
+});
 const not = (arg: ExprIR): ExprIR => ({ kind: "not", args: [arg] });
 
 export function todoHandModel(): Model {
@@ -16,14 +23,18 @@ export function todoHandModel(): Model {
         domain: { kind: "enum", values: ["/"] },
         origin: "system",
         scope: { kind: "global" },
-        initial: "/"
+        initial: "/",
       },
       {
         id: "sys:history",
-        domain: { kind: "boundedList", inner: { kind: "enum", values: ["/"] }, maxLen: 4 },
+        domain: {
+          kind: "boundedList",
+          inner: { kind: "enum", values: ["/"] },
+          maxLen: 4,
+        },
         origin: "system",
         scope: { kind: "global" },
-        initial: []
+        initial: [],
       },
       {
         id: "sys:pending",
@@ -32,84 +43,93 @@ export function todoHandModel(): Model {
           inner: {
             kind: "record",
             fields: {
-              opId: { kind: "enum", values: ["GET /api/todos", "api.createTodo"] },
+              opId: {
+                kind: "enum",
+                values: ["GET /api/todos", "api.createTodo"],
+              },
               continuation: {
                 kind: "enum",
                 values: [
                   "App.onChange.api.createTodo.cont",
                   "App.onClick.api.createTodo.cont",
                   "App.onSubmit.api.createTodo.cont",
-                  "swr:api_todos:resolve"
-                ]
+                  "swr:api_todos:resolve",
+                ],
               },
-              args: { kind: "record", fields: {} }
-            }
+              args: { kind: "record", fields: {} },
+            },
           },
-          maxLen: 3
+          maxLen: 3,
         },
         origin: "system",
         scope: { kind: "global" },
-        initial: []
+        initial: [],
       },
       {
         id: "local:App.draft",
         domain: { kind: "enum", values: ["empty", "nonEmpty"] },
         origin: "system",
         scope: { kind: "route-local", route: "/" },
-        initial: "empty"
+        initial: "empty",
       },
       {
         id: "local:App.saveStatus",
         domain: { kind: "enum", values: ["idle", "posting", "failed"] },
         origin: "system",
         scope: { kind: "route-local", route: "/" },
-        initial: "idle"
+        initial: "idle",
       },
       {
         id: "atom:authAtom",
         domain: { kind: "enum", values: ["guest", "user"] },
         origin: "system",
         scope: { kind: "global" },
-        initial: "guest"
+        initial: "guest",
       },
       {
         id: "swr:api_todos:data",
         domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
         origin: "library-template",
         scope: { kind: "global" },
-        initial: null
+        initial: null,
       },
       {
         id: "swr:api_todos:isValidating",
         domain: { kind: "bool" },
         origin: "library-template",
         scope: { kind: "global" },
-        initial: false
+        initial: false,
       },
       {
         id: "swr:api_todos:error",
         domain: { kind: "bool" },
         origin: "library-template",
         scope: { kind: "global" },
-        initial: false
-      }
+        initial: false,
+      },
     ],
     transitions: [
       {
         id: "App.onClick.authAtom",
         cls: "user",
-        label: { kind: "click", locator: { kind: "role", role: "button", name: "Login" } },
+        label: {
+          kind: "click",
+          locator: { kind: "role", role: "button", name: "Login" },
+        },
         source: [],
         guard: lit(true),
         effect: { kind: "assign", var: "atom:authAtom", expr: lit("user") },
         reads: [],
         writes: ["atom:authAtom"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.onClick.authAtom_draft_saveStatus.seq",
         cls: "user",
-        label: { kind: "click", locator: { kind: "role", role: "button", name: "Logout" } },
+        label: {
+          kind: "click",
+          locator: { kind: "role", role: "button", name: "Logout" },
+        },
         source: [],
         guard: lit(true),
         effect: {
@@ -117,51 +137,75 @@ export function todoHandModel(): Model {
           effects: [
             { kind: "assign", var: "atom:authAtom", expr: lit("guest") },
             { kind: "assign", var: "local:App.draft", expr: lit("empty") },
-            { kind: "assign", var: "local:App.saveStatus", expr: lit("idle") }
-          ]
+            { kind: "assign", var: "local:App.saveStatus", expr: lit("idle") },
+          ],
         },
         reads: [],
         writes: ["atom:authAtom", "local:App.draft", "local:App.saveStatus"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.onChange.draft.empty",
         cls: "user",
-        label: { kind: "input", valueClass: "empty", locator: { kind: "testId", value: "draft" } },
+        label: {
+          kind: "input",
+          valueClass: "empty",
+          locator: { kind: "testId", value: "draft" },
+        },
         source: [],
         guard: lit(true),
         effect: { kind: "assign", var: "local:App.draft", expr: lit("empty") },
         reads: [],
         writes: ["local:App.draft"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.onChange.draft.nonEmpty",
         cls: "user",
-        label: { kind: "input", valueClass: "nonEmpty", locator: { kind: "testId", value: "draft" } },
+        label: {
+          kind: "input",
+          valueClass: "nonEmpty",
+          locator: { kind: "testId", value: "draft" },
+        },
         source: [],
         guard: lit(true),
-        effect: { kind: "assign", var: "local:App.draft", expr: lit("nonEmpty") },
+        effect: {
+          kind: "assign",
+          var: "local:App.draft",
+          expr: lit("nonEmpty"),
+        },
         reads: [],
         writes: ["local:App.draft"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.onClick.api.createTodo.start",
         cls: "user",
-        label: { kind: "click", locator: { kind: "role", role: "button", name: "Add" } },
+        label: {
+          kind: "click",
+          locator: { kind: "role", role: "button", name: "Add" },
+        },
         source: [],
         guard: not(eq(read("local:App.saveStatus"), lit("posting"))),
         effect: {
           kind: "seq",
           effects: [
-            { kind: "assign", var: "local:App.saveStatus", expr: lit("posting") },
-            { kind: "enqueue", op: "api.createTodo", continuation: "App.onClick.api.createTodo.cont", args: {} }
-          ]
+            {
+              kind: "assign",
+              var: "local:App.saveStatus",
+              expr: lit("posting"),
+            },
+            {
+              kind: "enqueue",
+              op: "api.createTodo",
+              continuation: "App.onClick.api.createTodo.cont",
+              args: {},
+            },
+          ],
         },
         reads: ["local:App.saveStatus"],
         writes: ["local:App.saveStatus", "sys:pending"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "App.onClick.api.createTodo.success",
@@ -174,12 +218,12 @@ export function todoHandModel(): Model {
           effects: [
             { kind: "dequeue", index: 0 },
             { kind: "assign", var: "local:App.draft", expr: lit("empty") },
-            { kind: "assign", var: "local:App.saveStatus", expr: lit("idle") }
-          ]
+            { kind: "assign", var: "local:App.saveStatus", expr: lit("idle") },
+          ],
         },
         reads: ["sys:pending", "local:App.saveStatus"],
         writes: ["sys:pending", "local:App.draft", "local:App.saveStatus"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "swr:api_todos:fetch",
@@ -190,13 +234,22 @@ export function todoHandModel(): Model {
         effect: {
           kind: "seq",
           effects: [
-            { kind: "assign", var: "swr:api_todos:isValidating", expr: lit(true) },
-            { kind: "enqueue", op: "GET /api/todos", continuation: "swr:api_todos:resolve", args: {} }
-          ]
+            {
+              kind: "assign",
+              var: "swr:api_todos:isValidating",
+              expr: lit(true),
+            },
+            {
+              kind: "enqueue",
+              op: "GET /api/todos",
+              continuation: "swr:api_todos:resolve",
+              args: {},
+            },
+          ],
         },
         reads: [],
         writes: ["swr:api_todos:isValidating", "sys:pending"],
-        confidence: "exact"
+        confidence: "exact",
       },
       {
         id: "swr:api_todos:resolve:success:0",
@@ -209,13 +262,22 @@ export function todoHandModel(): Model {
           effects: [
             { kind: "dequeue", index: 0 },
             { kind: "assign", var: "swr:api_todos:data", expr: lit("tok1") },
-            { kind: "assign", var: "swr:api_todos:isValidating", expr: lit(false) },
-            { kind: "assign", var: "swr:api_todos:error", expr: lit(false) }
-          ]
+            {
+              kind: "assign",
+              var: "swr:api_todos:isValidating",
+              expr: lit(false),
+            },
+            { kind: "assign", var: "swr:api_todos:error", expr: lit(false) },
+          ],
         },
         reads: ["sys:pending"],
-        writes: ["sys:pending", "swr:api_todos:data", "swr:api_todos:isValidating", "swr:api_todos:error"],
-        confidence: "exact"
+        writes: [
+          "sys:pending",
+          "swr:api_todos:data",
+          "swr:api_todos:isValidating",
+          "swr:api_todos:error",
+        ],
+        confidence: "exact",
       },
       {
         id: "swr:api_todos:resolve:error",
@@ -227,14 +289,22 @@ export function todoHandModel(): Model {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            { kind: "assign", var: "swr:api_todos:isValidating", expr: lit(false) },
-            { kind: "assign", var: "swr:api_todos:error", expr: lit(true) }
-          ]
+            {
+              kind: "assign",
+              var: "swr:api_todos:isValidating",
+              expr: lit(false),
+            },
+            { kind: "assign", var: "swr:api_todos:error", expr: lit(true) },
+          ],
         },
         reads: ["sys:pending"],
-        writes: ["sys:pending", "swr:api_todos:isValidating", "swr:api_todos:error"],
-        confidence: "exact"
-      }
-    ]
+        writes: [
+          "sys:pending",
+          "swr:api_todos:isValidating",
+          "swr:api_todos:error",
+        ],
+        confidence: "exact",
+      },
+    ],
   };
 }

@@ -1,4 +1,8 @@
-import type { HarnessCtx, HarnessHooks, ObservedRead } from "modality-ts/extract/engine/spi";
+import type {
+  HarnessCtx,
+  HarnessHooks,
+  ObservedRead,
+} from "modality-ts/extract/engine/spi";
 import type { Value } from "modality-ts/core";
 
 export interface RouterHarnessHooks extends HarnessHooks {
@@ -8,19 +12,31 @@ export interface RouterHarnessHooks extends HarnessHooks {
 
 export function setup(ctx: HarnessCtx): RouterHarnessHooks {
   return {
-    route: typeof ctx.initialState?.["sys:route"] === "string" ? ctx.initialState["sys:route"] : "/",
-    history: Array.isArray(ctx.initialState?.["sys:history"]) ? [...ctx.initialState["sys:history"].filter(isString)] : []
+    route:
+      typeof ctx.initialState?.["sys:route"] === "string"
+        ? ctx.initialState["sys:route"]
+        : "/",
+    history: Array.isArray(ctx.initialState?.["sys:history"])
+      ? [...ctx.initialState["sys:history"].filter(isString)]
+      : [],
   };
 }
 
-export function observe(handles: HarnessHooks, varId = "sys:route"): ObservedRead | "unobservable" {
+export function observe(
+  handles: HarnessHooks,
+  varId = "sys:route",
+): ObservedRead | "unobservable" {
   const router = handles as RouterHarnessHooks;
   if (varId === "sys:route") return { value: router.route };
   if (varId === "sys:history") return { value: router.history };
   return "unobservable";
 }
 
-export function navigate(handles: HarnessHooks, mode: "push" | "replace" | "back", to?: string): void {
+export function navigate(
+  handles: HarnessHooks,
+  mode: "push" | "replace" | "back",
+  to?: string,
+): void {
   const router = handles as RouterHarnessHooks;
   if (mode === "back") {
     const previous = router.history.pop();

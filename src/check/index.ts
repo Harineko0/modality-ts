@@ -11,5 +11,5 @@ export const checkApi = {
   checkModel,
   modelInitialStates,
   modelSuccessors,
-  sliceModel
+  sliceModel,
 };

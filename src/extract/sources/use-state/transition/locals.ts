@@ -1,19 +1,18 @@
 import * as ts from "typescript";
-import { callName, componentNameFor, extractableHandlerInitializer, isExtractableHandler, isPropertyAccessLike, isUseEffectCall, isUseReducerCall, isUseRefCall, isUseStateCall, lineAndColumn, literalValue, propertyName, providerComponentNames } from "../../../engine/ts/ast.js";
-import { componentDeclarations, calledCustomHook, customHookDeclarations, detectStatefulListComponents, handlerExpression, inlineCustomHookState, isCustomHookDeclaration, isForwardablePropName, isIntrinsicJsxAttribute, jsxTagName, listRenderedHandlerInfo } from "../../../engine/ts/components.js";
-import { bindContextHookObjectDeclaration, discoverContextBindings, emptyContextBindings, setterBindingFromDecl, settersForComponent } from "../../../engine/ts/context.js";
-import { safeId, tagStableIdKey, uniqueStrings, withStableTransitionIds } from "../../../engine/ts/ids.js";
-import { inputTransitions } from "../../../engine/ts/input-transitions.js";
-import { jsxRouteTarget, routeMountGuard, routeMountReads, routeTargetValue, templateRoutePattern } from "../../../engine/ts/routes.js";
-import { staticNavigationTransitions } from "../../../engine/ts/static-navigation.js";
-import { firstValue, inferUseStateDomain, initialValueForUseState, typeAliasDeclarations } from "../../../engine/ts/domains.js";
-import { effectReads, effectWrites, type AbstractDomain, type EffectIR, type ExprIR, type Locator, type StateVarDecl, type Transition, type Value } from "modality-ts/core";
-import type { CallSite, M0Ctx, RouterPlugin, StateSourcePlugin } from "../../../engine/spi/index.js";
-import type { BoundExpr, ComponentDecl, ContextBindings, ExtractableHandler, ExtractedModelSkeleton, ExtractionWarning, EffectSummary, SetterBinding, SetterCall, UseStateExtractionOptions, UseStateExtractionResult } from "../types.js";
+import { bindContextHookObjectDeclaration } from "../../../engine/ts/context.js";
+import type {
+  BoundExpr,
+  ContextBindings,
+  ExtractableHandler,
+  SetterBinding,
+} from "../types.js";
 import { booleanExpr, valueExpr } from "./expressions.js";
 import { parseConjunctiveGuardExpression } from "./guards.js";
 
-export function componentGuardLocalsFor(attribute: ts.JsxAttribute, setters: Map<string, SetterBinding>): Map<string, BoundExpr> {
+export function componentGuardLocalsFor(
+  attribute: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+): Map<string, BoundExpr> {
   const body = enclosingFunctionBody(attribute);
   if (!body) return new Map();
   const locals = new Map<string, BoundExpr>();
@@ -25,7 +24,11 @@ export function componentGuardLocalsFor(attribute: ts.JsxAttribute, setters: Map
   return locals;
 }
 
-export function componentScopeLocalsFor(attribute: ts.JsxAttribute, setters: Map<string, SetterBinding>, contextBindings: ContextBindings): Map<string, BoundExpr> {
+export function componentScopeLocalsFor(
+  attribute: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  contextBindings: ContextBindings,
+): Map<string, BoundExpr> {
   const body = enclosingFunctionBody(attribute);
   if (!body) return new Map();
   const locals = new Map<string, BoundExpr>();
@@ -48,7 +51,13 @@ export function variableDeclarations(node: ts.Node): ts.VariableDeclaration[] {
 export function enclosingFunctionBody(node: ts.Node): ts.Block | undefined {
   let current: ts.Node | undefined = node;
   while (current) {
-    if ((ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current) || ts.isArrowFunction(current)) && current.body && ts.isBlock(current.body)) {
+    if (
+      (ts.isFunctionDeclaration(current) ||
+        ts.isFunctionExpression(current) ||
+        ts.isArrowFunction(current)) &&
+      current.body &&
+      ts.isBlock(current.body)
+    ) {
       return current.body;
     }
     current = current.parent;
@@ -56,39 +65,83 @@ export function enclosingFunctionBody(node: ts.Node): ts.Block | undefined {
   return undefined;
 }
 
-export function callSummaryFromHandler(handler: ExtractableHandler, setters: Map<string, SetterBinding>, initialLocals: Map<string, BoundExpr> = new Map()): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
+export function callSummaryFromHandler(
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
+): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
   const body = handler.body;
-  if (ts.isCallExpression(body)) return { call: body, locals: new Map(initialLocals) };
-  if (ts.isVoidExpression(body) && ts.isCallExpression(body.expression)) return { call: body.expression, locals: new Map(initialLocals) };
+  if (ts.isCallExpression(body))
+    return { call: body, locals: new Map(initialLocals) };
+  if (ts.isVoidExpression(body) && ts.isCallExpression(body.expression))
+    return { call: body.expression, locals: new Map(initialLocals) };
   if (ts.isBlock(body)) {
     const locals = new Map<string, BoundExpr>(initialLocals);
     for (let index = 0; index < body.statements.length; index += 1) {
       const statement = body.statements[index];
       const isLast = index === body.statements.length - 1;
-      if (isLast && ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) return { call: statement.expression, locals };
-      if (isLast && ts.isExpressionStatement(statement) && ts.isVoidExpression(statement.expression) && ts.isCallExpression(statement.expression.expression)) return { call: statement.expression.expression, locals };
+      if (
+        isLast &&
+        ts.isExpressionStatement(statement) &&
+        ts.isCallExpression(statement.expression)
+      )
+        return { call: statement.expression, locals };
+      if (
+        isLast &&
+        ts.isExpressionStatement(statement) &&
+        ts.isVoidExpression(statement.expression) &&
+        ts.isCallExpression(statement.expression.expression)
+      )
+        return { call: statement.expression.expression, locals };
       if (!bindConstStatement(statement, setters, locals)) return undefined;
     }
   }
   return undefined;
 }
 
-export function bindConstStatement(statement: ts.Statement, setters: Map<string, SetterBinding>, locals: Map<string, BoundExpr>, partialBoolean = false): boolean {
+export function bindConstStatement(
+  statement: ts.Statement,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>,
+  partialBoolean = false,
+): boolean {
   if (!ts.isVariableStatement(statement)) return false;
-  if ((ts.getCombinedNodeFlags(statement.declarationList) & ts.NodeFlags.Const) === 0) return false;
+  if (
+    (ts.getCombinedNodeFlags(statement.declarationList) &
+      ts.NodeFlags.Const) ===
+    0
+  )
+    return false;
   for (const declaration of statement.declarationList.declarations) {
-    if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return false;
-    const setterAlias = ts.isIdentifier(declaration.initializer) ? setters.get(declaration.initializer.text) ?? locals.get(declaration.initializer.text)?.setter : undefined;
-    const binding: BoundExpr | undefined = setterAlias ? { expr: { kind: "lit", value: null }, reads: [], setter: setterAlias } : valueExpr(declaration.initializer, setters, locals) ??
-      (partialBoolean ? parseConjunctiveGuardExpression(declaration.initializer, setters, locals) : booleanExpr(declaration.initializer, setters, locals));
+    if (!ts.isIdentifier(declaration.name) || !declaration.initializer)
+      return false;
+    const setterAlias = ts.isIdentifier(declaration.initializer)
+      ? (setters.get(declaration.initializer.text) ??
+        locals.get(declaration.initializer.text)?.setter)
+      : undefined;
+    const binding: BoundExpr | undefined = setterAlias
+      ? { expr: { kind: "lit", value: null }, reads: [], setter: setterAlias }
+      : (valueExpr(declaration.initializer, setters, locals) ??
+        (partialBoolean
+          ? parseConjunctiveGuardExpression(
+              declaration.initializer,
+              setters,
+              locals,
+            )
+          : booleanExpr(declaration.initializer, setters, locals)));
     if (!binding) return false;
     locals.set(declaration.name.text, binding);
   }
   return true;
 }
 
-export function inlinedHelperCall(call: ts.CallExpression, handlers: Map<string, ExtractableHandler>, setters: Map<string, SetterBinding>): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
-  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 0) return undefined;
+export function inlinedHelperCall(
+  call: ts.CallExpression,
+  handlers: Map<string, ExtractableHandler>,
+  setters: Map<string, SetterBinding>,
+): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
+  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 0)
+    return undefined;
   const helper = handlers.get(call.expression.text);
   return helper ? callSummaryFromHandler(helper, setters) : undefined;
 }

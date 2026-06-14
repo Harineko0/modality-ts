@@ -1,5 +1,8 @@
 import type { PluginProvenance } from "modality-ts/core";
-import type { RouterPlugin, StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import type {
+  RouterPlugin,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import { routerSource } from "modality-ts/extract/sources/router";
 import { swrSource } from "modality-ts/extract/sources/swr";
@@ -25,25 +28,39 @@ export interface RegistrySummary {
   plugins: readonly PluginProvenance[];
 }
 
-export function createBuiltinModalityRegistry(options: BuiltinRegistryOptions = {}): RegistrySummary {
+export function createBuiltinModalityRegistry(
+  options: BuiltinRegistryOptions = {},
+): RegistrySummary {
   const dependencies = options.dependencies;
   const disabled = new Set(options.disabledPlugins ?? []);
   const builtins = [useStateSource(), jotaiSource(), swrSource()];
   const sourcePlugins = [
-    ...builtins.filter((plugin) => !disabled.has(plugin.id) && shouldEnableBuiltin(plugin, dependencies)),
-    ...(options.extraSourcePlugins ?? [])
+    ...builtins.filter(
+      (plugin) =>
+        !disabled.has(plugin.id) && shouldEnableBuiltin(plugin, dependencies),
+    ),
+    ...(options.extraSourcePlugins ?? []),
   ];
   const defaultRouter = routerSource();
-  const routerPlugin = options.routerPlugin === false || disabled.has(defaultRouter.id)
-    ? undefined
-    : options.routerPlugin ?? (shouldEnableBuiltin(defaultRouter, dependencies) ? defaultRouter : undefined);
+  const routerPlugin =
+    options.routerPlugin === false || disabled.has(defaultRouter.id)
+      ? undefined
+      : (options.routerPlugin ??
+        (shouldEnableBuiltin(defaultRouter, dependencies)
+          ? defaultRouter
+          : undefined));
   return createModalityRegistry({ sourcePlugins, routerPlugin });
 }
 
-export function createModalityRegistry(options: ModalityPluginRegistry = { sourcePlugins: [] }): RegistrySummary {
+export function createModalityRegistry(
+  options: ModalityPluginRegistry = { sourcePlugins: [] },
+): RegistrySummary {
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
-  const sourcePluginIds = sortedUnique(options.sourcePlugins.map((plugin) => plugin.id), "source plugin");
+  const sourcePluginIds = sortedUnique(
+    options.sourcePlugins.map((plugin) => plugin.id),
+    "source plugin",
+  );
   return {
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
@@ -53,48 +70,99 @@ export function createModalityRegistry(options: ModalityPluginRegistry = { sourc
         id: plugin.id,
         version: plugin.version ?? "unknown",
         kind: "state-source" as const,
-        packageNames: [...plugin.packageNames].sort()
+        packageNames: [...plugin.packageNames].sort(),
       })),
-      ...(options.routerPlugin ? [{
-        id: options.routerPlugin.id,
-        version: options.routerPlugin.version ?? "unknown",
-        kind: "router" as const,
-        packageNames: [...options.routerPlugin.packageNames].sort()
-      }] : [])
-    ].sort((left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id)),
-    ...(options.routerPlugin ? { routerPluginId: options.routerPlugin.id } : {})
+      ...(options.routerPlugin
+        ? [
+            {
+              id: options.routerPlugin.id,
+              version: options.routerPlugin.version ?? "unknown",
+              kind: "router" as const,
+              packageNames: [...options.routerPlugin.packageNames].sort(),
+            },
+          ]
+        : []),
+    ].sort(
+      (left, right) =>
+        left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
+    ),
+    ...(options.routerPlugin
+      ? { routerPluginId: options.routerPlugin.id }
+      : {}),
   };
 }
 
-function shouldEnableBuiltin(plugin: { packageNames: readonly string[] }, dependencies: Readonly<Record<string, string>> | undefined): boolean {
+function shouldEnableBuiltin(
+  plugin: { packageNames: readonly string[] },
+  dependencies: Readonly<Record<string, string>> | undefined,
+): boolean {
   if (!dependencies) return true;
-  return plugin.packageNames.some((packageName) => dependencies[packageName] !== undefined);
+  return plugin.packageNames.some(
+    (packageName) => dependencies[packageName] !== undefined,
+  );
 }
 
 function validateStateSourcePlugin(plugin: StateSourcePlugin): void {
   validateCommonPluginShape(plugin, "source plugin");
-  if (typeof plugin.discover !== "function") throw new Error(`Invalid source plugin ${plugin.id}: discover must be a function`);
-  if (typeof plugin.writeChannels !== "function") throw new Error(`Invalid source plugin ${plugin.id}: writeChannels must be a function`);
-  if (!plugin.harness || typeof plugin.harness.setup !== "function" || typeof plugin.harness.observe !== "function") {
-    throw new Error(`Invalid source plugin ${plugin.id}: harness.setup and harness.observe are required`);
+  if (typeof plugin.discover !== "function")
+    throw new Error(
+      `Invalid source plugin ${plugin.id}: discover must be a function`,
+    );
+  if (typeof plugin.writeChannels !== "function")
+    throw new Error(
+      `Invalid source plugin ${plugin.id}: writeChannels must be a function`,
+    );
+  if (
+    !plugin.harness ||
+    typeof plugin.harness.setup !== "function" ||
+    typeof plugin.harness.observe !== "function"
+  ) {
+    throw new Error(
+      `Invalid source plugin ${plugin.id}: harness.setup and harness.observe are required`,
+    );
   }
 }
 
 function validateRouterPlugin(plugin: RouterPlugin): void {
   validateCommonPluginShape(plugin, "router plugin");
-  if (typeof plugin.routeVars !== "function") throw new Error(`Invalid router plugin ${plugin.id}: routeVars must be a function`);
-  if (typeof plugin.navigationCall !== "function") throw new Error(`Invalid router plugin ${plugin.id}: navigationCall must be a function`);
-  if (!plugin.harness || typeof plugin.harness.setup !== "function" || typeof plugin.harness.observe !== "function" || typeof plugin.harness.navigate !== "function") {
-    throw new Error(`Invalid router plugin ${plugin.id}: harness.setup, harness.observe, and harness.navigate are required`);
+  if (typeof plugin.routeVars !== "function")
+    throw new Error(
+      `Invalid router plugin ${plugin.id}: routeVars must be a function`,
+    );
+  if (typeof plugin.navigationCall !== "function")
+    throw new Error(
+      `Invalid router plugin ${plugin.id}: navigationCall must be a function`,
+    );
+  if (
+    !plugin.harness ||
+    typeof plugin.harness.setup !== "function" ||
+    typeof plugin.harness.observe !== "function" ||
+    typeof plugin.harness.navigate !== "function"
+  ) {
+    throw new Error(
+      `Invalid router plugin ${plugin.id}: harness.setup, harness.observe, and harness.navigate are required`,
+    );
   }
 }
 
-function validateCommonPluginShape(plugin: { id?: unknown; packageNames?: unknown; version?: unknown }, kind: string): void {
-  if (typeof plugin.id !== "string" || plugin.id.length === 0) throw new Error(`Invalid ${kind}: id must be a non-empty string`);
-  if (!Array.isArray(plugin.packageNames) || !plugin.packageNames.every((name) => typeof name === "string" && name.length > 0)) {
-    throw new Error(`Invalid ${kind} ${plugin.id}: packageNames must be non-empty strings`);
+function validateCommonPluginShape(
+  plugin: { id?: unknown; packageNames?: unknown; version?: unknown },
+  kind: string,
+): void {
+  if (typeof plugin.id !== "string" || plugin.id.length === 0)
+    throw new Error(`Invalid ${kind}: id must be a non-empty string`);
+  if (
+    !Array.isArray(plugin.packageNames) ||
+    !plugin.packageNames.every(
+      (name) => typeof name === "string" && name.length > 0,
+    )
+  ) {
+    throw new Error(
+      `Invalid ${kind} ${plugin.id}: packageNames must be non-empty strings`,
+    );
   }
-  if (plugin.version !== undefined && typeof plugin.version !== "string") throw new Error(`Invalid ${kind} ${plugin.id}: version must be a string`);
+  if (plugin.version !== undefined && typeof plugin.version !== "string")
+    throw new Error(`Invalid ${kind} ${plugin.id}: version must be a string`);
 }
 
 function sortedUnique(values: readonly string[], kind: string): string[] {

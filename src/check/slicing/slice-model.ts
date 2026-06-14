@@ -1,13 +1,27 @@
 import type { Model, Property } from "modality-ts/core";
 
-export function sliceModel(model: Model, propertyReads: readonly string[]): Model {
+export function sliceModel(
+  model: Model,
+  propertyReads: readonly string[],
+): Model {
   return sliceModelForProperty(model, { reads: propertyReads });
 }
 
-export function sliceModelForProperty(model: Model, property: Pick<Property, "reads" | "enabledTransitions">): Model {
-  const systemVars = new Set(model.vars.filter((decl) => decl.id.startsWith("sys:")).map((decl) => decl.id));
+export function sliceModelForProperty(
+  model: Model,
+  property: Pick<Property, "reads" | "enabledTransitions">,
+): Model {
+  const systemVars = new Set(
+    model.vars
+      .filter((decl) => decl.id.startsWith("sys:"))
+      .map((decl) => decl.id),
+  );
   const forcedTransitions = new Set(property.enabledTransitions ?? []);
-  const needed = new Set([...systemVars, ...(property.reads ?? []), ...enabledTransitionVars(model, forcedTransitions)]);
+  const needed = new Set([
+    ...systemVars,
+    ...(property.reads ?? []),
+    ...enabledTransitionVars(model, forcedTransitions),
+  ]);
   let changed = true;
   while (changed) {
     changed = false;
@@ -26,15 +40,20 @@ export function sliceModelForProperty(model: Model, property: Pick<Property, "re
     (transition) =>
       forcedTransitions.has(transition.id) ||
       transition.writes.some((write) => needed.has(write)) ||
-      transition.reads.some((read) => needed.has(read))
+      transition.reads.some((read) => needed.has(read)),
   );
   return { ...model, vars, transitions };
 }
 
-export function enabledTransitionVars(model: Model, transitionIds: Set<string>): string[] {
+export function enabledTransitionVars(
+  model: Model,
+  transitionIds: Set<string>,
+): string[] {
   const vars = new Set<string>();
   for (const id of transitionIds) {
-    const transition = model.transitions.find((candidate) => candidate.id === id);
+    const transition = model.transitions.find(
+      (candidate) => candidate.id === id,
+    );
     if (!transition) continue;
     vars.add("sys:route");
     for (const read of transition.reads) vars.add(read);

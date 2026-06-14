@@ -36,7 +36,12 @@ export type ExprIR =
   | { kind: "eq" | "neq" | "and" | "or"; args: readonly ExprIR[] }
   | { kind: "not"; args: readonly [ExprIR] }
   | { kind: "cond"; args: readonly [ExprIR, ExprIR, ExprIR] }
-  | { kind: "updateField"; target: ExprIR; path: readonly string[]; value: ExprIR }
+  | {
+      kind: "updateField";
+      target: ExprIR;
+      path: readonly string[];
+      value: ExprIR;
+    }
   | { kind: "tagIs"; arg: ExprIR; tag: string }
   | { kind: "lenCat"; arg: ExprIR }
   | { kind: "freshToken"; domainOf: string };
@@ -49,7 +54,12 @@ export type EffectIR =
   | { kind: "choose"; var: string; among: readonly ExprIR[] }
   | { kind: "if"; cond: ExprIR; then: EffectIR; else: EffectIR }
   | { kind: "seq"; effects: readonly EffectIR[] }
-  | { kind: "enqueue"; op: string; continuation: string; args: Record<string, ExprIR> }
+  | {
+      kind: "enqueue";
+      op: string;
+      continuation: string;
+      args: Record<string, ExprIR>;
+    }
   | { kind: "dequeue"; index: number }
   | { kind: "navigate"; mode: "push" | "replace" | "back"; to?: ExprIR }
   | { kind: "opaque"; ref: OpaqueRef };
@@ -103,8 +113,16 @@ export interface PluginProvenance {
 export interface ExtractionCaveats {
   globalTaints: readonly { id: string; reason: string; source?: string }[];
   staleReads: readonly { id: string; reason: string; source?: string }[];
-  unhandledRejections: readonly { id: string; reason: string; source?: string }[];
-  unextractableHandlers: readonly { id: string; reason: string; source?: string }[];
+  unhandledRejections: readonly {
+    id: string;
+    reason: string;
+    source?: string;
+  }[];
+  unextractableHandlers: readonly {
+    id: string;
+    reason: string;
+    source?: string;
+  }[];
 }
 
 export interface Model {

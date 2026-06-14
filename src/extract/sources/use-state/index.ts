@@ -1,6 +1,16 @@
 import * as ts from "typescript";
-import type { StateSourcePlugin, SourceDecl, WriteChannel } from "modality-ts/extract/engine/spi";
-import { validateValue, type AbstractDomain, type SourceAnchor, type StateVarDecl, type Value } from "modality-ts/core";
+import type {
+  StateSourcePlugin,
+  SourceDecl,
+  WriteChannel,
+} from "modality-ts/extract/engine/spi";
+import {
+  validateValue,
+  type AbstractDomain,
+  type SourceAnchor,
+  type StateVarDecl,
+  type Value,
+} from "modality-ts/core";
 import * as harness from "./harness.js";
 import { extractUseStateSkeleton } from "./transitions.js";
 
@@ -9,8 +19,10 @@ export function useStateSource(): StateSourcePlugin {
     id: "use-state",
     version: "0.1.0",
     packageNames: ["react"],
-    discover: (ctx) => discoverUseState(ctx.sourceText, ctx.fileName, ctx.route),
-    writeChannels: (ctx) => discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName),
+    discover: (ctx) =>
+      discoverUseState(ctx.sourceText, ctx.fileName, ctx.route),
+    writeChannels: (ctx) =>
+      discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName),
     extract: (ctx) => {
       const result = extractUseStateSkeleton(ctx.sourceText, {
         route: ctx.route,
@@ -20,27 +32,42 @@ export function useStateSource(): StateSourcePlugin {
         stateVars: ctx.stateVars,
         writeChannels: ctx.writeChannels,
         sourcePlugins: ctx.sourcePlugins,
-        ...(ctx.routerPlugin ? { routerPlugin: ctx.routerPlugin } : {})
+        ...(ctx.routerPlugin ? { routerPlugin: ctx.routerPlugin } : {}),
       });
       return { transitions: result.transitions, warnings: result.warnings };
     },
     harness,
     conformance: {
-      testedVersions: "react>=18"
-    }
+      testedVersions: "react>=18",
+    },
   };
 }
 
 export default useStateSource;
 
-function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/"): SourceDecl[] {
-  const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+function discoverUseState(
+  sourceText: string,
+  fileName = "App.tsx",
+  route = "/",
+): SourceDecl[] {
+  const source = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
   const typeAliases = typeAliasDeclarations(source);
   const providerComponents = providerComponentNames(source);
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node, componentName: string | undefined): void => {
     const component = componentNameFor(node) ?? componentName;
-    if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer && isUseStateCall(node.initializer)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isArrayBindingPattern(node.name) &&
+      node.initializer &&
+      isUseStateCall(node.initializer)
+    ) {
       const stateName = node.name.elements[0];
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
@@ -52,8 +79,10 @@ function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/")
           id: varId,
           domain,
           origin,
-          scope: providerComponents.has(componentId) ? { kind: "global" } : { kind: "route-local", route },
-          initial: initialValueForUseState(node.initializer, domain)
+          scope: providerComponents.has(componentId)
+            ? { kind: "global" }
+            : { kind: "route-local", route },
+          initial: initialValueForUseState(node.initializer, domain),
         };
         decls.push({
           id: varId,
@@ -63,8 +92,12 @@ function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/")
           metadata: {
             component: componentId,
             stateName: stateName.name.text,
-            ...(setterName && ts.isBindingElement(setterName) && ts.isIdentifier(setterName.name) ? { setterName: setterName.name.text } : {})
-          }
+            ...(setterName &&
+            ts.isBindingElement(setterName) &&
+            ts.isIdentifier(setterName.name)
+              ? { setterName: setterName.name.text }
+              : {}),
+          },
         });
       }
     }
@@ -74,20 +107,28 @@ function discoverUseState(sourceText: string, fileName = "App.tsx", route = "/")
   return decls;
 }
 
-function discoverUseStateWriteChannels(sourceText: string, fileName = "App.tsx"): WriteChannel[] {
+function discoverUseStateWriteChannels(
+  sourceText: string,
+  fileName = "App.tsx",
+): WriteChannel[] {
   return discoverUseState(sourceText, fileName, "/").flatMap((decl) => {
     const setterName = decl.metadata?.setterName;
     if (typeof setterName !== "string" || !decl.var) return [];
-    return [{
-      id: `${decl.id}.setter`,
-      varId: decl.var.id,
-      symbolName: setterName,
-      source: decl.origin as SourceAnchor
-    }];
+    return [
+      {
+        id: `${decl.id}.setter`,
+        varId: decl.var.id,
+        symbolName: setterName,
+        source: decl.origin as SourceAnchor,
+      },
+    ];
   });
 }
 
-function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
+function inferDomainFromTypeNode(
+  node: ts.TypeNode | undefined,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
     case ts.SyntaxKind.BooleanKeyword:
@@ -112,28 +153,58 @@ function inferDomainFromTypeNode(node: ts.TypeNode | undefined, typeAliases: Rea
   }
 }
 
-function inferUseStateDomain(call: ts.CallExpression, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
+function inferUseStateDomain(
+  call: ts.CallExpression,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
   if (!initial) return { kind: "tokens", count: 1 };
-  if (initial.kind === ts.SyntaxKind.TrueKeyword || initial.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
-  if (ts.isStringLiteral(initial)) return { kind: "enum", values: [initial.text] };
-  if (ts.isNumericLiteral(initial)) return { kind: "boundedInt", min: Number(initial.text), max: Number(initial.text) };
-  if (initial.kind === ts.SyntaxKind.NullKeyword) return { kind: "option", inner: { kind: "tokens", count: 1 } };
+  if (
+    initial.kind === ts.SyntaxKind.TrueKeyword ||
+    initial.kind === ts.SyntaxKind.FalseKeyword
+  )
+    return { kind: "bool" };
+  if (ts.isStringLiteral(initial))
+    return { kind: "enum", values: [initial.text] };
+  if (ts.isNumericLiteral(initial))
+    return {
+      kind: "boundedInt",
+      min: Number(initial.text),
+      max: Number(initial.text),
+    };
+  if (initial.kind === ts.SyntaxKind.NullKeyword)
+    return { kind: "option", inner: { kind: "tokens", count: 1 } };
   if (ts.isArrayLiteralExpression(initial)) return { kind: "lengthCat" };
   return { kind: "tokens", count: 1 };
 }
 
-function initialValueForUseState(call: ts.CallExpression, domain: AbstractDomain): Value {
+function initialValueForUseState(
+  call: ts.CallExpression,
+  domain: AbstractDomain,
+): Value {
   const initial = call.arguments[0];
   if (!initial) return firstValue(domain);
-  if (initial.kind === ts.SyntaxKind.TrueKeyword) return validInitialOrFirst(domain, true);
-  if (initial.kind === ts.SyntaxKind.FalseKeyword) return validInitialOrFirst(domain, false);
-  if (ts.isStringLiteral(initial)) return validInitialOrFirst(domain, initial.text);
-  if (ts.isNumericLiteral(initial)) return validInitialOrFirst(domain, Number(initial.text));
-  if (initial.kind === ts.SyntaxKind.NullKeyword) return validInitialOrFirst(domain, null);
-  if (ts.isArrayLiteralExpression(initial)) return validInitialOrFirst(domain, initial.elements.length === 0 ? "0" : initial.elements.length === 1 ? "1" : "many");
+  if (initial.kind === ts.SyntaxKind.TrueKeyword)
+    return validInitialOrFirst(domain, true);
+  if (initial.kind === ts.SyntaxKind.FalseKeyword)
+    return validInitialOrFirst(domain, false);
+  if (ts.isStringLiteral(initial))
+    return validInitialOrFirst(domain, initial.text);
+  if (ts.isNumericLiteral(initial))
+    return validInitialOrFirst(domain, Number(initial.text));
+  if (initial.kind === ts.SyntaxKind.NullKeyword)
+    return validInitialOrFirst(domain, null);
+  if (ts.isArrayLiteralExpression(initial))
+    return validInitialOrFirst(
+      domain,
+      initial.elements.length === 0
+        ? "0"
+        : initial.elements.length === 1
+          ? "1"
+          : "many",
+    );
   return firstValue(domain);
 }
 
@@ -143,28 +214,53 @@ function validInitialOrFirst(domain: AbstractDomain, value: Value): Value {
 
 function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   const lit = node.literal;
-  if (lit.kind === ts.SyntaxKind.TrueKeyword || lit.kind === ts.SyntaxKind.FalseKeyword) return { kind: "bool" };
+  if (
+    lit.kind === ts.SyntaxKind.TrueKeyword ||
+    lit.kind === ts.SyntaxKind.FalseKeyword
+  )
+    return { kind: "bool" };
   if (ts.isStringLiteral(lit)) return { kind: "enum", values: [lit.text] };
-  if (ts.isNumericLiteral(lit)) return { kind: "boundedInt", min: Number(lit.text), max: Number(lit.text) };
-  if (lit.kind === ts.SyntaxKind.NullKeyword) return { kind: "option", inner: { kind: "tokens", count: 1 } };
+  if (ts.isNumericLiteral(lit))
+    return { kind: "boundedInt", min: Number(lit.text), max: Number(lit.text) };
+  if (lit.kind === ts.SyntaxKind.NullKeyword)
+    return { kind: "option", inner: { kind: "tokens", count: 1 } };
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(node: ts.UnionTypeNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
-  const nonNull = node.types.filter((part) => part.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(part) && part.literal.kind === ts.SyntaxKind.NullKeyword));
+function domainFromUnion(
+  node: ts.UnionTypeNode,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+): AbstractDomain {
+  const nonNull = node.types.filter(
+    (part) =>
+      part.kind !== ts.SyntaxKind.UndefinedKeyword &&
+      !(
+        ts.isLiteralTypeNode(part) &&
+        part.literal.kind === ts.SyntaxKind.NullKeyword
+      ),
+  );
   if (nonNull.length !== node.types.length && nonNull.length === 1) {
-    return { kind: "option", inner: inferDomainFromTypeNode(nonNull[0], typeAliases) };
+    return {
+      kind: "option",
+      inner: inferDomainFromTypeNode(nonNull[0], typeAliases),
+    };
   }
   const literalValues: string[] = [];
   const numericValues: number[] = [];
   for (const part of node.types) {
-    if (!ts.isLiteralTypeNode(part)) return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
+    if (!ts.isLiteralTypeNode(part))
+      return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
     const lit = part.literal;
     if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
     else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
     else return taggedUnionFrom(node) ?? { kind: "tokens", count: 1 };
   }
-  if (numericValues.length === node.types.length) return { kind: "boundedInt", min: Math.min(...numericValues), max: Math.max(...numericValues) };
+  if (numericValues.length === node.types.length)
+    return {
+      kind: "boundedInt",
+      min: Math.min(...numericValues),
+      max: Math.max(...numericValues),
+    };
   return { kind: "enum", values: literalValues };
 }
 
@@ -174,45 +270,82 @@ function taggedUnionFrom(node: ts.UnionTypeNode): AbstractDomain | undefined {
   const tagCandidates = new Map<string, Set<string>>();
   for (const member of members) {
     for (const prop of member.members.filter(ts.isPropertySignature)) {
-      if (!prop.type || !ts.isIdentifier(prop.name) || !ts.isLiteralTypeNode(prop.type) || !ts.isStringLiteral(prop.type.literal)) continue;
+      if (
+        !prop.type ||
+        !ts.isIdentifier(prop.name) ||
+        !ts.isLiteralTypeNode(prop.type) ||
+        !ts.isStringLiteral(prop.type.literal)
+      )
+        continue;
       const set = tagCandidates.get(prop.name.text) ?? new Set<string>();
       set.add(prop.type.literal.text);
       tagCandidates.set(prop.name.text, set);
     }
   }
-  const tag = [...tagCandidates].find(([, values]) => values.size === members.length)?.[0];
+  const tag = [...tagCandidates].find(
+    ([, values]) => values.size === members.length,
+  )?.[0];
   if (!tag) return undefined;
   const variants: Record<string, AbstractDomain> = {};
   for (const member of members) {
-    const tagProp = member.members.find((prop): prop is ts.PropertySignature => ts.isPropertySignature(prop) && ts.isIdentifier(prop.name) && prop.name.text === tag);
-    if (!tagProp?.type || !ts.isLiteralTypeNode(tagProp.type) || !ts.isStringLiteral(tagProp.type.literal)) return undefined;
+    const tagProp = member.members.find(
+      (prop): prop is ts.PropertySignature =>
+        ts.isPropertySignature(prop) &&
+        ts.isIdentifier(prop.name) &&
+        prop.name.text === tag,
+    );
+    if (
+      !tagProp?.type ||
+      !ts.isLiteralTypeNode(tagProp.type) ||
+      !ts.isStringLiteral(tagProp.type.literal)
+    )
+      return undefined;
     variants[tagProp.type.literal.text] = domainFromTypeLiteral(member, tag);
   }
   return { kind: "tagged", tag, variants };
 }
 
-function domainFromTypeLiteral(node: ts.TypeLiteralNode, omitField?: string): AbstractDomain {
+function domainFromTypeLiteral(
+  node: ts.TypeLiteralNode,
+  omitField?: string,
+): AbstractDomain {
   const fields: Record<string, AbstractDomain> = {};
   for (const member of node.members) {
-    if (!ts.isPropertySignature(member) || !member.type || !ts.isIdentifier(member.name) || member.name.text === omitField) continue;
+    if (
+      !ts.isPropertySignature(member) ||
+      !member.type ||
+      !ts.isIdentifier(member.name) ||
+      member.name.text === omitField
+    )
+      continue;
     fields[member.name.text] = inferDomainFromTypeNode(member.type);
   }
   return { kind: "record", fields };
 }
 
-function domainFromTypeReference(node: ts.TypeReferenceNode, typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map()): AbstractDomain {
+function domainFromTypeReference(
+  node: ts.TypeReferenceNode,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+): AbstractDomain {
   const name = node.typeName.getText();
   const alias = typeAliases.get(name);
   if (alias) return inferDomainFromTypeNode(alias, typeAliases);
-  if ((name === "Array" || name === "ReadonlyArray") && node.typeArguments?.length === 1) return { kind: "lengthCat" };
+  if (
+    (name === "Array" || name === "ReadonlyArray") &&
+    node.typeArguments?.length === 1
+  )
+    return { kind: "lengthCat" };
   if (name === "Record") return { kind: "tokens", count: 1 };
   return { kind: "tokens", count: 1 };
 }
 
-function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> {
+function typeAliasDeclarations(
+  source: ts.SourceFile,
+): Map<string, ts.TypeNode> {
   const aliases = new Map<string, ts.TypeNode>();
   const visit = (node: ts.Node): void => {
-    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) aliases.set(node.name.text, node.type);
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name))
+      aliases.set(node.name.text, node.type);
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -220,12 +353,26 @@ function typeAliasDeclarations(source: ts.SourceFile): Map<string, ts.TypeNode> 
 }
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
-  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useState";
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "useState"
+  );
 }
 
 function componentNameFor(node: ts.Node): string | undefined {
-  if (ts.isFunctionDeclaration(node) && node.name && startsUppercase(node.name.text)) return node.name.text;
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && startsUppercase(node.name.text)) return node.name.text;
+  if (
+    ts.isFunctionDeclaration(node) &&
+    node.name &&
+    startsUppercase(node.name.text)
+  )
+    return node.name.text;
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    startsUppercase(node.name.text)
+  )
+    return node.name.text;
   return undefined;
 }
 
@@ -255,9 +402,17 @@ function firstValue(domain: AbstractDomain): Value {
     case "option":
       return null;
     case "record":
-      return Object.fromEntries(Object.entries(domain.fields).map(([key, field]) => [key, firstValue(field)]));
+      return Object.fromEntries(
+        Object.entries(domain.fields).map(([key, field]) => [
+          key,
+          firstValue(field),
+        ]),
+      );
     case "tagged": {
-      const [tagValue, variant] = Object.entries(domain.variants)[0] ?? ["unknown", { kind: "record", fields: {} } as const];
+      const [tagValue, variant] = Object.entries(domain.variants)[0] ?? [
+        "unknown",
+        { kind: "record", fields: {} } as const,
+      ];
       return { ...(firstValue(variant) as object), [domain.tag]: tagValue };
     }
     case "tokens":
@@ -269,7 +424,10 @@ function firstValue(domain: AbstractDomain): Value {
   }
 }
 
-function lineAndColumn(source: ts.SourceFile, node: ts.Node): { line: number; column: number } {
+function lineAndColumn(
+  source: ts.SourceFile,
+  node: ts.Node,
+): { line: number; column: number } {
   const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
   return { line: pos.line + 1, column: pos.character + 1 };
 }

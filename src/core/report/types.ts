@@ -21,7 +21,12 @@ export interface ReportTrustLedger {
 export interface DomainReportEntry {
   varId: string;
   domainKind: string;
-  provenance: "type-derived" | "default-token" | "overlay-refined" | "template" | "system";
+  provenance:
+    | "type-derived"
+    | "default-token"
+    | "overlay-refined"
+    | "template"
+    | "system";
 }
 
 export interface ExtractionCaveat {
@@ -61,7 +66,10 @@ export interface CheckReport {
   trustLedger: ReportTrustLedger;
 }
 
-export type ReplayVerdictStatus = "reproduced" | "not-reproduced" | "inconclusive";
+export type ReplayVerdictStatus =
+  | "reproduced"
+  | "not-reproduced"
+  | "inconclusive";
 
 export interface ReplayReport {
   schemaVersion: 1;

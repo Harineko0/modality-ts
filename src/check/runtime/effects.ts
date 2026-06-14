@@ -13,7 +13,12 @@ export { evalExpr, guardHolds } from "./expr.js";
 export { normalizeInitialRouteLocals } from "./navigation.js";
 export { readPending } from "./pending.js";
 
-export function applyEffect(model: Model, state: ModelState, effect: EffectIR, options: EvalOptions = {}): ModelState[] {
+export function applyEffect(
+  model: Model,
+  state: ModelState,
+  effect: EffectIR,
+  options: EvalOptions = {},
+): ModelState[] {
   try {
     return applyEffectUnsafe(model, state, effect, options);
   } catch (error) {
@@ -25,34 +30,73 @@ export function applyEffect(model: Model, state: ModelState, effect: EffectIR, o
   }
 }
 
-function applyEffectUnsafe(model: Model, state: ModelState, effect: EffectIR, options: EvalOptions): ModelState[] {
+function applyEffectUnsafe(
+  model: Model,
+  state: ModelState,
+  effect: EffectIR,
+  options: EvalOptions,
+): ModelState[] {
   switch (effect.kind) {
     case "assign":
-      return [{ ...state, [effect.var]: evalExpr(model, state, effect.expr, options) }];
+      return [
+        {
+          ...state,
+          [effect.var]: evalExpr(model, state, effect.expr, options),
+        },
+      ];
     case "havoc": {
       const decl = mustVar(model, effect.var);
-      return enumerateDomain(decl.domain).map((value) => ({ ...state, [effect.var]: value }));
+      return enumerateDomain(decl.domain).map((value) => ({
+        ...state,
+        [effect.var]: value,
+      }));
     }
     case "choose":
-      return effect.among.map((expr) => ({ ...state, [effect.var]: evalExpr(model, state, expr, options) }));
+      return effect.among.map((expr) => ({
+        ...state,
+        [effect.var]: evalExpr(model, state, expr, options),
+      }));
     case "if":
-      return applyEffect(model, state, Boolean(evalExpr(model, state, effect.cond, options)) ? effect.then : effect.else, options);
+      return applyEffect(
+        model,
+        state,
+        evalExpr(model, state, effect.cond, options)
+          ? effect.then
+          : effect.else,
+        options,
+      );
     case "seq":
-      return effect.effects.reduce<ModelState[]>((states, next) => states.flatMap((candidate) => applyEffect(model, candidate, next, options)), [state]);
+      return effect.effects.reduce<ModelState[]>(
+        (states, next) =>
+          states.flatMap((candidate) =>
+            applyEffect(model, candidate, next, options),
+          ),
+        [state],
+      );
     case "enqueue": {
       const pending = readPending(state);
       if (pending.length >= model.bounds.maxPending) return [];
       const op: PendingOp = {
         opId: effect.op,
         continuation: effect.continuation,
-        args: Object.fromEntries(Object.entries(effect.args).map(([key, expr]) => [key, evalExpr(model, state, expr, options)]))
+        args: Object.fromEntries(
+          Object.entries(effect.args).map(([key, expr]) => [
+            key,
+            evalExpr(model, state, expr, options),
+          ]),
+        ),
       };
       return [{ ...state, "sys:pending": [...pending, op] }];
     }
     case "dequeue": {
       const pending = readPending(state);
       if (effect.index < 0 || effect.index >= pending.length) return [state];
-      return [{ ...state, "sys:pending": pending.filter((_, index) => index !== effect.index) }];
+      return [
+        {
+          ...state,
+          "sys:pending": pending.filter((_, index) => index !== effect.index),
+        },
+      ];
     }
     case "navigate":
       return navigate(model, state, effect, options);

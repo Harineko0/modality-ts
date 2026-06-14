@@ -1,8 +1,10 @@
-import * as ts from "typescript";
+import type * as ts from "typescript";
 import type { Transition } from "modality-ts/core";
 import type { InternalTransition } from "./types.js";
 
-export function withStableTransitionIds(transitions: readonly Transition[]): Transition[] {
+export function withStableTransitionIds(
+  transitions: readonly Transition[],
+): Transition[] {
   const groups = new Map<string, InternalTransition[]>();
   for (const transition of transitions) {
     const group = groups.get(transition.id) ?? [];
@@ -15,7 +17,9 @@ export function withStableTransitionIds(transitions: readonly Transition[]): Tra
     const group = groups.get(transition.id) ?? [];
     const base = stripInternalTransition(internal);
     if (group.length <= 1) return base;
-    const suffix = shortHash(internal.__stableIdKey ?? canonicalTransitionKey(base));
+    const suffix = shortHash(
+      internal.__stableIdKey ?? canonicalTransitionKey(base),
+    );
     const id = `${transition.id}.${suffix}`;
     const count = emitted.get(id) ?? 0;
     emitted.set(id, count + 1);
@@ -23,9 +27,15 @@ export function withStableTransitionIds(transitions: readonly Transition[]): Tra
   });
 }
 
-export function tagStableIdKey(transitions: readonly Transition[], node: ts.Node): Transition[] {
+export function tagStableIdKey(
+  transitions: readonly Transition[],
+  node: ts.Node,
+): Transition[] {
   const key = normalizedAstKey(node);
-  return transitions.map((transition) => ({ ...(transition as InternalTransition), __stableIdKey: key }));
+  return transitions.map((transition) => ({
+    ...(transition as InternalTransition),
+    __stableIdKey: key,
+  }));
 }
 
 export function safeId(value: string): string {
@@ -47,7 +57,7 @@ function canonicalTransitionKey(transition: Transition): string {
     guard: transition.guard,
     effect: transition.effect,
     reads: transition.reads,
-    writes: transition.writes
+    writes: transition.writes,
   });
 }
 

@@ -8,13 +8,18 @@ type TodosData = "empty" | "some";
 export function App() {
   const setAuth = useSetAtom(authAtom);
   const [draft, setDraft] = useState<"empty" | "nonEmpty">("empty");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "posting" | "failed">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "posting" | "failed">(
+    "idle",
+  );
   const { data } = useSWR<TodosData>("/api/todos", api.fetchTodos);
 
   return (
     <main>
-      <button onClick={() => setAuth("user")}>Login</button>
+      <button type="button" onClick={() => setAuth("user")}>
+        Login
+      </button>
       <button
+        type="button"
         onClick={() => {
           setAuth("guest");
           setDraft("empty");
@@ -31,6 +36,7 @@ export function App() {
         />
       </label>
       <button
+        type="button"
         disabled={saveStatus === "posting"}
         onClick={async () => {
           setSaveStatus("posting");

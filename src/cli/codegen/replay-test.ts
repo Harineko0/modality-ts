@@ -5,7 +5,10 @@ export interface ReplayTestArtifact {
   source: string;
 }
 
-export function generateAbstractReplayTest(property: string, trace: Trace): ReplayTestArtifact {
+export function generateAbstractReplayTest(
+  property: string,
+  trace: Trace,
+): ReplayTestArtifact {
   const safeName = safeFileName(property);
   return {
     fileName: `${safeName}.replay.test.ts`,
@@ -21,12 +24,15 @@ export function generateAbstractReplayTest(property: string, trace: Trace): Repl
       `    expect(verdict.status).toBe("reproduced");`,
       `  });`,
       `});`,
-      ``
-    ].join("\n")
+      ``,
+    ].join("\n"),
   };
 }
 
-export function generateActionReplayTest(property: string, trace: Trace): ReplayTestArtifact {
+export function generateActionReplayTest(
+  property: string,
+  trace: Trace,
+): ReplayTestArtifact {
   const safeName = safeFileName(property);
   return {
     fileName: `${safeName}.action.replay.test.ts`,
@@ -64,8 +70,8 @@ export function generateActionReplayTest(property: string, trace: Trace): Replay
       `    expect(verdict.status).toBe("reproduced");`,
       `  });`,
       `});`,
-      ``
-    ].join("\n")
+      ``,
+    ].join("\n"),
   };
 }
 
@@ -111,8 +117,8 @@ export function generateReplayHarness(): ReplayTestArtifact {
       `function cssString(value: string): string {`,
       `  return value.replace(/["\\\\]/g, "\\\\$&");`,
       `}`,
-      ``
-    ].join("\n")
+      ``,
+    ].join("\n"),
   };
 }
 

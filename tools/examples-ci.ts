@@ -26,10 +26,16 @@ async function main(): Promise<void> {
       sourcePath,
       modelPath,
       effectApis: ["api.placeOrder"],
-      now: new Date("2026-06-12T00:00:00.000Z")
+      now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    assert(extracted.report.coverage.unextractable === 0, "demo extraction has unextractable handlers");
-    assert(extracted.report.coverage.percentExactOrOverlay === 1, "demo extraction is below 100% exact/overlay");
+    assert(
+      extracted.report.coverage.unextractable === 0,
+      "demo extraction has unextractable handlers",
+    );
+    assert(
+      extracted.report.coverage.percentExactOrOverlay === 1,
+      "demo extraction is below 100% exact/overlay",
+    );
 
     const checked = await runCheckCommand({
       modelPath,
@@ -37,33 +43,64 @@ async function main(): Promise<void> {
       reportPath,
       tracesDir,
       replayTestsDir,
-      now: new Date("2026-06-12T00:00:00.000Z")
+      now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    const violations = checked.check.verdicts.filter((verdict) => verdict.status === "violated");
-    assert(violations.length === 3, `expected 3 seeded bugs, got ${violations.length}`);
-    assert(checked.check.verdicts.map((verdict) => verdict.property).join(",") === "noDoubleSubmit,guestCannotReachAdmin,guestDoesNotSeeUserCache", "unexpected demo property set");
+    const violations = checked.check.verdicts.filter(
+      (verdict) => verdict.status === "violated",
+    );
+    assert(
+      violations.length === 3,
+      `expected 3 seeded bugs, got ${violations.length}`,
+    );
+    assert(
+      checked.check.verdicts.map((verdict) => verdict.property).join(",") ===
+        "noDoubleSubmit,guestCannotReachAdmin,guestDoesNotSeeUserCache",
+      "unexpected demo property set",
+    );
     assert(Date.now() - startedAt < 60_000, "demo check exceeded one minute");
 
     const replayStatuses = await replayStatusesForViolations(tracesDir);
-    const reproduced = replayStatuses.filter((status) => status === "reproduced").length;
-    assert(reproduced >= 2, `expected at least 2 reproduced replays, got ${reproduced}`);
+    const reproduced = replayStatuses.filter(
+      (status) => status === "reproduced",
+    ).length;
+    assert(
+      reproduced >= 2,
+      `expected at least 2 reproduced replays, got ${reproduced}`,
+    );
 
     const overlayLines = await countOverlayLines(demoDir);
-    assert(overlayLines <= 100, `overlay line budget exceeded: ${overlayLines}`);
+    assert(
+      overlayLines <= 100,
+      `overlay line budget exceeded: ${overlayLines}`,
+    );
 
     const ci = await runCiCommand({
       modelPath,
       propsPath,
       artifactDir: ciArtifactDir,
       sourcePath,
-      now: new Date("2026-06-12T00:00:00.000Z")
+      now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    assert(ci.exitCode === 2, `expected CI to fail on seeded bugs with exit 2, got ${ci.exitCode}`);
-    assert(ci.lines.includes("violations=3 errors=0"), "CI did not report 3 violations and 0 errors");
-    assert(ci.lines.includes("determinism=passed"), "CI determinism check failed");
-    assert(ci.lines.includes("source-freshness=passed"), "CI source freshness check failed");
+    assert(
+      ci.exitCode === 2,
+      `expected CI to fail on seeded bugs with exit 2, got ${ci.exitCode}`,
+    );
+    assert(
+      ci.lines.includes("violations=3 errors=0"),
+      "CI did not report 3 violations and 0 errors",
+    );
+    assert(
+      ci.lines.includes("determinism=passed"),
+      "CI determinism check failed",
+    );
+    assert(
+      ci.lines.includes("source-freshness=passed"),
+      "CI source freshness check failed",
+    );
 
-    console.log(`examples-ci: passed violations=3 reproduced=${reproduced}/3 overlayLines=${overlayLines} elapsedMs=${Date.now() - startedAt}`);
+    console.log(
+      `examples-ci: passed violations=3 reproduced=${reproduced}/3 overlayLines=${overlayLines} elapsedMs=${Date.now() - startedAt}`,
+    );
   } finally {
     await rm(artifactDir, { recursive: true, force: true });
   }
@@ -73,11 +110,18 @@ function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-async function replayStatusesForViolations(tracesDir: string): Promise<string[]> {
-  const traceNames = (await readdir(tracesDir)).filter((name) => name.endsWith(".violated.trace.json")).sort();
+async function replayStatusesForViolations(
+  tracesDir: string,
+): Promise<string[]> {
+  const traceNames = (await readdir(tracesDir))
+    .filter((name) => name.endsWith(".violated.trace.json"))
+    .sort();
   const statuses: string[] = [];
   for (const traceName of traceNames) {
-    const replay = await runReplayCommand({ tracePath: join(tracesDir, traceName), now: new Date("2026-06-12T00:00:00.000Z") });
+    const replay = await runReplayCommand({
+      tracePath: join(tracesDir, traceName),
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
     statuses.push(replay.report.verdict.status);
   }
   return statuses;
@@ -90,13 +134,18 @@ async function countOverlayLines(root: string): Promise<number> {
     const relative = String(name);
     if (!isOverlayFile(relative)) continue;
     const text = await readFile(join(root, relative), "utf8");
-    lines += text.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
+    lines += text
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0).length;
   }
   return lines;
 }
 
 function isOverlayFile(path: string): boolean {
-  return /(^|\/)(modality\.)?overlay\.(json|mjs|js|ts)$/.test(path) || path.endsWith(".overlay.ts");
+  return (
+    /(^|\/)(modality\.)?overlay\.(json|mjs|js|ts)$/.test(path) ||
+    path.endsWith(".overlay.ts")
+  );
 }
 
 main().catch((error) => {
