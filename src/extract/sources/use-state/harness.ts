@@ -27,8 +27,10 @@ export function observe(
   const useState = handles as UseStateHarnessHooks;
   const probe = useState.probes[varId];
   if (probe) return { value: probe() };
-  if (varId in useState.initialState)
-    return { value: useState.initialState[varId]! };
+  if (varId in useState.initialState) {
+    const initial = useState.initialState[varId];
+    if (initial !== undefined) return { value: initial };
+  }
   return "unobservable";
 }
 

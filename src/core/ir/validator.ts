@@ -784,18 +784,11 @@ function inferExprDomain(
     case "eq":
     case "neq":
       if (Array.isArray(expr.args) && expr.args.length === 2) {
-        const left = inferExprDomain(
-          errors,
-          transitionId,
-          expr.args[0]!,
-          varsById,
-        );
-        const right = inferExprDomain(
-          errors,
-          transitionId,
-          expr.args[1]!,
-          varsById,
-        );
+        const leftArg = expr.args[0];
+        const rightArg = expr.args[1];
+        if (!leftArg || !rightArg) return bool;
+        const left = inferExprDomain(errors, transitionId, leftArg, varsById);
+        const right = inferExprDomain(errors, transitionId, rightArg, varsById);
         if (left && right && !sameDomain(left, right)) {
           errors.push(
             `${transitionId}: ${expr.kind} compares ${domainFingerprint(left)} with ${domainFingerprint(right)}`,
@@ -877,26 +870,20 @@ function inferCondDomain(
   varsById: Map<string, StateVarDecl>,
 ): AbstractDomain | undefined {
   if (!Array.isArray(expr.args) || expr.args.length !== 3) return undefined;
+  const condition = expr.args[0];
+  const thenArg = expr.args[1];
+  const elseArg = expr.args[2];
+  if (!condition || !thenArg || !elseArg) return undefined;
   validateBooleanOperand(
     errors,
     transitionId,
     "cond condition",
-    expr.args[0]!,
+    condition,
     varsById,
   );
-  const thenDomain = inferExprDomain(
-    errors,
-    transitionId,
-    expr.args[1]!,
-    varsById,
-  );
-  const elseDomain = inferExprDomain(
-    errors,
-    transitionId,
-    expr.args[2]!,
-    varsById,
-  );
-  if (isNullLiteral(expr.args[1]) && elseDomain)
+  const thenDomain = inferExprDomain(errors, transitionId, thenArg, varsById);
+  const elseDomain = inferExprDomain(errors, transitionId, elseArg, varsById);
+  if (isNullLiteral(thenArg) && elseDomain)
     return { kind: "option", inner: elseDomain };
   if (isNullLiteral(expr.args[2]) && thenDomain)
     return { kind: "option", inner: thenDomain };

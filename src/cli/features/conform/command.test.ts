@@ -17,6 +17,9 @@ const trace: Trace = {
   ],
 };
 
+const firstTraceStep = trace.steps[0];
+if (!firstTraceStep) throw new Error("fixture trace missing step");
+
 const repeatedTrace: Trace = {
   steps: [
     ...trace.steps,
@@ -263,7 +266,7 @@ describe("runConformCommand", () => {
             trace: {
               steps: [
                 {
-                  ...trace.steps[0]!,
+                  ...firstTraceStep,
                   label: {
                     kind: "click",
                     locator: { kind: "testId", value: "login" },
@@ -408,7 +411,7 @@ describe("runConformCommand", () => {
     const wrongTrace: Trace = {
       steps: [
         {
-          ...trace.steps[0]!,
+          ...firstTraceStep,
           post: { auth: "admin" },
           diff: { auth: { before: "guest", after: "admin" } },
         },

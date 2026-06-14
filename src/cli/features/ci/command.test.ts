@@ -177,9 +177,9 @@ describe("runCiCommand", () => {
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     const current = model();
-    current.transitions = [
-      { ...current.transitions[0]!, confidence: "manual" },
-    ];
+    const firstTransition = current.transitions[0];
+    if (!firstTransition) throw new Error("fixture missing transition");
+    current.transitions = [{ ...firstTransition, confidence: "manual" }];
     await writeFile(modelPath, JSON.stringify(current), "utf8");
     await writeFile(
       propsPath,

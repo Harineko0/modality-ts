@@ -270,7 +270,8 @@ export function transitionsFromSequentialAwait(
     expressionStatementAwait(statement, effectApis),
   );
   if (secondIndex < 0) return [];
-  const secondAwait = successStatements[secondIndex]!;
+  const secondAwait = successStatements[secondIndex];
+  if (!secondAwait) return [];
   const secondOp = awaitedOp(secondAwait, effectApis);
   const promiseAllOps = secondOp
     ? undefined
@@ -306,7 +307,8 @@ export function transitionsFromSequentialAwait(
     message: `Unhandled rejection ${firstBaseId}`,
     ...lineAndColumn(source, firstAwait),
   });
-  for (const op of promiseAllOps ?? [secondOp!]) {
+  const rejectionOps = promiseAllOps ?? (secondOp ? [secondOp] : []);
+  for (const op of rejectionOps) {
     warnings.push({
       message: `Unhandled rejection ${component}.${attr}.${op}`,
       ...lineAndColumn(source, secondAwait),
@@ -322,14 +324,16 @@ export function transitionsFromSequentialAwait(
         continuation: `${secondBaseId}.cont`,
         args: {},
       }))
-    : [
-        {
-          kind: "enqueue",
-          op: secondOp!,
-          continuation: `${secondBaseId}.cont`,
-          args: {},
-        },
-      ];
+    : secondOp
+      ? [
+          {
+            kind: "enqueue",
+            op: secondOp,
+            continuation: `${secondBaseId}.cont`,
+            args: {},
+          },
+        ]
+      : [];
   const secondSuccess: Transition = promiseAllOps
     ? {
         id: `${secondBaseId}.success`,
@@ -356,9 +360,13 @@ export function transitionsFromSequentialAwait(
     : {
         id: `${secondBaseId}.success`,
         cls: "env",
-        label: { kind: "resolve", op: secondOp!, outcome: "success" },
+        label: {
+          kind: "resolve",
+          op: secondOp ?? "unknown",
+          outcome: "success",
+        },
         source: sourceAnchor,
-        guard: pendingIs(secondOp!),
+        guard: pendingIs(secondOp ?? "unknown"),
         effect: {
           kind: "seq",
           effects: [{ kind: "dequeue", index: 0 }, ...tailEffects],

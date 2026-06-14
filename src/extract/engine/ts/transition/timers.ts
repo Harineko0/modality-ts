@@ -89,7 +89,10 @@ export function transitionsFromTimerCall(
       label: { kind: "timer", key: `${component}.${name}.${suffix}` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit", value: true },
-      effect: effects.length === 1 ? effects[0]! : { kind: "seq", effects },
+      effect:
+        effects.length === 1
+          ? (effects[0] ?? { kind: "seq", effects })
+          : { kind: "seq", effects },
       reads: uniqueStrings(summaries.flatMap((summary) => summary.reads)),
       writes,
       confidence: effects.some((effect) => effect.kind === "havoc")

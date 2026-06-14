@@ -147,6 +147,7 @@ export interface ExtractionReport {
   staleReads: readonly ExtractionCaveat[];
   unhandledRejections: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
+  coarseDomains?: readonly { varId: string; paths: readonly string[] }[];
   stateContributors?: StateSpaceContributors;
   coverage: {
     handlersTotal: number;

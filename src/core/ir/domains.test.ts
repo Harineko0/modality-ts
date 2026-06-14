@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AbstractDomain } from "./types.js";
-import { domainCardinality, enumerateDomain } from "./domains.js";
+import {
+  collectTokenDomainPaths,
+  domainCardinality,
+  enumerateDomain,
+} from "./domains.js";
 
 describe("domainCardinality", () => {
   const cases: Array<{ label: string; domain: AbstractDomain }> = [
@@ -76,5 +80,87 @@ describe("domainCardinality", () => {
     const card = domainCardinality(domain);
     expect(Number.isFinite(card)).toBe(true);
     expect(card).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+  });
+});
+
+describe("collectTokenDomainPaths", () => {
+  it("collects token paths across domain shapes", () => {
+    expect(collectTokenDomainPaths({ kind: "tokens", count: 1 })).toEqual([""]);
+    expect(collectTokenDomainPaths({ kind: "bool" })).toEqual([]);
+    expect(collectTokenDomainPaths({ kind: "enum", values: ["a"] })).toEqual(
+      [],
+    );
+    expect(
+      collectTokenDomainPaths({ kind: "boundedInt", min: 0, max: 1 }),
+    ).toEqual([]);
+    expect(collectTokenDomainPaths({ kind: "lengthCat" })).toEqual([]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "record",
+        fields: {
+          a: { kind: "tokens", count: 1 },
+          b: { kind: "bool" },
+          c: { kind: "enum", values: ["x"] },
+        },
+      }),
+    ).toEqual(["a"]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "record",
+        fields: {
+          outer: {
+            kind: "record",
+            fields: { inner: { kind: "tokens", count: 1 } },
+          },
+        },
+      }),
+    ).toEqual(["outer.inner"]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "option",
+        inner: {
+          kind: "record",
+          fields: { title: { kind: "tokens", count: 1 } },
+        },
+      }),
+    ).toEqual(["title"]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "tagged",
+        tag: "kind",
+        variants: {
+          a: {
+            kind: "record",
+            fields: { field: { kind: "tokens", count: 1 } },
+          },
+        },
+      }),
+    ).toEqual(["#a.field"]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "boundedList",
+        inner: {
+          kind: "record",
+          fields: { field: { kind: "tokens", count: 1 } },
+        },
+        maxLen: 2,
+      }),
+    ).toEqual(["[].field"]);
+
+    expect(
+      collectTokenDomainPaths({
+        kind: "record",
+        fields: {
+          z: { kind: "tokens", count: 1 },
+          a: { kind: "tokens", count: 1 },
+          b: { kind: "tokens", count: 1 },
+        },
+      }),
+    ).toEqual(["a", "b", "z"]);
   });
 });

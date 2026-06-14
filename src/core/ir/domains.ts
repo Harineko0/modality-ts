@@ -185,6 +185,47 @@ export function domainFingerprint(domain: AbstractDomain): string {
   }
 }
 
+export function collectTokenDomainPaths(domain: AbstractDomain): string[] {
+  const paths: string[] = [];
+
+  function collect(current: AbstractDomain, prefix: string): void {
+    switch (current.kind) {
+      case "tokens":
+        paths.push(prefix);
+        break;
+      case "bool":
+      case "enum":
+      case "boundedInt":
+      case "lengthCat":
+        break;
+      case "option":
+        collect(current.inner, prefix);
+        break;
+      case "record":
+        for (const [field, fieldDomain] of Object.entries(current.fields)) {
+          collect(fieldDomain, prefix ? `${prefix}.${field}` : field);
+        }
+        break;
+      case "tagged":
+        for (const [variant, variantDomain] of Object.entries(
+          current.variants,
+        )) {
+          collect(
+            variantDomain,
+            prefix ? `${prefix}#${variant}` : `#${variant}`,
+          );
+        }
+        break;
+      case "boundedList":
+        collect(current.inner, `${prefix}[]`);
+        break;
+    }
+  }
+
+  collect(domain, "");
+  return [...new Set(paths)].sort();
+}
+
 function cartesian<T>(sets: readonly (readonly T[])[]): T[][] {
   return sets.reduce<T[][]>(
     (acc, set) => acc.flatMap((prefix) => set.map((item) => [...prefix, item])),

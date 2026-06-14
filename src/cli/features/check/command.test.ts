@@ -94,7 +94,7 @@ describe("runCheckCommand", () => {
     const replayTestsDir = join(dir, "replay-tests");
     const actionReplayTestsDir = join(dir, "action-replay-tests");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    const properties: Property[] = [
+    const _properties: Property[] = [
       {
         kind: "always",
         name: "flagStartsFalseOnly",

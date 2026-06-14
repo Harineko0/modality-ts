@@ -122,7 +122,8 @@ export async function replayTrace(
 ): Promise<ReplayVerdict> {
   const compare = options.compareState ?? defaultCompareState;
   for (let index = 0; index < trace.steps.length; index += 1) {
-    const step = trace.steps[index]!;
+    const step = trace.steps[index];
+    if (!step) break;
     let preState: ModelState;
     try {
       preState = driver.currentState();
@@ -202,7 +203,12 @@ export class StateSequenceDriver implements ReplayDriver {
   }
 
   currentState(): ModelState {
-    return this.states[Math.min(this.index, this.states.length - 1)]!;
+    const index = Math.min(this.index, this.states.length - 1);
+    const state = this.states[index];
+    if (state === undefined) {
+      throw new Error("StateSequenceDriver has no state at current index");
+    }
+    return state;
   }
 
   apply(_step: TraceStep): void {
@@ -216,7 +222,7 @@ export class StateSequenceDriver implements ReplayDriver {
 export function statesFromTrace(trace: Trace): ModelState[] {
   return trace.steps.length === 0
     ? [{}]
-    : [trace.steps[0]!.pre, ...trace.steps.map((step) => step.post)];
+    : [trace.steps[0]?.pre, ...trace.steps.map((step) => step.post)];
 }
 
 export class ActionReplayDriver implements ReplayDriver {
@@ -291,7 +297,12 @@ export class TraceBackedActionReplayDriver implements ReplayDriver {
   }
 
   currentState(): ModelState {
-    return this.states[Math.min(this.index, this.states.length - 1)]!;
+    const index = Math.min(this.index, this.states.length - 1);
+    const state = this.states[index];
+    if (state === undefined) {
+      throw new Error("ActionReplayDriver has no state at current index");
+    }
+    return state;
   }
 
   async apply(step: TraceStep): Promise<void> {
@@ -685,7 +696,8 @@ export function inputWitness(valueClass: string): string {
       return valueClass.includes("|")
         ? inputWitness(
             valueClass.split("|").find((part) => part !== "empty") ??
-              valueClass.split("|")[0]!,
+              valueClass.split("|")[0] ??
+              valueClass,
           )
         : valueClass;
   }

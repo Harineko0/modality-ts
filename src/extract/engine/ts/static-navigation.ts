@@ -117,7 +117,8 @@ export function staticNavigationTransitions(
     const map = staticMapCall(expression, env);
     if (map) {
       for (let index = 0; index < map.items.length; index += 1) {
-        const item = map.items[index]!;
+        const item = map.items[index];
+        if (item === undefined) continue;
         const callbackEnv = new Map(env);
         const [itemParam, indexParam] = map.callback.parameters;
         if (itemParam && ts.isIdentifier(itemParam.name))
@@ -496,16 +497,18 @@ function staticValues(
   const literal = literalValue(expression);
   if (literal !== undefined) return [literal];
   if (ts.isNoSubstitutionTemplateLiteral(expression)) return [expression.text];
-  if (ts.isIdentifier(expression))
-    return env.get(expression.text)
-      ? [...env.get(expression.text)!]
-      : undefined;
+  if (ts.isIdentifier(expression)) {
+    const bound = env.get(expression.text);
+    return bound ? [...bound] : undefined;
+  }
   if (ts.isArrayLiteralExpression(expression)) {
     const items: StaticValue[] = [];
     for (const element of expression.elements) {
       const values = staticValues(element, env);
-      if (!values || values.length !== 1) return undefined;
-      items.push(values[0]!);
+      if (values?.length !== 1) return undefined;
+      const [single] = values;
+      if (single === undefined) return undefined;
+      items.push(single);
     }
     return [items];
   }
@@ -515,14 +518,14 @@ function staticValues(
       if (ts.isShorthandPropertyAssignment(property)) {
         const values = env.get(property.name.text);
         object[property.name.text] =
-          values && values.length === 1 ? values[0]! : null;
+          values?.length === 1 ? (values[0] ?? null) : null;
         continue;
       }
       if (!ts.isPropertyAssignment(property)) return undefined;
       const name = propertyName(property.name);
       if (!name) return undefined;
       const values = staticValues(property.initializer, env);
-      object[name] = values && values.length === 1 ? values[0]! : null;
+      object[name] = values?.length === 1 ? (values[0] ?? null) : null;
     }
     return [object];
   }
@@ -532,8 +535,10 @@ function staticValues(
     const out: StaticValue[] = [];
     for (const value of baseValues) {
       if (!isStaticObject(value)) continue;
-      if (Object.hasOwn(value, expression.name.text))
-        out.push(value[expression.name.text]!);
+      if (Object.hasOwn(value, expression.name.text)) {
+        const field = value[expression.name.text];
+        if (field !== undefined) out.push(field);
+      }
     }
     return out.length > 0 ? out : undefined;
   }

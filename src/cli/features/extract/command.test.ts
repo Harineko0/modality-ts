@@ -93,7 +93,11 @@ describe("runExtractCommand", () => {
       (v: { bits: number }) => v.bits,
     );
     for (let i = 1; i < (topBits?.length ?? 0); i += 1) {
-      expect(topBits![i]).toBeLessThanOrEqual(topBits![i - 1]!);
+      const prev = topBits?.[i - 1];
+      const curr = topBits?.[i];
+      if (prev !== undefined && curr !== undefined) {
+        expect(curr).toBeLessThanOrEqual(prev);
+      }
     }
     expect(
       report.stateContributors?.bySource.some(
@@ -2188,6 +2192,97 @@ describe("runExtractCommand", () => {
       ]),
     );
     expect(result.report.coverage.exactOrOverlay).toBeGreaterThan(0);
+  });
+
+  it("preserves aliased union fields inside useState record domains", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "EditLink.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      type Visibility = "private" | "public";
+      type Draft = { visibility: Visibility; title: string };
+      export default function EditLink() {
+        const [draft, setDraft] = useState<Draft>({ visibility: "private", title: "" });
+        return <button onClick={() => setDraft({ ...draft, visibility: "public" })} />;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const draft = result.model.vars.find(
+      (decl) => decl.id === "local:EditLink.draft",
+    );
+    expect(draft?.domain).toEqual({
+      kind: "record",
+      fields: {
+        visibility: { kind: "enum", values: ["private", "public"] },
+        title: { kind: "tokens", count: 1 },
+      },
+    });
+    expect((draft?.initial as { visibility: string }).visibility).toBe(
+      "private",
+    );
+  });
+
+  it("surfaces coarse token domains in extraction report and CLI summary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "EditLink.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      type Visibility = "private" | "public";
+      type Draft = { visibility: Visibility; title: string };
+      export default function EditLink() {
+        const [draft, setDraft] = useState<Draft>({ visibility: "private", title: "" });
+        return <button onClick={() => setDraft({ ...draft, visibility: "public" })} />;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.report.coarseDomains).toContainEqual({
+      varId: "local:EditLink.draft",
+      paths: ["title"],
+    });
+    expect(
+      result.lines.some((line) => line.startsWith("coarse-domains=")),
+    ).toBe(true);
+  });
+
+  it("preserves aliased union fields inside jotai atom record domains", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "state.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { atom } from 'jotai';
+      type Status = "open" | "closed";
+      export const statusAtom = atom<{ status: Status }>({ status: "open" });
+      export function App() {
+        return null;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const statusAtom = result.model.vars.find(
+      (decl) => decl.id === "atom:statusAtom",
+    );
+    expect(statusAtom?.domain).toEqual({
+      kind: "record",
+      fields: {
+        status: { kind: "enum", values: ["open", "closed"] },
+      },
+    });
   });
 });
 

@@ -18,6 +18,11 @@ export type StepPredicate = (
   post: ModelState,
 ) => boolean;
 
+type InferablePredicate =
+  | StatePredicate
+  | StepPredicate
+  | ((step: StepFacts) => boolean);
+
 export interface PropertyOptions {
   name?: string;
   reads?: readonly string[];
@@ -164,7 +169,7 @@ export function enabled(model: Model, transitionId: string): StatePredicate {
 
 function propertyEnabledTransitions(
   options: PropertyOptions,
-  ...predicates: readonly Function[]
+  ...predicates: readonly InferablePredicate[]
 ): readonly string[] | undefined {
   const ids = new Set(options.enabledTransitions ?? []);
   for (const predicate of predicates) {
@@ -176,7 +181,7 @@ function propertyEnabledTransitions(
 function propertyReads(
   model: Model,
   options: PropertyOptions,
-  ...predicates: readonly Function[]
+  ...predicates: readonly InferablePredicate[]
 ): readonly string[] | undefined {
   if (options.reads !== undefined) return options.reads;
   const reads = new Set<string>();
@@ -186,26 +191,34 @@ function propertyReads(
   return [...reads].sort();
 }
 
-function inferStateReads(model: Model, predicate: Function): string[] {
+function inferStateReads(
+  model: Model,
+  predicate: InferablePredicate,
+): string[] {
   const reads = new Set<string>();
   for (const read of inferSourceReads(model, predicate)) reads.add(read);
   const state = recordingStateProxy(model, reads);
   try {
-    predicate(state);
+    (predicate as StatePredicate)(state);
   } catch {
     // Inference is best-effort; runtime read validation catches under-declared reads.
   }
   try {
-    predicate(state, recordingStepFacts(), state);
+    (predicate as StepPredicate)(state, recordingStepFacts(), state);
   } catch {
     // Inference is best-effort; runtime read validation catches under-declared reads.
   }
   return [...reads];
 }
 
-function inferSourceReads(model: Model, predicate: Function): string[] {
+function inferSourceReads(
+  model: Model,
+  predicate: InferablePredicate,
+): string[] {
   const varIds = new Set(model.vars.map((decl) => decl.id));
-  const source = Function.prototype.toString.call(predicate);
+  const source = Function.prototype.toString.call(
+    predicate as (...args: never) => unknown,
+  );
   const reads = new Set<string>();
   const dotPattern = /\.([A-Za-z_$][\w$]*)/g;
   const bracketPattern = /\[\s*(['"`])([^'"`]+)\1\s*\]/g;
@@ -272,9 +285,11 @@ function recordingStepFacts(): StepFacts {
   };
 }
 
-function inferEnabledTransitions(predicate: Function): string[] {
+function inferEnabledTransitions(predicate: InferablePredicate): string[] {
   const ids: string[] = [];
-  const source = Function.prototype.toString.call(predicate);
+  const source = Function.prototype.toString.call(
+    predicate as (...args: never) => unknown,
+  );
   const pattern = /enabled\)?\s*\([^,]+,\s*(['"`])([^'"`]+)\1/g;
   let match = pattern.exec(source);
   while (match) {

@@ -33,7 +33,10 @@ export function observe(
     jotai.atoms?.[varId] ?? jotai.atoms?.[varId.replace(/^atom:/, "")];
   if (atom !== undefined && jotai.store)
     return { value: jotai.store.get(atom) };
-  if (varId in jotai.initialState) return { value: jotai.initialState[varId]! };
+  if (varId in jotai.initialState) {
+    const initial = jotai.initialState[varId];
+    if (initial !== undefined) return { value: initial };
+  }
   return "unobservable";
 }
 

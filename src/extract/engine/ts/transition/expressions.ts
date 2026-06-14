@@ -402,7 +402,8 @@ export function taggedPathDomain(
     .map((variant) => variant.fields[field])
     .filter((candidate): candidate is AbstractDomain => Boolean(candidate));
   if (fieldDomains.length === 0) return undefined;
-  const first = fieldDomains[0]!;
+  const first = fieldDomains[0];
+  if (!first) return undefined;
   if (rest.length === 0) return first;
   return first.kind === "record" ? domainAtRecordPath(first, rest) : undefined;
 }

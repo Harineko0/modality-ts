@@ -28,10 +28,17 @@ export function observe(
   handles: HarnessHooks,
 ): ObservedRead | "unobservable" {
   const swr = handles as SwrHarnessHooks;
-  if (swr.cache.has(varId)) return { value: swr.cache.get(varId)! };
+  const cached = swr.cache.get(varId);
+  if (cached !== undefined) return { value: cached };
   const key = cacheKeyForVar(varId);
-  if (key && swr.cache.has(key)) return { value: swr.cache.get(key)! };
-  if (varId in swr.initialState) return { value: swr.initialState[varId]! };
+  if (key) {
+    const keyed = swr.cache.get(key);
+    if (keyed !== undefined) return { value: keyed };
+  }
+  if (varId in swr.initialState) {
+    const initial = swr.initialState[varId];
+    if (initial !== undefined) return { value: initial };
+  }
   return "unobservable";
 }
 

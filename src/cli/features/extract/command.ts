@@ -6,6 +6,7 @@ import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import {
   canonicalJson,
+  collectTokenDomainPaths,
   domainCardinality,
   parseModelArtifact,
   type EffectIR,
@@ -205,19 +206,31 @@ export async function runExtractCommand(
     await assertMatchesExpectedModel(model, options.expectModelPath);
   }
   const stateSpaceLine = (() => {
-    const { totalBits, topVars } = report.stateContributors!;
+    const contributors = report.stateContributors;
+    if (!contributors) return undefined;
+    const { totalBits, topVars } = contributors;
     const top = topVars
       .slice(0, 3)
       .map((v) => `${v.varId}(${v.bits.toFixed(1)})`)
       .join(",");
     return `state-space≈${totalBits.toFixed(1)}bits top:${top}`;
   })();
+  const coarseDomainsLine = (() => {
+    const entries = report.coarseDomains ?? [];
+    if (entries.length === 0) return undefined;
+    const count = entries.reduce((sum, entry) => sum + entry.paths.length, 0);
+    const first = entries[0];
+    if (!first) return undefined;
+    const examplePath = first.paths[0];
+    return `coarse-domains=${count} e.g. ${first.varId}[${examplePath ?? ""}]`;
+  })();
   return {
     model,
     report,
     lines: [
       `extracted vars=${pipeline.stateVars.length + pipeline.templateFragments.flatMap((fragment) => fragment.vars).length} transitions=${transitions.length}`,
-      stateSpaceLine,
+      ...(stateSpaceLine ? [stateSpaceLine] : []),
+      ...(coarseDomainsLine ? [coarseDomainsLine] : []),
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
@@ -266,7 +279,8 @@ async function loadExtractionProject(
 ): Promise<ExtractionProject> {
   if (sourcePaths.length > 1)
     return loadMultiFileExtractionProject(sourcePaths);
-  const resolved = sourcePaths[0]!;
+  const resolved = sourcePaths[0];
+  if (!resolved) throw new Error("extract requires at least one source path");
   const info = await stat(resolved);
   if (!info.isDirectory()) {
     const source = await readFile(resolved, "utf8");
@@ -358,7 +372,8 @@ async function sourceWithLocalImports(
   const sources: Array<{ path: string; text: string }> = [];
   const queue = [...entries];
   while (queue.length > 0) {
-    const next = queue.shift()!;
+    const next = queue.shift();
+    if (!next) break;
     const canonical = resolve(next.path);
     if (seen.has(canonical)) continue;
     seen.add(canonical);
@@ -757,7 +772,11 @@ function commonAncestor(paths: readonly string[]): string {
     }
   }
   const prefix = first.slice(0, length).join("/");
-  return prefix === "" ? parse(paths[0]!).root : prefix;
+  if (prefix === "") {
+    const firstPath = paths[0];
+    return firstPath ? parse(firstPath).root : process.cwd();
+  }
+  return prefix;
 }
 
 async function findNearestPackageJson(
@@ -894,6 +913,13 @@ function createExtractionReport(
   const unextractable = handlers.filter(
     (handler) => handler.classification === "unextractable",
   ).length;
+  const coarseDomains = model.vars
+    .map((decl) => ({
+      varId: decl.id,
+      paths: collectTokenDomainPaths(decl.domain),
+    }))
+    .filter((entry) => entry.paths.length > 0)
+    .sort((a, b) => a.varId.localeCompare(b.varId));
   return {
     schemaVersion: 1,
     kind: "extraction-report",
@@ -917,6 +943,7 @@ function createExtractionReport(
               ? "default-token"
               : "type-derived"),
     })),
+    ...(coarseDomains.length > 0 ? { coarseDomains } : {}),
     stateContributors: buildStateContributors(model),
     coverage: {
       handlersTotal: handlers.length,
@@ -1158,18 +1185,26 @@ function editDistance(left: string, right: string): number {
     (_, index) => index,
   );
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    let diagonal = previous[0]!;
+    const startDiagonal = previous[0];
+    if (startDiagonal === undefined) break;
+    let diagonal = startDiagonal;
     previous[0] = leftIndex;
     for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      const up = previous[rightIndex]! + 1;
-      const leftCost = previous[rightIndex - 1]! + 1;
+      const upCell = previous[rightIndex];
+      const leftCell = previous[rightIndex - 1];
+      if (upCell === undefined || leftCell === undefined) break;
+      const up = upCell + 1;
+      const leftCost = leftCell + 1;
       const subst =
         diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
-      diagonal = previous[rightIndex]!;
+      const corner = previous[rightIndex];
+      if (corner === undefined) break;
+      diagonal = corner;
       previous[rightIndex] = Math.min(up, leftCost, subst);
     }
   }
-  return previous[right.length]!;
+  const distance = previous[right.length];
+  return distance ?? 0;
 }
 
 function havocWrites(effect: EffectIR): string[] {
@@ -1231,13 +1266,18 @@ function unextractableHandlerFromWarning(
   const rich = /^Unextractable handler (\S+) \[([^\]]+)\] \((.+)\)$/.exec(
     warning,
   );
-  if (rich)
+  if (rich) {
+    const id = rich[1];
+    const category = rich[2];
+    const source = rich[3];
+    if (!id || !category || !source) return undefined;
     return {
-      id: rich[1]!,
-      category: rich[2]!,
-      reason: `${rich[2]!} at ${rich[3]!}`,
-      source: rich[3]!,
+      id,
+      category,
+      reason: `${category} at ${source}`,
+      source,
     };
+  }
   const bare = /^Unextractable handler (\S+)$/.exec(warning);
   return bare?.[1]
     ? { id: bare[1], category: "unextractable", reason: bare[0] }

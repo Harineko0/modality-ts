@@ -10,6 +10,12 @@ import type {
   Value,
 } from "modality-ts/core";
 
+export {
+  firstValue,
+  inferDomainFromTypeNode,
+  typeAliasDeclarations,
+} from "../ts/domains.js";
+
 export interface SourceDecl {
   id: string;
   kind: string;

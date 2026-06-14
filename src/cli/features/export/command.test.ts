@@ -80,6 +80,23 @@ function model(): Model {
   };
 }
 
+function firstTransition(
+  fixture: Model = model(),
+): Model["transitions"][number] {
+  const transition = fixture.transitions[0];
+  if (!transition) throw new Error("export fixture missing transition");
+  return transition;
+}
+
+function requiredVar(
+  id: string,
+  fixture: Model = model(),
+): Model["vars"][number] {
+  const decl = fixture.vars.find((entry) => entry.id === id);
+  if (!decl) throw new Error(`export fixture missing var ${id}`);
+  return decl;
+}
+
 function assuranceModel(): Model {
   return {
     ...model(),
@@ -342,8 +359,8 @@ describe("TLA export", () => {
           scope: { kind: "global" },
           initial: [],
         },
-        model().vars.find((decl) => decl.id === "sys:pending")!,
-        model().vars.find((decl) => decl.id === "flag")!,
+        requiredVar("sys:pending"),
+        requiredVar("flag"),
       ],
       transitions: [
         {
@@ -468,7 +485,7 @@ describe("TLA export", () => {
       ...model(),
       transitions: [
         {
-          ...model().transitions[0]!,
+          ...firstTransition(),
           effect: { kind: "havoc", var: "flag" },
         },
       ],
@@ -501,7 +518,7 @@ describe("TLA export", () => {
       ],
       transitions: [
         {
-          ...model().transitions[0]!,
+          ...firstTransition(),
           effect: {
             kind: "seq",
             effects: [
@@ -650,7 +667,7 @@ describe("TLA export", () => {
       ],
       transitions: [
         {
-          ...model().transitions[0]!,
+          ...firstTransition(),
           id: "fresh",
           guard: { kind: "lit", value: true },
           effect: {
@@ -684,7 +701,7 @@ describe("TLA export", () => {
       ],
       transitions: [
         {
-          ...model().transitions[0]!,
+          ...firstTransition(),
           id: "fresh",
           guard: { kind: "lit", value: true },
           effect: {
@@ -707,7 +724,7 @@ describe("TLA export", () => {
       ...model(),
       transitions: [
         {
-          ...model().transitions[0]!,
+          ...firstTransition(),
           id: "branch",
           guard: { kind: "read", var: "flag" },
           effect: {

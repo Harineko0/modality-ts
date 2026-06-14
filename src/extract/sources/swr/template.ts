@@ -434,7 +434,7 @@ function lit(value: Value): ExprIR {
   return { kind: "lit", value };
 }
 
-function notExpr(expr: ExprIR): ExprIR {
+function _notExpr(expr: ExprIR): ExprIR {
   if (expr.kind === "not") return expr.args[0] ?? lit(true);
   return { kind: "not", args: [expr] };
 }

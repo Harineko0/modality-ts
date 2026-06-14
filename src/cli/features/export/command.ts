@@ -173,7 +173,11 @@ interface TlaEnv {
 
 function effectRelation(model: Model, effect: EffectIR, env: TlaEnv): string {
   const branches = effectBranches(model, effect, env);
-  if (branches.length === 1) return branchRelation(model, branches[0]!);
+  if (branches.length === 1) {
+    const branch = branches[0];
+    if (!branch) return "FALSE";
+    return branchRelation(model, branch);
+  }
   return `(${branches.map((branch) => `(${branchRelation(model, branch)})`).join(" \\/\n")})`;
 }
 
@@ -538,7 +542,11 @@ function validateTlaIdentifiers(model: Model): void {
 }
 
 function tlaInitial(id: string, values: readonly Value[]): string {
-  if (values.length === 1) return `${tlaName(id)} = ${tlaValue(values[0]!)}`;
+  if (values.length === 1) {
+    const value = values[0];
+    if (value === undefined) return `${tlaName(id)} \\in ${tlaSet(values)}`;
+    return `${tlaName(id)} = ${tlaValue(value)}`;
+  }
   return `${tlaName(id)} \\in ${tlaSet(values)}`;
 }
 

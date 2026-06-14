@@ -17,6 +17,9 @@ const trace: Trace = {
   ],
 };
 
+const firstTraceStep = trace.steps[0];
+if (!firstTraceStep) throw new Error("fixture trace missing step");
+
 describe("runReplayCommand", () => {
   it("writes reproduced replay reports directly from trace artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-replay-"));
@@ -80,7 +83,7 @@ describe("runReplayCommand", () => {
         traceArtifact({
           steps: [
             {
-              ...trace.steps[0]!,
+              ...firstTraceStep,
               label: {
                 kind: "click",
                 locator: { kind: "testId", value: "login" },
@@ -157,8 +160,8 @@ describe("runReplayCommand", () => {
         "  return {",
         "    document,",
         "    inputValues: { valid: 'custom' },",
-        "    beforeStep: ({ stepIndex }) => calls.push(`before:${stepIndex}`),",
-        "    afterStep: ({ stepIndex }) => calls.push(`after:${stepIndex}`),",
+        "    beforeStep: ({ stepIndex }) => calls.push('before:' + stepIndex),",
+        "    afterStep: ({ stepIndex }) => calls.push('after:' + stepIndex),",
         "    assertViolation: () => calls.join(',') === 'before:0,after:0'",
         "  };",
         "}",
@@ -256,7 +259,7 @@ describe("runReplayCommand", () => {
         traceArtifact({
           steps: [
             {
-              ...trace.steps[0]!,
+              ...firstTraceStep,
               post: { auth: "admin" },
               diff: { auth: { before: "guest", after: "admin" } },
             },

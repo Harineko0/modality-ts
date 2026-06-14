@@ -91,7 +91,13 @@ export function transitionsFromUseEffect(
     }));
     const guard =
       guards.length > 0
-        ? guards.slice(1).reduce((acc, next) => andGuard(acc, next), guards[0]!)
+        ? guards.slice(1).reduce(
+            (acc, next) => andGuard(acc, next),
+            guards[0] ?? {
+              kind: "lit" as const,
+              value: true,
+            },
+          )
         : { kind: "lit" as const, value: true };
     transitions.push({
       id: `${component}.useEffect.${effects
@@ -156,7 +162,7 @@ export function cleanupSummaries(
   const returns = statements.filter(isCleanupReturn);
   if (returns.length === 0) return [];
   if (returns.length > 1) return undefined;
-  const expression = returns[0]!.expression;
+  const expression = returns[0]?.expression;
   if (
     !expression ||
     (!ts.isArrowFunction(expression) && !ts.isFunctionExpression(expression)) ||

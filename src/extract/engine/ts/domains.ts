@@ -8,6 +8,7 @@ import {
 export function inferDomainFromTypeNode(
   node: ts.TypeNode | undefined,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
   if (!node) return { kind: "tokens", count: 1 };
   switch (node.kind) {
@@ -21,13 +22,22 @@ export function inferDomainFromTypeNode(
     case ts.SyntaxKind.LiteralType:
       return domainFromLiteralType(node as ts.LiteralTypeNode);
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(node as ts.UnionTypeNode, typeAliases);
+      return domainFromUnion(node as ts.UnionTypeNode, typeAliases, visited);
     case ts.SyntaxKind.TypeLiteral:
-      return domainFromTypeLiteral(node as ts.TypeLiteralNode);
+      return domainFromTypeLiteral(
+        node as ts.TypeLiteralNode,
+        undefined,
+        typeAliases,
+        visited,
+      );
     case ts.SyntaxKind.ArrayType:
       return { kind: "lengthCat" };
     case ts.SyntaxKind.TypeReference:
-      return domainFromTypeReference(node as ts.TypeReferenceNode, typeAliases);
+      return domainFromTypeReference(
+        node as ts.TypeReferenceNode,
+        typeAliases,
+        visited,
+      );
     default:
       return { kind: "tokens", count: 1 };
   }
@@ -179,6 +189,7 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
 function domainFromUnion(
   node: ts.UnionTypeNode,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
   const nonNull = node.types.filter(
     (part) =>
@@ -193,23 +204,38 @@ function domainFromUnion(
       kind: "option",
       inner:
         nonNull.length === 1
-          ? inferDomainFromTypeNode(nonNull[0], typeAliases)
-          : domainFromUnionMembers(nonNull),
+          ? inferDomainFromTypeNode(nonNull[0], typeAliases, visited)
+          : domainFromUnionMembers(nonNull, typeAliases, visited),
     };
   }
-  return domainFromUnionMembers(node.types);
+  return domainFromUnionMembers(node.types, typeAliases, visited);
 }
 
-function domainFromUnionMembers(types: readonly ts.TypeNode[]): AbstractDomain {
+function domainFromUnionMembers(
+  types: readonly ts.TypeNode[],
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
+): AbstractDomain {
   const literalValues: string[] = [];
   const numericValues: number[] = [];
   for (const part of types) {
     if (!ts.isLiteralTypeNode(part))
-      return taggedUnionFromMembers(types) ?? { kind: "tokens", count: 1 };
+      return (
+        taggedUnionFromMembers(types, typeAliases, visited) ?? {
+          kind: "tokens",
+          count: 1,
+        }
+      );
     const lit = part.literal;
     if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
     else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
-    else return taggedUnionFromMembers(types) ?? { kind: "tokens", count: 1 };
+    else
+      return (
+        taggedUnionFromMembers(types, typeAliases, visited) ?? {
+          kind: "tokens",
+          count: 1,
+        }
+      );
   }
   if (numericValues.length === types.length) {
     return {
@@ -223,6 +249,8 @@ function domainFromUnionMembers(types: readonly ts.TypeNode[]): AbstractDomain {
 
 function taggedUnionFromMembers(
   types: readonly ts.TypeNode[],
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain | undefined {
   const members = types.filter(ts.isTypeLiteralNode);
   if (members.length !== types.length) return undefined;
@@ -259,7 +287,12 @@ function taggedUnionFromMembers(
       !ts.isStringLiteral(tagProp.type.literal)
     )
       return undefined;
-    variants[tagProp.type.literal.text] = domainFromTypeLiteral(member, tag);
+    variants[tagProp.type.literal.text] = domainFromTypeLiteral(
+      member,
+      tag,
+      typeAliases,
+      visited,
+    );
   }
   return { kind: "tagged", tag, variants };
 }
@@ -267,6 +300,8 @@ function taggedUnionFromMembers(
 function domainFromTypeLiteral(
   node: ts.TypeLiteralNode,
   omitField?: string,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
   const fields: Record<string, AbstractDomain> = {};
   for (const member of node.members) {
@@ -277,7 +312,11 @@ function domainFromTypeLiteral(
       member.name.text === omitField
     )
       continue;
-    fields[member.name.text] = inferDomainFromTypeNode(member.type);
+    fields[member.name.text] = inferDomainFromTypeNode(
+      member.type,
+      typeAliases,
+      visited,
+    );
   }
   return { kind: "record", fields };
 }
@@ -285,10 +324,17 @@ function domainFromTypeLiteral(
 function domainFromTypeReference(
   node: ts.TypeReferenceNode,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
   const name = node.typeName.getText();
+  if (visited.has(name)) return { kind: "tokens", count: 1 };
   const alias = typeAliases.get(name);
-  if (alias) return inferDomainFromTypeNode(alias, typeAliases);
+  if (alias)
+    return inferDomainFromTypeNode(
+      alias,
+      typeAliases,
+      new Set([...visited, name]),
+    );
   if (
     (name === "Array" || name === "ReadonlyArray") &&
     node.typeArguments?.length === 1

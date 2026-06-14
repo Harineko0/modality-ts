@@ -251,7 +251,9 @@ export function generateConformWalks(
           canonicalJson(a.post).localeCompare(canonicalJson(b.post)),
       );
       if (successors.length === 0) break;
-      const next = successors[Math.floor(rand() * successors.length)]!;
+      const next =
+        successors[Math.floor(rand() * successors.length)] ?? successors[0];
+      if (!next) break;
       steps.push(next);
       states.push(next.post);
       current = next.post;

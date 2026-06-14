@@ -44,7 +44,9 @@ function positionals(
     if (index >= 0) values.add(index + 1);
   }
   for (let index = 0; index < args.length; index += 1) {
-    if (repeatableValueFlags.includes(args[index]!)) values.add(index + 1);
+    const arg = args[index];
+    if (arg !== undefined && repeatableValueFlags.includes(arg))
+      values.add(index + 1);
   }
   return args.filter(
     (arg, index) => !arg.startsWith("--") && !values.has(index),
@@ -241,12 +243,16 @@ async function main(): Promise<void> {
   }
   if (command === "extract") {
     const explainDrift = args.includes("--explain-drift");
-    const effectApiFlags = args.flatMap((arg, index) =>
-      arg === "--effect-api" && args[index + 1] ? [args[index + 1]!] : [],
-    );
-    const disabledPlugins = args.flatMap((arg, index) =>
-      arg === "--disable-plugin" && args[index + 1] ? [args[index + 1]!] : [],
-    );
+    const effectApiFlags = args.flatMap((arg, index) => {
+      if (arg !== "--effect-api") return [];
+      const value = args[index + 1];
+      return value ? [value] : [];
+    });
+    const disabledPlugins = args.flatMap((arg, index) => {
+      if (arg !== "--disable-plugin") return [];
+      const value = args[index + 1];
+      return value ? [value] : [];
+    });
     const sourcePaths = positionals(
       args,
       [
