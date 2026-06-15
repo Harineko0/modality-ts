@@ -19,26 +19,26 @@ The checker is Rust-backed and evaluates serializable property IR. `*.props.mjs`
 2. Initialize the project when no Modality config exists:
 
 ```bash
-modality init
+npx modality init
 ```
 
 3. Create `*.props.mjs` files next to target components when you want default source inference. `src/App.props.mjs` maps to `src/App.tsx`; multiple props files map to multiple sources.
 4. Extract a model. With colocated props files, let the CLI infer sources and write `.modality/model.json` plus `.modality/app.model.ts`:
 
 ```bash
-modality extract
+npx modality extract
 ```
 
 Use explicit sources when inference is not desired:
 
 ```bash
-modality extract src/App.tsx src/HomePage.tsx
+npx modality extract src/App.tsx src/HomePage.tsx
 ```
 
 5. Name modeled side-effect APIs when user flows depend on them:
 
 ```bash
-modality extract --effect-api api.placeOrder
+npx modality extract --effect-api api.placeOrder
 ```
 
 6. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
@@ -46,19 +46,19 @@ modality extract --effect-api api.placeOrder
 8. Check the model. With default paths, `modality check` reads `.modality/model.json`, loads all discovered `*.props.mjs`, and writes `.modality/report.json`, `.modality/traces`, `.modality/replay-tests`, and `.modality/action-replay-tests`:
 
 ```bash
-modality check
+npx modality check
 ```
 
 9. Replay a failing counterexample when a property is violated. The trace path remains mandatory:
 
 ```bash
-modality replay .modality/traces/noDoubleSubmit.violated.trace.json
+npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json
 ```
 
 10. Prefer CI artifacts when automating verification:
 
 ```bash
-modality ci .modality/model.json src/app.props.mjs --artifacts .modality
+npx modality ci .modality/model.json src/app.props.mjs --artifacts .modality
 ```
 
 ## Property Patterns
