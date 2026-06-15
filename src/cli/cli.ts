@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { access } from "node:fs/promises";
 import {
+  artifactPathsForPropsFile,
   defaultActionReplayTestsDir,
   defaultAppModelPath,
   defaultConformReportPath,
@@ -9,7 +11,9 @@ import {
   defaultReportPath,
   defaultTlaPath,
   defaultTracesDir,
+  discoverGeneratedModelFiles,
   discoverPropsFiles,
+  inferCheckTargetsFromProps,
   inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
 } from "./defaults.js";
@@ -76,7 +80,13 @@ async function main(): Promise<void> {
       "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]",
     );
     console.log(
+      "         no args checks each discovered *.props.mjs against its matching .modality/models/**/*.model.json",
+    );
+    console.log(
       "       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]",
+    );
+    console.log(
+      "         modality ci <props.mjs> --artifacts .modality derives the matching .modality/models model path",
     );
     console.log(
       "       modality replay <trace.json> [--mode abstract|action] [--harness harness.ts] [--states states.json] [--observed observed-states.json] [--report report.json]",
@@ -143,9 +153,18 @@ async function main(): Promise<void> {
       "--min-conform-pass-rate",
       "--min-transition-conform-pass-rate",
     ]);
-    const [modelPath, propsPath] = positional;
-    if (!modelPath) throw new Error("Missing model.json path");
+    const [firstPositional, secondPositional] = positional;
+    if (!firstPositional) throw new Error("Missing model.json path");
     if (!artifactDir) throw new Error("Missing --artifacts path");
+    let modelPath: string;
+    let propsPath: string | undefined;
+    if (firstPositional.endsWith(".props.mjs")) {
+      modelPath = artifactPathsForPropsFile(firstPositional).modelPath;
+      propsPath = firstPositional;
+    } else {
+      modelPath = firstPositional;
+      propsPath = secondPositional;
+    }
     if (args.includes("--overlay") && !overlayPath)
       throw new Error("Missing --overlay path");
     if (args.includes("--baseline") && !baselinePath)
@@ -198,9 +217,29 @@ async function main(): Promise<void> {
         "--mode",
         "--harness",
       ])[0];
-    const effectiveModelPath = walksPath
-      ? modelPath
-      : (modelPath ?? defaultModelPath);
+    let effectiveModelPath: string | undefined;
+    if (walksPath) {
+      effectiveModelPath = modelPath;
+    } else if (modelPath) {
+      effectiveModelPath = modelPath;
+    } else {
+      try {
+        await access(defaultModelPath);
+        effectiveModelPath = defaultModelPath;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const generatedModels = await discoverGeneratedModelFiles();
+        if (generatedModels.length === 1) {
+          effectiveModelPath = generatedModels[0];
+        } else if (generatedModels.length > 1) {
+          throw new Error(
+            "Multiple generated models found; pass --model <path>",
+          );
+        } else {
+          effectiveModelPath = defaultModelPath;
+        }
+      }
+    }
     if (args.includes("--report") && !reportFlag)
       throw new Error("Missing --report path");
     if (args.includes("--model") && !modelPath)
@@ -226,9 +265,30 @@ async function main(): Promise<void> {
     const formatFlag = flagValue(args, "--format");
     const format = formatFlag ?? "tla";
     const moduleName = flagValue(args, "--module");
-    const modelPath =
-      positionals(args, ["--out", "--format", "--module"])[0] ??
-      defaultModelPath;
+    const positionalModelPath = positionals(args, [
+      "--out",
+      "--format",
+      "--module",
+    ])[0];
+    let modelPath: string;
+    if (positionalModelPath) {
+      modelPath = positionalModelPath;
+    } else {
+      try {
+        await access(defaultModelPath);
+        modelPath = defaultModelPath;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const generatedModels = await discoverGeneratedModelFiles();
+        if (generatedModels.length === 1) {
+          modelPath = generatedModels[0];
+        } else if (generatedModels.length > 1) {
+          throw new Error("Multiple generated models found; pass a model path");
+        } else {
+          modelPath = defaultModelPath;
+        }
+      }
+    }
     if (format !== "tla")
       throw new Error(`Unsupported export format ${format}`);
     if (args.includes("--out") && !outFlag)
@@ -412,10 +472,6 @@ async function main(): Promise<void> {
     memoryGuardMbRaw !== undefined
       ? parsePositiveIntegerValue("--memory-guard-mb", memoryGuardMbRaw)
       : undefined;
-  const tracesDir = tracesFlag ?? defaultTracesDir;
-  const replayTestsDir = replayTestsFlag ?? defaultReplayTestsDir;
-  const actionReplayTestsDir =
-    actionReplayTestsFlag ?? defaultActionReplayTestsDir;
   const statesPath = flagValue(args, "--states");
   const positional = positionals(args, [
     "--report",
@@ -431,9 +487,6 @@ async function main(): Promise<void> {
   ]);
   const [modelPath, ...propsPaths] = positional;
   const overlayPath = flagValue(args, "--overlay");
-  const effectiveModelPath = modelPath ?? defaultModelPath;
-  const effectivePropsPaths =
-    propsPaths.length > 0 ? propsPaths : await discoverPropsFiles();
   if (args.includes("--report") && !reportPath)
     throw new Error("Missing --report path");
   if (args.includes("--overlay") && !overlayPath)
@@ -472,14 +525,63 @@ async function main(): Promise<void> {
         : {}),
     };
   }
+  if (!modelPath) {
+    const generatedModels = await discoverGeneratedModelFiles();
+    let useMultiTarget = generatedModels.length > 0;
+    if (!useMultiTarget) {
+      try {
+        await access(defaultModelPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        useMultiTarget = true;
+      }
+    }
+    if (useMultiTarget) {
+      if (
+        reportPath !== undefined ||
+        tracesFlag !== undefined ||
+        replayTestsFlag !== undefined ||
+        actionReplayTestsFlag !== undefined
+      ) {
+        throw new Error(
+          "--report requires an explicit model path when checking multiple generated models",
+        );
+      }
+      const targets = await inferCheckTargetsFromProps();
+      let exitCode = 0;
+      for (const target of targets) {
+        const base = target.modelPath.replace(/\.model\.json$/, "");
+        console.log(
+          `checkTarget=${target.modelPath} props=${target.propsPath}`,
+        );
+        const result = await runCheckCommand({
+          modelPath: target.modelPath,
+          propsPaths: [target.propsPath],
+          reportPath: `${base}.report.json`,
+          overlayPath,
+          tracesDir: `${base}.traces`,
+          replayTestsDir: `${base}.replay-tests`,
+          actionReplayTestsDir: `${base}.action-replay-tests`,
+          statesPath,
+          searchLimits,
+        });
+        for (const line of result.lines) console.log(line);
+        if (result.exitCode === 2) exitCode = 2;
+      }
+      process.exit(exitCode);
+    }
+  }
+  const effectiveModelPath = modelPath ?? defaultModelPath;
+  const effectivePropsPaths =
+    propsPaths.length > 0 ? propsPaths : await discoverPropsFiles();
   const result = await runCheckCommand({
     modelPath: effectiveModelPath,
     propsPaths: effectivePropsPaths,
     reportPath: reportPath ?? defaultReportPath,
     overlayPath,
-    tracesDir,
-    replayTestsDir,
-    actionReplayTestsDir,
+    tracesDir: tracesFlag ?? defaultTracesDir,
+    replayTestsDir: replayTestsFlag ?? defaultReplayTestsDir,
+    actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
     statesPath,
     searchLimits,
   });

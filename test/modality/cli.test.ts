@@ -335,6 +335,140 @@ describe("modality CLI", () => {
       stderr: expect.stringContaining("cannot be combined"),
     });
   });
+
+  it("checks each discovered props file against its generated model with no args", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, { failingTarget: null });
+
+    const { stdout } = await execFileAsync(tsxBin, [cliPath, "check"], {
+      cwd: dir,
+    });
+
+    expect(stdout).toContain(
+      "checkTarget=.modality/models/app/root.model.json props=",
+    );
+    expect(stdout).toContain("app/root.props.mjs");
+    expect(stdout).toContain(
+      "checkTarget=.modality/models/app/routes/home.model.json props=",
+    );
+    expect(stdout).toContain("app/routes/home.props.mjs");
+    expect(stdout).toContain("rootFlagCanBecomeTrue: reachable");
+    expect(stdout).toContain("homeFlagCanBecomeTrue: reachable");
+    await access(join(dir, ".modality", "models", "app", "root.report.json"));
+    await access(
+      join(dir, ".modality", "models", "app", "routes", "home.report.json"),
+    );
+  });
+
+  it("returns exit code 2 when any no-arg check target fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, { failingTarget: "home" });
+
+    let stdout = "";
+    try {
+      await execFileAsync(tsxBin, [cliPath, "check"], { cwd: dir });
+    } catch (error: unknown) {
+      const execError = error as { stdout?: string; code?: number };
+      expect(execError.code).toBe(2);
+      stdout = execError.stdout ?? "";
+    }
+    expect(stdout).toContain("rootFlagCanBecomeTrue: reachable");
+    expect(stdout).toContain("homeFlagAlwaysFalse: violated");
+  });
+
+  it("fails clearly when generated models are missing for no-arg check", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await mkdir(join(dir, "app"), { recursive: true });
+    await writeFile(
+      join(dir, "app", "root.props.mjs"),
+      passingProps("root"),
+      "utf8",
+    );
+
+    await expect(
+      execFileAsync(tsxBin, [cliPath, "check"], { cwd: dir }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        "Missing inferred model files for props: .modality/models/app/root.model.json",
+      ),
+    });
+  });
+
+  it("rejects --report in no-arg multi-target check mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, { failingTarget: null });
+
+    await expect(
+      execFileAsync(tsxBin, [cliPath, "check", "--report", "custom.json"], {
+        cwd: dir,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        "--report requires an explicit model path when checking multiple generated models",
+      ),
+    });
+  });
+
+  it("keeps explicit single-model check report paths", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const reportPath = join(dir, "custom-report.json");
+    await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
+    await writeFile(propsPath, passingProps("root"), "utf8");
+
+    await execFileAsync(
+      tsxBin,
+      [cliPath, "check", modelPath, propsPath, "--report", reportPath],
+      { cwd: dir },
+    );
+
+    await access(reportPath);
+  });
+
+  it("derives the model path for modality ci from a props path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, {
+      failingTarget: null,
+      singleTarget: "root",
+    });
+    const artifactDir = join(dir, ".modality", "ci-root");
+
+    const { stdout } = await execFileAsync(
+      tsxBin,
+      [cliPath, "ci", "app/root.props.mjs", "--artifacts", artifactDir],
+      { cwd: dir },
+    );
+
+    expect(stdout).toContain("violations=0 errors=0");
+    await access(join(artifactDir, "report.json"));
+  });
+
+  it("errors when conform has multiple generated models and no --model", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, { failingTarget: null });
+
+    await expect(
+      execFileAsync(tsxBin, [cliPath, "conform"], { cwd: dir }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        "Multiple generated models found; pass --model <path>",
+      ),
+    });
+  });
+
+  it("errors when export has multiple generated models and no model path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, { failingTarget: null });
+
+    await expect(
+      execFileAsync(tsxBin, [cliPath, "export"], { cwd: dir }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        "Multiple generated models found; pass a model path",
+      ),
+    });
+  });
 });
 
 function tinyCheckModel() {
@@ -458,6 +592,50 @@ async function writeFixtureApp(dir: string): Promise<void> {
   await writeFile(
     join(dir, "src", "HomePage.props.mjs"),
     "export const properties = [];",
+    "utf8",
+  );
+}
+
+function passingProps(prefix: string): string {
+  return `export const properties = [
+    { kind: "reachable", name: "${prefix}FlagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+  ];`;
+}
+
+function failingProps(): string {
+  return `export const properties = [
+    { kind: "always", name: "homeFlagAlwaysFalse", predicate: state => state.flag === false, reads: ["flag"] }
+  ];`;
+}
+
+async function writePerPropsCheckFixture(
+  dir: string,
+  options: { failingTarget: "home" | null; singleTarget?: "root" },
+): Promise<void> {
+  await mkdir(join(dir, "app", "routes"), { recursive: true });
+  await mkdir(join(dir, ".modality", "models", "app", "routes"), {
+    recursive: true,
+  });
+  const modelJson = JSON.stringify(tinyCheckModel());
+  await writeFile(
+    join(dir, ".modality", "models", "app", "root.model.json"),
+    modelJson,
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "root.props.mjs"),
+    passingProps("root"),
+    "utf8",
+  );
+  if (options.singleTarget === "root") return;
+  await writeFile(
+    join(dir, ".modality", "models", "app", "routes", "home.model.json"),
+    modelJson,
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "routes", "home.props.mjs"),
+    options.failingTarget === "home" ? failingProps() : passingProps("home"),
     "utf8",
   );
 }

@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   artifactPathsForPropsFile,
+  discoverGeneratedModelFiles,
   discoverPropsFiles,
+  inferCheckTargetsFromProps,
   inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
 } from "../../src/cli/defaults.js";
@@ -156,5 +158,82 @@ describe("CLI default discovery", () => {
     await expect(inferExtractTargetsFromProps(dir)).rejects.toThrow(
       `Missing inferred source files for props: ${join(dir, "app", "root.tsx")}`,
     );
+  });
+
+  it("infers check targets from props and generated models", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    await mkdir(join(dir, ".modality", "models", "app", "routes"), {
+      recursive: true,
+    });
+    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+    await writeFile(
+      join(dir, ".modality", "models", "app", "root.model.json"),
+      "{}",
+      "utf8",
+    );
+    await writeFile(join(dir, "app", "routes", "home.props.mjs"), "", "utf8");
+    await writeFile(
+      join(dir, ".modality", "models", "app", "routes", "home.model.json"),
+      "{}",
+      "utf8",
+    );
+
+    expect(await inferCheckTargetsFromProps(dir)).toEqual([
+      {
+        propsPath: join(dir, "app", "root.props.mjs"),
+        modelPath: join(".modality", "models", "app", "root.model.json"),
+        appModelPath: join(".modality", "models", "app", "root.props.ts"),
+      },
+      {
+        propsPath: join(dir, "app", "routes", "home.props.mjs"),
+        modelPath: join(
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "home.model.json",
+        ),
+        appModelPath: join(
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "home.props.ts",
+        ),
+      },
+    ]);
+  });
+
+  it("fails clearly when a generated model is missing for check targets", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
+    await mkdir(join(dir, "app"), { recursive: true });
+    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+
+    await expect(inferCheckTargetsFromProps(dir)).rejects.toThrow(
+      `Missing inferred model files for props: ${join(".modality", "models", "app", "root.model.json")}`,
+    );
+  });
+
+  it("discovers generated model files under .modality/models", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
+    await mkdir(join(dir, ".modality", "models", "app", "routes"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(dir, ".modality", "models", "app", "root.model.json"),
+      "{}",
+      "utf8",
+    );
+    await writeFile(
+      join(dir, ".modality", "models", "app", "routes", "home.model.json"),
+      "{}",
+      "utf8",
+    );
+
+    expect(await discoverGeneratedModelFiles(dir)).toEqual([
+      join(".modality", "models", "app", "root.model.json"),
+      join(".modality", "models", "app", "routes", "home.model.json"),
+    ]);
   });
 });

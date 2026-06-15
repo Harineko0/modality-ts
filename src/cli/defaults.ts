@@ -91,6 +91,74 @@ export async function inferSourceFilesFromProps(
   return targets.map((target) => target.sourcePath);
 }
 
+export interface CheckTargetFromProps {
+  propsPath: string;
+  modelPath: string;
+  appModelPath: string;
+}
+
+export async function inferCheckTargetsFromProps(
+  root = process.cwd(),
+): Promise<CheckTargetFromProps[]> {
+  const propsFiles = await discoverPropsFiles(root);
+  if (propsFiles.length === 0) {
+    throw new Error(`No *.props.mjs files found under ${root}`);
+  }
+  const missing: string[] = [];
+  const targets: CheckTargetFromProps[] = [];
+  for (const propsPath of propsFiles) {
+    const { modelPath, appModelPath } = artifactPathsForPropsFile(
+      propsPath,
+      root,
+    );
+    const absoluteModelPath = join(root, modelPath);
+    try {
+      const info = await stat(absoluteModelPath);
+      if (!info.isFile()) missing.push(modelPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      missing.push(modelPath);
+    }
+    targets.push({ propsPath, modelPath, appModelPath });
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing inferred model files for props: ${missing.join(", ")}`,
+    );
+  }
+  return targets;
+}
+
+export async function discoverGeneratedModelFiles(
+  root = process.cwd(),
+): Promise<string[]> {
+  const modelsDir = join(root, defaultModelsDir);
+  try {
+    const info = await stat(modelsDir);
+    if (!info.isDirectory()) return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const files = await discoverModelFilesIn(modelsDir);
+  return files
+    .map((path) => relative(root, path))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+async function discoverModelFilesIn(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const discovered = await Promise.all(
+    entries.map(async (entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return discoverModelFilesIn(path);
+      if (entry.isFile() && entry.name.endsWith(".model.json")) return [path];
+      return [];
+    }),
+  );
+  return discovered.flat();
+}
+
 async function discoverPropsFilesIn(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const discovered = await Promise.all(
