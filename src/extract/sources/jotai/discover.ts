@@ -1,16 +1,43 @@
 import * as ts from "typescript";
 import type { SourceDecl } from "modality-ts/extract/engine/spi";
-import type { StateVarDecl } from "modality-ts/core";
+import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
-  inferAtomDomain,
-  initialValueForAtom,
+  atomCreatorName,
+  isAtomCreatorCall,
+  resolveJotaiImports,
+} from "./imports.js";
+import {
+  classifyAtomCall,
+  classifyFamilyInstance,
+  staticFamilyParam,
   typeAliasDeclarations,
 } from "./domains.js";
+import { atomVarId, familyVarId } from "./ids.js";
+import { metadataToRecord } from "./types.js";
+import {
+  applyHydrationOverrides,
+  discoverHydrationOverrides,
+} from "./hydration.js";
+import { discoverComponentStoreScopes } from "./stores.js";
+
+export interface DiscoverJotaiResult {
+  decls: SourceDecl[];
+  warnings: { message: string; source?: SourceAnchor }[];
+  atomNames: Set<string>;
+  atomMetadata: Map<string, ReturnType<typeof classifyAtomCall>["metadata"]>;
+}
 
 export function discoverJotaiAtoms(
   sourceText: string,
   fileName = "state.ts",
 ): SourceDecl[] {
+  return discoverJotaiAtomsDetailed(sourceText, fileName).decls;
+}
+
+export function discoverJotaiAtomsDetailed(
+  sourceText: string,
+  fileName = "state.ts",
+): DiscoverJotaiResult {
   const source = ts.createSourceFile(
     fileName,
     sourceText,
@@ -18,80 +45,224 @@ export function discoverJotaiAtoms(
     true,
     ts.ScriptKind.TSX,
   );
-  const importedAtomNames = atomImportNames(source);
-  if (importedAtomNames.size === 0) return [];
-  const typeAliases = typeAliasDeclarations(source);
+  const imports = resolveJotaiImports(source);
+  if (imports.atomCreators.size === 0) return emptyDiscoverResult();
 
+  const typeAliases = typeAliasDeclarations(source);
+  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const atomMetadata = new Map<
+    string,
+    ReturnType<typeof classifyAtomCall>["metadata"]
+  >();
+  const atomNames = new Set<string>();
+  const familyFactories = new Map<string, ts.CallExpression>();
   const decls: SourceDecl[] = [];
+
   const visit = (node: ts.Node): void => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer &&
-      isAtomCall(node.initializer, importedAtomNames)
+      isAtomCreatorCall(node.initializer, imports.atomCreators)
     ) {
-      const origin = { file: fileName, ...lineAndColumn(source, node) };
-      const domain = inferAtomDomain(node.initializer, typeAliases);
-      const variable: StateVarDecl = {
-        id: `atom:${node.name.text}`,
-        domain,
-        origin,
-        scope: { kind: "global" },
-        initial: initialValueForAtom(node.initializer, domain),
-      };
-      decls.push({
-        id: variable.id,
-        kind: "jotai/atom",
-        var: variable,
-        origin,
-        metadata: { atomName: node.name.text },
-      });
+      const atomName = node.name.text;
+      const creator = atomCreatorName(node.initializer, imports.atomCreators);
+      if (creator === "atomFamily") {
+        familyFactories.set(atomName, node.initializer);
+        const classification = classifyAtomCall(
+          node.initializer,
+          atomName,
+          imports,
+          typeAliases,
+        );
+        atomMetadata.set(atomName, classification.metadata);
+        if (classification.warning) {
+          warnings.push({
+            message: classification.warning,
+            source: anchor(source, fileName, node),
+          });
+        }
+      } else {
+        const classification = classifyAtomCall(
+          node.initializer,
+          atomName,
+          imports,
+          typeAliases,
+        );
+        atomNames.add(atomName);
+        atomMetadata.set(atomName, classification.metadata);
+        if (classification.warning) {
+          warnings.push({
+            message: classification.warning,
+            source: anchor(source, fileName, node),
+          });
+        }
+        if (classification.emitVar) {
+          decls.push(
+            atomDecl(node, atomName, classification, fileName, source),
+          );
+        }
+      }
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      familyFactories.has(node.expression.text)
+    ) {
+      const familyName = node.expression.text;
+      const paramArg = node.arguments[0];
+      if (!paramArg) return;
+      const staticParam = staticFamilyParam(paramArg);
+      if (!staticParam) {
+        warnings.push({
+          message: `Jotai dynamic atom family param unsupported for ${familyName}`,
+          source: anchor(source, fileName, node),
+        });
+      } else {
+        const familyCall = familyFactories.get(familyName);
+        const initializer = familyCall?.arguments[0];
+        let innerCall: ts.CallExpression | undefined;
+        if (
+          initializer &&
+          (ts.isArrowFunction(initializer) ||
+            ts.isFunctionExpression(initializer))
+        ) {
+          const body = initializer.body;
+          if (
+            ts.isCallExpression(body) &&
+            isAtomCreatorCall(body, imports.atomCreators)
+          ) {
+            innerCall = body;
+          } else if (ts.isBlock(body)) {
+            for (const stmt of body.statements) {
+              if (
+                ts.isReturnStatement(stmt) &&
+                stmt.expression &&
+                ts.isCallExpression(stmt.expression) &&
+                isAtomCreatorCall(stmt.expression, imports.atomCreators)
+              ) {
+                innerCall = stmt.expression;
+                break;
+              }
+            }
+          }
+        }
+        if (innerCall) {
+          const classification = classifyFamilyInstance(
+            familyName,
+            staticParam,
+            innerCall,
+            typeAliases,
+          );
+          const varId = familyVarId(familyName, staticParam);
+          atomNames.add(varId);
+          atomMetadata.set(varId, classification.metadata);
+          decls.push({
+            id: varId,
+            kind: "jotai/atom-family",
+            var: {
+              id: varId,
+              domain: classification.domain,
+              origin: anchor(source, fileName, node),
+              scope: { kind: "global" },
+              initial: classification.initial,
+            },
+            origin: anchor(source, fileName, node),
+            metadata: metadataToRecord(classification.metadata),
+          });
+        }
+      }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return decls;
-}
 
-function atomImportNames(source: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
-  for (const statement of source.statements) {
-    if (
-      !ts.isImportDeclaration(statement) ||
-      !isJotaiModule(statement.moduleSpecifier)
-    )
-      continue;
-    const bindings = statement.importClause?.namedBindings;
-    if (!bindings || !ts.isNamedImports(bindings)) continue;
-    for (const specifier of bindings.elements) {
-      if ((specifier.propertyName?.text ?? specifier.name.text) === "atom")
-        names.add(specifier.name.text);
-    }
+  const hydration = discoverHydrationOverrides(source, fileName, imports);
+  for (const warning of hydration.warnings) warnings.push(warning);
+  const hydratedDecls = applyHydrationOverrides(decls, hydration.overrides);
+
+  const componentStoreScopes = discoverComponentStoreScopes(source, imports);
+  const storeScopedDecls: SourceDecl[] = [];
+  for (const storeScope of new Set(componentStoreScopes.values())) {
+    storeScopedDecls.push(...duplicateAtomsForStore(hydratedDecls, storeScope));
   }
-  return names;
+
+  return {
+    decls: [...hydratedDecls, ...storeScopedDecls],
+    warnings,
+    atomNames,
+    atomMetadata,
+  };
 }
 
-function isJotaiModule(moduleSpecifier: ts.Expression): boolean {
-  return (
-    ts.isStringLiteral(moduleSpecifier) && moduleSpecifier.text === "jotai"
-  );
-}
-
-function isAtomCall(
-  node: ts.Expression,
-  atomNames: Set<string>,
-): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    atomNames.has(node.expression.text)
-  );
-}
-
-function lineAndColumn(
+function atomDecl(
+  node: ts.VariableDeclaration,
+  atomName: string,
+  classification: ReturnType<typeof classifyAtomCall>,
+  fileName: string,
   source: ts.SourceFile,
-  node: ts.Node,
-): { line: number; column: number } {
-  const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
-  return { line: pos.line + 1, column: pos.character + 1 };
+): SourceDecl {
+  const origin = anchor(source, fileName, node);
+  const variable: StateVarDecl = {
+    id: atomVarId(atomName),
+    domain: classification.domain,
+    origin,
+    scope: { kind: "global" },
+    initial: classification.initial,
+  };
+  return {
+    id: variable.id,
+    kind: "jotai/atom",
+    var: variable,
+    origin,
+    metadata: metadataToRecord(classification.metadata),
+  };
 }
+
+function anchor(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.Node,
+): SourceAnchor {
+  const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
+  return { file: fileName, line: pos.line + 1, column: pos.character + 1 };
+}
+
+function emptyDiscoverResult(): DiscoverJotaiResult {
+  return {
+    decls: [],
+    warnings: [],
+    atomNames: new Set(),
+    atomMetadata: new Map(),
+  };
+}
+
+export function duplicateAtomsForStore(
+  decls: readonly SourceDecl[],
+  storeScope: string,
+): SourceDecl[] {
+  return decls
+    .filter((decl) => decl.var && decl.kind.startsWith("jotai/"))
+    .map((decl) => {
+      const atomName =
+        typeof decl.metadata?.atomName === "string"
+          ? decl.metadata.atomName
+          : decl.var!.id.replace(/^atom:/, "").replace(/@store:.+$/, "");
+      const varId = atomVarId(atomName, storeScope);
+      return {
+        ...decl,
+        id: varId,
+        var: { ...decl.var!, id: varId },
+        metadata: { ...decl.metadata, storeScope },
+      };
+    });
+}
+
+export function isAtomCall(
+  node: ts.Expression,
+  atomCreators: ReadonlyMap<string, string>,
+): node is ts.CallExpression {
+  return isAtomCreatorCall(node, atomCreators);
+}
+
+export { resolveJotaiImports } from "./imports.js";

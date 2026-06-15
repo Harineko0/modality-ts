@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { Model, Trace } from "modality-ts/core";
 import { generateConformWalks, runConformCommand } from "./index.js";
+import { renderHumanConformResult } from "./output.js";
 
 const trace: Trace = {
   steps: [
@@ -535,6 +536,34 @@ describe("runConformCommand", () => {
         passRate: 1,
       },
     ]);
+  });
+});
+
+describe("renderHumanConformResult", () => {
+  it("prints row-oriented conform output", () => {
+    const lines = renderHumanConformResult({
+      report: {
+        schemaVersion: 1,
+        kind: "conform-report",
+        generatedAt: "2026-06-12T00:00:00.000Z",
+        mode: "abstract",
+        metrics: {
+          total: 8,
+          reproduced: 8,
+          notReproduced: 0,
+          inconclusive: 0,
+          passRate: 1,
+        },
+        transitionMetrics: [],
+      },
+      reportPath: ".modality/conform-report.json",
+      durationMs: 8,
+    });
+    expect(lines[0]).toMatch(/^ ✓ conformance /);
+    expect(lines.join("\n")).toContain("passRate 1");
+    expect(lines.join("\n")).toContain(
+      "(report) .modality/conform-report.json",
+    );
   });
 });
 

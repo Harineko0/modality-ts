@@ -1,71 +1,131 @@
 import type { CheckResult, PropertyVerdict } from "modality-ts/check";
+import {
+  colorize,
+  formatArtifactLine,
+  formatDuration,
+  formatMs,
+  formatStatusSymbol,
+  formatSummaryLabel,
+  formatTime,
+  type OutputOptions,
+  statusSymbol,
+  ANSI,
+} from "../../output.js";
 
-export type CheckOutputMode = "plain" | "color";
+export type CheckOutputOptions = OutputOptions;
 
-export interface CheckOutputOptions {
-  color?: boolean;
+export interface ArtifactPathEntry {
+  kind: "report" | "trace" | "replayTest" | "actionReplayTest";
+  path: string;
 }
 
-const ANSI = {
-  reset: "\u001b[0m",
-  bold: "\u001b[1m",
-  green: "\u001b[32m",
-  red: "\u001b[31m",
-  yellow: "\u001b[33m",
-  cyan: "\u001b[36m",
-  dim: "\u001b[2m",
-} as const;
-
-function useColor(options: CheckOutputOptions): boolean {
-  return options.color === true;
+export interface HumanCheckTargetResult {
+  modelPath: string;
+  propsPath: string;
+  check: CheckResult;
+  reportPath?: string;
+  artifacts: readonly ArtifactPathEntry[];
+  durationMs?: number;
 }
 
-function colorize(
-  text: string,
-  color: string,
-  options: CheckOutputOptions,
-): string {
-  if (!useColor(options)) return text;
-  return `${color}${text}${ANSI.reset}`;
+export interface HumanCheckRenderOptions extends OutputOptions {
+  startedAt: Date;
+  totalDurationMs: number;
 }
 
 export function symbolForStatus(status: PropertyVerdict["status"]): string {
   switch (status) {
     case "verified-within-bounds":
-      return "✓";
     case "reachable":
-      return "✓";
+      return statusSymbol("pass");
     case "violated":
-      return "×";
     case "error":
-      return "×";
+      return statusSymbol("fail");
     case "vacuous-warning":
-      return "⚠";
+      return statusSymbol("warn");
   }
 }
 
-function symbolColor(
-  status: PropertyVerdict["status"],
-): (typeof ANSI)[keyof typeof ANSI] {
-  switch (status) {
-    case "verified-within-bounds":
-      return ANSI.green;
-    case "reachable":
-      return ANSI.cyan;
-    case "violated":
-    case "error":
-      return ANSI.red;
-    case "vacuous-warning":
-      return ANSI.yellow;
+function targetStatusKind(check: CheckResult): "pass" | "fail" | "warn" {
+  if (
+    check.verdicts.some(
+      (verdict) => verdict.status === "violated" || verdict.status === "error",
+    )
+  ) {
+    return "fail";
   }
+  if (check.verdicts.some((verdict) => verdict.status === "vacuous-warning")) {
+    return "warn";
+  }
+  return "pass";
 }
 
-function formatSymbol(
-  status: PropertyVerdict["status"],
-  options: CheckOutputOptions,
-): string {
-  const symbol = symbolForStatus(status);
-  return colorize(symbol, symbolColor(status), options);
+function verdictCounts(check: CheckResult) {
+  const tests = check.verdicts.length;
+  const passed = check.verdicts.filter(
+    (verdict) =>
+      verdict.status === "verified-within-bounds" ||
+      verdict.status === "reachable",
+  ).length;
+  const failed = check.verdicts.filter(
+    (verdict) => verdict.status === "violated",
+  ).length;
+  const errors = check.verdicts.filter(
+    (verdict) => verdict.status === "error",
+  ).length;
+  const warnings = check.verdicts.filter(
+    (verdict) => verdict.status === "vacuous-warning",
+  ).length;
+  return { tests, passed, failed, errors, warnings };
+}
+
+function slicingStats(check: CheckResult): {
+  slices: number;
+  vars: number;
+  transitions: number;
+  skipped: number;
+} {
+  const slicing = check.diagnostics?.slicing;
+  if (slicing?.enabled) {
+    const totalVars =
+      slicing.sliceSummaries?.reduce((sum, summary) => sum + summary.vars, 0) ??
+      0;
+    const totalTransitions =
+      slicing.sliceSummaries?.reduce(
+        (sum, summary) => sum + summary.transitions,
+        0,
+      ) ?? 0;
+    return {
+      slices: slicing.slices ?? 0,
+      vars: totalVars,
+      transitions: totalTransitions,
+      skipped: 0,
+    };
+  }
+  if (slicing?.skipped) {
+    return { slices: 0, vars: 0, transitions: 0, skipped: 1 };
+  }
+  return { slices: 1, vars: 0, transitions: 0, skipped: 0 };
+}
+
+function formatTargetStats(check: CheckResult): string {
+  const { tests, passed, failed, errors, warnings } = verdictCounts(check);
+  const { slices, vars, transitions, skipped } = slicingStats(check);
+  const parts = [
+    `${tests} tests`,
+    `${passed} passed`,
+    `${failed} failed`,
+    `${errors} errors`,
+    `states ${check.stats.states}`,
+    `edges ${check.stats.edges}`,
+    `depth ${check.stats.depth}`,
+    `slices ${slices}`,
+    `vars ${vars}`,
+    `transitions ${transitions}`,
+    `skipped ${skipped}`,
+  ];
+  if (warnings > 0) parts.push(`warnings ${warnings}`);
+  return `(${parts.join(", ")})`;
 }
 
 function traceSteps(verdict: PropertyVerdict): string {
@@ -78,17 +138,19 @@ function traceSteps(verdict: PropertyVerdict): string {
   );
 }
 
-export function renderHumanCheckResult(
-  check: CheckResult,
-  options: CheckOutputOptions = {},
+function renderTargetRows(
+  target: HumanCheckTargetResult,
+  options: OutputOptions,
 ): string[] {
   const lines: string[] = [];
-  const section = (title: string) => colorize(title, `${ANSI.bold}`, options);
-
-  lines.push(section("Properties"));
-  for (const verdict of check.verdicts) {
-    const symbol = formatSymbol(verdict.status, options);
-    lines.push(`  ${symbol} ${verdict.property} ${verdict.status}`);
+  const kind = targetStatusKind(target.check);
+  const symbol = formatStatusSymbol(kind, options);
+  const duration =
+    target.durationMs !== undefined ? ` ${formatMs(target.durationMs)}` : "";
+  lines.push(` ${symbol} ${target.propsPath}${duration}`);
+  lines.push(`  ${formatTargetStats(target.check)}`);
+  for (const verdict of target.check.verdicts) {
+    lines.push(`  - ${verdict.property} ${verdict.status}`);
     if (verdict.status === "violated" || verdict.status === "reachable") {
       lines.push(`    trace: ${traceSteps(verdict)}`);
     }
@@ -96,80 +158,119 @@ export function renderHumanCheckResult(
       lines.push(`    ${verdict.message}`);
     }
   }
+  return lines;
+}
 
+export function renderHumanCheckTargets(
+  results: readonly HumanCheckTargetResult[],
+  options: HumanCheckRenderOptions,
+): string[] {
+  const lines: string[] = [];
+  for (const target of results) {
+    lines.push(...renderTargetRows(target, options));
+  }
   lines.push("");
-  lines.push(section("Stats"));
+
+  const totalTargets = results.length;
+  const passedTargets = results.filter(
+    (target) => targetStatusKind(target.check) === "pass",
+  ).length;
+  const failedTargets = totalTargets - passedTargets;
+  const testFilesValue =
+    failedTargets > 0
+      ? `${failedTargets} failed | ${passedTargets} passed (${totalTargets})`
+      : `${passedTargets} passed (${totalTargets})`;
+  lines.push(formatSummaryLabel("Test Files", testFilesValue));
+
+  const totalTests = results.reduce(
+    (sum, target) => sum + target.check.verdicts.length,
+    0,
+  );
+  const passedTests = results.reduce(
+    (sum, target) => sum + verdictCounts(target.check).passed,
+    0,
+  );
+  const failedTests = results.reduce(
+    (sum, target) => sum + verdictCounts(target.check).failed,
+    0,
+  );
+  const errorTests = results.reduce(
+    (sum, target) => sum + verdictCounts(target.check).errors,
+    0,
+  );
+  const warningTests = results.reduce(
+    (sum, target) => sum + verdictCounts(target.check).warnings,
+    0,
+  );
+  let testsValue = `${passedTests} passed (${totalTests})`;
+  if (failedTests > 0 || errorTests > 0 || warningTests > 0) {
+    const parts = [`${passedTests} passed`];
+    if (failedTests > 0) parts.push(`${failedTests} failed`);
+    if (errorTests > 0) parts.push(`${errorTests} errors`);
+    if (warningTests > 0) parts.push(`${warningTests} warnings`);
+    parts.push(`(${totalTests})`);
+    testsValue = parts.join(", ");
+  }
+  lines.push(formatSummaryLabel("Tests", testsValue));
+  lines.push(formatSummaryLabel("Start at", formatTime(options.startedAt)));
   lines.push(
-    `  states=${check.stats.states} edges=${check.stats.edges} depth=${check.stats.depth}`,
+    formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
   );
 
-  const slicing = check.diagnostics?.slicing;
-  if (slicing?.enabled) {
-    const totalVars =
-      slicing.sliceSummaries?.reduce((sum, summary) => sum + summary.vars, 0) ??
-      0;
-    const totalTransitions =
-      slicing.sliceSummaries?.reduce(
-        (sum, summary) => sum + summary.transitions,
-        0,
-      ) ?? 0;
-    lines.push(
-      `  slicing slices=${slicing.slices ?? 0} vars=${totalVars} transitions=${totalTransitions} skipped=0`,
-    );
-  } else if (slicing?.skipped) {
-    lines.push(`  slicing skipped reason=${slicing.skipReason ?? "unknown"}`);
+  const artifacts: ArtifactPathEntry[] = [];
+  for (const target of results) {
+    if (target.reportPath) {
+      artifacts.push({ kind: "report", path: target.reportPath });
+    }
+    for (const entry of target.artifacts) {
+      artifacts.push(entry);
+    }
   }
-
-  const limits = check.diagnostics?.limits;
-  if (limits) {
-    const limitKind =
-      limits.maxStates !== undefined
-        ? "maxStates"
-        : limits.maxFrontier !== undefined
-          ? "maxFrontier"
-          : limits.maxEdges !== undefined
-            ? "maxEdges"
-            : "memoryGuard";
-    lines.push(
-      `  search-limit=${limitKind} states=${check.stats.states} frontier=${check.diagnostics?.search?.finalFrontier ?? 0} depth=${check.stats.depth}`,
-    );
-  }
-
-  const storage = check.diagnostics?.storage;
-  if (storage) {
-    lines.push(
-      `  storage mode=${storage.edgeRecordingMode} recordedEdges=${storage.recordedEdges} storedStates=${storage.storedStates} parentEntries=${storage.parentEntries}`,
-    );
-  }
-
-  const hotPath = check.diagnostics?.hotPath;
-  if (hotPath) {
-    lines.push(
-      `  hotPath canonicalCache=${hotPath.canonicalCache} transitionIndex=${hotPath.transitionIndex} internalTransitionIndex=${hotPath.internalTransitionIndex}`,
-    );
+  if (artifacts.length > 0) {
+    lines.push(formatSummaryLabel("Artifacts", ""));
+    for (const entry of artifacts) {
+      lines.push(formatArtifactLine(entry.kind, entry.path, options));
+    }
   }
 
   return lines;
 }
 
-export interface ArtifactPathEntry {
-  kind: "trace" | "replayTest" | "actionReplayTest";
-  path: string;
+/** @deprecated Use renderHumanCheckTargets for CLI output */
+export function renderHumanCheckResult(
+  check: CheckResult,
+  options: CheckOutputOptions = {},
+): string[] {
+  return renderHumanCheckTargets(
+    [
+      {
+        modelPath: "",
+        propsPath: "",
+        check,
+        artifacts: [],
+      },
+    ],
+    {
+      ...options,
+      startedAt: new Date(0),
+      totalDurationMs: 0,
+    },
+  );
 }
 
+/** @deprecated Use renderHumanCheckTargets artifact block */
 export function renderHumanCheckArtifacts(
   paths: readonly ArtifactPathEntry[],
   options: CheckOutputOptions = {},
 ): string[] {
   if (paths.length === 0) return [];
-  const lines: string[] = [];
-  lines.push(colorize("Artifacts", `${ANSI.bold}`, options));
-  for (const entry of paths) {
-    lines.push(`  ${entry.kind} ${entry.path}`);
-  }
-  return lines;
+  return [
+    colorize("Artifacts", `${ANSI.bold}`, options),
+    ...paths.map((entry) => `  ${entry.kind} ${entry.path}`),
+  ];
 }
 
+/** @deprecated No longer used in CLI output */
 export function renderHumanCheckTargetHeader(
   modelPath: string,
   propsPath: string,
@@ -178,3 +279,5 @@ export function renderHumanCheckTargetHeader(
   const title = colorize(`Target ${modelPath}`, `${ANSI.bold}`, options);
   return [title, `  props ${propsPath}`];
 }
+
+export type CheckOutputMode = "plain" | "color";

@@ -9,6 +9,7 @@ import {
 } from "modality-ts/core";
 import { runCheckCommand } from "../../check.js";
 import { runConformCommand } from "../../conform.js";
+import type { HumanCiRenderInput } from "./output.js";
 
 export interface CiCommandOptions {
   modelPath: string;
@@ -33,6 +34,7 @@ export interface CiCommandResult {
   lines: string[];
   reportPath: string;
   tracesDir: string;
+  summary: Omit<HumanCiRenderInput, "durationMs">;
 }
 
 export async function runCiCommand(
@@ -98,6 +100,27 @@ export async function runCiCommand(
     exitCode,
     reportPath,
     tracesDir,
+    summary: {
+      exitCode,
+      violationCount,
+      errorCount,
+      determinismPassed: determinism.length === 0,
+      determinismFailures: determinism,
+      trustRegressions,
+      sourceStaleFailures: options.sourcePath ? staleSource : [],
+      ...(options.sourcePath
+        ? { sourceFreshnessPassed: staleSource.length === 0 }
+        : {}),
+      ...(conformPassRate !== undefined
+        ? {
+            conformPassRate,
+            conformMinPassRate: minConformPassRate,
+            transitionConformFailures,
+          }
+        : { transitionConformFailures: [] }),
+      reportPath,
+      tracesDir,
+    },
     lines: [
       `ci: ${exitCode === 0 ? "passed" : "failed"}`,
       `violations=${violationCount} errors=${errorCount}`,

@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { traceArtifact, type Trace } from "modality-ts/core";
-import { runReplayCommand } from "../replay/index.js";
+import { runReplayCommand } from "./index.js";
+import { renderHumanReplayResult } from "./output.js";
 
 const trace: Trace = {
   steps: [
@@ -303,5 +304,25 @@ describe("runReplayCommand", () => {
     await expect(runReplayCommand({ tracePath })).rejects.toThrow(
       "trace step 1 is malformed",
     );
+  });
+});
+
+describe("renderHumanReplayResult", () => {
+  it("prints row-oriented replay output", () => {
+    const lines = renderHumanReplayResult({
+      tracePath: "trace.json",
+      report: {
+        schemaVersion: 1,
+        kind: "replay-report",
+        generatedAt: "2026-06-12T00:00:00.000Z",
+        mode: "abstract",
+        verdict: { status: "reproduced", stepsRun: 3 },
+      },
+      reportPath: ".modality/replay-report.json",
+      durationMs: 4,
+    });
+    expect(lines[0]).toMatch(/^ ✓ trace\.json /);
+    expect(lines.join("\n")).toContain("reproduced");
+    expect(lines.join("\n")).toContain("(report) .modality/replay-report.json");
   });
 });

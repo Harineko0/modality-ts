@@ -14,6 +14,7 @@ import {
   generateTlaStructuredModel,
   runExportTlaCommand,
 } from "./index.js";
+import { renderHumanExportResult } from "./output.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -785,5 +786,18 @@ describe("TLA export", () => {
     expect(() => generateTlaModule(colliding, "CollisionFixture")).toThrow(
       "TLA export identifier collision",
     );
+  });
+});
+
+describe("renderHumanExportResult", () => {
+  it("prints row-oriented export output", () => {
+    const lines = renderHumanExportResult({
+      outPath: ".modality/model.tla",
+      moduleName: "extracted_model_Model",
+      durationMs: 3,
+    });
+    expect(lines[0]).toMatch(/^ ✓ model\.tla /);
+    expect(lines.join("\n")).toContain("format tla");
+    expect(lines.join("\n")).toContain("(export) .modality/model.tla");
   });
 });

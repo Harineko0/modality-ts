@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { StateVarDecl } from "modality-ts/core";
+import type { StateVarDecl, Value } from "modality-ts/core";
 import {
   componentNameFor,
   isExtractableHandler,
@@ -22,12 +22,19 @@ export function emptyContextBindings(): ContextBindings {
 export function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
   const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
   const atomMatch = /^atom:(.+)$/.exec(decl.id);
+  const familyMatch = /^atom-family:([^:]+):/.exec(decl.id);
   const swrMatch = /^swr:(.+):data$/.exec(decl.id);
   return {
     varId: decl.id,
     component: localMatch?.[1] ?? "Anonymous",
-    stateName: localMatch?.[2] ?? atomMatch?.[1] ?? swrMatch?.[1] ?? decl.id,
+    stateName:
+      localMatch?.[2] ??
+      familyMatch?.[1] ??
+      atomMatch?.[1]?.replace(/@store:.+$/, "") ??
+      swrMatch?.[1] ??
+      decl.id,
     domain: decl.domain,
+    initial: decl.initial as Value,
   };
 }
 

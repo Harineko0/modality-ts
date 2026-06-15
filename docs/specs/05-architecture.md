@@ -127,12 +127,18 @@ Each source package owns its concern end-to-end — discovery to replay to confo
 
 ```
 src/extract/sources/jotai/
-├── discover.ts              # P1: atom() resolution through aliasing/re-exports
-├── domains.ts               # P2 hints (derived-atom inlining decisions)
-├── writes.ts                # P5 channels (useSetAtom, useAtom[1], store.set,
-│                            #   getDefaultStore taint source) + P4 summarizeWrite
-├── harness.ts               # './harness': createStore + Provider, store.get observation
-├── conformance.ts           # testedVersions; (no template → no probes)
+├── imports.ts               # Jotai module + alias resolution
+├── types.ts                 # internal atom metadata shapes
+├── ids.ts                   # store/family-qualified var IDs
+├── discover.ts              # P1: atom + utility creators + family instances
+├── domains.ts               # P2 classification and domain inference
+├── derived-writes.ts        # derived atom write summarization
+├── hydration.ts             # useHydrateAtoms initial overrides
+├── writes.ts                # P3/P5 channels (useAtom, useSetAtom, useResetAtom,
+│                            #   store.set, Provider scoping) + safety warnings
+├── plugin.ts                # summarizeWrite hook for cache lifecycle no-ops
+├── harness.ts               # store-qualified observation handles
+├── transitions.ts           # shared React transition adapter entry
 └── index.ts                 # assembles and exports the plugin object
 ```
 

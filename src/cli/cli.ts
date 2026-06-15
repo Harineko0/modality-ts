@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import { relative } from "node:path";
 import {
   artifactPathsForPropsFile,
@@ -18,14 +19,31 @@ import {
   inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
 } from "./defaults.js";
-import { runCheckCommand } from "./features/check/index.js";
-import { renderHumanCheckTargetHeader } from "./features/check/output.js";
-import { runCiCommand } from "./features/ci/index.js";
-import { runConformCommand } from "./features/conform/index.js";
-import { runExportTlaCommand } from "./features/export/index.js";
-import { runExtractCommand } from "./features/extract/index.js";
-import { runInitCommand } from "./features/init/index.js";
-import { runReplayCommand } from "./features/replay/index.js";
+import {
+  renderHumanCheckTargets,
+  runCheckCommand,
+} from "./features/check/index.js";
+import { renderHumanCiResult, runCiCommand } from "./features/ci/index.js";
+import {
+  renderHumanConformResult,
+  runConformCommand,
+} from "./features/conform/index.js";
+import {
+  renderHumanExportResult,
+  runExportTlaCommand,
+} from "./features/export/index.js";
+import {
+  renderHumanExtractTargets,
+  runExtractCommand,
+} from "./features/extract/index.js";
+import {
+  renderHumanInitResult,
+  runInitCommand,
+} from "./features/init/index.js";
+import {
+  renderHumanReplayResult,
+  runReplayCommand,
+} from "./features/replay/index.js";
 
 function flagValue(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -67,12 +85,12 @@ function shouldUseColor(): boolean {
   return process.stdout.isTTY === true;
 }
 
-function checkOutputOptions() {
-  return {
-    emit: (line: string) => console.log(line),
-    human: true,
-    color: shouldUseColor(),
-  } as const;
+function outputOptions() {
+  return { color: shouldUseColor() } as const;
+}
+
+function emitLines(lines: readonly string[]): void {
+  for (const line of lines) console.log(line);
 }
 
 async function main(): Promise<void> {
@@ -120,11 +138,19 @@ async function main(): Promise<void> {
     process.exit(command ? 1 : 0);
   }
   if (command === "init") {
+    const startedMs = performance.now();
     const result = await runInitCommand();
-    for (const line of result.lines) console.log(line);
+    emitLines(
+      renderHumanInitResult(
+        result,
+        performance.now() - startedMs,
+        outputOptions(),
+      ),
+    );
     process.exit(0);
   }
   if (command === "ci") {
+    const startedMs = performance.now();
     const artifactDir = flagValue(args, "--artifacts");
     const overlayPath = flagValue(args, "--overlay");
     const baselinePath = flagValue(args, "--baseline");
@@ -206,10 +232,19 @@ async function main(): Promise<void> {
       minConformPassRate,
       minTransitionConformPassRate,
     });
-    for (const line of result.lines) console.log(line);
+    emitLines(
+      renderHumanCiResult(
+        {
+          ...result.summary,
+          durationMs: performance.now() - startedMs,
+        },
+        outputOptions(),
+      ),
+    );
     process.exit(result.exitCode);
   }
   if (command === "conform") {
+    const startedMs = performance.now();
     const reportFlag = flagValue(args, "--report");
     const reportPath = reportFlag ?? defaultConformReportPath;
     const modelPath = flagValue(args, "--model");
@@ -273,10 +308,20 @@ async function main(): Promise<void> {
       mode,
       harnessPath,
     });
-    for (const line of result.lines) console.log(line);
+    emitLines(
+      renderHumanConformResult(
+        {
+          report: result.report,
+          reportPath,
+          durationMs: performance.now() - startedMs,
+        },
+        outputOptions(),
+      ),
+    );
     process.exit(result.exitCode);
   }
   if (command === "export") {
+    const startedMs = performance.now();
     const outFlag = flagValue(args, "--out");
     const outPath = outFlag ?? defaultTlaPath;
     const formatFlag = flagValue(args, "--format");
@@ -319,10 +364,20 @@ async function main(): Promise<void> {
       outPath,
       moduleName,
     });
-    for (const line of result.lines) console.log(line);
+    emitLines(
+      renderHumanExportResult(
+        {
+          outPath: result.outPath,
+          moduleName: result.moduleName,
+          durationMs: performance.now() - startedMs,
+        },
+        outputOptions(),
+      ),
+    );
     process.exit(0);
   }
   if (command === "extract") {
+    const startedMs = performance.now();
     const explainDrift = args.includes("--explain-drift");
     const effectApiFlags = args.flatMap((arg, index) => {
       if (arg !== "--effect-api") return [];
@@ -387,33 +442,68 @@ async function main(): Promise<void> {
       effectApis: effectApiFlags,
       explainDrift,
     };
+    const extractTargets: Array<{
+      label: string;
+      durationMs: number;
+      result: Awaited<ReturnType<typeof runExtractCommand>>;
+    }> = [];
     if (sourcePaths.length > 0 || wantsSingleMergedOutput) {
       const effectiveSourcePaths =
         sourcePaths.length > 0
           ? sourcePaths
           : await inferSourceFilesFromProps();
+      const targetStartedMs = performance.now();
       const result = await runExtractCommand({
         sourcePaths: effectiveSourcePaths,
         modelPath,
         appModelPath,
         ...sharedOptions,
       });
-      for (const line of result.lines) console.log(line);
+      extractTargets.push({
+        label: result.targetLabel,
+        durationMs: performance.now() - targetStartedMs,
+        result,
+      });
     } else {
       const targets = await inferExtractTargetsFromProps();
       for (const target of targets) {
+        const targetStartedMs = performance.now();
         const result = await runExtractCommand({
           sourcePath: target.sourcePath,
           modelPath: target.modelPath,
           appModelPath: target.appModelPath,
           ...sharedOptions,
         });
-        for (const line of result.lines) console.log(line);
+        extractTargets.push({
+          label: target.sourcePath,
+          durationMs: performance.now() - targetStartedMs,
+          result,
+        });
       }
     }
+    emitLines(
+      renderHumanExtractTargets(
+        extractTargets.map(({ label, durationMs, result }) => ({
+          label,
+          durationMs,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          report: result.report,
+          pluginLabels: result.pluginLabels,
+          stateSpaceLine: result.stateSpaceLine,
+          coarseDomainsLine: result.coarseDomainsLine,
+          artifacts: result.artifacts,
+        })),
+        {
+          ...outputOptions(),
+          totalDurationMs: performance.now() - startedMs,
+        },
+      ),
+    );
     process.exit(0);
   }
   if (command === "replay") {
+    const startedMs = performance.now();
     const reportFlag = flagValue(args, "--report");
     const reportPath = reportFlag ?? defaultReplayReportPath;
     const statesPath = flagValue(args, "--states");
@@ -442,7 +532,17 @@ async function main(): Promise<void> {
       mode,
       harnessPath,
     });
-    for (const line of result.lines) console.log(line);
+    emitLines(
+      renderHumanReplayResult(
+        {
+          tracePath,
+          report: result.report,
+          reportPath,
+          durationMs: performance.now() - startedMs,
+        },
+        outputOptions(),
+      ),
+    );
     process.exit(result.exitCode);
   }
   const reportPath = flagValue(args, "--report");
@@ -542,6 +642,9 @@ async function main(): Promise<void> {
         : {}),
     };
   }
+  const startedAt = new Date();
+  const startedMs = performance.now();
+  const color = shouldUseColor();
   if (!modelPath) {
     const generatedModels = await discoverGeneratedModelFiles();
     let useMultiTarget = generatedModels.length > 0;
@@ -566,16 +669,10 @@ async function main(): Promise<void> {
       }
       const targets = await inferCheckTargetsFromProps();
       let exitCode = 0;
-      const output = checkOutputOptions();
+      const checkTargets = [];
       for (const target of targets) {
+        const targetStartedMs = performance.now();
         const base = target.modelPath.replace(/\.model\.json$/, "");
-        for (const line of renderHumanCheckTargetHeader(
-          target.modelPath,
-          relative(process.cwd(), target.propsPath),
-          { color: output.color },
-        )) {
-          output.emit(line);
-        }
         const result = await runCheckCommand({
           modelPath: target.modelPath,
           propsPaths: [target.propsPath],
@@ -586,28 +683,68 @@ async function main(): Promise<void> {
           actionReplayTestsDir: `${base}.action-replay-tests`,
           statesPath,
           searchLimits,
-          output,
         });
         if (result.exitCode === 2) exitCode = 2;
+        checkTargets.push({
+          modelPath: target.modelPath,
+          propsPath: relative(process.cwd(), target.propsPath),
+          check: result.check,
+          reportPath: `${base}.report.json`,
+          artifacts: result.artifacts,
+          durationMs: performance.now() - targetStartedMs,
+        });
       }
+      emitLines(
+        renderHumanCheckTargets(checkTargets, {
+          color,
+          startedAt,
+          totalDurationMs: performance.now() - startedMs,
+        }),
+      );
       process.exit(exitCode);
     }
   }
   const effectiveModelPath = modelPath ?? defaultModelPath;
   const effectivePropsPaths =
     propsPaths.length > 0 ? propsPaths : await discoverPropsFiles();
+  const targetStartedMs = performance.now();
+  const effectiveReportPath = reportPath ?? defaultReportPath;
   const result = await runCheckCommand({
     modelPath: effectiveModelPath,
     propsPaths: effectivePropsPaths,
-    reportPath: reportPath ?? defaultReportPath,
+    reportPath: effectiveReportPath,
     overlayPath,
     tracesDir: tracesFlag ?? defaultTracesDir,
     replayTestsDir: replayTestsFlag ?? defaultReplayTestsDir,
     actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
     statesPath,
     searchLimits,
-    output: checkOutputOptions(),
   });
+  const propsLabel =
+    effectivePropsPaths.length === 1
+      ? relative(process.cwd(), effectivePropsPaths[0] ?? "")
+      : effectivePropsPaths
+          .map((props) => relative(process.cwd(), props))
+          .join(", ");
+  emitLines(
+    renderHumanCheckTargets(
+      [
+        {
+          modelPath: effectiveModelPath,
+          propsPath: propsLabel,
+          check: result.check,
+          reportPath: effectiveReportPath,
+          artifacts: result.artifacts,
+          durationMs: performance.now() - targetStartedMs,
+        },
+      ],
+      {
+        color,
+        startedAt,
+        totalDurationMs: performance.now() - startedMs,
+      },
+    ),
+  );
   process.exit(result.exitCode);
 }
 

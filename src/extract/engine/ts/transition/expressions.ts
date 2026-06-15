@@ -9,7 +9,21 @@ export function setterArgumentExpr(
   setter: SetterBinding,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
 ): BoundExpr | undefined {
+  if (ts.isIdentifier(argument) && resetSymbols.has(argument.text)) {
+    if (setter.resettable && setter.initial !== undefined) {
+      return { expr: { kind: "lit", value: setter.initial }, reads: [] };
+    }
+    return undefined;
+  }
+  if (
+    argument.kind === ts.SyntaxKind.NullKeyword &&
+    setter.resettable &&
+    setter.initial !== undefined
+  ) {
+    return { expr: { kind: "lit", value: setter.initial }, reads: [] };
+  }
   if (ts.isObjectLiteralExpression(argument)) {
     const object = objectLiteralAssignmentExpr(
       argument,

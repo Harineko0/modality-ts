@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
 import { runCiCommand } from "./index.js";
+import { renderHumanCiResult } from "./output.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 
@@ -798,6 +799,31 @@ describe("runCiCommand", () => {
     expect(result.lines).not.toContain(
       "conform-transition-failure: setFlag passRate=1 walks=1",
     );
+  });
+});
+
+describe("renderHumanCiResult", () => {
+  it("prints row-oriented ci output", () => {
+    const lines = renderHumanCiResult({
+      exitCode: 0,
+      violationCount: 0,
+      errorCount: 0,
+      determinismPassed: true,
+      determinismFailures: [],
+      trustRegressions: [],
+      sourceFreshnessPassed: true,
+      sourceStaleFailures: [],
+      conformPassRate: 1,
+      conformMinPassRate: 1,
+      transitionConformFailures: [],
+      reportPath: ".modality/report.json",
+      tracesDir: ".modality/traces",
+      durationMs: 43,
+    });
+    expect(lines[0]).toMatch(/^ ✓ ci /);
+    expect(lines.join("\n")).toContain("check 0 violations, 0 errors");
+    expect(lines.join("\n")).toContain("(report) .modality/report.json");
+    expect(lines.join("\n")).toContain("(traces) .modality/traces");
   });
 });
 

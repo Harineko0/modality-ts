@@ -86,6 +86,7 @@ export function transitionsFromJsxAttribute(
   routePatterns: readonly string[],
   contextBindings: ContextBindings,
   warnings: ExtractionWarning[],
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
 ): Transition[] {
   if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer)
@@ -115,6 +116,7 @@ export function transitionsFromJsxAttribute(
       routePatterns,
       contextBindings,
       warnings,
+      resetSymbols,
     ),
     handler,
   );
@@ -275,6 +277,7 @@ export function transitionsFromResolvedHandler(
   routePatterns: readonly string[],
   contextBindings: ContextBindings,
   warnings: ExtractionWarning[],
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
 ): Transition[] {
   if (containsAwaitInLoop(handler)) {
     const { line, column } = lineAndColumn(source, handler);
@@ -333,6 +336,7 @@ export function transitionsFromResolvedHandler(
     handlers,
     component,
     locator,
+    resetSymbols,
   );
   if (sequentialTransition)
     return applyParsedGuard([sequentialTransition], disabledGuard);
@@ -437,7 +441,13 @@ export function transitionsFromResolvedHandler(
       disabledGuard,
     );
   }
-  const assignment = setterArgumentExpr(argument, setter, setters, locals);
+  const assignment = setterArgumentExpr(
+    argument,
+    setter,
+    setters,
+    locals,
+    resetSymbols,
+  );
   if (!assignment) {
     return applyParsedGuard(
       [
@@ -483,8 +493,12 @@ export function sequentialTransitionFromHandler(
   handlers: Map<string, ExtractableHandler>,
   component: string,
   locator: Locator | undefined,
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
 ): Transition | undefined {
-  const summaries = summarizeHandlerStatements(handler, setters, { handlers });
+  const summaries = summarizeHandlerStatements(handler, setters, {
+    handlers,
+    resetSymbols,
+  });
   const onlySummary = summaries?.[0];
   if (
     !summaries ||

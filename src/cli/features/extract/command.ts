@@ -36,6 +36,7 @@ import {
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
+import type { ExtractArtifactEntry } from "./output.js";
 
 export interface ModalityConfig {
   route?: string;
@@ -71,6 +72,14 @@ export interface ExtractCommandResult {
   model: Model;
   report: ExtractionReport;
   lines: string[];
+  targetLabel: string;
+  appModelPath: string;
+  varCount: number;
+  transitionCount: number;
+  pluginLabels: readonly string[];
+  stateSpaceLine?: string;
+  coarseDomainsLine?: string;
+  artifacts: readonly ExtractArtifactEntry[];
 }
 
 export async function runExtractCommand(
@@ -239,11 +248,33 @@ export async function runExtractCommand(
     if (!coverage || coverage.configured === 0) return undefined;
     return formatRouteCoverageLine(coverage);
   })();
+  const varCount =
+    pipeline.stateVars.length +
+    pipeline.templateFragments.flatMap((fragment) => fragment.vars).length;
+  const pluginLabels = registry.plugins.map(
+    (plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`,
+  );
+  const targetLabel = options.sourcePath ?? sourcePaths[0] ?? options.modelPath;
+  const artifacts: ExtractArtifactEntry[] = [
+    { kind: "model", path: options.modelPath },
+    { kind: "appModel", path: appModelPath },
+  ];
+  if (options.reportPath) {
+    artifacts.push({ kind: "report", path: options.reportPath });
+  }
   return {
     model,
     report,
+    targetLabel,
+    appModelPath,
+    varCount,
+    transitionCount: transitions.length,
+    pluginLabels,
+    stateSpaceLine,
+    coarseDomainsLine,
+    artifacts,
     lines: [
-      `extracted vars=${pipeline.stateVars.length + pipeline.templateFragments.flatMap((fragment) => fragment.vars).length} transitions=${transitions.length}`,
+      `extracted vars=${varCount} transitions=${transitions.length}`,
       ...(stateSpaceLine ? [stateSpaceLine] : []),
       ...(routeCoverageLine ? [routeCoverageLine] : []),
       ...(coarseDomainsLine ? [coarseDomainsLine] : []),

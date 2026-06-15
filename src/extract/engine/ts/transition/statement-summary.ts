@@ -16,11 +16,13 @@ import { bindConstStatement } from "./locals.js";
 export interface StatementSummaryOptions {
   handlers?: Map<string, ExtractableHandler>;
   initialLocals?: Map<string, BoundExpr>;
+  resetSymbols?: ReadonlySet<string>;
 }
 
 interface StatementSummaryState {
   locals: Map<string, BoundExpr>;
   handlers?: Map<string, ExtractableHandler>;
+  resetSymbols?: ReadonlySet<string>;
 }
 
 interface StatementSummaryResult {
@@ -44,7 +46,9 @@ export function summarizeHandlerStatements(
   options: StatementSummaryOptions = {},
 ): EffectSummary[] | undefined {
   if (ts.isCallExpression(handler.body)) {
-    const summary = summarizeSetterCall(handler.body, setters);
+    const summary = summarizeSetterCall(handler.body, setters, new Map(), {
+      resetSymbols: options.resetSymbols,
+    });
     return summary ? [summary] : undefined;
   }
   if (!ts.isBlock(handler.body)) return undefined;
@@ -59,6 +63,7 @@ export function summarizeStatements(
   const result = summarizeStatementList(statements, setters, {
     locals: new Map(options.initialLocals),
     handlers: options.handlers,
+    resetSymbols: options.resetSymbols,
   });
   return result?.summaries;
 }
@@ -90,22 +95,52 @@ export function summarizeSetterCall(
   call: ts.CallExpression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
+  resetOptions: StatementSummaryResetOptions = {},
 ): EffectSummary | undefined {
   const setterCall = setterCallFrom(call, setters);
   if (!setterCall) return undefined;
-  return summarizeSetterWrite(setterCall, setters, locals);
+  return summarizeSetterWrite(setterCall, setters, locals, resetOptions);
+}
+
+export interface StatementSummaryResetOptions {
+  resetSymbols?: ReadonlySet<string>;
 }
 
 export function summarizeSetterWrite(
   setterCall: SetterCall,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
+  resetOptions: StatementSummaryResetOptions = {},
 ): EffectSummary {
+  if (
+    setterCall.setter.fixedEffect &&
+    setterCall.argument.kind === ts.SyntaxKind.NullKeyword
+  ) {
+    return {
+      effect: setterCall.setter.fixedEffect,
+      reads: [],
+    };
+  }
+  if (
+    setterCall.setter.resettable &&
+    setterCall.setter.initial !== undefined &&
+    setterCall.argument.kind === ts.SyntaxKind.NullKeyword
+  ) {
+    return {
+      effect: {
+        kind: "assign",
+        var: setterCall.setter.varId,
+        expr: { kind: "lit", value: setterCall.setter.initial },
+      },
+      reads: [],
+    };
+  }
   const assignment = setterArgumentExpr(
     setterCall.argument,
     setterCall.setter,
     setters,
     locals,
+    resetOptions.resetSymbols,
   );
   if (!assignment) {
     return {
@@ -127,6 +162,16 @@ export function setterCallFrom(
   call: ts.CallExpression,
   setters: Map<string, SetterBinding>,
 ): SetterCall | undefined {
+  if (ts.isIdentifier(call.expression) && call.arguments.length === 0) {
+    const setter = setters.get(call.expression.text);
+    if (setter?.resettable || setter?.fixedEffect) {
+      return {
+        setter,
+        argument: ts.factory.createNull(),
+      };
+    }
+    return undefined;
+  }
   if (ts.isIdentifier(call.expression) && call.arguments.length === 1) {
     const setter = setters.get(call.expression.text);
     const argument = call.arguments[0];
@@ -376,7 +421,9 @@ function summarizeStatement(
     if (call) {
       const helper = helperSummariesFromCall(call, state.handlers, setters);
       if (helper) return { summaries: helper, terminated: false };
-      const summary = summarizeSetterCall(call, setters, state.locals);
+      const summary = summarizeSetterCall(call, setters, state.locals, {
+        resetSymbols: state.resetSymbols,
+      });
       if (summary) return { summaries: [summary], terminated: false };
     }
     return fallbackResult(statement, setters);

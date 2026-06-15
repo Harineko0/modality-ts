@@ -1,6 +1,11 @@
-import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import type {
+  CallSite,
+  M0Ctx,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
+import type { EffectIR } from "modality-ts/core";
 import * as harness from "./harness.js";
-import { discoverJotaiAtoms } from "./discover.js";
+import { discoverJotaiAtomsDetailed } from "./discover.js";
 import {
   discoverJotaiSafetyWarnings,
   discoverJotaiWriteChannels,
@@ -11,16 +16,28 @@ export function jotaiSource(): StateSourcePlugin {
     id: "jotai",
     version: "0.1.0",
     packageNames: ["jotai"],
-    discover: (ctx) => discoverJotaiAtoms(ctx.sourceText, ctx.fileName),
+    discover: (ctx) =>
+      discoverJotaiAtomsDetailed(ctx.sourceText, ctx.fileName).decls,
     writeChannels: (ctx) =>
       discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName),
     safetyWarnings: (ctx) =>
       discoverJotaiSafetyWarnings(ctx.sourceText, ctx.fileName),
+    summarizeWrite: summarizeJotaiWrite,
     harness,
     conformance: {
       testedVersions: "jotai>=2",
     },
   };
+}
+
+function summarizeJotaiWrite(
+  call: CallSite,
+  _ctx: M0Ctx,
+): EffectIR | "unsupported" {
+  if (call.callee.endsWith(".setShouldRemove")) {
+    return { kind: "seq", effects: [] };
+  }
+  return "unsupported";
 }
 
 export default jotaiSource;

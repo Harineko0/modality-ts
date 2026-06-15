@@ -66,6 +66,7 @@ export interface CheckCommandResult {
   report: CheckReport;
   exitCode: number;
   lines: string[];
+  artifacts: readonly ArtifactPathEntry[];
 }
 
 export async function runCheckCommand(
@@ -115,18 +116,33 @@ export async function runCheckCommand(
       options.output?.emit?.(line);
     }
   };
+  const artifacts: ArtifactPathEntry[] = [];
   const tracePaths = options.tracesDir
-    ? await writeTraceArtifacts(check, options.tracesDir)
+    ? await writeTraceArtifacts(check, options.tracesDir, (kind, path) => {
+        artifacts.push({ kind, path });
+      })
     : [];
   emitArtifacts(tracePaths.map((path) => ({ kind: "trace" as const, path })));
   const replayTestPaths = options.replayTestsDir
-    ? await writeReplayTestArtifacts(check, options.replayTestsDir)
+    ? await writeReplayTestArtifacts(
+        check,
+        options.replayTestsDir,
+        (kind, path) => {
+          artifacts.push({ kind, path });
+        },
+      )
     : [];
   emitArtifacts(
     replayTestPaths.map((path) => ({ kind: "replayTest" as const, path })),
   );
   const actionReplayTestPaths = options.actionReplayTestsDir
-    ? await writeActionReplayTestArtifacts(check, options.actionReplayTestsDir)
+    ? await writeActionReplayTestArtifacts(
+        check,
+        options.actionReplayTestsDir,
+        (kind, path) => {
+          artifacts.push({ kind, path });
+        },
+      )
     : [];
   emitArtifacts(
     actionReplayTestPaths.map((path) => ({
@@ -148,6 +164,7 @@ export async function runCheckCommand(
       ...replayTestPaths.map((path) => `replayTest=${path}`),
       ...actionReplayTestPaths.map((path) => `actionReplayTest=${path}`),
     ],
+    artifacts,
   };
 }
 

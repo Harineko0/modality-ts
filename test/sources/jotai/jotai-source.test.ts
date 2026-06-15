@@ -66,7 +66,11 @@ describe("Jotai source plugin", () => {
           initial: "guest",
         },
         origin: { file: "state.ts", line: 3, column: 20 },
-        metadata: { atomName: "authAtom" },
+        metadata: {
+          atomName: "authAtom",
+          configKind: "primitive",
+          creator: "atom",
+        },
       },
       {
         id: "atom:countAtom",
@@ -79,7 +83,11 @@ describe("Jotai source plugin", () => {
           initial: 0,
         },
         origin: { file: "state.ts", line: 4, column: 20 },
-        metadata: { atomName: "countAtom" },
+        metadata: {
+          atomName: "countAtom",
+          configKind: "primitive",
+          creator: "atom",
+        },
       },
     ]);
   });
@@ -308,5 +316,236 @@ describe("Jotai source plugin", () => {
         confidence: "exact",
       }),
     );
+  });
+
+  it("discovers aliased jotai imports", () => {
+    const source = `
+      import { atom as jotaiAtom, useAtom as useJ } from 'jotai';
+      export const authAtom = jotaiAtom('guest');
+      const [auth, setAuth] = useJ(authAtom);
+    `;
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: "state.ts",
+      route: "/",
+    });
+    expect(decls[0]?.id).toBe("atom:authAtom");
+    expect(
+      jotaiSource().writeChannels({ sourceText: source, fileName: "App.tsx" }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ symbolName: "auth", varId: "atom:authAtom" }),
+        expect.objectContaining({
+          symbolName: "setAuth",
+          varId: "atom:authAtom",
+        }),
+      ]),
+    );
+  });
+
+  it("discovers atomWithStorage from jotai/utils", () => {
+    const source = `
+      import { atomWithStorage } from 'jotai/utils';
+      export const themeAtom = atomWithStorage('theme', 'light');
+    `;
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: "state.ts",
+      route: "/",
+    });
+    expect(decls[0]).toMatchObject({
+      id: "atom:themeAtom",
+      var: {
+        id: "atom:themeAtom",
+        initial: "light",
+        domain: { kind: "enum", values: ["light"] },
+      },
+      metadata: {
+        atomName: "themeAtom",
+        configKind: "storage",
+        storageKey: "theme",
+      },
+    });
+  });
+
+  it("warns on dynamic atom family params", () => {
+    const source = `
+      import { atom, atomFamily } from 'jotai/utils';
+      const countAtom = atom(0);
+      const todoFamily = atomFamily((id: string) => atom(id));
+      const dynamic = todoFamily(routeId);
+    `;
+    const warnings = jotaiSource().safetyWarnings?.({
+      sourceText: source,
+      fileName: "state.ts",
+    });
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining("dynamic atom family param"),
+        }),
+      ]),
+    );
+  });
+
+  it("discovers static atom family instances", () => {
+    const source = `
+      import { atom } from 'jotai';
+      import { atomFamily } from 'jotai-family';
+      const itemFamily = atomFamily((id: 'a' | 'b') => atom(id));
+      const itemA = itemFamily('a');
+    `;
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: "state.ts",
+      route: "/",
+    });
+    expect(decls).toContainEqual(
+      expect.objectContaining({
+        id: 'atom-family:itemFamily:"a"',
+        kind: "jotai/atom-family",
+      }),
+    );
+  });
+
+  it("extracts write-only derived atom increments through useSetAtom", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useSetAtom } from 'jotai';
+      export const countAtom = atom(0);
+      const incAtom = atom(null, (get, set) => set(countAtom, get(countAtom) + 1));
+      export function App() {
+        const inc = useSetAtom(incAtom);
+        return <button onClick={() => inc()}>Inc</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        writes: ["atom:countAtom"],
+        confidence: "exact",
+      }),
+    );
+  });
+
+  it("discovers Provider store-qualified useAtom channels", () => {
+    const source = `
+      import { Provider, useAtom, createStore } from 'jotai';
+      const myStore = createStore();
+      function Button() {
+        const [count, setCount] = useAtom(countAtom);
+        return null;
+      }
+      export function App() {
+        return <Provider store={myStore}><Button /></Provider>;
+      }
+    `;
+    const channels = jotaiSource().writeChannels({
+      sourceText: source,
+      fileName: "App.tsx",
+    });
+    expect(channels).toContainEqual(
+      expect.objectContaining({
+        varId: "atom:countAtom@store:myStore",
+        symbolName: "setCount",
+      }),
+    );
+  });
+
+  it("hydrates atom initial values from useHydrateAtoms", () => {
+    const source = `
+      import { atom } from 'jotai';
+      import { useHydrateAtoms } from 'jotai/utils';
+      export const countAtom = atom(0);
+      export function App() {
+        useHydrateAtoms([[countAtom, 42]]);
+        return null;
+      }
+    `;
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: "App.tsx",
+      route: "/",
+    });
+    expect(decls[0]?.var?.initial).toBe(42);
+  });
+
+  it("extracts useResetAtom as initial-value assignment", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useResetAtom } from 'jotai';
+      import { atomWithReset } from 'jotai/utils';
+      export const countAtom = atomWithReset(0);
+      export function App() {
+        const reset = useResetAtom(countAtom);
+        return <button onClick={() => reset()}>Reset</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        effect: {
+          kind: "assign",
+          var: "atom:countAtom",
+          expr: { kind: "lit", value: 0 },
+        },
+        writes: ["atom:countAtom"],
+      }),
+    );
+  });
+
+  it("extracts RESET setter argument for resettable atoms", () => {
+    const result = extractJotaiSkeleton(
+      `
+      import { atom, useAtom } from 'jotai';
+      import { atomWithReset, RESET } from 'jotai/utils';
+      export const countAtom = atomWithReset(0);
+      export function App() {
+        const [, setCount] = useAtom(countAtom);
+        return <button onClick={() => setCount(RESET)}>Reset</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions).toContainEqual(
+      expect.objectContaining({
+        effect: {
+          kind: "assign",
+          var: "atom:countAtom",
+          expr: { kind: "lit", value: 0 },
+        },
+      }),
+    );
+  });
+
+  it("discovers loadable wrapper domains", () => {
+    const source = `
+      import { atom } from 'jotai';
+      import { loadable } from 'jotai/utils';
+      const userAtom = atom(async () => 'user');
+      const loadableUser = loadable(userAtom);
+    `;
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: "state.ts",
+      route: "/",
+    });
+    expect(decls.at(-1)?.var?.domain).toEqual({
+      kind: "tagged",
+      tag: "state",
+      variants: {
+        loading: { kind: "record", fields: {} },
+        hasData: {
+          kind: "record",
+          fields: { data: { kind: "tokens", count: 1 } },
+        },
+        hasError: {
+          kind: "record",
+          fields: { error: { kind: "tokens", count: 1 } },
+        },
+      },
+    });
   });
 });

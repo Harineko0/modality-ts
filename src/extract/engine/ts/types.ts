@@ -13,6 +13,9 @@ export interface SetterBinding {
   component: string;
   stateName: string;
   domain: AbstractDomain;
+  initial?: Value;
+  resettable?: boolean;
+  fixedEffect?: EffectIR;
 }
 
 export interface SetterCall {

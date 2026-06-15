@@ -10,7 +10,7 @@ This list captures features described in `docs/design.md` and `docs/specs/*.md` 
 - Expand predicate-refinement support so witness obligations are required and validated at extract time.
 - Improve M0 expression coverage where still partial: bounded-list comprehensions such as `find`/`some`/`every`/`includes`, richer input coercion pipelines, and condition-only nondeterministic branch modeling.
 - Implement closure-snapshot semantics for async continuations as the v2 alternative to current stale-read caveats.
-- Improve derived read-only atom extraction by inlining extractable derived expressions and modeling unextractable derived atoms with recompute transitions.
+- Improve derived read-only Jotai atom inlining beyond current token-domain + warning fallback.
 - Add `modality extract --explain-drift` for orphaned overlay entries and AST-similarity hints.
 
 ## Checker

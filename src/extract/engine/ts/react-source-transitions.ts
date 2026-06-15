@@ -34,7 +34,12 @@ import {
   initialValueForUseState,
   typeAliasDeclarations,
 } from "./domains.js";
-import type { StateVarDecl, Transition, Value } from "modality-ts/core";
+import type {
+  StateVarDecl,
+  Transition,
+  Value,
+  EffectIR,
+} from "modality-ts/core";
 import type {
   ExtractableHandler,
   ExtractionWarning,
@@ -83,6 +88,9 @@ export interface ReactSourceTransitionOptions {
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
   inventory?: RouteInventory;
+  resetSymbols?: ReadonlySet<string>;
+  setterFixedEffects?: ReadonlyMap<string, EffectIR>;
+  resettableVarIds?: ReadonlySet<string>;
 }
 
 export interface ReactSourceTransitionResult {
@@ -133,10 +141,20 @@ export function extractReactSourceTransitions(
   for (const decl of contextBindings.vars) {
     if (!vars.some((candidate) => candidate.id === decl.id)) vars.push(decl);
   }
+  const resetSymbols = options.resetSymbols ?? new Set<string>(["RESET"]);
   for (const channel of options.writeChannels ?? []) {
     const decl = vars.find((candidate) => candidate.id === channel.varId);
     if (!decl) continue;
-    bindSetter(setters, channel.symbolName, setterBindingFromDecl(decl));
+    const binding = setterBindingFromDecl(decl);
+    if (
+      channel.id.endsWith(".reset") ||
+      options.resettableVarIds?.has(channel.varId)
+    ) {
+      binding.resettable = true;
+    }
+    const fixedEffect = options.setterFixedEffects?.get(channel.symbolName);
+    if (fixedEffect) binding.fixedEffect = fixedEffect;
+    bindSetter(setters, channel.symbolName, binding);
   }
   for (const [symbolName, setter] of contextBindings.setters)
     setters.set(symbolName, setter);
@@ -405,6 +423,7 @@ export function extractReactSourceTransitions(
         routePatterns,
         contextBindings,
         warnings,
+        resetSymbols,
       );
       transitions.push(...extracted);
       if (

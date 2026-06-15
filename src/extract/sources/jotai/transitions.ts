@@ -6,10 +6,12 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { extractSharedReactTransitions } from "../shared/react-transition-extract.js";
 import type { ExtractedModelSkeleton } from "../use-state/types.js";
-import { discoverJotaiAtoms } from "./discover.js";
+import { discoverJotaiAtomsDetailed } from "./discover.js";
 import {
   discoverJotaiSafetyWarnings,
   discoverJotaiWriteChannels,
+  discoverJotaiWritesDetailed,
+  jotaiResetSymbols,
 } from "./writes.js";
 import { jotaiSource } from "./plugin.js";
 
@@ -30,9 +32,13 @@ export function extractJotaiSkeleton(
 ): ExtractedModelSkeleton {
   const fileName = options.fileName ?? "App.tsx";
   const route = options.route ?? "/";
-  const discovered = discoverJotaiAtoms(sourceText, fileName);
+  const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
+  const writeDiscovery = discoverJotaiWritesDetailed(sourceText, fileName);
   const vars = [
-    ...discovered
+    ...discovery.decls
+      .map((decl) => decl.var)
+      .filter((decl): decl is StateVarDecl => Boolean(decl)),
+    ...writeDiscovery.storeScopedDecls
       .map((decl) => decl.var)
       .filter((decl): decl is StateVarDecl => Boolean(decl)),
     ...(options.stateVars ?? []),
@@ -48,6 +54,10 @@ export function extractJotaiSkeleton(
       ...(warning.source ? { line: warning.source.line } : {}),
     }),
   );
+  const discoveryWarnings = discovery.warnings.map((warning) => ({
+    message: warning.message,
+    ...(warning.source ? { line: warning.source.line } : {}),
+  }));
   const { transitions, warnings = [] } = extractSharedReactTransitions({
     sourceText,
     fileName,
@@ -57,11 +67,14 @@ export function extractJotaiSkeleton(
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
     sourcePlugins,
+    resetSymbols: jotaiResetSymbols(sourceText, fileName),
+    setterFixedEffects: writeDiscovery.setterFixedEffects,
+    resettableVarIds: writeDiscovery.resettableVarIds,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
   });
   return {
     vars,
     transitions: [...transitions],
-    warnings: [...safetyWarnings, ...warnings],
+    warnings: [...safetyWarnings, ...discoveryWarnings, ...warnings],
   };
 }

@@ -8,10 +8,13 @@ export {
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
   renderHumanCheckTargetHeader,
+  renderHumanCheckTargets,
   symbolForStatus,
 } from "./output.js";
 export type {
   ArtifactPathEntry,
   CheckOutputMode,
   CheckOutputOptions,
+  HumanCheckRenderOptions,
+  HumanCheckTargetResult,
 } from "./output.js";

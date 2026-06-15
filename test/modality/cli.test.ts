@@ -30,7 +30,9 @@ describe("modality CLI", () => {
     const realDir = await realpath(dir);
     const configPath = join(realDir, "modality.config.ts");
     const config = await readFile(configPath, "utf8");
-    expect(stdout).toContain(`config=${configPath}`);
+    expect(stdout).toContain("modality.config.ts");
+    expect(stdout).toMatch(/^ [✓×⚠] modality\.config\.ts /m);
+    expect(stdout).toContain("config created");
     expect(config).toContain(
       'import type { ModalityConfig } from "modality-ts/cli/extract";',
     );
@@ -50,7 +52,8 @@ describe("modality CLI", () => {
     );
 
     const model = JSON.parse(await readFile(modelPath, "utf8"));
-    expect(stdout).toContain(`model=${modelPath}`);
+    expect(stdout).toMatch(/^ [✓×⚠] /m);
+    expect(stdout).toContain(modelPath.split("/").pop() ?? modelPath);
     expect(model.schemaVersion).toBe(1);
     expect(model.transitions.length).toBeGreaterThan(0);
   });
@@ -91,10 +94,13 @@ describe("modality CLI", () => {
       ),
     );
     const realDir = await realpath(dir);
-    expect(stdout).toContain("model=.modality/models/src/App.model.json");
-    expect(stdout).toContain("appModel=.modality/models/src/App.props.ts");
-    expect(stdout).toContain("model=.modality/models/src/HomePage.model.json");
-    expect(stdout).toContain("appModel=.modality/models/src/HomePage.props.ts");
+    expect(stdout).toMatch(/^ [✓×⚠] /m);
+    expect(stdout).toContain(".modality/models/src/App.model.json");
+    expect(stdout).toContain(".modality/models/src/App.props.ts");
+    expect(stdout).toContain(".modality/models/src/HomePage.model.json");
+    expect(stdout).toContain(".modality/models/src/HomePage.props.ts");
+    expect(stdout).toContain("Duration");
+    expect(stdout).toContain("Artifacts");
     expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
     expect(await readFile(homeModelPath, "utf8")).toContain('"schemaVersion"');
     expect(await readFile(homeAppModelPath, "utf8")).toContain(
@@ -126,11 +132,7 @@ describe("modality CLI", () => {
     ];
     for (const artifact of artifacts) {
       await access(join(dir, artifact));
-      expect(stdout).toContain(
-        artifact.endsWith(".model.json")
-          ? `model=${artifact}`
-          : `appModel=${artifact}`,
-      );
+      expect(stdout).toContain(artifact);
     }
     await expect(
       access(join(dir, ".modality", "model.json")),
@@ -158,8 +160,8 @@ describe("modality CLI", () => {
     const appModelPath = join(dir, ".modality", "app.model.ts");
     const model = JSON.parse(await readFile(modelPath, "utf8"));
     const realDir = await realpath(dir);
-    expect(stdout).toContain("model=.modality/model.json");
-    expect(stdout).toContain("appModel=.modality/app.model.ts");
+    expect(stdout).toContain(".modality/model.json");
+    expect(stdout).toContain(".modality/app.model.ts");
     expect(model.metadata.sourceHashes).toHaveProperty(
       join(realDir, "src", "App.tsx"),
     );
@@ -183,7 +185,7 @@ describe("modality CLI", () => {
       await readFile(join(dir, ".modality", "model.json"), "utf8"),
     );
     const realDir = await realpath(dir);
-    expect(stdout).toContain("model=.modality/model.json");
+    expect(stdout).toContain(".modality/model.json");
     expect(model.metadata.sourceHashes).toHaveProperty(
       join(realDir, "src", "App.tsx"),
     );
@@ -211,10 +213,12 @@ describe("modality CLI", () => {
     const check = await execFileAsync(tsxBin, [cliPath, "check"], {
       cwd: dir,
     });
-    expect(check.stdout).toContain("states=");
-    expect(check.stdout.indexOf("states=")).toBeGreaterThan(
-      check.stdout.indexOf("Properties"),
-    );
+    expect(check.stdout).not.toContain("Properties\n");
+    expect(check.stdout).not.toContain("Stats\n");
+    expect(check.stdout).not.toContain("Target ");
+    expect(check.stdout).toMatch(/^ [✓×⚠] /m);
+    expect(check.stdout).toContain("Test Files");
+    expect(check.stdout).toContain("Duration");
     expect(
       JSON.parse(await readFile(join(dir, ".modality", "report.json"), "utf8")),
     ).toMatchObject({ kind: "check-report" });
@@ -222,7 +226,8 @@ describe("modality CLI", () => {
     const exported = await execFileAsync(tsxBin, [cliPath, "export"], {
       cwd: dir,
     });
-    expect(exported.stdout).toContain("export=.modality/model.tla");
+    expect(exported.stdout).toContain(".modality/model.tla");
+    expect(exported.stdout).toContain("format tla");
     expect(
       await readFile(join(dir, ".modality", "model.tla"), "utf8"),
     ).toContain("---- MODULE extracted_model_Model ----");
@@ -230,7 +235,8 @@ describe("modality CLI", () => {
     const conform = await execFileAsync(tsxBin, [cliPath, "conform"], {
       cwd: dir,
     });
-    expect(conform.stdout).toContain("conform: total=");
+    expect(conform.stdout).toContain("conformance");
+    expect(conform.stdout).toContain("passRate");
     expect(
       JSON.parse(
         await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
@@ -298,7 +304,7 @@ describe("modality CLI", () => {
       expect(execError.code).toBe(2);
       stdout = execError.stdout ?? "";
     }
-    expect(stdout).toContain("search-limit=maxStates");
+    expect(stdout).toContain("maxStates");
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.diagnostics.limits.maxStates).toBe(1);
     expect(
@@ -362,14 +368,12 @@ describe("modality CLI", () => {
       cwd: dir,
     });
 
-    expect(stdout).toContain("Target .modality/models/app/root.model.json");
-    expect(stdout).toContain("props app/root.props.mjs");
-    expect(stdout).toContain(
-      "Target .modality/models/app/routes/home.model.json",
-    );
-    expect(stdout).toContain("props app/routes/home.props.mjs");
-    expect(stdout).toContain("✓ rootFlagCanBecomeTrue reachable");
-    expect(stdout).toContain("✓ homeFlagCanBecomeTrue reachable");
+    expect(stdout).not.toContain("Target ");
+    expect(stdout).not.toContain("Properties\n");
+    expect(stdout).not.toContain("Stats\n");
+    expect(stdout).toContain("Test Files");
+    expect(stdout).toContain("  - rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  - homeFlagCanBecomeTrue reachable");
     await access(join(dir, ".modality", "models", "app", "root.report.json"));
     await access(
       join(dir, ".modality", "models", "app", "routes", "home.report.json"),
@@ -388,8 +392,8 @@ describe("modality CLI", () => {
       expect(execError.code).toBe(2);
       stdout = execError.stdout ?? "";
     }
-    expect(stdout).toContain("✓ rootFlagCanBecomeTrue reachable");
-    expect(stdout).toContain("× homeFlagAlwaysFalse violated");
+    expect(stdout).toContain("  - rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  - homeFlagAlwaysFalse violated");
   });
 
   it("fails clearly when generated models are missing for no-arg check", async () => {
@@ -456,7 +460,7 @@ describe("modality CLI", () => {
       { cwd: dir },
     );
 
-    expect(stdout).toContain("violations=0 errors=0");
+    expect(stdout).toContain("check 0 violations, 0 errors");
     await access(join(artifactDir, "report.json"));
   });
 

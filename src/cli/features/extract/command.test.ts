@@ -10,6 +10,7 @@ import {
   type Model,
 } from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
+import { renderHumanExtractTargets } from "./output.js";
 
 describe("runExtractCommand", () => {
   it("writes model and extraction report artifacts", async () => {
@@ -1133,6 +1134,89 @@ describe("runExtractCommand", () => {
     expect(result.model.metadata?.extractionCaveats?.globalTaints).toEqual([
       caveat,
     ]);
+  });
+
+  it("extracts Jotai Provider store-qualified writes across components", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const statePath = join(dir, "state.ts");
+    const appPath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      statePath,
+      `
+      import { atom } from 'jotai';
+      export const countAtom = atom(0);
+      `,
+      "utf8",
+    );
+    await writeFile(
+      appPath,
+      `
+      import { Provider, createStore, useAtom } from 'jotai';
+      import { countAtom } from './state';
+      const myStore = createStore();
+      function Button() {
+        const [, setCount] = useAtom(countAtom);
+        return <button onClick={() => setCount(1)}>Inc</button>;
+      }
+      export function App() {
+        return <Provider store={myStore}><Button /></Provider>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath: appPath,
+      sourcePaths: [statePath],
+      modelPath,
+    });
+    expect(result.model.vars).toContainEqual(
+      expect.objectContaining({ id: "atom:countAtom@store:myStore" }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        effect: {
+          kind: "assign",
+          var: "atom:countAtom@store:myStore",
+          expr: { kind: "lit", value: 1 },
+        },
+        writes: ["atom:countAtom@store:myStore"],
+      }),
+    );
+  });
+
+  it("surfaces Jotai utility warnings in extraction caveats", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { atom } from 'jotai';
+      import { atomFamily } from 'jotai-family';
+      const todoFamily = atomFamily((id: string) => atom(id));
+      export function App() {
+        const dynamic = todoFamily(routeId);
+        return null;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+    });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(
+      report.warnings.some((warning: string) =>
+        warning.includes("dynamic atom family param"),
+      ),
+    ).toBe(true);
+    expect(result.lines.join("\n")).toMatch(/jotai|family|warning/i);
   });
 
   it("extracts Jotai writes inside async handlers and loops through the shared transition extractor", async () => {
@@ -2555,6 +2639,44 @@ describe("runExtractCommand", () => {
         status: { kind: "enum", values: ["open", "closed"] },
       },
     });
+  });
+});
+
+describe("renderHumanExtractTargets", () => {
+  it("prints aggregated extract rows before duration and artifacts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const lines = renderHumanExtractTargets(
+      [
+        {
+          label: "App.tsx",
+          durationMs: 12,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          report: result.report,
+          pluginLabels: result.pluginLabels,
+          artifacts: result.artifacts,
+        },
+      ],
+      { totalDurationMs: 12 },
+    );
+    expect(lines[0]).toMatch(/^ ✓ App\.tsx /);
+    expect(lines.join("\n")).not.toContain("extracted vars=");
+    expect(lines.join("\n")).toContain("Duration");
+    expect(lines.join("\n")).toContain("(model)");
   });
 });
 

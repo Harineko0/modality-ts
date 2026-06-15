@@ -23,6 +23,8 @@ export interface ExportTlaCommandOptions {
 export interface ExportTlaCommandResult {
   lines: string[];
   source: string;
+  moduleName: string;
+  outPath: string;
 }
 
 export interface TlaStructuredModel {
@@ -57,13 +59,16 @@ export async function runExportTlaCommand(
   options: ExportTlaCommandOptions,
 ): Promise<ExportTlaCommandResult> {
   const model = parseModelArtifact(await readFile(options.modelPath, "utf8"));
-  const source = generateTlaModule(
-    model,
-    options.moduleName ?? tlaModuleName(model.id),
-  );
+  const moduleName = options.moduleName ?? tlaModuleName(model.id);
+  const source = generateTlaModule(model, moduleName);
   await mkdir(dirname(options.outPath), { recursive: true });
   await writeFile(options.outPath, source, "utf8");
-  return { source, lines: [`export=${options.outPath}`, `format=tla`] };
+  return {
+    source,
+    moduleName,
+    outPath: options.outPath,
+    lines: [`export=${options.outPath}`, `format=tla`],
+  };
 }
 
 export function generateTlaModule(

@@ -25,11 +25,14 @@ P0 input from config: route table (`pattern → RootComponent`), include globs, 
 
 ## 2. P1 — State inventory
 
-**Jotai atoms.** Find module-level (exported or not) calls to `atom`/`atomWithStorage`/etc. from `jotai`'s module graph, resolved via the type checker (not by identifier name — aliasing and re-export are common).
+**Jotai atoms.** Find module-level calls to `atom`, utility atom creators (`atomWithStorage`, `atomWithReset`, `atomFamily`, `loadable`, …), and static `atomFamily(...)` instantiations from Jotai's module graph (`jotai`, `jotai/utils`, `jotai-family`, …), resolved via import aliases rather than callee names alone.
 
 - *Primitive atoms*: record initial-value expression and declared/inferred type.
-- *Derived read-only atoms*: the read function's `get(x)` calls give the dependency set. Attempt to extract the body as an `ExprIR` over those dependencies (same expression subset as §6). Success ⇒ the atom is **not** a state variable at all — it is compiled away by inlining the expression at use sites (smaller state vector, free consistency). Failure ⇒ the atom becomes a real var with an `internal` recompute transition declared `over-approx` (havoc on dependency change) or overlay-defined.
-- *Writable derived atoms*: the write function is a transition-effect fragment, summarized by P4 like any handler.
+- *Utility atoms*: storage, lazy, resettable, async wrapper, and family instances carry plugin metadata (`storageKey`, `familyParam`, …) used for warnings and conservative fallbacks.
+- *Derived read-only atoms*: dependency sets are recorded; simple bodies may use token domains with explicit warnings when not statically inlined.
+- *Writable derived atoms*: write functions are summarized into underlying primitive atom writes when the body only contains supported `set(atom, value)` calls.
+- *Store scoping*: `createStore`, `Provider`, `useStore`, and `useAtom(atom, { store })` qualify atom var IDs (`atom:count@store:myStore`); `getDefaultStore` keeps the legacy global ID and emits a global taint.
+- *Unsupported cases* (dynamic family params, dynamic Provider stores, async storage, unbounded observables) emit Jotai-specific extraction warnings instead of silent exact models.
 
 **`useState`.** For every component reachable from a route root (call-graph walk over JSX element types, depth-limited with bail-and-report): record `useState` calls; bind the destructured `[x, setX]` names; the *setter symbol* (not name) is what P4/P5 track. Component instances are keyed by route (Spec 01 §2). v1 restriction, detected and enforced: a modeled stateful component must render at most once per route (no stateful list items); violations downgrade that component's vars to `unextractable`.
 

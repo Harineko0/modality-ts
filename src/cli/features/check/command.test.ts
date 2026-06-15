@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, type Model, type Property } from "modality-ts/core";
 import { runCheckCommand } from "./index.js";
-import { renderHumanCheckResult, symbolForStatus } from "./output.js";
+import {
+  renderHumanCheckResult,
+  renderHumanCheckTargets,
+  symbolForStatus,
+} from "./output.js";
 import { runReplayCommand } from "../../replay.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
@@ -726,8 +730,8 @@ describe("runCheckCommand", () => {
   });
 });
 
-describe("renderHumanCheckResult", () => {
-  it("prints Properties before Stats", async () => {
+describe("renderHumanCheckTargets", () => {
+  it("prints a status row instead of Properties", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.mjs");
@@ -742,15 +746,84 @@ describe("renderHumanCheckResult", () => {
     );
 
     const result = await runCheckCommand({ modelPath, propsPath });
-    const lines = renderHumanCheckResult(result.check);
-    const propertiesIndex = lines.indexOf("Properties");
-    const statsIndex = lines.indexOf("Stats");
-    expect(propertiesIndex).toBeGreaterThanOrEqual(0);
-    expect(statsIndex).toBeGreaterThan(propertiesIndex);
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "props.mjs",
+          check: result.check,
+          reportPath: "report.json",
+          artifacts: [{ kind: "trace", path: "traces/foo.trace.json" }],
+          durationMs: 12,
+        },
+      ],
+      {
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+        totalDurationMs: 1270,
+      },
+    );
+    expect(lines[0]).toMatch(/^ [×✓⚠] props\.mjs /);
+    expect(lines.join("\n")).not.toContain("Properties");
+    expect(lines.join("\n")).not.toContain("Stats");
     expect(
-      lines.some((line) => line.includes("flagStartsFalseOnly violated")),
+      lines.some((line) => line === "  - flagStartsFalseOnly violated"),
     ).toBe(true);
-    expect(lines.some((line) => line.includes("states="))).toBe(true);
+    expect(lines.some((line) => line.includes("Test Files"))).toBe(true);
+    expect(lines.some((line) => line.includes("Tests"))).toBe(true);
+    expect(lines.some((line) => line.includes("Start at"))).toBe(true);
+    expect(lines.some((line) => line.includes("Duration"))).toBe(true);
+    const artifactsIndex = lines.findIndex((line) =>
+      line.trimStart().startsWith("Artifacts"),
+    );
+    const testFilesIndex = lines.findIndex((line) =>
+      line.includes("Test Files"),
+    );
+    expect(artifactsIndex).toBeGreaterThanOrEqual(0);
+    expect(artifactsIndex).toBeGreaterThan(testFilesIndex);
+    expect(lines.some((line) => line.includes("(trace)"))).toBe(true);
+  });
+
+  it("aggregates multiple targets before the summary block", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }
+      ];`,
+      "utf8",
+    );
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "a.props.mjs",
+          check: result.check,
+          artifacts: [],
+          durationMs: 5,
+        },
+        {
+          modelPath,
+          propsPath: "b.props.mjs",
+          check: result.check,
+          artifacts: [],
+          durationMs: 7,
+        },
+      ],
+      {
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+        totalDurationMs: 12,
+      },
+    );
+    const testFilesIndex = lines.findIndex((line) =>
+      line.includes("Test Files"),
+    );
+    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("a.props.mjs");
+    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("b.props.mjs");
+    expect(lines[testFilesIndex]).toContain("2 passed (2)");
   });
 
   it("maps all verdict statuses to expected symbols", () => {
@@ -782,7 +855,7 @@ describe("renderHumanCheckResult", () => {
 });
 
 describe("runCheckCommand streaming output", () => {
-  it("calls emit before artifact lines while returning legacy lines", async () => {
+  it("calls emit with row-oriented output while returning legacy lines", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.mjs");
@@ -810,12 +883,9 @@ describe("runCheckCommand streaming output", () => {
     });
 
     expect(result.lines).toContain("flagStartsFalseOnly: violated");
-    expect(emitted.some((line) => line === "Properties")).toBe(true);
-    expect(emitted.some((line) => line === "Stats")).toBe(true);
-    const propertiesIndex = emitted.indexOf("Properties");
-    const artifactsIndex = emitted.indexOf("Artifacts");
-    expect(propertiesIndex).toBeGreaterThanOrEqual(0);
-    expect(artifactsIndex).toBeGreaterThan(propertiesIndex);
+    expect(emitted.join("\n")).not.toContain("Properties");
+    expect(emitted.some((line) => line.match(/^ [×✓⚠] /))).toBe(true);
+    expect(emitted.some((line) => line.includes("Test Files"))).toBe(true);
     expect(result.lines.some((line) => line.startsWith("trace="))).toBe(true);
   });
 });
