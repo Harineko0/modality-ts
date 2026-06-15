@@ -11,6 +11,8 @@ Use modality-ts to verify bounded, deterministic React state transitions. Focus 
 
 The built-in extraction pipeline can model React local state plus supported source plugins such as Jotai, SWR, and router state. When the target imports local modules, extraction follows relative TypeScript imports so atom definitions, SWR payload aliases, and helper handlers can contribute domains and transitions. Treat the generated model as the source of truth for exact variable IDs before writing properties.
 
+The checker is Rust-backed and evaluates serializable property IR. `*.props.mjs` files may use JavaScript helper functions to build IR objects, but property predicates themselves must be plain JSON-like objects, not callbacks. Old predicates such as `predicate: (state) => ...` are rejected with a migration error.
+
 ## Workflow
 
 1. Pick target components whose important behavior is finite enough to model.
@@ -40,7 +42,7 @@ modality extract --effect-api api.placeOrder
 ```
 
 6. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
-7. Write property files that export `properties()` and return checks over model state. Avoid putting conditionals or branching logic in props.mjs files.
+7. Write property files that export serializable property objects. Prefer explicit `reads` for slicing and diagnostics, especially for hand-written object properties.
 8. Check the model. With default paths, `modality check` reads `.modality/model.json`, loads all discovered `*.props.mjs`, and writes `.modality/report.json`, `.modality/traces`, `.modality/replay-tests`, and `.modality/action-replay-tests`:
 
 ```bash
@@ -61,39 +63,150 @@ modality ci .modality/model.json src/app.props.mjs --artifacts .modality
 
 ## Property Patterns
 
-Use `always`-style properties for invariants over every reachable state. Use `alwaysStep` for transition-sensitive rules, especially side-effect enqueue/resolve behavior. Use `reachable` or `reachableFrom` when the expected behavior is that a useful state can be reached.
+Use `always` for invariants over every reachable state. Use `alwaysStep` for transition-sensitive rules, especially side-effect enqueue/resolve behavior. Use `reachable` or `reachableFrom` when the expected behavior is that a useful state can be reached. Use `leadsToWithin` for bounded response properties after a step trigger.
+
+Import predicate IR helpers from `modality-ts/core`. Common helpers are `readVar`, `readPreVar`, `readOpArg`, `lit`, `eq`, `neq`, `andExpr`, `orExpr`, `notExpr`, `enabled`, `stepEnqueued`, `stepResolved`, `stepTransitionId`, and `stepAny`.
+
+Accepted `*.props.mjs` export shapes:
 
 ```js
-export function properties() {
-  return [
-    {
-      kind: "always",
-      name: "noDoubleSubmit",
-      reads: ["sys:pending"],
-      predicate: (state) =>
-        state["sys:pending"].filter((op) => op.opId === "api.placeOrder").length <= 1
-    },
-    {
-      kind: "alwaysStep",
-      name: "guestCannotSubmit",
-      reads: ["atom:authAtom", "sys:pending"],
-      predicate: (pre, step) =>
-        !(step.enqueued("api.placeOrder") && pre["atom:authAtom"]?.kind === "guest")
-    },
-    {
-      kind: "reachableFrom",
-      name: "reviewCanReachSuccess",
-      reads: ["atom:authAtom", "local:App.step"],
-      when: (state) => state["atom:authAtom"]?.kind === "user" && state["local:App.step"] === "review",
-      goal: (state) => state["local:App.step"] === "success"
-    }
-  ];
+export const properties = [/* serializable properties */];
+
+export default { schemaVersion: 1, properties: [/* serializable properties */] };
+
+export function properties(model) {
+  return [/* serializable properties, optionally built from model */];
+}
+
+export function propertiesFor(model) {
+  return [/* serializable properties, optionally built from model */];
 }
 ```
 
-Declare `reads` explicitly when a property touches model variables. Use state keys as they appear in the extracted model, commonly `local:<Component>.<stateName>`, `sys:pending`, `sys:route`, `atom:<atomName>`, and SWR cache entries such as `swr:<key>:data`, `swr:<key>:error`, or `swr:<key>:isValidating`.
+Do not put executable predicates inside property objects. This is invalid:
 
-For Jotai, prefer properties over the atom variable, for example `atom:authAtom`, and use the extracted tagged-union shape when the atom type is a discriminated union. For SWR, read the extracted data variable and nested payload fields directly when the payload type is finite, for example `state["swr:event_snapshot_userId:data"]?.application?.applied`. If the exact SWR key ID is not obvious, inspect `.modality/model.json` or the generated app model before writing the property.
+```js
+export const properties = [
+  { kind: "always", name: "legacy", predicate: (state) => !state.flag },
+];
+```
+
+Build predicate IR instead:
+
+```js
+import {
+  andExpr,
+  eq,
+  lit,
+  neq,
+  notExpr,
+  orExpr,
+  readOpArg,
+  readPreVar,
+  readVar,
+  stepAny,
+  stepEnqueued,
+  stepResolved,
+} from "modality-ts/core";
+
+function atMostOnePendingOp(opId) {
+  return andExpr(
+    orExpr(
+      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+    ),
+    orExpr(
+      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    ),
+    orExpr(
+      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    ),
+  );
+}
+
+export const properties = [
+  {
+    kind: "always",
+    name: "noDoubleSubmit",
+    reads: ["sys:pending"],
+    predicate: atMostOnePendingOp("api.placeOrder"),
+  },
+  {
+    kind: "alwaysStep",
+    name: "guestCannotSubmit",
+    reads: ["atom:authAtom", "sys:pending"],
+    predicate: {
+      negate: true,
+      step: stepEnqueued("api.placeOrder"),
+      pre: eq(readVar("atom:authAtom"), lit("guest")),
+    },
+  },
+  {
+    kind: "alwaysStep",
+    name: "successMatchesUser",
+    reads: ["local:App.auth", "local:App.userId", "local:App.step", "sys:pending"],
+    predicate: {
+      negate: true,
+      step: stepResolved("api.placeOrder", "success"),
+      post: andExpr(
+        eq(readVar("local:App.step"), lit("success")),
+        notExpr(
+          andExpr(
+            eq(readVar("local:App.auth"), lit("user")),
+            eq(readOpArg("userId"), readVar("local:App.userId")),
+          ),
+        ),
+      ),
+    },
+  },
+  {
+    kind: "alwaysStep",
+    name: "staleFailureDoesNotMutateStatus",
+    reads: ["local:App.auth", "local:App.submitStatus", "sys:pending"],
+    predicate: {
+      negate: true,
+      step: stepResolved("api.placeOrder", "error"),
+      pre: eq(readVar("local:App.auth"), lit("guest")),
+      post: neq(
+        readVar("local:App.submitStatus"),
+        readPreVar("local:App.submitStatus"),
+      ),
+    },
+  },
+  {
+    kind: "alwaysStep",
+    name: "invalidQuoteCannotEnterBilling",
+    reads: ["local:App.quoteStatus", "local:App.step"],
+    predicate: {
+      negate: true,
+      step: stepAny(),
+      pre: eq(readVar("local:App.quoteStatus"), lit("invalid")),
+      post: eq(readVar("local:App.step"), lit("billing")),
+    },
+  },
+  {
+    kind: "reachableFrom",
+    name: "reviewCanReachSuccess",
+    reads: ["local:App.auth", "local:App.step", "local:App.submitStatus"],
+    when: andExpr(
+      eq(readVar("local:App.auth"), lit("user")),
+      eq(readVar("local:App.step"), lit("review")),
+      eq(readVar("local:App.submitStatus"), lit("idle")),
+    ),
+    goal: eq(readVar("local:App.step"), lit("success")),
+  },
+];
+```
+
+For properties built through the model-aware builders `always(model, predicate, options)`, `alwaysStep(model, predicate, options)`, `reachable(model, predicate, options)`, `reachableFrom(model, when, goal, options)`, and `leadsToWithin(model, trigger, goal, options)`, reads can be inferred by walking IR. For direct object properties, declare `reads` explicitly when the property touches model variables. Use state keys as they appear in the extracted model, commonly `local:<Component>.<stateName>`, `sys:pending`, `sys:route`, `atom:<atomName>`, and SWR cache entries such as `swr:<key>:data`, `swr:<key>:error`, or `swr:<key>:isValidating`.
+
+`readVar("id", ["field", "nested"])` reads nested record fields. For bounded lists such as `sys:pending`, use string path segments for indices, for example `readVar("sys:pending", ["0", "opId"])`. Use `readPreVar` and `readOpArg` only inside step predicates such as `alwaysStep` or `leadsToWithin`; ordinary state predicates for `always`, `reachable`, and `reachableFrom` are evaluated over one state.
+
+Flat step predicates can match transition metadata: `{ transitionId: "App.onSubmit" }`, `{ transitionClass: "user" }`, `{ labelKind: "click" }`, `{ enqueued: "api.placeOrder" }`, `{ resolved: ["api.placeOrder", "success"] }`, `{ navigated: true }`, `{ navigatedTo: "/checkout" }`, `{ opId: "api.placeOrder" }`, `{ continuation: "success" }`, or `{ opArgs: { userId: "tok1" } }`. Composite step predicates add optional `pre`, required `step`, optional `post`, and optional `negate`.
+
+For Jotai, prefer properties over the atom variable, for example `atom:authAtom`, and use the extracted tagged-union shape when the atom type is a discriminated union. For SWR, read the extracted data variable and nested payload fields through IR when the payload type is finite, for example `readVar("swr:event_snapshot_userId:data", ["application", "applied"])`. If the exact SWR key ID is not obvious, inspect `.modality/model.json` or the generated app model before writing the property.
 
 ## Failure Triage
 
