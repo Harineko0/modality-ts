@@ -1,6 +1,14 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, extname, join, parse, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  join,
+  parse,
+  relative,
+  resolve,
+} from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
@@ -39,7 +47,10 @@ import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import type { ExtractArtifactEntry } from "./output.js";
 
 export interface ModalityConfig {
-  route?: string;
+  navigation?: {
+    initialRoute?: string;
+    routeBySource?: Record<string, string>;
+  };
   effectApis?: readonly string[];
   bounds?: Partial<Bounds>;
   packageJsonPath?: string;
@@ -90,7 +101,6 @@ export async function runExtractCommand(
   const config = await loadModalityConfig(
     options.configPath ?? (await findNearestConfig(projectBase.configStartDir)),
   );
-  const route = options.route ?? config.route ?? "/";
   const appModelPath =
     options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
   const packageJsonPath =
@@ -112,6 +122,7 @@ export async function runExtractCommand(
   });
   const routerAdapter = registry.routerPlugin ?? routerSource();
   const project = await attachRouteInventory(projectBase, routerAdapter);
+  const route = resolveExtractionRoute(project, config, options, sourcePaths);
   const routePatterns = project.inventory.routes.map((node) => node.pattern);
   const effectApis = uniqueStrings([
     ...(config.effectApis ?? []),
@@ -275,6 +286,7 @@ export async function runExtractCommand(
     artifacts,
     lines: [
       `extracted vars=${varCount} transitions=${transitions.length}`,
+      `route=${route}`,
       ...(stateSpaceLine ? [stateSpaceLine] : []),
       ...(routeCoverageLine ? [routeCoverageLine] : []),
       ...(coarseDomainsLine ? [coarseDomainsLine] : []),
@@ -434,7 +446,125 @@ async function attachRouteInventory(
     files,
     readFile: (path) => readFile(path, "utf8"),
   });
-  return { ...project, inventory };
+  return { ...project, sources: files, inventory };
+}
+
+function findManifestPath(project: ExtractionProject): string | undefined {
+  return project.sources.find((file) => file.path.endsWith("routes.ts"))?.path;
+}
+
+function resolveProjectRoot(
+  manifestPath: string | undefined,
+  fallback: string,
+): string {
+  if (!manifestPath) return fallback;
+  const appDir = dirname(manifestPath);
+  if (basename(appDir) === "app") return dirname(appDir);
+  return fallback;
+}
+
+function projectRelativeSourcePath(
+  sourcePath: string,
+  project: ExtractionProject,
+): string {
+  const manifestPath = findManifestPath(project);
+  const projectRoot = resolveProjectRoot(manifestPath, project.configStartDir);
+  return relative(projectRoot, resolve(sourcePath)).split("\\").join("/");
+}
+
+function routesForSourceFile(
+  sourcePath: string,
+  project: ExtractionProject,
+): string[] {
+  const manifestPath = findManifestPath(project);
+  if (!manifestPath) return [];
+  const manifestDir = dirname(manifestPath);
+  const resolvedSource = resolve(sourcePath);
+  return project.inventory.routes
+    .filter(
+      (node) =>
+        (node.kind === "page" || node.kind === "index") &&
+        node.file !== undefined &&
+        resolve(manifestDir, node.file) === resolvedSource,
+    )
+    .map((node) => node.pattern)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function manifestRouteFiles(project: ExtractionProject): string[] {
+  const manifestPath = findManifestPath(project);
+  if (!manifestPath) return [];
+  const manifest = project.sources.find(
+    (file) => resolve(file.path) === resolve(manifestPath),
+  );
+  if (!manifest) return [];
+  const manifestDir = dirname(manifestPath);
+  return parseReactRouterRoutes(manifest.text)
+    .map((entry) => resolve(manifestDir, entry.file))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function isManifestRouteSource(
+  sourcePath: string,
+  project: ExtractionProject,
+): boolean {
+  const resolvedSource = resolve(sourcePath);
+  return manifestRouteFiles(project).some(
+    (filePath) => resolve(filePath) === resolvedSource,
+  );
+}
+
+function resolveExtractionRoute(
+  project: ExtractionProject,
+  config: ModalityConfig,
+  options: ExtractCommandOptions,
+  sourcePaths: readonly string[],
+): string {
+  if (options.route) return options.route;
+
+  const manifestPath = findManifestPath(project);
+  const hasRouteInventory = project.inventory.routes.length > 0;
+
+  if (sourcePaths.length === 1) {
+    const sourcePath = resolve(sourcePaths[0] ?? "");
+    const relativeSource = projectRelativeSourcePath(sourcePath, project);
+    const configuredRoute = config.navigation?.routeBySource?.[relativeSource];
+    if (configuredRoute) return configuredRoute;
+
+    const matchedRoutes = routesForSourceFile(sourcePath, project);
+    if (matchedRoutes.length === 1) return matchedRoutes[0] ?? "/";
+    if (matchedRoutes.length > 1) {
+      throw new Error(
+        `Source ${relativeSource} maps to multiple routes (${matchedRoutes.join(", ")}). Configure navigation.routeBySource to disambiguate.`,
+      );
+    }
+
+    if (isManifestRouteSource(sourcePath, project)) {
+      if (!manifestPath || !hasRouteInventory) {
+        throw new Error(
+          `Cannot resolve route for ${relativeSource}: route inventory is unavailable.`,
+        );
+      }
+      throw new Error(
+        `Cannot resolve route for ${relativeSource}: source is not mapped in the route inventory.`,
+      );
+    }
+
+    return config.navigation?.initialRoute ?? "/";
+  }
+
+  const matchedRoutes = new Set<string>();
+  for (const sourcePath of sourcePaths) {
+    for (const pattern of routesForSourceFile(resolve(sourcePath), project)) {
+      matchedRoutes.add(pattern);
+    }
+  }
+  if (matchedRoutes.size > 1 && !config.navigation?.initialRoute) {
+    throw new Error(
+      `Multi-source extraction spans routes ${[...matchedRoutes].sort().join(", ")}. Configure navigation.initialRoute.`,
+    );
+  }
+  return config.navigation?.initialRoute ?? "/";
 }
 
 async function findNearestRoutesManifest(

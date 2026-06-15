@@ -20,7 +20,6 @@ export async function runInitCommand(
       'import type { ModalityConfig } from "modality-ts/cli/extract";',
       "",
       "export default {",
-      '  route: "/",',
       "  bounds: {",
       "    maxDepth: 12,",
       "    maxPending: 3,",

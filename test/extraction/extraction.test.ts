@@ -651,6 +651,186 @@ describe("useState inventory", () => {
     });
   });
 
+  it("extracts exact onOpenChange transitions for named boolean handlers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function Popover(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
+        return <div {...props} />;
+      }
+      export function App() {
+        const [open, setOpen] = useState(false);
+        const [pickedDim, setPickedDim] = useState<'browser' | null>(null);
+        const [query, setQuery] = useState('');
+        function handleOpenChange(next: boolean) {
+          setOpen(next);
+          if (!next) {
+            setPickedDim(null);
+            setQuery('');
+          }
+        }
+        return <Popover open={open} onOpenChange={handleOpenChange} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    const openChange = result.transitions.filter((transition) =>
+      transition.id.includes(".onOpenChange."),
+    );
+    expect(openChange).toHaveLength(2);
+    expect(
+      openChange.every((transition) => transition.confidence === "exact"),
+    ).toBe(true);
+    expect(openChange.map((transition) => transition.id).sort()).toEqual([
+      "App.onOpenChange.open_pickedDim_query.seq.false",
+      "App.onOpenChange.open_pickedDim_query.seq.true",
+    ]);
+    const falseTransition = openChange.find((transition) =>
+      transition.id.endsWith(".false"),
+    );
+    expect(falseTransition?.writes.sort()).toEqual([
+      "local:App.open",
+      "local:App.pickedDim",
+      "local:App.query",
+    ]);
+    expect(falseTransition?.effect).toMatchObject({
+      kind: "seq",
+      effects: [
+        {
+          kind: "assign",
+          var: "local:App.open",
+          expr: { kind: "lit", value: false },
+        },
+        {
+          kind: "if",
+          // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+          then: {
+            kind: "seq",
+            effects: [
+              {
+                kind: "assign",
+                var: "local:App.pickedDim",
+                expr: { kind: "lit", value: null },
+              },
+              {
+                kind: "assign",
+                var: "local:App.query",
+                expr: { kind: "lit", value: "" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(falseTransition?.effect)).not.toContain("havoc");
+  });
+
+  it("extracts exact onOpenChange true/false transitions for direct boolean setters", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function Dialog(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
+        return <div {...props} />;
+      }
+      export function App() {
+        const [createOpen, setCreateOpen] = useState(false);
+        return <Dialog open={createOpen} onOpenChange={setCreateOpen} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(
+      result.transitions.map((transition) => transition.id).sort(),
+    ).toEqual([
+      "App.onOpenChange.createOpen.false",
+      "App.onOpenChange.createOpen.true",
+    ]);
+    expect(
+      result.transitions.every(
+        (transition) => transition.confidence === "exact",
+      ),
+    ).toBe(true);
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onOpenChange.createOpen.true",
+      ),
+    ).toMatchObject({
+      effect: {
+        kind: "assign",
+        var: "local:App.createOpen",
+        expr: { kind: "lit", value: true },
+      },
+      writes: ["local:App.createOpen"],
+    });
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onOpenChange.createOpen.false",
+      ),
+    ).toMatchObject({
+      effect: {
+        kind: "assign",
+        var: "local:App.createOpen",
+        expr: { kind: "lit", value: false },
+      },
+      writes: ["local:App.createOpen"],
+    });
+
+    const model: Model = {
+      schemaVersion: 1,
+      id: "direct-setter-open-change",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: ["/"] },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: {
+            kind: "boundedList",
+            inner: {
+              kind: "record",
+              fields: {
+                opId: { kind: "enum", values: ["noop"] },
+                continuation: { kind: "enum", values: ["noop"] },
+                args: { kind: "record", fields: {} },
+              },
+            },
+            maxLen: 1,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        ...result.vars,
+      ],
+      transitions: result.transitions,
+    };
+    const check = checkModel(model, [
+      reachable(model, (state) => state["local:App.createOpen"] === true, {
+        name: "createOpenReachable",
+        reads: ["local:App.createOpen"],
+      }),
+    ]);
+    expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
   it("reports deeper component prop drilling as unextractable", () => {
     const result = extractUseStateSkeleton(
       `

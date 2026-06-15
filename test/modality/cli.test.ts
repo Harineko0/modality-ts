@@ -37,6 +37,7 @@ describe("modality CLI", () => {
       'import type { ModalityConfig } from "modality-ts/cli/extract";',
     );
     expect(config).toContain("satisfies ModalityConfig");
+    expect(config).not.toContain('route: "/"');
   });
 
   it("accepts the README extract command from an example app directory", async () => {
@@ -134,6 +135,47 @@ describe("modality CLI", () => {
       await access(join(dir, artifact));
       expect(stdout).toContain(artifact);
     }
+    const routeExpectations = [
+      {
+        modelPath: ".modality/models/app/routes/home.model.json",
+        route: "/",
+        localVar: "local:Home.count",
+      },
+      {
+        modelPath: ".modality/models/app/routes/analytics.model.json",
+        route: "/analytics",
+        localVar: "local:Analytics.viewed",
+      },
+    ] as const;
+    for (const expectation of routeExpectations) {
+      const model = JSON.parse(
+        await readFile(join(dir, expectation.modelPath), "utf8"),
+      );
+      expect(
+        model.vars.find((decl: { id: string }) => decl.id === "sys:route")
+          ?.initial,
+      ).toBe(expectation.route);
+      expect(
+        model.vars.find(
+          (decl: { id: string }) => decl.id === expectation.localVar,
+        )?.scope,
+      ).toEqual({ kind: "route-local", route: expectation.route });
+    }
+    const analyticsModel = JSON.parse(
+      await readFile(
+        join(dir, ".modality/models/app/routes/analytics.model.json"),
+        "utf8",
+      ),
+    );
+    const routeLocalVars = analyticsModel.vars.filter(
+      (decl: { scope?: { kind: string; route?: string } }) =>
+        decl.scope?.kind === "route-local",
+    );
+    expect(
+      routeLocalVars.every(
+        (decl: { scope?: { route?: string } }) => decl.scope?.route !== "/",
+      ),
+    ).toBe(true);
     await expect(
       access(join(dir, ".modality", "model.json")),
     ).rejects.toThrow();
@@ -530,6 +572,17 @@ function tinyCheckModel() {
 
 async function writeRouteFixtureApp(dir: string): Promise<void> {
   await mkdir(join(dir, "app", "routes"), { recursive: true });
+  await writeFile(
+    join(dir, "app", "routes.ts"),
+    `
+    import { index, route } from "@react-router/dev/routes";
+    export default [
+      index("routes/home.tsx"),
+      route("analytics", "routes/analytics.tsx"),
+    ];
+    `,
+    "utf8",
+  );
   await writeFile(
     join(dir, "app", "root.tsx"),
     `

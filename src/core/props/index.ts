@@ -27,6 +27,7 @@ export interface PropertyOptions {
   name?: string;
   reads?: readonly string[];
   enabledTransitions?: readonly string[];
+  includeUnmounted?: boolean;
 }
 
 export type Property =
@@ -36,6 +37,7 @@ export type Property =
       predicate: StatePredicate;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
     }
   | {
       kind: "alwaysStep";
@@ -43,6 +45,7 @@ export type Property =
       predicate: StepPredicate;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
     }
   | {
       kind: "reachable";
@@ -50,6 +53,7 @@ export type Property =
       predicate: StatePredicate;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
     }
   | {
       kind: "leadsToWithin";
@@ -60,6 +64,7 @@ export type Property =
       allowUserEvents?: boolean;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
     }
   | {
       kind: "reachableFrom";
@@ -68,6 +73,7 @@ export type Property =
       goal: StatePredicate;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
     };
 
 export function always(
@@ -81,6 +87,7 @@ export function always(
     predicate,
     reads: propertyReads(_model, options, predicate),
     enabledTransitions: propertyEnabledTransitions(options, predicate),
+    includeUnmounted: options.includeUnmounted,
   };
 }
 
@@ -95,6 +102,7 @@ export function alwaysStep(
     predicate,
     reads: propertyReads(_model, options, predicate),
     enabledTransitions: propertyEnabledTransitions(options, predicate),
+    includeUnmounted: options.includeUnmounted,
   };
 }
 
@@ -109,6 +117,7 @@ export function reachable(
     predicate,
     reads: propertyReads(_model, options, predicate),
     enabledTransitions: propertyEnabledTransitions(options, predicate),
+    includeUnmounted: options.includeUnmounted,
   };
 }
 
@@ -130,6 +139,7 @@ export function leadsToWithin(
     allowUserEvents: options.allowUserEvents,
     reads: propertyReads(_model, options, goal),
     enabledTransitions: propertyEnabledTransitions(options, trigger, goal),
+    includeUnmounted: options.includeUnmounted,
   };
 }
 
@@ -146,6 +156,7 @@ export function reachableFrom(
     goal,
     reads: propertyReads(_model, options, when, goal),
     enabledTransitions: propertyEnabledTransitions(options, when, goal),
+    includeUnmounted: options.includeUnmounted,
   };
 }
 

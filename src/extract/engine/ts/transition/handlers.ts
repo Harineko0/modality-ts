@@ -71,6 +71,74 @@ import {
   locatorForEventAttribute,
 } from "./ui.js";
 
+function booleanControlledCallbackValues(attr: string): boolean[] | undefined {
+  if (attr === "onOpenChange" || attr === "onCheckedChange") {
+    return [true, false];
+  }
+  return undefined;
+}
+
+function booleanCallbackParameterBindings(
+  handler: ExtractableHandler,
+  attr: string,
+): Map<string, BoundExpr>[] | undefined {
+  const values = booleanControlledCallbackValues(attr);
+  if (!values) return undefined;
+  const firstParam = handler.parameters[0];
+  if (!firstParam || !ts.isIdentifier(firstParam.name)) return undefined;
+  const paramName = firstParam.name.text;
+  return values.map(
+    (value) =>
+      new Map([
+        [paramName, { expr: { kind: "lit", value }, reads: [] as string[] }],
+      ]),
+  );
+}
+
+function booleanCallbackValueSuffix(
+  initialLocals: Map<string, BoundExpr>,
+): string | undefined {
+  for (const binding of initialLocals.values()) {
+    if (binding.expr.kind === "lit") {
+      const value = binding.expr.value;
+      if (value === true || value === false) return String(value);
+    }
+  }
+  return undefined;
+}
+
+function directSetterBooleanCallbackTransitions(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  setter: SetterBinding,
+  component: string,
+  disabledGuard: ParsedGuard | undefined,
+  locator: Locator | undefined,
+): Transition[] {
+  const values = booleanControlledCallbackValues(attr);
+  if (!values || setter.domain.kind !== "bool") return [];
+  return applyParsedGuard(
+    values.map((value) => ({
+      id: `${component}.${attr}.${setter.stateName}.${value}`,
+      cls: "user" as const,
+      label: labelForEvent(attr, locator),
+      source: [{ file: fileName, ...lineAndColumn(source, node) }],
+      guard: { kind: "lit" as const, value: true },
+      effect: {
+        kind: "assign" as const,
+        var: setter.varId,
+        expr: { kind: "lit" as const, value },
+      },
+      reads: [],
+      writes: [setter.varId],
+      confidence: "exact" as const,
+    })),
+    disabledGuard,
+  );
+}
+
 export function transitionsFromJsxAttribute(
   source: ts.SourceFile,
   fileName: string,
@@ -148,13 +216,33 @@ export function transitionsFromComponentPropAttribute(
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
+  const attr = node.name.text;
   const guardLocals = componentGuardLocalsFor(node, setters);
   const callerGuard = combineParsedGuards([
     renderGuardFor(node, setters, warnings, source, component, guardLocals),
     disabledGuardFor(node, setters, warnings, source, component, guardLocals),
   ]);
+  const combinedGuard = combineParsedGuards([trigger.guard, callerGuard]);
+  if (expression && ts.isIdentifier(expression)) {
+    const setter = setters.get(expression.text);
+    if (setter && booleanControlledCallbackValues(attr)) {
+      const directTransitions = directSetterBooleanCallbackTransitions(
+        source,
+        fileName,
+        node,
+        attr,
+        setter,
+        component,
+        combinedGuard,
+        trigger.locator,
+      );
+      if (directTransitions.length > 0) {
+        return tagStableIdKey(directTransitions, node);
+      }
+    }
+  }
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
   return tagStableIdKey(
     transitionsFromResolvedHandler(
       source,
@@ -169,7 +257,7 @@ export function transitionsFromComponentPropAttribute(
       asyncOutcomes,
       sourcePlugins,
       routerPlugin,
-      combineParsedGuards([trigger.guard, callerGuard]),
+      combinedGuard,
       trigger.locator,
       [],
       emptyContextBindings(),
@@ -313,6 +401,56 @@ export function transitionsFromResolvedHandler(
       line,
     });
     return [];
+  }
+  const callbackBindings = booleanCallbackParameterBindings(handler, attr);
+  if (callbackBindings) {
+    const callbackTransitions = callbackBindings.flatMap((initialLocals) => {
+      const valueSuffix = booleanCallbackValueSuffix(initialLocals);
+      const transition =
+        sequentialTransitionFromHandler(
+          source,
+          fileName,
+          node,
+          attr,
+          handler,
+          setters,
+          handlers,
+          component,
+          locator,
+          resetSymbols,
+          initialLocals,
+          valueSuffix,
+        ) ??
+        conditionalTransitionFromHandler(
+          source,
+          fileName,
+          node,
+          attr,
+          handler,
+          setters,
+          component,
+          locator,
+          initialLocals,
+          valueSuffix,
+        ) ??
+        singleSetterTransitionFromHandler(
+          source,
+          fileName,
+          node,
+          attr,
+          handler,
+          setters,
+          component,
+          locator,
+          initialLocals,
+          resetSymbols,
+          valueSuffix,
+        );
+      return transition ? [transition] : [];
+    });
+    if (callbackTransitions.length === callbackBindings.length) {
+      return applyParsedGuard(callbackTransitions, disabledGuard);
+    }
   }
   const conditionalTransition = conditionalTransitionFromHandler(
     source,
@@ -483,6 +621,49 @@ export function transitionsFromResolvedHandler(
   );
 }
 
+function singleSetterTransitionFromHandler(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  setters: Map<string, SetterBinding>,
+  component: string,
+  locator: Locator | undefined,
+  initialLocals: Map<string, BoundExpr>,
+  resetSymbols: ReadonlySet<string>,
+  valueSuffix?: string,
+): Transition | undefined {
+  const summary = callSummaryFromHandler(handler, setters, initialLocals);
+  if (!summary) return undefined;
+  const setterCall = setterCallFrom(summary.call, setters);
+  if (!setterCall) return undefined;
+  const assignment = setterArgumentExpr(
+    setterCall.argument,
+    setterCall.setter,
+    setters,
+    initialLocals,
+    resetSymbols,
+  );
+  if (!assignment) return undefined;
+  const suffix = valueSuffix ? `.${valueSuffix}` : "";
+  return {
+    id: `${component}.${attr}.${setterCall.setter.stateName}${suffix}`,
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: {
+      kind: "assign",
+      var: setterCall.setter.varId,
+      expr: assignment.expr,
+    },
+    reads: assignment.reads,
+    writes: [setterCall.setter.varId],
+    confidence: "exact",
+  };
+}
+
 export function sequentialTransitionFromHandler(
   source: ts.SourceFile,
   fileName: string,
@@ -494,10 +675,13 @@ export function sequentialTransitionFromHandler(
   component: string,
   locator: Locator | undefined,
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  initialLocals?: Map<string, BoundExpr>,
+  valueSuffix?: string,
 ): Transition | undefined {
   const summaries = summarizeHandlerStatements(handler, setters, {
     handlers,
     resetSymbols,
+    ...(initialLocals ? { initialLocals } : {}),
   });
   const onlySummary = summaries?.[0];
   if (
@@ -509,8 +693,9 @@ export function sequentialTransitionFromHandler(
   const effect = effectFromSummaries(summaries);
   const effects = effect.kind === "seq" ? effect.effects : [effect];
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
+  const suffix = valueSuffix ? `.${valueSuffix}` : "";
   return {
-    id: `${component}.${attr}.${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq`,
+    id: `${component}.${attr}.${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq${suffix}`,
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -567,6 +752,8 @@ export function conditionalTransitionFromHandler(
   setters: Map<string, SetterBinding>,
   component: string,
   locator: Locator | undefined,
+  initialLocals: Map<string, BoundExpr> = new Map(),
+  valueSuffix?: string,
 ): Transition | undefined {
   const body = handler.body;
   if (
@@ -576,7 +763,11 @@ export function conditionalTransitionFromHandler(
   )
     return undefined;
   const statement = body.statements[0];
-  const condition = parseGuardExpression(statement.expression, setters);
+  const condition = parseGuardExpression(
+    statement.expression,
+    setters,
+    initialLocals,
+  );
   if (!condition) return undefined;
   const thenEffect =
     singleSetterEffect(statement.thenStatement, setters) ?? identityEffect();
@@ -590,11 +781,12 @@ export function conditionalTransitionFromHandler(
       ...effectWriteVars(elseEffect),
     ]),
   ];
-  const suffix =
+  const writeSuffix =
     writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") ||
     "if";
+  const suffix = valueSuffix ? `.${valueSuffix}` : "";
   return {
-    id: `${component}.${attr}.${suffix}.if`,
+    id: `${component}.${attr}.${writeSuffix}.if${suffix}`,
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],

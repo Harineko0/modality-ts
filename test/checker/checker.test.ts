@@ -7,6 +7,7 @@ import {
   leadsToWithin,
   reachable,
   reachableFrom,
+  UNMOUNTED,
   type Model,
   type Property,
 } from "modality-ts/core";
@@ -1667,10 +1668,8 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        (s) =>
-          s["sys:route"] === "/b" &&
-          s["local:A.draft"] === "__modality_unmounted__",
-        { name: "localUnmountsOnB" },
+        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        { name: "localUnmountsOnB", includeUnmounted: true },
       ),
       always(
         m,
@@ -1772,12 +1771,11 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        (s) =>
-          s["sys:route"] === "/b" &&
-          s["local:A.draft"] === "__modality_unmounted__",
+        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
         {
           name: "offRouteLocalRemainsUnmounted",
           reads: ["sys:route", "local:A.draft"],
+          includeUnmounted: true,
         },
       ),
     ]);
@@ -1788,6 +1786,365 @@ describe("checker", () => {
       "verified-within-bounds",
     );
     expect(byName.get("offRouteLocalRemainsUnmounted")).toBe("reachable");
+  });
+
+  it("evaluates route-local properties only while their locals are mounted", () => {
+    const tagsRoutes = {
+      kind: "enum",
+      values: ["/tags", "/analytics"],
+    } as const;
+    const dialogTarget = {
+      kind: "enum",
+      values: ["none", "link-1", "link-2"],
+    } as const;
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-mounted",
+      bounds: { maxDepth: 4, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: tagsRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/tags",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: tagsRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:Tags.createOpen",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "route-local", route: "/tags" },
+          initial: false,
+        },
+        {
+          id: "local:Tags.editTarget",
+          domain: dialogTarget,
+          origin: "system",
+          scope: { kind: "route-local", route: "/tags" },
+          initial: "none",
+        },
+        {
+          id: "local:Tags.deleteTarget",
+          domain: dialogTarget,
+          origin: "system",
+          scope: { kind: "route-local", route: "/tags" },
+          initial: "none",
+        },
+      ],
+      transitions: [
+        {
+          id: "openCreate",
+          cls: "user",
+          label: { kind: "click", text: "Open create" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "assign",
+            var: "local:Tags.createOpen",
+            expr: lit(true),
+          },
+          reads: ["local:Tags.createOpen"],
+          writes: ["local:Tags.createOpen"],
+          confidence: "exact",
+        },
+        {
+          id: "openEdit",
+          cls: "user",
+          label: { kind: "click", text: "Open edit" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "assign",
+            var: "local:Tags.editTarget",
+            expr: lit("link-1"),
+          },
+          reads: ["local:Tags.editTarget"],
+          writes: ["local:Tags.editTarget"],
+          confidence: "exact",
+        },
+        {
+          id: "goAnalytics",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/analytics" },
+          source: [],
+          guard: { kind: "eq", args: [read("sys:route"), lit("/tags")] },
+          effect: {
+            kind: "navigate",
+            mode: "push",
+            to: lit("/analytics"),
+          },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const dialogReads = [
+      "local:Tags.createOpen",
+      "local:Tags.editTarget",
+      "local:Tags.deleteTarget",
+    ] as const;
+    const oneDialogOpen = (s: Record<string, unknown>) => {
+      const open =
+        Number(s["local:Tags.createOpen"] === true) +
+        Number(s["local:Tags.editTarget"] !== "none") +
+        Number(s["local:Tags.deleteTarget"] !== "none");
+      return open <= 1;
+    };
+    const goAnalyticsTransition = m.transitions.find(
+      (transition) => transition.id === "goAnalytics",
+    );
+    const tagsNavigationModel: Model = {
+      ...m,
+      transitions: goAnalyticsTransition ? [goAnalyticsTransition] : [],
+    };
+    const result = checkModel(m, [
+      always(m, (s) => oneDialogOpen(s), {
+        name: "tagsOnlyOneDialogOpenViolatesWhileMounted",
+        reads: [...dialogReads],
+      }),
+      reachable(
+        m,
+        (s) =>
+          s["sys:route"] === "/tags" &&
+          s["local:Tags.createOpen"] === true &&
+          s["local:Tags.editTarget"] === "link-1",
+        {
+          name: "tagsMountedBadStateReachable",
+          reads: ["sys:route", ...dialogReads],
+        },
+      ),
+      alwaysStep(
+        m,
+        (pre, step, post) =>
+          step.transition.id !== "goAnalytics" ||
+          pre["local:Tags.createOpen"] === post["local:Tags.createOpen"],
+        {
+          name: "tagsStepSkipsRouteLeavingEdge",
+          reads: ["local:Tags.createOpen"],
+        },
+      ),
+      reachable(
+        m,
+        (s) =>
+          s["sys:route"] === "/analytics" &&
+          s["local:Tags.createOpen"] === true,
+        {
+          name: "tagsOffRouteDialogStateUnreachable",
+          reads: ["sys:route", "local:Tags.createOpen"],
+        },
+      ),
+    ]);
+    const byName = new Map(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    );
+    const navigationResult = checkModel(tagsNavigationModel, [
+      always(tagsNavigationModel, (s) => oneDialogOpen(s), {
+        name: "tagsOnlyOneDialogOpen",
+        reads: [...dialogReads],
+      }),
+    ]);
+    expect(navigationResult.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(byName.get("tagsOnlyOneDialogOpenViolatesWhileMounted")).toBe(
+      "violated",
+    );
+    expect(byName.get("tagsMountedBadStateReachable")).toBe("reachable");
+    expect(byName.get("tagsStepSkipsRouteLeavingEdge")).toBe(
+      "verified-within-bounds",
+    );
+    expect(byName.get("tagsOffRouteDialogStateUnreachable")).toBe(
+      "vacuous-warning",
+    );
+  });
+
+  it("includeUnmounted opts into off-route sentinel property evaluation", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "include-unmounted",
+      bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:A.draft",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "route-local", route: "/a" },
+          initial: "empty",
+        },
+      ],
+      transitions: [
+        {
+          id: "goB",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const defaultResult = checkModel(m, [
+      reachable(
+        m,
+        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        {
+          name: "defaultSkipsUnmounted",
+          reads: ["sys:route", "local:A.draft"],
+        },
+      ),
+    ]);
+    const optInResult = checkModel(m, [
+      reachable(
+        m,
+        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        {
+          name: "includeUnmountedWitnessesOffRouteSentinel",
+          reads: ["sys:route", "local:A.draft"],
+          includeUnmounted: true,
+        },
+      ),
+    ]);
+    expect(defaultResult.verdicts[0]?.status).toBe("vacuous-warning");
+    expect(optInResult.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("verifies edit-link draft visibility within mounted bounds after navigation away", () => {
+    const editRoutes = {
+      kind: "enum",
+      values: ["/links/:id", "/analytics"],
+    } as const;
+    const draftVisibility = {
+      kind: "enum",
+      values: ["hidden", "visible"],
+    } as const;
+    const m: Model = {
+      schemaVersion: 1,
+      id: "edit-link-mounted",
+      bounds: { maxDepth: 4, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: editRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/links/:id",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: editRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:EditLink.draft",
+          domain: {
+            kind: "record",
+            fields: { visibility: draftVisibility },
+          },
+          origin: "system",
+          scope: { kind: "route-local", route: "/links/:id" },
+          initial: { visibility: "hidden" },
+        },
+      ],
+      transitions: [
+        {
+          id: "showDraft",
+          cls: "user",
+          label: { kind: "click", text: "Show draft" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "assign",
+            var: "local:EditLink.draft",
+            expr: lit({ visibility: "visible" }),
+          },
+          reads: ["local:EditLink.draft"],
+          writes: ["local:EditLink.draft"],
+          confidence: "exact",
+        },
+        {
+          id: "goAnalytics",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/analytics" },
+          source: [],
+          guard: {
+            kind: "eq",
+            args: [read("sys:route"), lit("/links/:id")],
+          },
+          effect: {
+            kind: "navigate",
+            mode: "push",
+            to: lit("/analytics"),
+          },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      always(
+        m,
+        (s) => {
+          const draft = s["local:EditLink.draft"] as
+            | { visibility?: string }
+            | undefined;
+          return (
+            draft?.visibility === "hidden" || draft?.visibility === "visible"
+          );
+        },
+        {
+          name: "editDraftVisibilityStaysValid",
+          reads: ["local:EditLink.draft"],
+        },
+      ),
+    ]);
+    expect(result.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
   it("exposes generic navigation step facts", () => {
@@ -2716,8 +3073,8 @@ describe("checker", () => {
     ];
     const unsliced = checkModel(m, props);
     const sliced = checkModel(m, props, { slicing: true });
-    expect(unsliced.verdicts[0]?.status).toBe("violated");
-    expect(sliced.verdicts[0]?.status).toBe("violated");
+    expect(unsliced.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(sliced.verdicts[0]?.status).toBe("verified-within-bounds");
     expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
   });
 

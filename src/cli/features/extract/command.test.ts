@@ -866,7 +866,7 @@ describe("runExtractCommand", () => {
     await writeFile(
       configPath,
       `export default {
-        route: "/configured",
+        navigation: { initialRoute: "/configured" },
         effectApis: ["api.save"],
         bounds: { maxDepth: 5, maxPending: 2 },
         packageJsonPath: ${JSON.stringify(packageJsonPath)},
@@ -1870,6 +1870,60 @@ describe("runExtractCommand", () => {
     ]);
   });
 
+  it("reports named onOpenChange handlers as exact rather than over-approximate", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      function Popover(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
+        return <div {...props} />;
+      }
+      export function App() {
+        const [open, setOpen] = useState(false);
+        const [pickedDim, setPickedDim] = useState<'browser' | null>(null);
+        const [query, setQuery] = useState('');
+        function handleOpenChange(next: boolean) {
+          setOpen(next);
+          if (!next) {
+            setPickedDim(null);
+            setQuery('');
+          }
+        }
+        return <Popover open={open} onOpenChange={handleOpenChange} />;
+      }
+      `,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const openChangeHandlers = report.handlers.filter(
+      (handler: { id: string }) => handler.id.includes(".onOpenChange."),
+    );
+    expect(openChangeHandlers).toHaveLength(2);
+    expect(
+      openChangeHandlers.every(
+        (handler: { classification: string }) =>
+          handler.classification === "exact",
+      ),
+    ).toBe(true);
+    expect(
+      openChangeHandlers.some(
+        (handler: { classification: string }) =>
+          handler.classification === "over-approx",
+      ),
+    ).toBe(false);
+  });
+
   it("reports unhandled async rejection caveats", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
@@ -2639,6 +2693,213 @@ describe("runExtractCommand", () => {
         status: { kind: "enum", values: ["open", "closed"] },
       },
     });
+  });
+
+  it("loads navigation.initialRoute from modality config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const configPath = join(dir, "modality.config.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      configPath,
+      `export default { navigation: { initialRoute: "/fallback" } };`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      configPath,
+    });
+    expect(
+      result.model.vars.find((decl) => decl.id === "sys:route")?.initial,
+    ).toBe("/fallback");
+    expect(
+      result.model.vars.find((decl) => decl.id === "local:App.flag")?.scope,
+    ).toEqual({ kind: "route-local", route: "/fallback" });
+  });
+
+  it("loads navigation.routeBySource from modality config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const routesPath = join(dir, "app", "routes.ts");
+    const sourcePath = join(dir, "app", "routes", "analytics.tsx");
+    const configPath = join(dir, "modality.config.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      routesPath,
+      `
+      import { index, route } from "@react-router/dev/routes";
+      export default [
+        index("routes/home.tsx"),
+        route("analytics", "routes/analytics.tsx"),
+      ];
+      `,
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      `export default {
+        navigation: {
+          routeBySource: {
+            "app/routes/analytics.tsx": "/custom-analytics",
+          },
+        },
+      };`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function Analytics() {
+        const [viewed, setViewed] = useState(false);
+        return <button onClick={() => setViewed(true)}>View</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      configPath,
+    });
+    expect(
+      result.model.vars.find((decl) => decl.id === "sys:route")?.initial,
+    ).toBe("/custom-analytics");
+    expect(
+      result.model.vars.find((decl) => decl.id === "local:Analytics.viewed")
+        ?.scope,
+    ).toEqual({ kind: "route-local", route: "/custom-analytics" });
+  });
+
+  it("scopes route-local state to each route source", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-route-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const routesPath = join(dir, "app", "routes.ts");
+    await writeFile(
+      routesPath,
+      `
+      import { index, route } from "@react-router/dev/routes";
+      export default [
+        index("routes/home.tsx"),
+        route("analytics", "routes/analytics.tsx"),
+        route("tags", "routes/tags.tsx"),
+        route("links/:id", "routes/links.$id.tsx"),
+      ];
+      `,
+      "utf8",
+    );
+    const cases = [
+      {
+        file: "home.tsx",
+        component: "Home",
+        stateVar: "count",
+        route: "/",
+      },
+      {
+        file: "analytics.tsx",
+        component: "Analytics",
+        stateVar: "viewed",
+        route: "/analytics",
+      },
+      {
+        file: "tags.tsx",
+        component: "Tags",
+        stateVar: "query",
+        route: "/tags",
+      },
+      {
+        file: "links.$id.tsx",
+        component: "LinkDetail",
+        stateVar: "copied",
+        route: "/links/:id",
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const sourcePath = join(dir, "app", "routes", testCase.file);
+      const setter =
+        testCase.stateVar[0]?.toUpperCase() + testCase.stateVar.slice(1);
+      await writeFile(
+        sourcePath,
+        `
+        import { useState } from 'react';
+        export function ${testCase.component}() {
+          const [${testCase.stateVar}, set${setter}] = useState(false);
+          return <button onClick={() => set${setter}(true)}>Set</button>;
+        }
+        `,
+        "utf8",
+      );
+      const modelPath = join(dir, `${testCase.file}.model.json`);
+      const result = await runExtractCommand({ sourcePath, modelPath });
+      expect(
+        result.model.vars.find((decl) => decl.id === "sys:route")?.initial,
+        testCase.file,
+      ).toBe(testCase.route);
+      expect(
+        result.model.vars.find(
+          (decl) =>
+            decl.id === `local:${testCase.component}.${testCase.stateVar}`,
+        )?.scope,
+        testCase.file,
+      ).toEqual({ kind: "route-local", route: testCase.route });
+      expect(result.lines).toContain(`route=${testCase.route}`);
+    }
+  });
+
+  it("requires navigation.initialRoute for multi-source extraction across routes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-route-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const routesPath = join(dir, "app", "routes.ts");
+    const analyticsPath = join(dir, "app", "routes", "analytics.tsx");
+    const tagsPath = join(dir, "app", "routes", "tags.tsx");
+    await writeFile(
+      routesPath,
+      `
+      import { route } from "@react-router/dev/routes";
+      export default [
+        route("analytics", "routes/analytics.tsx"),
+        route("tags", "routes/tags.tsx"),
+      ];
+      `,
+      "utf8",
+    );
+    for (const [file, component] of [
+      ["analytics.tsx", "Analytics"],
+      ["tags.tsx", "Tags"],
+    ] as const) {
+      await writeFile(
+        join(dir, "app", "routes", file),
+        `
+        import { useState } from 'react';
+        export function ${component}() {
+          const [flag, setFlag] = useState(false);
+          return <button onClick={() => setFlag(true)}>Set</button>;
+        }
+        `,
+        "utf8",
+      );
+    }
+
+    await expect(
+      runExtractCommand({
+        sourcePaths: [analyticsPath, tagsPath],
+        modelPath: join(dir, "model.json"),
+      }),
+    ).rejects.toThrow(/navigation\.initialRoute/);
   });
 });
 
