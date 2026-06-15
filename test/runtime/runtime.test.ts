@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { always, reachable, type Model } from "modality-ts/core";
+import {
+  always,
+  andExpr,
+  eq,
+  evalStatePredicate,
+  lit,
+  neq,
+  orExpr,
+  reachable,
+  readVar,
+  StatePredicateEvalError,
+  type Model,
+} from "modality-ts/core";
 import {
   assertObservableInvariantsOrThrow,
   assertObservableState,
@@ -41,14 +53,17 @@ describe("modality-ts/cli/runtime observable assertions", () => {
     const properties = [
       always(
         model,
-        (state) => state.auth === "user" || state.route !== "/checkout",
+        orExpr(
+          eq(readVar("auth"), lit("user")),
+          neq(readVar("route"), lit("/checkout")),
+        ),
         { name: "checkoutRequiresUser", reads: ["auth", "route"] },
       ),
-      always(model, (state) => state.missing === true, {
+      always(model, eq(readVar("missing"), lit(true)), {
         name: "missingObservable",
         reads: ["missing"],
       }),
-      reachable(model, (state) => state.auth === "user", {
+      reachable(model, eq(readVar("auth"), lit("user")), {
         name: "notAnInvariant",
         reads: ["auth"],
       }),
@@ -84,7 +99,7 @@ describe("modality-ts/cli/runtime observable assertions", () => {
     expect(() =>
       assertObservableInvariantsOrThrow(
         [
-          always(model, (state) => state.flag === true, {
+          always(model, eq(readVar("flag"), lit(true)), {
             name: "flagTrue",
             reads: ["flag"],
           }),
@@ -100,7 +115,10 @@ describe("modality-ts/cli/runtime observable assertions", () => {
       [
         always(
           model,
-          (state) => state.flag === true && state.secret === "open",
+          andExpr(
+            eq(readVar("flag"), lit(true)),
+            eq(readVar("secret"), lit("open")),
+          ),
           { name: "secretOpen", reads: ["flag"] },
         ),
       ],
@@ -123,7 +141,10 @@ describe("modality-ts/cli/runtime observable assertions", () => {
       [
         always(
           model,
-          (state) => state.auth === "user" || state.route !== "/checkout",
+          orExpr(
+            eq(readVar("auth"), lit("user")),
+            neq(readVar("route"), lit("/checkout")),
+          ),
           { name: "checkoutRequiresUser", reads: ["auth", "route"] },
         ),
       ],
@@ -159,7 +180,7 @@ describe("modality-ts/cli/runtime observable assertions", () => {
   it("can throw on subscribed runtime assertion violations", () => {
     const controller = createModalityAssertions(
       [
-        always(model, (state) => state.flag === true, {
+        always(model, eq(readVar("flag"), lit(true)), {
           name: "flagTrue",
           reads: ["flag"],
         }),
@@ -174,5 +195,37 @@ describe("modality-ts/cli/runtime observable assertions", () => {
     expect(() => controller.check()).toThrow(
       "flagTrue: observable invariant failed",
     );
+  });
+});
+
+describe("evalStatePredicate", () => {
+  it("matches tagIs against the tagged discriminant field", () => {
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "admin" } },
+      ),
+    ).toBe(true);
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "guest", role: "admin" } },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects step-only expressions in plain state predicates", () => {
+    expect(() =>
+      evalStatePredicate({ kind: "readPre", var: "flag" }, { flag: true }),
+    ).toThrow(StatePredicateEvalError);
+    expect(() =>
+      evalStatePredicate({ kind: "readOpArg", key: "plan" }, {}),
+    ).toThrow(/step predicates/);
+    expect(() =>
+      evalStatePredicate(
+        { kind: "transitionEnabled", transitionId: "toggle" },
+        {},
+      ),
+    ).toThrow(/step predicates/);
   });
 });

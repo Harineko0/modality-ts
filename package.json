@@ -11,6 +11,7 @@
   "types": "./dist/cli/cli.d.ts",
   "files": [
     "dist/**",
+    "native/**",
     "README.md",
     "LICENSE"
   ],
@@ -126,14 +127,15 @@
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "architecture": "depcruise --config tools/depcruise.config.cjs src",
-    "build": "tsc -b",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build:rust": "napi build --platform --release --cargo-cwd crates/checker native",
+    "build": "pnpm build:rust && tsc -b",
+    "clean": "rm -rf dist native tsconfig.tsbuildinfo && cargo clean --manifest-path crates/checker/Cargo.toml",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run test/modality/demo-acceptance.test.ts",
     "fix": "biome lint --write . && biome format --write .",
     "phase7": "tsx tools/phase7-differential.ts",
     "publish:npm": "npm publish --access public",
-    "test": "vitest run",
+    "test": "pnpm build:rust && vitest run",
     "typecheck": "tsc -b"
   },
   "dependencies": {
@@ -142,9 +144,17 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
+    "@napi-rs/cli": "^2.18.4",
     "@types/node": "^24.10.1",
     "dependency-cruiser": "^17.4.3",
     "tsx": "^4.20.6",
     "vitest": "^4.0.14"
+  },
+  "napi": {
+    "name": "modality-checker",
+    "triples": {
+      "defaults": true,
+      "additional": []
+    }
   }
 }

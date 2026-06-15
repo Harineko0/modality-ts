@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, reachable, type Model } from "modality-ts/core";
+import {
+  always,
+  andExpr,
+  eq,
+  lit,
+  neq,
+  reachable,
+  readVar,
+  type Model,
+} from "modality-ts/core";
 import {
   extractUseStateSkeleton,
   extractUseStateVars,
@@ -158,7 +167,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saveStatus"] === "posting", {
+      reachable(model, eq(readVar("local:App.saveStatus"), lit("posting")), {
         name: "postingReachable",
         reads: ["local:App.saveStatus"],
       }),
@@ -252,7 +261,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.role"] === "guest", {
+      reachable(model, eq(readVar("local:App.role"), lit("guest")), {
         name: "roleCopied",
         reads: ["local:App.role"],
       }),
@@ -823,7 +832,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.createOpen"] === true, {
+      reachable(model, eq(readVar("local:App.createOpen"), lit(true)), {
         name: "createOpenReachable",
         reads: ["local:App.createOpen"],
       }),
@@ -1114,7 +1123,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.open"] === true, {
+      reachable(model, eq(readVar("local:App.open"), lit(true)), {
         name: "openReachable",
         reads: ["local:App.open"],
       }),
@@ -1265,9 +1274,10 @@ describe("useState inventory", () => {
     const check = checkModel(model, [
       reachable(
         model,
-        (state) =>
-          state["local:App.saved"] === "nonEmpty" &&
-          state["local:App.draft"] === "empty",
+        andExpr(
+          eq(readVar("local:App.saved"), lit("nonEmpty")),
+          eq(readVar("local:App.draft"), lit("empty")),
+        ),
         {
           name: "savedThenDraftCleared",
           reads: ["local:App.saved", "local:App.draft"],
@@ -1385,13 +1395,10 @@ describe("useState inventory", () => {
     const check = checkModel(model, [
       reachable(
         model,
-        (state) => {
-          const auth = state["local:App.auth"] as {
-            kind?: string;
-            stale?: boolean;
-          };
-          return auth.kind === "user" && auth.stale === false;
-        },
+        andExpr(
+          eq(readVar("local:App.auth", ["kind"]), lit("user")),
+          eq(readVar("local:App.auth", ["stale"]), lit(false)),
+        ),
         { name: "updatedAuthReachable", reads: ["local:App.auth"] },
       ),
     ]);
@@ -1499,7 +1506,7 @@ describe("useState inventory", () => {
       ],
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.screen"] === "checkout", {
+      reachable(model, eq(readVar("local:App.screen"), lit("checkout")), {
         name: "checkoutReachable",
         reads: ["local:App.screen"],
       }),
@@ -1720,7 +1727,7 @@ describe("useState inventory", () => {
       ],
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.screen"] === "checkout", {
+      reachable(model, eq(readVar("local:App.screen"), lit("checkout")), {
         name: "checkoutReachable",
         reads: ["local:App.screen"],
       }),
@@ -1803,7 +1810,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.saveStatus"] !== "idle", {
+      always(model, neq(readVar("local:App.saveStatus"), lit("idle")), {
         name: "idleNotReachable",
         reads: ["local:App.saveStatus"],
       }),
@@ -1929,7 +1936,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.saveStatus"] !== "posting", {
+      always(model, neq(readVar("local:App.saveStatus"), lit("posting")), {
         name: "postingNotReachable",
         reads: ["local:App.saveStatus"],
       }),
@@ -2085,7 +2092,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.draft"] === "nonEmpty", {
+      reachable(model, eq(readVar("local:App.draft"), lit("nonEmpty")), {
         name: "nonEmptyReachable",
         reads: ["local:App.draft"],
       }),
@@ -2208,7 +2215,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.seats"] === 2, {
+      reachable(model, eq(readVar("local:App.seats"), lit(2)), {
         name: "twoSeatsReachable",
         reads: ["local:App.seats"],
       }),
@@ -2428,7 +2435,7 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      always(model, (state) => state["local:App.screen"] === "home", {
+      always(model, eq(readVar("local:App.screen"), lit("home")), {
         name: "effectStabilizesScreen",
         reads: ["local:App.screen"],
       }),
@@ -2711,11 +2718,11 @@ describe("useState inventory", () => {
       transitions: result.transitions,
     };
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saveStatus"] === "posting", {
+      reachable(model, eq(readVar("local:App.saveStatus"), lit("posting")), {
         name: "postingReachable",
         reads: ["local:App.saveStatus"],
       }),
-      reachable(model, (state) => state["local:App.saveStatus"] === "failed", {
+      reachable(model, eq(readVar("local:App.saveStatus"), lit("failed")), {
         name: "failedReachable",
         reads: ["local:App.saveStatus"],
       }),

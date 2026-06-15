@@ -1,17 +1,31 @@
-import { describe, expect, it } from "vitest";
 import { checkModel, modelInitialStates, sliceModel } from "modality-ts/check";
 import {
   always,
   alwaysStep,
+  andExpr,
+  lit as coreLit,
   enabled,
+  eq,
   leadsToWithin,
+  type Model,
+  neq,
+  notExpr,
+  orExpr,
+  type Property,
   reachable,
   reachableFrom,
+  readVar,
+  stepAny,
+  stepEnqueued,
+  stepTransitionId,
   UNMOUNTED,
-  type Model,
-  type Property,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { checkerOracleCorpus } from "./oracle-corpus.js";
+
+function lit(value: unknown) {
+  return coreLit(value as never);
+}
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;
@@ -24,10 +38,6 @@ const pendingOp = {
     args: { kind: "record", fields: {} },
   },
 } as const;
-
-function lit(value: unknown) {
-  return { kind: "lit" as const, value: value as never };
-}
 
 function read(id: string, path?: string[]) {
   return { kind: "read" as const, var: id, path };
@@ -182,6 +192,25 @@ function model(): Model {
   };
 }
 
+function partialStateExpr(expected: Record<string, unknown>) {
+  return andExpr(
+    ...Object.entries(expected).map(([key, value]) =>
+      eq(readVar(key), lit(value)),
+    ),
+  );
+}
+
+function tagsOneDialogOpenInvariant() {
+  const createOpen = eq(readVar("local:Tags.createOpen"), lit(true));
+  const editOpen = neq(readVar("local:Tags.editTarget"), lit("none"));
+  const deleteOpen = neq(readVar("local:Tags.deleteTarget"), lit("none"));
+  return andExpr(
+    notExpr(andExpr(createOpen, editOpen)),
+    notExpr(andExpr(createOpen, deleteOpen)),
+    notExpr(andExpr(editOpen, deleteOpen)),
+  );
+}
+
 function firstTransition(model: Model): Model["transitions"][number] {
   const transition = model.transitions[0];
   if (!transition) throw new Error("Fixture is missing first transition");
@@ -189,6 +218,21 @@ function firstTransition(model: Model): Model["transitions"][number] {
 }
 
 describe("checker", () => {
+  it("reaches the native binding and returns a shaped CheckResult", () => {
+    const m = model();
+    const result = checkModel(m, []);
+    expect(result).toMatchObject({
+      verdicts: [],
+      stats: expect.objectContaining({
+        states: expect.any(Number),
+        edges: expect.any(Number),
+        depth: expect.any(Number),
+      }),
+      vacuityWarnings: expect.any(Array),
+      boundHits: expect.any(Array),
+    });
+  });
+
   it("preserves nondeterministic route-local initials on initial mount and remount", () => {
     const routeLocalModel: Model = {
       schemaVersion: 1,
@@ -256,11 +300,9 @@ describe("checker", () => {
         .sort(),
     ).toEqual(["x", "y"]);
     const check = checkModel(routeLocalModel, [
-      reachable(
-        routeLocalModel,
-        (state) => state["local:Page.choice"] === "y",
-        { name: "canMountY" },
-      ),
+      reachable(routeLocalModel, eq(readVar("local:Page.choice"), lit("y")), {
+        name: "canMountY",
+      }),
     ]);
     expect(check.verdicts[0]).toMatchObject({
       status: "reachable",
@@ -330,7 +372,7 @@ describe("checker", () => {
     };
 
     const check = checkModel(tokenModel, [
-      reachable(tokenModel, (state) => state.next !== "userA", {
+      reachable(tokenModel, neq(readVar("next"), lit("userA")), {
         name: "freshGenerated",
       }),
     ]);
@@ -410,7 +452,7 @@ describe("checker", () => {
     };
 
     const check = checkModel(taggedModel, [
-      reachable(taggedModel, (state) => state.entered === true, {
+      reachable(taggedModel, eq(readVar("entered"), lit(true)), {
         name: "enteredAdmin",
       }),
     ]);
@@ -424,15 +466,28 @@ describe("checker", () => {
   it("finds shortest traces for state and step violations", () => {
     const m = model();
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), {
-        name: "badDoneInvariant",
-      }),
+      always(
+        m,
+        notExpr(
+          andExpr(
+            eq(readVar("done"), lit(true)),
+            eq(readVar("draft"), lit("empty")),
+          ),
+        ),
+        {
+          name: "badDoneInvariant",
+        },
+      ),
       alwaysStep(
         m,
-        (pre, step) => !(step.enqueued("POST") && pre.auth === false),
+        {
+          negate: true,
+          step: stepEnqueued("POST"),
+          pre: eq(readVar("auth"), lit(false)),
+        },
         { name: "guestCannotSubmit" },
       ),
-      reachable(m, (s) => s.done === true, { name: "doneReachable" }),
+      reachable(m, eq(readVar("done"), lit(true)), { name: "doneReachable" }),
     ];
     const result = checkModel(m, props);
     expect(result.stats.states).toBeGreaterThan(1);
@@ -458,14 +513,17 @@ describe("checker", () => {
     const props: Property[] = [
       leadsToWithin(
         m,
-        (step) => step.enqueued("POST"),
-        (s) => s.done === true || s.status === "failed",
+        stepEnqueued("POST"),
+        orExpr(
+          eq(readVar("done"), lit(true)),
+          eq(readVar("status"), lit("failed")),
+        ),
         { name: "submitSettles", budget: { environment: 1 } },
       ),
       reachableFrom(
         m,
-        (s) => s.status === "failed",
-        (s) => s.auth === true,
+        eq(readVar("status"), lit("failed")),
+        eq(readVar("auth"), lit(true)),
         { name: "failedCanRemainAuthed" },
       ),
     ];
@@ -487,8 +545,11 @@ describe("checker", () => {
     const result = checkModel(m, [
       leadsToWithin(
         m,
-        (step) => step.enqueued("POST"),
-        (s) => s.done === true || s.status === "failed",
+        stepEnqueued("POST"),
+        orExpr(
+          eq(readVar("done"), lit(true)),
+          eq(readVar("status"), lit("failed")),
+        ),
         { name: "submitSettlesAfterFrontier", budget: { environment: 1 } },
       ),
     ]);
@@ -510,8 +571,8 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachableFrom(
         m,
-        (s) => s.status === "failed",
-        (s) => s.done === true,
+        eq(readVar("status"), lit("failed")),
+        eq(readVar("done"), lit(true)),
         { name: "failedCannotForceDone", reads: ["status", "done"] },
       ),
     ]);
@@ -528,7 +589,7 @@ describe("checker", () => {
   it("marks locatorless user-event counterexamples as non-replayable", () => {
     const m = model();
     const result = checkModel(m, [
-      reachable(m, (s) => s.done === true, {
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "doneReachable",
         reads: ["done"],
       }),
@@ -554,12 +615,10 @@ describe("checker", () => {
   it("includes the failing bounded-response suffix in leadsToWithin traces", () => {
     const m = model();
     const result = checkModel(m, [
-      leadsToWithin(
-        m,
-        (step) => step.enqueued("POST"),
-        (s) => s.done === true,
-        { name: "submitDoneImmediately", budget: { environment: 0 } },
-      ),
+      leadsToWithin(m, stepEnqueued("POST"), eq(readVar("done"), lit(true)), {
+        name: "submitDoneImmediately",
+        budget: { environment: 0 },
+      }),
     ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
@@ -632,8 +691,8 @@ describe("checker", () => {
     const props = [
       leadsToWithin(
         m,
-        (step) => step.transition.id === "fire",
-        (state) => state.done === true,
+        stepTransitionId("fire"),
+        eq(readVar("done"), lit(true)),
         { name: "fireEventuallyDone", budget: { environment: 0 } },
       ),
     ];
@@ -751,27 +810,17 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      leadsToWithin(
-        m,
-        (step) => step.enqueued("POST"),
-        (s) => s.done === true,
-        {
-          name: "settlesWithoutUserInterference",
-          budget: { environment: 1 },
-          reads: ["done"],
-        },
-      ),
-      leadsToWithin(
-        m,
-        (step) => step.enqueued("POST"),
-        (s) => s.done === true,
-        {
-          name: "adversarialUserCanDelaySettlement",
-          budget: { environment: 1 },
-          allowUserEvents: true,
-          reads: ["done"],
-        },
-      ),
+      leadsToWithin(m, stepEnqueued("POST"), eq(readVar("done"), lit(true)), {
+        name: "settlesWithoutUserInterference",
+        budget: { environment: 1 },
+        reads: ["done"],
+      }),
+      leadsToWithin(m, stepEnqueued("POST"), eq(readVar("done"), lit(true)), {
+        name: "adversarialUserCanDelaySettlement",
+        budget: { environment: 1 },
+        allowUserEvents: true,
+        reads: ["done"],
+      }),
     ]);
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict]),
@@ -795,7 +844,7 @@ describe("checker", () => {
       transitions: [{ ...m.transitions[0], writes: [] }],
     };
     const [verdict] = checkModel(broken, [
-      always(broken, () => true, { name: "p" }),
+      always(broken, lit(true), { name: "p" }),
     ]).verdicts;
     expect(verdict.status).toBe("error");
     expect(verdict.status === "error" ? verdict.message : "").toContain(
@@ -873,7 +922,7 @@ describe("checker", () => {
     const diamond = checkModel(independentBits, [
       reachable(
         independentBits,
-        (state) => state.a === true && state.b === true,
+        andExpr(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
         { name: "bothSet", reads: ["a", "b"] },
       ),
     ]);
@@ -901,7 +950,7 @@ describe("checker", () => {
       ],
     };
     const loop = checkModel(toggleLoop, [
-      alwaysStep(toggleLoop, () => true, { name: "allEdgesOk", reads: [] }),
+      alwaysStep(toggleLoop, stepAny(), { name: "allEdgesOk", reads: [] }),
     ]);
     expect(loop.stats).toEqual({ states: 2, edges: 2, depth: 2 });
     expect(diamond.diagnostics?.storage).toMatchObject({
@@ -973,10 +1022,14 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(toggleLoop, [
-      alwaysStep(toggleLoop, (_pre, _step, post) => post.a === true, {
-        name: "aMustStayTrue",
-        reads: ["a"],
-      }),
+      alwaysStep(
+        toggleLoop,
+        { step: stepAny(), post: eq(readVar("a"), lit(true)) },
+        {
+          name: "aMustStayTrue",
+          reads: ["a"],
+        },
+      ),
     ]);
     const verdict = result.verdicts[0];
     expect(verdict?.status).toBe("violated");
@@ -1056,11 +1109,11 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(independentBits, [
-      always(independentBits, () => true, {
+      always(independentBits, lit(true), {
         name: "trivialAlways",
         reads: ["a", "b"],
       }),
-      reachable(independentBits, (state) => state.a === true, {
+      reachable(independentBits, eq(readVar("a"), lit(true)), {
         name: "aReachable",
         reads: ["a"],
       }),
@@ -1075,7 +1128,7 @@ describe("checker", () => {
   it("reconstructs traces with correct pre/post state diffs after compact parent storage", () => {
     const m = model();
     const result = checkModel(m, [
-      reachable(m, (state) => state.done === true, {
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "doneReachable",
         reads: ["done"],
       }),
@@ -1099,8 +1152,11 @@ describe("checker", () => {
     const leadsResult = checkModel(m, [
       leadsToWithin(
         m,
-        (step) => step.enqueued("POST"),
-        (state) => state.done === true || state.status === "failed",
+        stepEnqueued("POST"),
+        orExpr(
+          eq(readVar("done"), lit(true)),
+          eq(readVar("status"), lit("failed")),
+        ),
         { name: "submitSettles", budget: { environment: 1 } },
       ),
     ]);
@@ -1112,8 +1168,8 @@ describe("checker", () => {
     const reachResult = checkModel(m, [
       reachableFrom(
         m,
-        (state) => state.status === "failed",
-        (state) => state.auth === true,
+        eq(readVar("status"), lit("failed")),
+        eq(readVar("auth"), lit(true)),
         { name: "failedCanRemainAuthed" },
       ),
     ]);
@@ -1123,7 +1179,7 @@ describe("checker", () => {
     );
   });
 
-  it("executes opaque effects and validates their declared write footprint", () => {
+  it("rejects opaque effects in the Rust checker", () => {
     const m: Model = {
       ...model(),
       transitions: [
@@ -1149,75 +1205,15 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.done === true, {
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "doneViaOpaque",
         reads: ["done"],
       }),
     ]);
-    expect(result.verdicts[0]?.status).toBe("reachable");
-
-    const undeclaredWrite: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "writeUndeclared",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(undeclaredWrite, [])).toThrow(
-      "wrote undeclared var auth",
-    );
-
-    const invalidValue: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "invalidDone",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(invalidValue, [])).toThrow(
-      "produced invalid value for done",
-    );
-
-    const nondeterministic: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "nondeterministicDone",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(nondeterministic, [])).toThrow(
-      "returned nondeterministic results for identical input",
-    );
+    expect(result.verdicts[0]?.status).toBe("error");
+    expect(
+      result.verdicts[0]?.status === "error" ? result.verdicts[0].message : "",
+    ).toContain("unsupported opaque effect");
   });
 
   it("reports run-level vacuity warnings", () => {
@@ -1286,11 +1282,20 @@ describe("checker", () => {
       ],
     };
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), {
-        name: "badDoneInvariant",
-        reads: ["done", "draft"],
-      }),
-      reachable(m, (s) => s.done === true, {
+      always(
+        m,
+        notExpr(
+          andExpr(
+            eq(readVar("done"), lit(true)),
+            eq(readVar("draft"), lit("empty")),
+          ),
+        ),
+        {
+          name: "badDoneInvariant",
+          reads: ["done", "draft"],
+        },
+      ),
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "doneReachable",
         reads: ["done"],
       }),
@@ -1308,10 +1313,19 @@ describe("checker", () => {
   it("checks sliced properties using inferred state reads", () => {
     const m = model();
     const props: Property[] = [
-      always(m, (s) => !(s.done === true && s.draft === "empty"), {
-        name: "badDoneInvariant",
-      }),
-      reachable(m, (s) => s.done === true, { name: "doneReachable" }),
+      always(
+        m,
+        notExpr(
+          andExpr(
+            eq(readVar("done"), lit(true)),
+            eq(readVar("draft"), lit("empty")),
+          ),
+        ),
+        {
+          name: "badDoneInvariant",
+        },
+      ),
+      reachable(m, eq(readVar("done"), lit(true)), { name: "doneReachable" }),
     ];
     const full = checkModel(m, props);
     const sliced = checkModel(m, props, { slicing: true });
@@ -1327,14 +1341,18 @@ describe("checker", () => {
   it("reports property errors when declared reads omit accessed state vars", () => {
     const m = model();
     const result = checkModel(m, [
-      always(m, (state) => state.done !== true, {
+      always(m, neq(readVar("done"), lit(true)), {
         name: "badStateReads",
         reads: [],
       }),
-      alwaysStep(m, (pre) => pre.auth !== "guest", {
-        name: "badStepReads",
-        reads: [],
-      }),
+      alwaysStep(
+        m,
+        { step: stepAny(), pre: neq(readVar("auth"), lit("guest")) },
+        {
+          name: "badStepReads",
+          reads: [],
+        },
+      ),
     ]);
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict]),
@@ -1441,10 +1459,14 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (s) => s.a === true && s.b === true, {
-        name: "bothInternalEffectsRan",
-        reads: ["a", "b"],
-      }),
+      reachable(
+        m,
+        andExpr(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
+        {
+          name: "bothInternalEffectsRan",
+          reads: ["a", "b"],
+        },
+      ),
     ]);
     expect(result.verdicts[0]?.status).toBe("reachable");
     expect(result.stats).toEqual({ states: 2, edges: 1, depth: 1 });
@@ -1572,14 +1594,22 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (s) => s.x === "b" && s.seen === "sawA", {
-        name: "aThenBReachable",
-        reads: ["x", "seen"],
-      }),
-      reachable(m, (s) => s.x === "a" && s.seen === "sawB", {
-        name: "bThenAReachable",
-        reads: ["x", "seen"],
-      }),
+      reachable(
+        m,
+        andExpr(eq(readVar("x"), lit("b")), eq(readVar("seen"), lit("sawA"))),
+        {
+          name: "aThenBReachable",
+          reads: ["x", "seen"],
+        },
+      ),
+      reachable(
+        m,
+        andExpr(eq(readVar("x"), lit("a")), eq(readVar("seen"), lit("sawB"))),
+        {
+          name: "bThenAReachable",
+          reads: ["x", "seen"],
+        },
+      ),
     ]);
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
@@ -1668,20 +1698,30 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        andExpr(
+          eq(readVar("sys:route"), lit("/b")),
+          eq(readVar("local:A.draft"), lit(UNMOUNTED)),
+        ),
         { name: "localUnmountsOnB", includeUnmounted: true },
       ),
       always(
         m,
-        (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"),
+        notExpr(
+          andExpr(
+            eq(readVar("sys:route"), lit("/b")),
+            eq(readVar("local:A.draft"), lit("nonEmpty")),
+          ),
+        ),
         { name: "cannotTypeWhileUnmounted" },
       ),
       alwaysStep(
         m,
-        (pre, step, post) =>
-          step.transition.id !== "back" ||
-          pre["sys:route"] !== "/b" ||
-          post["local:A.draft"] === "empty",
+        {
+          negate: true,
+          step: stepTransitionId("back"),
+          pre: eq(readVar("sys:route"), lit("/b")),
+          post: neq(readVar("local:A.draft"), lit("empty")),
+        },
         { name: "backRemountResetsDraft" },
       ),
     ]);
@@ -1763,7 +1803,12 @@ describe("checker", () => {
     const result = checkModel(m, [
       always(
         m,
-        (s) => !(s["sys:route"] === "/b" && s["local:A.draft"] === "nonEmpty"),
+        notExpr(
+          andExpr(
+            eq(readVar("sys:route"), lit("/b")),
+            eq(readVar("local:A.draft"), lit("nonEmpty")),
+          ),
+        ),
         {
           name: "offRouteInternalCannotWrite",
           reads: ["sys:route", "local:A.draft"],
@@ -1771,7 +1816,10 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        andExpr(
+          eq(readVar("sys:route"), lit("/b")),
+          eq(readVar("local:A.draft"), lit(UNMOUNTED)),
+        ),
         {
           name: "offRouteLocalRemainsUnmounted",
           reads: ["sys:route", "local:A.draft"],
@@ -1898,13 +1946,6 @@ describe("checker", () => {
       "local:Tags.editTarget",
       "local:Tags.deleteTarget",
     ] as const;
-    const oneDialogOpen = (s: Record<string, unknown>) => {
-      const open =
-        Number(s["local:Tags.createOpen"] === true) +
-        Number(s["local:Tags.editTarget"] !== "none") +
-        Number(s["local:Tags.deleteTarget"] !== "none");
-      return open <= 1;
-    };
     const goAnalyticsTransition = m.transitions.find(
       (transition) => transition.id === "goAnalytics",
     );
@@ -1913,16 +1954,17 @@ describe("checker", () => {
       transitions: goAnalyticsTransition ? [goAnalyticsTransition] : [],
     };
     const result = checkModel(m, [
-      always(m, (s) => oneDialogOpen(s), {
+      always(m, tagsOneDialogOpenInvariant(), {
         name: "tagsOnlyOneDialogOpenViolatesWhileMounted",
         reads: [...dialogReads],
       }),
       reachable(
         m,
-        (s) =>
-          s["sys:route"] === "/tags" &&
-          s["local:Tags.createOpen"] === true &&
-          s["local:Tags.editTarget"] === "link-1",
+        andExpr(
+          eq(readVar("sys:route"), lit("/tags")),
+          eq(readVar("local:Tags.createOpen"), lit(true)),
+          eq(readVar("local:Tags.editTarget"), lit("link-1")),
+        ),
         {
           name: "tagsMountedBadStateReachable",
           reads: ["sys:route", ...dialogReads],
@@ -1930,9 +1972,12 @@ describe("checker", () => {
       ),
       alwaysStep(
         m,
-        (pre, step, post) =>
-          step.transition.id !== "goAnalytics" ||
-          pre["local:Tags.createOpen"] === post["local:Tags.createOpen"],
+        {
+          negate: true,
+          step: stepTransitionId("goAnalytics"),
+          pre: eq(readVar("local:Tags.createOpen"), lit(true)),
+          post: neq(readVar("local:Tags.createOpen"), lit(true)),
+        },
         {
           name: "tagsStepSkipsRouteLeavingEdge",
           reads: ["local:Tags.createOpen"],
@@ -1940,9 +1985,10 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        (s) =>
-          s["sys:route"] === "/analytics" &&
-          s["local:Tags.createOpen"] === true,
+        andExpr(
+          eq(readVar("sys:route"), lit("/analytics")),
+          eq(readVar("local:Tags.createOpen"), lit(true)),
+        ),
         {
           name: "tagsOffRouteDialogStateUnreachable",
           reads: ["sys:route", "local:Tags.createOpen"],
@@ -1953,7 +1999,7 @@ describe("checker", () => {
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
     const navigationResult = checkModel(tagsNavigationModel, [
-      always(tagsNavigationModel, (s) => oneDialogOpen(s), {
+      always(tagsNavigationModel, tagsOneDialogOpenInvariant(), {
         name: "tagsOnlyOneDialogOpen",
         reads: [...dialogReads],
       }),
@@ -2023,7 +2069,10 @@ describe("checker", () => {
     const defaultResult = checkModel(m, [
       reachable(
         m,
-        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        andExpr(
+          eq(readVar("sys:route"), lit("/b")),
+          eq(readVar("local:A.draft"), lit(UNMOUNTED)),
+        ),
         {
           name: "defaultSkipsUnmounted",
           reads: ["sys:route", "local:A.draft"],
@@ -2033,7 +2082,10 @@ describe("checker", () => {
     const optInResult = checkModel(m, [
       reachable(
         m,
-        (s) => s["sys:route"] === "/b" && s["local:A.draft"] === UNMOUNTED,
+        andExpr(
+          eq(readVar("sys:route"), lit("/b")),
+          eq(readVar("local:A.draft"), lit(UNMOUNTED)),
+        ),
         {
           name: "includeUnmountedWitnessesOffRouteSentinel",
           reads: ["sys:route", "local:A.draft"],
@@ -2130,14 +2182,10 @@ describe("checker", () => {
     const result = checkModel(m, [
       always(
         m,
-        (s) => {
-          const draft = s["local:EditLink.draft"] as
-            | { visibility?: string }
-            | undefined;
-          return (
-            draft?.visibility === "hidden" || draft?.visibility === "visible"
-          );
-        },
+        orExpr(
+          eq(readVar("local:EditLink.draft", ["visibility"]), lit("hidden")),
+          eq(readVar("local:EditLink.draft", ["visibility"]), lit("visible")),
+        ),
         {
           name: "editDraftVisibilityStaysValid",
           reads: ["local:EditLink.draft"],
@@ -2193,9 +2241,10 @@ describe("checker", () => {
     const result = checkModel(m, [
       alwaysStep(
         m,
-        (_pre, step) =>
-          step.transition.id !== "pushB" ||
-          (step.navigated() && step.navigatedTo("/b")),
+        {
+          negate: true,
+          step: { transitionId: "pushB", navigated: false },
+        },
         { name: "pushReportsNavigation", reads: ["sys:route"] },
       ),
     ]);
@@ -2236,7 +2285,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        (s) => Array.isArray(s["sys:pending"]) && s["sys:pending"].length === 1,
+        eq({ kind: "lenCat", arg: readVar("sys:pending") }, lit("1")),
         { name: "onePendingReachable" },
       ),
     ]);
@@ -2287,7 +2336,7 @@ describe("checker", () => {
     };
 
     const result = checkModel(m, [
-      reachable(m, (s) => s["sys:route"] === "/b", {
+      reachable(m, eq(readVar("sys:route"), lit("/b")), {
         name: "pushedB",
         reads: ["sys:route"],
       }),
@@ -2305,7 +2354,7 @@ describe("checker", () => {
       bounds: { ...model().bounds, maxDepth: 0 },
     };
     const boundedResult = checkModel(bounded, [
-      always(bounded, () => true, { name: "ok" }),
+      always(bounded, lit(true), { name: "ok" }),
     ]);
     expect(boundedResult.boundHits).toEqual(["maxDepth reached before login"]);
     expect(boundedResult.vacuityWarnings).not.toContain(
@@ -2318,7 +2367,7 @@ describe("checker", () => {
       bounds: { ...model().bounds, maxDepth: 0 },
     };
     const terminalResult = checkModel(terminal, [
-      always(terminal, () => true, { name: "ok" }),
+      always(terminal, lit(true), { name: "ok" }),
     ]);
     expect(terminalResult.boundHits).toEqual([]);
   });
@@ -2384,7 +2433,7 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.next === "tok1", {
+      reachable(m, eq(readVar("next"), lit("tok1")), {
         name: "onlyInitialReachable",
         reads: ["next"],
       }),
@@ -2461,11 +2510,11 @@ describe("checker", () => {
       ],
     };
     const props = [
-      always(m, (state) => !enabled(m, "go")(state), {
+      always(m, notExpr(enabled(m, "go")), {
         name: "goNeverEnabled",
         reads: [],
       }),
-      reachable(m, (state) => state.clicked === true, {
+      reachable(m, eq(readVar("clicked"), lit(true)), {
         name: "goCanClick",
         reads: ["clicked"],
       }),
@@ -2572,11 +2621,11 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.value === "a", {
+      reachable(m, eq(readVar("value"), lit("a")), {
         name: "aReachable",
         reads: ["value"],
       }),
-      reachable(m, (state) => state.value === "b", {
+      reachable(m, eq(readVar("value"), lit("b")), {
         name: "bReachable",
         reads: ["value"],
       }),
@@ -2669,14 +2718,28 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.source === true && state.target === true, {
-        name: "triggerRuns",
-        reads: ["source", "target"],
-      }),
-      reachable(m, (state) => state.source === true && state.target === false, {
-        name: "unrelatedTargetWriteDoesNotRetrigger",
-        reads: ["source", "target"],
-      }),
+      reachable(
+        m,
+        andExpr(
+          eq(readVar("source"), lit(true)),
+          eq(readVar("target"), lit(true)),
+        ),
+        {
+          name: "triggerRuns",
+          reads: ["source", "target"],
+        },
+      ),
+      reachable(
+        m,
+        andExpr(
+          eq(readVar("source"), lit(true)),
+          eq(readVar("target"), lit(false)),
+        ),
+        {
+          name: "unrelatedTargetWriteDoesNotRetrigger",
+          reads: ["source", "target"],
+        },
+      ),
     ]);
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
@@ -2775,14 +2838,23 @@ describe("checker", () => {
       ...expected.map((state, index) =>
         reachable(
           m,
-          (candidate) =>
-            candidate.phase === state.phase && candidate.flag === state.flag,
+          andExpr(
+            eq(readVar("phase"), lit(state.phase)),
+            eq(readVar("flag"), lit(state.flag)),
+          ),
           { name: `oracle${index}` },
         ),
       ),
-      reachable(m, (state) => state.phase === "start" && state.flag === true, {
-        name: "oracleImpossible",
-      }),
+      reachable(
+        m,
+        andExpr(
+          eq(readVar("phase"), lit("start")),
+          eq(readVar("flag"), lit(true)),
+        ),
+        {
+          name: "oracleImpossible",
+        },
+      ),
     ]);
 
     expect(result.stats).toEqual({ states: 5, edges: 7, depth: 3 });
@@ -2801,23 +2873,19 @@ describe("checker", () => {
     for (const oracle of checkerOracleCorpus()) {
       const reachability = [
         ...oracle.reachable.map((expected, index) =>
-          reachable(
-            oracle.model,
-            (state) => partialStateMatches(state, expected),
-            { name: `${oracle.name}:reachable:${index}` },
-          ),
+          reachable(oracle.model, partialStateExpr(expected), {
+            name: `${oracle.name}:reachable:${index}`,
+          }),
         ),
         ...oracle.unreachable.map((expected, index) =>
-          reachable(
-            oracle.model,
-            (state) => partialStateMatches(state, expected),
-            { name: `${oracle.name}:unreachable:${index}` },
-          ),
+          reachable(oracle.model, partialStateExpr(expected), {
+            name: `${oracle.name}:unreachable:${index}`,
+          }),
         ),
         leadsToWithin(
           oracle.model,
-          (step) => step.enqueued(oracle.boundedResponse.triggerOp),
-          (state) => state[oracle.boundedResponse.goalVar] === "done",
+          stepEnqueued(oracle.boundedResponse.triggerOp),
+          eq(readVar(oracle.boundedResponse.goalVar), lit("done")),
           {
             name: `${oracle.name}:bounded-response`,
             budget: oracle.boundedResponse.budget,
@@ -3066,7 +3134,7 @@ describe("checker", () => {
       ],
     };
     const props = [
-      always(m, (state) => state["local:/a.panel"] === true, {
+      always(m, eq(readVar("local:/a.panel"), lit(true)), {
         name: "panelStaysMounted",
         reads: ["local:/a.panel"],
       }),
@@ -3150,7 +3218,7 @@ describe("checker", () => {
       "writer",
     ]);
     const props = [
-      always(m, (state) => state.needed === false, {
+      always(m, eq(readVar("needed"), lit(false)), {
         name: "neededStaysFalse",
         reads: ["needed"],
       }),
@@ -3171,11 +3239,11 @@ describe("checker", () => {
   it("stops gracefully when maxStates is exceeded", () => {
     const m = model();
     const props: Property[] = [
-      reachable(m, (state) => state.done === true, {
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "doneReachable",
         reads: ["done"],
       }),
-      always(m, (state) => state.draft !== "missing", {
+      always(m, neq(readVar("draft"), lit("missing")), {
         name: "draftKnown",
         reads: ["draft"],
       }),
@@ -3261,11 +3329,11 @@ describe("checker", () => {
       ],
     };
     const props: Property[] = [
-      always(m, (state) => state.a !== true, {
+      always(m, neq(readVar("a"), lit(true)), {
         name: "notA",
         reads: ["a"],
       }),
-      always(m, (state) => state.b !== true, {
+      always(m, neq(readVar("b"), lit(true)), {
         name: "notB",
         reads: ["b"],
       }),
@@ -3292,7 +3360,7 @@ describe("checker", () => {
   it("stops mid-depth when maxEdges is exceeded", () => {
     const m = highBranchingModel();
     const props: Property[] = [
-      reachable(m, (state) => state.choice === "b9", {
+      reachable(m, eq(readVar("choice"), lit("b9")), {
         name: "lastBranchReachable",
         reads: ["choice"],
       }),
@@ -3316,7 +3384,7 @@ describe("checker", () => {
   it("stops mid-depth when maxFrontier is exceeded", () => {
     const m = highBranchingModel();
     const props: Property[] = [
-      reachable(m, (state) => state.choice === "b9", {
+      reachable(m, eq(readVar("choice"), lit("b9")), {
         name: "lastBranchReachable",
         reads: ["choice"],
       }),
@@ -3386,10 +3454,14 @@ describe("checker", () => {
       })),
     };
     const result = checkModel(m, [
-      reachable(m, (state) => toggleIds.every((id) => state[id] === true), {
-        name: "allToggled",
-        reads: toggleIds,
-      }),
+      reachable(
+        m,
+        andExpr(...toggleIds.map((id) => eq(readVar(id), lit(true)))),
+        {
+          name: "allToggled",
+          reads: toggleIds,
+        },
+      ),
     ]);
     expect(result.stats).toEqual({ states: 256, edges: 1024, depth: 8 });
     expect(result.verdicts[0]?.status).toBe("reachable");
@@ -3468,7 +3540,7 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.done === true, {
+      reachable(m, eq(readVar("done"), lit(true)), {
         name: "canFinishAfterArm",
         reads: ["done"],
       }),
@@ -3527,7 +3599,7 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.stamped === true, {
+      reachable(m, eq(readVar("stamped"), lit(true)), {
         name: "stampedOnInit",
         reads: ["stamped"],
       }),
@@ -3624,11 +3696,11 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, (state) => state.derived === true, {
+      reachable(m, eq(readVar("derived"), lit(true)), {
         name: "derivedFromSource",
         reads: ["derived"],
       }),
-      reachable(m, (state) => state.noise === true, {
+      reachable(m, eq(readVar("noise"), lit(true)), {
         name: "noiseReachable",
         reads: ["noise"],
       }),
@@ -3710,13 +3782,4 @@ function highBranchingModel(): Model {
       confidence: "exact" as const,
     })),
   };
-}
-
-function partialStateMatches(
-  state: Record<string, unknown>,
-  expected: Record<string, unknown>,
-): boolean {
-  return Object.entries(expected).every(
-    ([key, value]) => JSON.stringify(state[key]) === JSON.stringify(value),
-  );
 }

@@ -80,7 +80,7 @@ export function demoHandModel(): Model {
       },
       {
         id: "swr:api_user:data",
-        domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
+        domain: { kind: "option", inner: { kind: "tokens", count: 2 } },
         origin: "library-template",
         scope: { kind: "global" },
         initial: null,
@@ -223,6 +223,34 @@ export function demoHandModel(): Model {
           effects: [
             { kind: "dequeue", index: 0 },
             { kind: "assign", var: "swr:api_user:data", expr: lit("tok1") },
+            {
+              kind: "assign",
+              var: "swr:api_user:isValidating",
+              expr: lit(false),
+            },
+            { kind: "assign", var: "swr:api_user:error", expr: lit(false) },
+          ],
+        },
+        reads: ["sys:pending"],
+        writes: [
+          "sys:pending",
+          "swr:api_user:data",
+          "swr:api_user:isValidating",
+          "swr:api_user:error",
+        ],
+        confidence: "exact",
+      },
+      {
+        id: "swr:api_user:resolve:success:1",
+        cls: "env",
+        label: { kind: "resolve", op: "GET /api/user", outcome: "success:1" },
+        source: [],
+        guard: eq(read("sys:pending", ["0", "opId"]), lit("GET /api/user")),
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "dequeue", index: 0 },
+            { kind: "assign", var: "swr:api_user:data", expr: lit("tok2") },
             {
               kind: "assign",
               var: "swr:api_user:isValidating",

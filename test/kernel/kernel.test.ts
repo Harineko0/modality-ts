@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   always,
   alwaysStep,
+  andExpr,
   canonicalJson,
   canonicalState,
   enabled,
   enumerateDomain,
+  eq,
+  evalStatePredicate,
+  lit,
+  notExpr,
   reachableFrom,
+  readVar,
+  stepEnqueued,
   validateModel,
   validateValue,
   type AbstractDomain,
@@ -1092,22 +1099,30 @@ describe("property DSL", () => {
   it("infers simple state reads for property slicing metadata", () => {
     const model = baseModel();
     expect(
-      always(model, (state) => state.flag === false && state.mode === "a", {
-        name: "flagMode",
-      }).reads,
+      always(
+        model,
+        andExpr(eq(readVar("flag"), lit(false)), eq(readVar("mode"), lit("a"))),
+        {
+          name: "flagMode",
+        },
+      ).reads,
     ).toEqual(["flag", "mode"]);
     expect(
       alwaysStep(
         model,
-        (pre, step) => step.enqueued("op") || pre.flag === false,
+        {
+          negate: true,
+          step: stepEnqueued("op"),
+          pre: eq(readVar("flag"), lit(true)),
+        },
         { name: "stepReads" },
       ).reads,
     ).toEqual(["flag"]);
     expect(
       reachableFrom(
         model,
-        (state) => state.mode === "a",
-        (state) => state.flag === true,
+        eq(readVar("mode"), lit("a")),
+        eq(readVar("flag"), lit(true)),
         { name: "fromReads" },
       ).reads,
     ).toEqual(["flag", "mode"]);
@@ -1116,7 +1131,7 @@ describe("property DSL", () => {
   it("preserves explicit read metadata over inferred reads", () => {
     const model = baseModel();
     expect(
-      always(model, (state) => state.flag === false, {
+      always(model, eq(readVar("flag"), lit(false)), {
         name: "explicitReads",
         reads: ["mode"],
       }).reads,
@@ -1125,22 +1140,53 @@ describe("property DSL", () => {
 
   it("records literal enabled transition references for slicing", () => {
     const model = baseModel();
-    const property = always(
-      model,
-      (state) => !enabled(model, "toggle")(state),
-      { name: "toggleUnavailable", reads: [] },
-    );
+    const property = always(model, notExpr(enabled(model, "toggle")), {
+      name: "toggleUnavailable",
+      reads: [],
+    });
     expect(property.enabledTransitions).toEqual(["toggle"]);
   });
 
   it("allows explicit enabled transition metadata when inference cannot see through helpers", () => {
     const model = baseModel();
     const toggleEnabled = enabled(model, "toggle");
-    const property = always(model, (state) => !toggleEnabled(state), {
+    const property = always(model, notExpr(toggleEnabled), {
       name: "toggleUnavailable",
       reads: [],
       enabledTransitions: ["toggle"],
     });
     expect(property.enabledTransitions).toEqual(["toggle"]);
+  });
+});
+
+describe("evalStatePredicate", () => {
+  it("matches tagIs against the tagged discriminant field", () => {
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "admin" } },
+      ),
+    ).toBe(true);
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "guest", role: "admin" } },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects step-only expressions in plain state predicates", () => {
+    expect(() =>
+      evalStatePredicate({ kind: "readPre", var: "flag" }, { flag: true }),
+    ).toThrow(/readPre is only valid in step predicates/);
+    expect(() =>
+      evalStatePredicate({ kind: "readOpArg", key: "plan" }, {}),
+    ).toThrow(/readOpArg is only valid in step predicates/);
+    expect(() =>
+      evalStatePredicate(
+        { kind: "transitionEnabled", transitionId: "toggle" },
+        {},
+      ),
+    ).toThrow(/transitionEnabled is only valid in step predicates/);
   });
 });

@@ -1,5 +1,5 @@
-import { checkModel } from "./engine/check-model.js";
-import { modelInitialStates, modelSuccessors } from "./engine/model-api.js";
+import { checkModel } from "./check-model.js";
+import { modelInitialStates, modelSuccessors } from "./model-api.js";
 import { sliceModel } from "./slicing/slice-model.js";
 
 export { checkModel };

@@ -4,10 +4,16 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import {
+  andExpr,
   canonicalState,
+  eq,
+  lit,
   reachable,
+  readVar,
+  type ExprIR,
   type Model,
   type ModelState,
+  type Value,
 } from "modality-ts/core";
 import {
   generateTlaModule,
@@ -238,6 +244,12 @@ function assuranceModel(): Model {
 }
 
 function oracleReachableStates(m: Model): Set<string> {
+  return new Set(
+    oracleReachableStateList(m).map((state) => canonicalState(m, state)),
+  );
+}
+
+function oracleReachableStateList(m: Model): ModelState[] {
   const initial: ModelState = {
     "sys:route": "/",
     "sys:history": [],
@@ -263,7 +275,47 @@ function oracleReachableStates(m: Model): Set<string> {
     }
     frontier = next;
   }
-  return new Set(seen.keys());
+  return [...seen.values()];
+}
+
+function stateEqualsPredicate(target: ModelState): ExprIR {
+  const parts: ExprIR[] = [];
+  for (const [key, value] of Object.entries(target)) {
+    if (key === "sys:pending") {
+      const pending = value as {
+        opId: string;
+        continuation: string;
+        args: { flag: boolean };
+      }[];
+      parts.push(
+        eq(
+          { kind: "lenCat", arg: readVar("sys:pending") },
+          lit(String(pending.length) as Value),
+        ),
+      );
+      if (pending.length === 1) {
+        const op = pending[0];
+        if (!op) throw new Error("missing pending op");
+        parts.push(eq(readVar("sys:pending", ["0", "opId"]), lit(op.opId)));
+        parts.push(
+          eq(
+            readVar("sys:pending", ["0", "continuation"]),
+            lit(op.continuation),
+          ),
+        );
+        parts.push(
+          eq(readVar("sys:pending", ["0", "args", "flag"]), lit(op.args.flag)),
+        );
+      }
+      continue;
+    }
+    if (key === "sys:history") {
+      parts.push(eq({ kind: "lenCat", arg: readVar("sys:history") }, lit("0")));
+      continue;
+    }
+    parts.push(eq(readVar(key), lit(value as Value)));
+  }
+  return andExpr(...parts);
 }
 
 function oraclePosts(state: ModelState): ModelState[] {
@@ -395,6 +447,7 @@ describe("TLA export", () => {
   it("cross-validates structured TLA export against a finite checker oracle", () => {
     const m = assuranceModel();
     const expectedReachable = oracleReachableStates(m);
+    const reachableStates = oracleReachableStateList(m);
     const unreachable: ModelState = {
       "sys:route": "/",
       "sys:history": [],
@@ -404,16 +457,14 @@ describe("TLA export", () => {
       seen: true,
     };
     const result = checkModel(m, [
-      ...[...expectedReachable].map((canon, index) =>
-        reachable(m, (state) => canonicalState(m, state) === canon, {
+      ...reachableStates.map((state, index) =>
+        reachable(m, stateEqualsPredicate(state), {
           name: `oracleState${index}`,
         }),
       ),
-      reachable(
-        m,
-        (state) => canonicalState(m, state) === canonicalState(m, unreachable),
-        { name: "oracleExcludedState" },
-      ),
+      reachable(m, stateEqualsPredicate(unreachable), {
+        name: "oracleExcludedState",
+      }),
     ]);
     expect(result.stats.states).toBe(expectedReachable.size);
     expect(

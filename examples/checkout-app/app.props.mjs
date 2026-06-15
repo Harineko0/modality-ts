@@ -1,14 +1,28 @@
+import {
+  andExpr,
+  eq,
+  lit,
+  neq,
+  notExpr,
+  readOpArg,
+  readPreVar,
+  readVar,
+  stepAny,
+  stepResolved,
+} from "modality-ts/core";
+
 export function properties() {
   return [
     {
       kind: "always",
       name: "guestCannotReachSuccess",
       reads: ["local:App.auth", "local:App.step"],
-      predicate: (state) =>
-        !(
-          state["local:App.auth"] === "guest" &&
-          state["local:App.step"] === "success"
+      predicate: notExpr(
+        andExpr(
+          eq(readVar("local:App.auth"), lit("guest")),
+          eq(readVar("local:App.step"), lit("success")),
         ),
+      ),
     },
     {
       kind: "alwaysStep",
@@ -19,13 +33,19 @@ export function properties() {
         "local:App.step",
         "sys:pending",
       ],
-      predicate: (_pre, step, post) =>
-        !(
-          step.resolved("api.submitOrder", "success") &&
-          post["local:App.step"] === "success"
-        ) ||
-        (post["local:App.auth"] === "user" &&
-          step.op?.args.userId === post["local:App.userId"]),
+      predicate: {
+        negate: true,
+        step: stepResolved("api.submitOrder", "success"),
+        post: andExpr(
+          eq(readVar("local:App.step"), lit("success")),
+          notExpr(
+            andExpr(
+              eq(readVar("local:App.auth"), lit("user")),
+              eq(readOpArg("userId"), readVar("local:App.userId")),
+            ),
+          ),
+        ),
+      },
     },
     {
       kind: "alwaysStep",
@@ -36,42 +56,51 @@ export function properties() {
         "local:App.step",
         "sys:pending",
       ],
-      predicate: (_pre, step, post) =>
-        !(
-          step.resolved("api.submitOrder", "success") &&
-          post["local:App.step"] === "success" &&
-          post["local:App.auth"] === "user"
-        ) || step.op?.args.plan === post["local:App.plan"],
+      predicate: {
+        negate: true,
+        step: stepResolved("api.submitOrder", "success"),
+        post: andExpr(
+          eq(readVar("local:App.step"), lit("success")),
+          eq(readVar("local:App.auth"), lit("user")),
+          neq(readOpArg("plan"), readVar("local:App.plan")),
+        ),
+      },
     },
     {
       kind: "alwaysStep",
       name: "staleFailureDoesNotMutateGuestStatus",
       reads: ["local:App.auth", "local:App.submitStatus", "sys:pending"],
-      predicate: (pre, step, post) =>
-        !(
-          step.resolved("api.submitOrder", "error") &&
-          pre["local:App.auth"] === "guest"
-        ) || post["local:App.submitStatus"] === pre["local:App.submitStatus"],
+      predicate: {
+        negate: true,
+        step: stepResolved("api.submitOrder", "error"),
+        pre: eq(readVar("local:App.auth"), lit("guest")),
+        post: neq(
+          readVar("local:App.submitStatus"),
+          readPreVar("local:App.submitStatus"),
+        ),
+      },
     },
     {
       kind: "alwaysStep",
       name: "invalidQuoteCannotEnterBilling",
       reads: ["local:App.quoteStatus", "local:App.step"],
-      predicate: (pre, _step, post) =>
-        !(
-          pre["local:App.quoteStatus"] === "invalid" &&
-          post["local:App.step"] === "billing"
-        ),
+      predicate: {
+        negate: true,
+        step: stepAny(),
+        pre: eq(readVar("local:App.quoteStatus"), lit("invalid")),
+        post: eq(readVar("local:App.step"), lit("billing")),
+      },
     },
     {
       kind: "reachableFrom",
       name: "reviewCanReachSuccess",
       reads: ["local:App.auth", "local:App.step", "local:App.submitStatus"],
-      when: (state) =>
-        state["local:App.auth"] === "user" &&
-        state["local:App.step"] === "review" &&
-        state["local:App.submitStatus"] === "idle",
-      goal: (state) => state["local:App.step"] === "success",
+      when: andExpr(
+        eq(readVar("local:App.auth"), lit("user")),
+        eq(readVar("local:App.step"), lit("review")),
+        eq(readVar("local:App.submitStatus"), lit("idle")),
+      ),
+      goal: eq(readVar("local:App.step"), lit("success")),
     },
   ];
 }

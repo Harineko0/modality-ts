@@ -9,15 +9,20 @@ const checkerSrc = resolve(
 );
 
 describe("checker package architecture", () => {
-  it("uses the Spec 05 checker slices", async () => {
+  it("uses the Rust-backed checker integration slices", async () => {
     await Promise.all([
-      expectPath("diagnostics/vacuity.ts"),
-      expectPath("engine/check-model.ts"),
-      expectPath("properties/finalize.ts"),
-      expectPath("runtime/effects.ts"),
+      expectPath("native.ts"),
+      expectPath("check-model.ts"),
+      expectPath("model-api.ts"),
+      expectPath("serialize-properties.ts"),
       expectPath("slicing/slice-model.ts"),
-      expectPath("traces/trace.ts"),
     ]);
+    await expect(
+      access(join(checkerSrc, "engine/check-model.ts")),
+    ).rejects.toThrow();
+    await expect(
+      access(join(checkerSrc, "runtime/effects.ts")),
+    ).rejects.toThrow();
     await expect(access(join(checkerSrc, "eval.ts"))).rejects.toThrow();
     await expect(access(join(checkerSrc, "search.ts"))).rejects.toThrow();
     await expect(access(join(checkerSrc, "encode/index.ts"))).rejects.toThrow();

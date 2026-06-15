@@ -9,6 +9,10 @@ import { renderHumanCiResult } from "./output.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 
+const flagAlwaysFalseProps = `export const properties = [{ kind: "always", name: "flagAlwaysFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
+const flagTrueProps = `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }, reads: ["flag"] }];`;
+const flagFalseReachableProps = `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
+
 function model(): Model {
   return {
     schemaVersion: 1,
@@ -109,11 +113,7 @@ describe("runCiCommand", () => {
     const propsPath = join(dir, "props.mjs");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "always", name: "flagAlwaysFalse", predicate: state => state.flag === false }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagAlwaysFalseProps, "utf8");
 
     const result = await runCiCommand({
       modelPath,
@@ -154,11 +154,7 @@ describe("runCiCommand", () => {
     const propsPath = join(dir, "props.mjs");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
 
     const result = await runCiCommand({
       modelPath,
@@ -182,11 +178,7 @@ describe("runCiCommand", () => {
     if (!firstTransition) throw new Error("fixture missing transition");
     current.transitions = [{ ...firstTransition, confidence: "manual" }];
     await writeFile(modelPath, JSON.stringify(current), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -240,11 +232,7 @@ describe("runCiCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: state => state.flag === false }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagFalseReachableProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -296,11 +284,7 @@ describe("runCiCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: state => state.flag === false }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagFalseReachableProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -376,11 +360,7 @@ describe("runCiCommand", () => {
       JSON.stringify({ ignoreVars: ["debug"] }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: state => state.flag === false }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagFalseReachableProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -436,11 +416,7 @@ describe("runCiCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: state => state.flag === false }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagFalseReachableProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -476,11 +452,7 @@ describe("runCiCommand", () => {
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
     await writeFile(
       baselinePath,
       JSON.stringify({
@@ -513,11 +485,7 @@ describe("runCiCommand", () => {
     const propsPath = join(dir, "props.mjs");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
 
     const result = await runCiCommand({
       modelPath,
@@ -551,11 +519,7 @@ describe("runCiCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
 
     const result = await runCiCommand({
       modelPath,
@@ -587,11 +551,7 @@ describe("runCiCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
 
     const result = await runCiCommand({
       modelPath,
@@ -616,11 +576,7 @@ describe("runCiCommand", () => {
     const walksPath = join(dir, "walks.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
     await writeFile(
       walksPath,
       JSON.stringify(
@@ -691,11 +647,7 @@ describe("runCiCommand", () => {
     const walksPath = join(dir, "walks.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
-      "utf8",
-    );
+    await writeFile(propsPath, flagTrueProps, "utf8");
     await writeFile(
       walksPath,
       JSON.stringify(
