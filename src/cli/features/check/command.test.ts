@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, type Model, type Property } from "modality-ts/core";
 import { runCheckCommand } from "./index.js";
+import { renderHumanCheckResult, symbolForStatus } from "./output.js";
 import { runReplayCommand } from "../../replay.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
@@ -722,5 +723,99 @@ describe("runCheckCommand", () => {
     await expect(runCheckCommand({ modelPath })).rejects.toThrow(
       "unsupported model schemaVersion 2",
     );
+  });
+});
+
+describe("renderHumanCheckResult", () => {
+  it("prints Properties before Stats", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false },
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const lines = renderHumanCheckResult(result.check);
+    const propertiesIndex = lines.indexOf("Properties");
+    const statsIndex = lines.indexOf("Stats");
+    expect(propertiesIndex).toBeGreaterThanOrEqual(0);
+    expect(statsIndex).toBeGreaterThan(propertiesIndex);
+    expect(
+      lines.some((line) => line.includes("flagStartsFalseOnly violated")),
+    ).toBe(true);
+    expect(lines.some((line) => line.includes("states="))).toBe(true);
+  });
+
+  it("maps all verdict statuses to expected symbols", () => {
+    expect(symbolForStatus("verified-within-bounds")).toBe("✓");
+    expect(symbolForStatus("reachable")).toBe("✓");
+    expect(symbolForStatus("violated")).toBe("×");
+    expect(symbolForStatus("error")).toBe("×");
+    expect(symbolForStatus("vacuous-warning")).toBe("⚠");
+  });
+
+  it("includes ANSI escapes in color mode and not in plain mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false }
+      ];`,
+      "utf8",
+    );
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const plain = renderHumanCheckResult(result.check, { color: false });
+    const colored = renderHumanCheckResult(result.check, { color: true });
+    expect(plain.join("\n")).not.toContain("\u001b[");
+    expect(colored.join("\n")).toContain("\u001b[");
+  });
+});
+
+describe("runCheckCommand streaming output", () => {
+  it("calls emit before artifact lines while returning legacy lines", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const tracesDir = join(dir, "traces");
+    const replayTestsDir = join(dir, "replay-tests");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false }
+      ];`,
+      "utf8",
+    );
+
+    const emitted: string[] = [];
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      tracesDir,
+      replayTestsDir,
+      output: {
+        human: true,
+        emit: (line) => emitted.push(line),
+      },
+    });
+
+    expect(result.lines).toContain("flagStartsFalseOnly: violated");
+    expect(emitted.some((line) => line === "Properties")).toBe(true);
+    expect(emitted.some((line) => line === "Stats")).toBe(true);
+    const propertiesIndex = emitted.indexOf("Properties");
+    const artifactsIndex = emitted.indexOf("Artifacts");
+    expect(propertiesIndex).toBeGreaterThanOrEqual(0);
+    expect(artifactsIndex).toBeGreaterThan(propertiesIndex);
+    expect(result.lines.some((line) => line.startsWith("trace="))).toBe(true);
   });
 });

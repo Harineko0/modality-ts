@@ -212,6 +212,9 @@ describe("modality CLI", () => {
       cwd: dir,
     });
     expect(check.stdout).toContain("states=");
+    expect(check.stdout.indexOf("states=")).toBeGreaterThan(
+      check.stdout.indexOf("Properties"),
+    );
     expect(
       JSON.parse(await readFile(join(dir, ".modality", "report.json"), "utf8")),
     ).toMatchObject({ kind: "check-report" });
@@ -233,6 +236,21 @@ describe("modality CLI", () => {
         await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
       ),
     ).toMatchObject({ kind: "conform-report" });
+  });
+
+  it("emits colored structured check output when FORCE_COLOR is set", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writePerPropsCheckFixture(dir, {
+      failingTarget: null,
+      singleTarget: "root",
+    });
+
+    const { stdout } = await execFileAsync(tsxBin, [cliPath, "check"], {
+      cwd: dir,
+      env: { ...process.env, FORCE_COLOR: "1" },
+    });
+    expect(stdout).toContain("\u001b[");
+    expect(stdout).toContain("✓");
   });
 
   it("keeps replay trace path mandatory", async () => {
@@ -344,16 +362,14 @@ describe("modality CLI", () => {
       cwd: dir,
     });
 
+    expect(stdout).toContain("Target .modality/models/app/root.model.json");
+    expect(stdout).toContain("props app/root.props.mjs");
     expect(stdout).toContain(
-      "checkTarget=.modality/models/app/root.model.json props=",
+      "Target .modality/models/app/routes/home.model.json",
     );
-    expect(stdout).toContain("app/root.props.mjs");
-    expect(stdout).toContain(
-      "checkTarget=.modality/models/app/routes/home.model.json props=",
-    );
-    expect(stdout).toContain("app/routes/home.props.mjs");
-    expect(stdout).toContain("rootFlagCanBecomeTrue: reachable");
-    expect(stdout).toContain("homeFlagCanBecomeTrue: reachable");
+    expect(stdout).toContain("props app/routes/home.props.mjs");
+    expect(stdout).toContain("✓ rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("✓ homeFlagCanBecomeTrue reachable");
     await access(join(dir, ".modality", "models", "app", "root.report.json"));
     await access(
       join(dir, ".modality", "models", "app", "routes", "home.report.json"),
@@ -372,8 +388,8 @@ describe("modality CLI", () => {
       expect(execError.code).toBe(2);
       stdout = execError.stdout ?? "";
     }
-    expect(stdout).toContain("rootFlagCanBecomeTrue: reachable");
-    expect(stdout).toContain("homeFlagAlwaysFalse: violated");
+    expect(stdout).toContain("✓ rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("× homeFlagAlwaysFalse violated");
   });
 
   it("fails clearly when generated models are missing for no-arg check", async () => {

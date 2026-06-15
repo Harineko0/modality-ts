@@ -24,6 +24,11 @@ import {
   generateReplayHarness,
 } from "../../codegen/replay-test.js";
 import { loadAndApplyOverlay } from "../../overlay.js";
+import {
+  renderHumanCheckArtifacts,
+  renderHumanCheckResult,
+  type ArtifactPathEntry,
+} from "./output.js";
 
 const DEFAULT_CLI_MAX_STATES = 1_000_000;
 const DEFAULT_CLI_MAX_EDGES = 5_000_000;
@@ -49,6 +54,11 @@ export interface CheckCommandOptions {
       }
     | false;
   now?: Date;
+  output?: {
+    emit?: (line: string) => void;
+    color?: boolean;
+    human?: boolean;
+  };
 }
 
 export interface CheckCommandResult {
@@ -80,6 +90,14 @@ export async function runCheckCommand(
     slicing: canSlice,
     ...resolveCheckSearchLimits(options.searchLimits),
   });
+  const streamHuman =
+    options.output?.emit !== undefined && options.output.human === true;
+  const outputOptions = { color: options.output?.color };
+  if (streamHuman) {
+    for (const line of renderHumanCheckResult(check, outputOptions)) {
+      options.output?.emit?.(line);
+    }
+  }
   const report = createCheckReport(
     model,
     check,
@@ -91,15 +109,31 @@ export async function runCheckCommand(
     await mkdir(dirname(options.reportPath), { recursive: true });
     await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
   }
+  const emitArtifacts = (entries: readonly ArtifactPathEntry[]) => {
+    if (!streamHuman || entries.length === 0) return;
+    for (const line of renderHumanCheckArtifacts(entries, outputOptions)) {
+      options.output?.emit?.(line);
+    }
+  };
   const tracePaths = options.tracesDir
     ? await writeTraceArtifacts(check, options.tracesDir)
     : [];
+  emitArtifacts(tracePaths.map((path) => ({ kind: "trace" as const, path })));
   const replayTestPaths = options.replayTestsDir
     ? await writeReplayTestArtifacts(check, options.replayTestsDir)
     : [];
+  emitArtifacts(
+    replayTestPaths.map((path) => ({ kind: "replayTest" as const, path })),
+  );
   const actionReplayTestPaths = options.actionReplayTestsDir
     ? await writeActionReplayTestArtifacts(check, options.actionReplayTestsDir)
     : [];
+  emitArtifacts(
+    actionReplayTestPaths.map((path) => ({
+      kind: "actionReplayTest" as const,
+      path,
+    })),
+  );
   return {
     check,
     report,
@@ -357,6 +391,7 @@ function reportVerdict(
 async function writeTraceArtifacts(
   check: CheckResult,
   tracesDir: string,
+  onPath?: (kind: ArtifactPathEntry["kind"], path: string) => void,
 ): Promise<string[]> {
   await mkdir(tracesDir, { recursive: true });
   const paths: string[] = [];
@@ -373,6 +408,7 @@ async function writeTraceArtifacts(
       "utf8",
     );
     paths.push(path);
+    onPath?.("trace", path);
   }
   return paths;
 }
@@ -384,6 +420,7 @@ function safeFileName(value: string): string {
 async function writeReplayTestArtifacts(
   check: CheckResult,
   replayTestsDir: string,
+  onPath?: (kind: ArtifactPathEntry["kind"], path: string) => void,
 ): Promise<string[]> {
   await mkdir(replayTestsDir, { recursive: true });
   const paths: string[] = [];
@@ -397,6 +434,7 @@ async function writeReplayTestArtifacts(
     const path = join(replayTestsDir, artifact.fileName);
     await writeFile(path, artifact.source, "utf8");
     paths.push(path);
+    onPath?.("replayTest", path);
   }
   return paths;
 }
@@ -404,6 +442,7 @@ async function writeReplayTestArtifacts(
 async function writeActionReplayTestArtifacts(
   check: CheckResult,
   replayTestsDir: string,
+  onPath?: (kind: ArtifactPathEntry["kind"], path: string) => void,
 ): Promise<string[]> {
   await mkdir(replayTestsDir, { recursive: true });
   const paths: string[] = [];
@@ -416,12 +455,14 @@ async function writeActionReplayTestArtifacts(
       const harnessPath = join(replayTestsDir, harness.fileName);
       await writeFile(harnessPath, harness.source, "utf8");
       paths.push(harnessPath);
+      onPath?.("actionReplayTest", harnessPath);
       wroteHarness = true;
     }
     const artifact = generateActionReplayTest(verdict.property, verdict.trace);
     const path = join(replayTestsDir, artifact.fileName);
     await writeFile(path, artifact.source, "utf8");
     paths.push(path);
+    onPath?.("actionReplayTest", path);
   }
   return paths;
 }

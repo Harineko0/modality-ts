@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
+import { relative } from "node:path";
 import {
   artifactPathsForPropsFile,
   defaultActionReplayTestsDir,
@@ -18,6 +19,7 @@ import {
   inferSourceFilesFromProps,
 } from "./defaults.js";
 import { runCheckCommand } from "./features/check/index.js";
+import { renderHumanCheckTargetHeader } from "./features/check/output.js";
 import { runCiCommand } from "./features/ci/index.js";
 import { runConformCommand } from "./features/conform/index.js";
 import { runExportTlaCommand } from "./features/export/index.js";
@@ -56,6 +58,21 @@ function positionals(
   return args.filter(
     (arg, index) => !arg.startsWith("--") && !values.has(index),
   );
+}
+
+function shouldUseColor(): boolean {
+  if (process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== "0")
+    return true;
+  if (process.env.NO_COLOR !== undefined) return false;
+  return process.stdout.isTTY === true;
+}
+
+function checkOutputOptions() {
+  return {
+    emit: (line: string) => console.log(line),
+    human: true,
+    color: shouldUseColor(),
+  } as const;
 }
 
 async function main(): Promise<void> {
@@ -549,11 +566,16 @@ async function main(): Promise<void> {
       }
       const targets = await inferCheckTargetsFromProps();
       let exitCode = 0;
+      const output = checkOutputOptions();
       for (const target of targets) {
         const base = target.modelPath.replace(/\.model\.json$/, "");
-        console.log(
-          `checkTarget=${target.modelPath} props=${target.propsPath}`,
-        );
+        for (const line of renderHumanCheckTargetHeader(
+          target.modelPath,
+          relative(process.cwd(), target.propsPath),
+          { color: output.color },
+        )) {
+          output.emit(line);
+        }
         const result = await runCheckCommand({
           modelPath: target.modelPath,
           propsPaths: [target.propsPath],
@@ -564,8 +586,8 @@ async function main(): Promise<void> {
           actionReplayTestsDir: `${base}.action-replay-tests`,
           statesPath,
           searchLimits,
+          output,
         });
-        for (const line of result.lines) console.log(line);
         if (result.exitCode === 2) exitCode = 2;
       }
       process.exit(exitCode);
@@ -584,8 +606,8 @@ async function main(): Promise<void> {
     actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
     statesPath,
     searchLimits,
+    output: checkOutputOptions(),
   });
-  for (const line of result.lines) console.log(line);
   process.exit(result.exitCode);
 }
 
