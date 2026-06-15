@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, reachable, type Model } from "modality-ts/core";
+import {
+  always,
+  andExpr,
+  eq,
+  lit,
+  neq,
+  orExpr,
+  reachable,
+  readVar,
+  type Model,
+} from "modality-ts/core";
 import {
   createSwrKeyWindowTemplate,
   createSwrTemplate,
   extractSwrSkeleton,
   swrSource,
   swrVarId,
-  swrView,
   swrWindowEvictedSummaryId,
   swrWindowView,
 } from "modality-ts/extract/sources/swr";
@@ -229,22 +238,47 @@ describe("SWR template", () => {
 
   it("models loading, success data, and stale-data retention on error", () => {
     const m = model();
+    const todosData = swrVarId("todos", "data");
+    const todosValidating = swrVarId("todos", "isValidating");
+    const todosError = swrVarId("todos", "error");
     const result = checkModel(m, [
-      reachable(m, (s) => swrView(s, "todos").isLoading, {
-        name: "loadingReachable",
-      }),
-      reachable(m, (s) => swrView(s, "todos").loadedSome, {
-        name: "loadedSomeReachable",
-      }),
       reachable(
         m,
-        (s) => swrView(s, "todos").loadedSome && swrView(s, "todos").error,
+        andExpr(
+          eq(readVar(todosData), lit(null)),
+          eq(readVar(todosValidating), lit(true)),
+        ),
+        {
+          name: "loadingReachable",
+        },
+      ),
+      reachable(
+        m,
+        orExpr(
+          eq(readVar(todosData), lit("1")),
+          eq(readVar(todosData), lit("many")),
+        ),
+        {
+          name: "loadedSomeReachable",
+        },
+      ),
+      reachable(
+        m,
+        andExpr(
+          orExpr(
+            eq(readVar(todosData), lit("1")),
+            eq(readVar(todosData), lit("many")),
+          ),
+          eq(readVar(todosError), lit(true)),
+        ),
         { name: "staleDataWithErrorReachable" },
       ),
       always(
         m,
-        (s) =>
-          s.auth !== "guest" || s[swrVarId("todos", "isValidating")] === false,
+        orExpr(
+          neq(readVar("auth"), lit("guest")),
+          eq(readVar(todosValidating), lit(false)),
+        ),
         { name: "inactiveGuestDoesNotFetch" },
       ),
     ]);

@@ -45,7 +45,9 @@ export type ExprIR =
   | { kind: "tagIs"; arg: ExprIR; tag: string }
   | { kind: "lenCat"; arg: ExprIR }
   | { kind: "freshToken"; domainOf: string }
-  | { kind: "transitionEnabled"; transitionId: string };
+  | { kind: "transitionEnabled"; transitionId: string }
+  | { kind: "readPre"; var: string; path?: readonly string[] }
+  | { kind: "readOpArg"; key: string };
 
 export type GuardIR = ExprIR;
 
@@ -145,4 +147,86 @@ export type ModelState = Record<string, Value>;
 export interface TemplateFragment {
   vars: readonly StateVarDecl[];
   transitions: readonly Transition[];
+}
+
+export type StatePredicateIR = ExprIR;
+
+export interface StepPredicateFlat {
+  transitionId?: string;
+  transitionClass?: string;
+  labelKind?: string;
+  enqueued?: string;
+  resolved?: readonly [string, string?];
+  navigated?: boolean;
+  navigatedTo?: string;
+  opId?: string;
+  continuation?: string;
+  opArgs?: Record<string, unknown>;
+}
+
+export interface StepPredicateComposite {
+  pre?: ExprIR;
+  step: StepPredicateFlat;
+  post?: ExprIR;
+  negate?: boolean;
+}
+
+export type StepPredicateIR = StepPredicateFlat | StepPredicateComposite;
+
+export interface PropertyOptions {
+  name?: string;
+  reads?: readonly string[];
+  enabledTransitions?: readonly string[];
+  includeUnmounted?: boolean;
+}
+
+export type Property =
+  | {
+      kind: "always";
+      name: string;
+      predicate: StatePredicateIR;
+      reads?: readonly string[];
+      enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
+    }
+  | {
+      kind: "alwaysStep";
+      name: string;
+      predicate: StepPredicateIR;
+      reads?: readonly string[];
+      enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
+    }
+  | {
+      kind: "reachable";
+      name: string;
+      predicate: StatePredicateIR;
+      reads?: readonly string[];
+      enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
+    }
+  | {
+      kind: "leadsToWithin";
+      name: string;
+      trigger: StepPredicateFlat;
+      goal: StatePredicateIR;
+      budget: { steps?: number; environment?: number };
+      allowUserEvents?: boolean;
+      reads?: readonly string[];
+      enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
+    }
+  | {
+      kind: "reachableFrom";
+      name: string;
+      when: StatePredicateIR;
+      goal: StatePredicateIR;
+      reads?: readonly string[];
+      enabledTransitions?: readonly string[];
+      includeUnmounted?: boolean;
+    };
+
+export interface PropertyArtifact {
+  schemaVersion: 1;
+  properties: readonly Property[];
 }

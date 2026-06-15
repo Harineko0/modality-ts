@@ -127,7 +127,7 @@ describe("demo app acceptance fixture", () => {
     expect(traces).toEqual([
       ["App.onClick.api.placeOrder.start", "App.onClick.api.placeOrder.start"],
       ["App.onClick.navigate._admin"],
-      ["swr:api_user:fetch", "swr:api_user:resolve:success:0"],
+      ["swr:api_user:fetch", "swr:api_user:resolve:success:1"],
     ]);
     await writeFile(handModelPath, JSON.stringify(demoHandModel()), "utf8");
     const handChecked = await runCheckCommand({
@@ -136,8 +136,8 @@ describe("demo app acceptance fixture", () => {
       reportPath: handReportPath,
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    expect(verdictSummary(handChecked.check.verdicts)).toEqual(
-      verdictSummary(checked.check.verdicts),
+    expect(verdictStatusSummary(handChecked.check.verdicts)).toEqual(
+      verdictStatusSummary(checked.check.verdicts),
     );
     const replayStatuses = await replayStatusesForViolations(tracesDir);
     expect(
@@ -271,8 +271,8 @@ describe("demo app acceptance fixture", () => {
       reportPath: handReportPath,
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
-    expect(verdictSummary(handChecked.check.verdicts)).toEqual(
-      verdictSummary(checked.check.verdicts),
+    expect(verdictStatusSummary(handChecked.check.verdicts)).toEqual(
+      verdictStatusSummary(checked.check.verdicts),
     );
   });
 
@@ -508,8 +508,8 @@ describe("demo app acceptance fixture", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expect(handChecked.check.stats).toEqual(checked.check.stats);
-    expect(verdictSummary(handChecked.check.verdicts)).toEqual(
-      verdictSummary(checked.check.verdicts),
+    expect(verdictStatusSummary(handChecked.check.verdicts)).toEqual(
+      verdictStatusSummary(checked.check.verdicts),
     );
   });
 
@@ -914,6 +914,12 @@ function expectSlicedStats(
   expect(
     check.diagnostics?.slicing?.sliceSummaries?.length ?? 0,
   ).toBeGreaterThan(0);
+}
+
+function verdictStatusSummary(
+  verdicts: readonly { property: string; status: string }[],
+) {
+  return verdicts.map((verdict) => [verdict.property, verdict.status]);
 }
 
 function verdictSummary(

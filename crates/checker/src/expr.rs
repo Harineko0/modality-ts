@@ -1,15 +1,25 @@
 use crate::domain::domain_at_path;
 use crate::model::{route_local_mounted, CompiledModel, ExprIR};
 use crate::state::{read_path, values_equal, write_path, ModelState};
+use crate::step::StepFacts;
 use serde_json::{json, Value};
 
 pub struct EvalOptions<'a> {
     pub on_bound_hit: Option<&'a mut dyn FnMut(&str)>,
+    pub step_ctx: Option<StepEvalContext<'a>>,
+}
+
+pub struct StepEvalContext<'a> {
+    pub pre: Option<&'a ModelState>,
+    pub step: Option<&'a StepFacts>,
 }
 
 impl Default for EvalOptions<'_> {
     fn default() -> Self {
-        Self { on_bound_hit: None }
+        Self {
+            on_bound_hit: None,
+            step_ctx: None,
+        }
     }
 }
 
@@ -131,6 +141,7 @@ pub fn eval_expr(
                     && guard_holds(compiled, transition, state),
             )
         }
+        ExprIR::ReadPre { .. } | ExprIR::ReadOpArg { .. } => Value::Null,
     }
 }
 
@@ -200,11 +211,35 @@ pub fn eval_state_predicate(
     property_name: &str,
     context: &str,
 ) -> Result<bool, String> {
+    eval_state_predicate_with_step(
+        compiled,
+        state,
+        expr,
+        allowed_reads,
+        property_name,
+        context,
+        None,
+    )
+}
+
+pub fn eval_state_predicate_with_step(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    expr: &ExprIR,
+    allowed_reads: &std::collections::HashSet<String>,
+    property_name: &str,
+    context: &str,
+    step_ctx: Option<StepEvalContext<'_>>,
+) -> Result<bool, String> {
+    let mut options = EvalOptions {
+        on_bound_hit: None,
+        step_ctx,
+    };
     let result = eval_expr_checked(
         compiled,
         state,
         expr,
-        &mut EvalOptions::default(),
+        &mut options,
         allowed_reads,
         property_name,
         context,
@@ -376,6 +411,41 @@ fn eval_expr_checked(
                 route_local_mounted(compiled, idx, state)
                     && guard_holds(compiled, transition, state),
             ))
+        }
+        ExprIR::ReadPre { var, path } => {
+            let Some(step_ctx) = options.step_ctx.as_ref() else {
+                return Err(format!(
+                    "{property_name}: {context} readPre requires step evaluation context"
+                ));
+            };
+            let Some(pre) = step_ctx.pre else {
+                return Err(format!(
+                    "{property_name}: {context} readPre requires a pre-state"
+                ));
+            };
+            if !allowed.contains(var) {
+                return Err(format!(
+                    "{property_name}: {context} read undeclared var {var}"
+                ));
+            }
+            let base = compiled.var_idx(var).map(|idx| pre.get(idx));
+            Ok(read_path(base, path.as_deref().unwrap_or(&[])))
+        }
+        ExprIR::ReadOpArg { key } => {
+            let Some(step_ctx) = options.step_ctx.as_ref() else {
+                return Err(format!(
+                    "{property_name}: {context} readOpArg is only valid in step post predicates"
+                ));
+            };
+            let Some(step) = step_ctx.step else {
+                return Err(format!(
+                    "{property_name}: {context} readOpArg requires step facts"
+                ));
+            };
+            let Some(op) = step.op.as_ref() else {
+                return Ok(Value::Null);
+            };
+            Ok(op.args.get(key).cloned().unwrap_or(Value::Null))
         }
     }
 }

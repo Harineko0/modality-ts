@@ -1,9 +1,6 @@
-import type { ExprIR, ModelState, Transition, Value } from "./types.js";
+import type { ExprIR, ModelState, Value } from "./types.js";
 
-export function evalStatePredicate(
-  expr: ExprIR,
-  state: ModelState,
-): boolean {
+export function evalStatePredicate(expr: ExprIR, state: ModelState): boolean {
   return Boolean(evalExpr(expr, state));
 }
 
@@ -14,11 +11,15 @@ function evalExpr(expr: ExprIR, state: ModelState): Value {
     case "read":
       return readPath(state[expr.var], expr.path ?? []);
     case "eq":
-      return stableJson(evalExpr(expr.args[0], state))
-        === stableJson(evalExpr(expr.args[1], state));
+      return (
+        stableJson(evalExpr(expr.args[0], state)) ===
+        stableJson(evalExpr(expr.args[1], state))
+      );
     case "neq":
-      return stableJson(evalExpr(expr.args[0], state))
-        !== stableJson(evalExpr(expr.args[1], state));
+      return (
+        stableJson(evalExpr(expr.args[0], state)) !==
+        stableJson(evalExpr(expr.args[1], state))
+      );
     case "and":
       return expr.args.every((arg) => Boolean(evalExpr(arg, state)));
     case "or":

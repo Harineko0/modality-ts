@@ -1,10 +1,29 @@
-import type { ExprIR, Model, Transition, Value } from "../ir/types.js";
+import type {
+  ExprIR,
+  Model,
+  Property,
+  PropertyOptions,
+  StatePredicateIR,
+  StepPredicateFlat,
+  StepPredicateIR,
+  Value,
+} from "../ir/types.js";
 
 export { evalStatePredicate } from "../ir/eval.js";
-export type { ModelState, Value } from "../ir/types.js";
+export type {
+  ModelState,
+  Property,
+  PropertyArtifact,
+  PropertyOptions,
+  StatePredicateIR,
+  StepPredicateComposite,
+  StepPredicateFlat,
+  StepPredicateIR,
+  Value,
+} from "../ir/types.js";
 
 export interface StepFacts {
-  transition: Transition;
+  transition: import("../ir/types.js").Transition;
   enqueued(op: string): boolean;
   resolved(op: string, outcome?: string): boolean;
   navigated(): boolean;
@@ -12,84 +31,16 @@ export interface StepFacts {
   op?: { id: string; continuation?: string; args: Record<string, unknown> };
 }
 
-export type StatePredicateIR = ExprIR;
-export type StepPredicateIR =
-  | StepPredicateFlat
-  | {
-      pre?: ExprIR;
-      step: StepPredicateFlat;
-      post?: ExprIR;
-      negate?: boolean;
-    };
-
-export interface StepPredicateFlat {
-  transitionId?: string;
-  transitionClass?: string;
-  labelKind?: string;
-  enqueued?: string;
-  resolved?: readonly [string, string?];
-  navigated?: boolean;
-  navigatedTo?: string;
-  opId?: string;
-  continuation?: string;
-  opArgs?: Record<string, unknown>;
-}
-
-export interface PropertyOptions {
-  name?: string;
-  reads?: readonly string[];
-  enabledTransitions?: readonly string[];
-  includeUnmounted?: boolean;
-}
-
-export type Property =
-  | {
-      kind: "always";
-      name: string;
-      predicate: StatePredicateIR;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "alwaysStep";
-      name: string;
-      predicate: StepPredicateIR;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "reachable";
-      name: string;
-      predicate: StatePredicateIR;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "leadsToWithin";
-      name: string;
-      trigger: StepPredicateFlat;
-      goal: StatePredicateIR;
-      budget: { steps?: number; environment?: number };
-      allowUserEvents?: boolean;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "reachableFrom";
-      name: string;
-      when: StatePredicateIR;
-      goal: StatePredicateIR;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    };
-
 export function readVar(varId: string, path?: readonly string[]): ExprIR {
   return { kind: "read", var: varId, path };
+}
+
+export function readPreVar(varId: string, path?: readonly string[]): ExprIR {
+  return { kind: "readPre", var: varId, path };
+}
+
+export function readOpArg(key: string): ExprIR {
+  return { kind: "readOpArg", key };
 }
 
 export function lit(value: Value): ExprIR {
@@ -122,6 +73,10 @@ export function enabled(_model: Model, transitionId: string): ExprIR {
 
 export function stepEnqueued(op: string): StepPredicateFlat {
   return { enqueued: op };
+}
+
+export function stepResolved(op: string, outcome?: string): StepPredicateFlat {
+  return { resolved: outcome === undefined ? [op] : [op, outcome] };
 }
 
 export function stepTransitionId(transitionId: string): StepPredicateFlat {
@@ -238,6 +193,7 @@ function inferReads(
   const walkExpr = (expr: ExprIR): void => {
     switch (expr.kind) {
       case "read":
+      case "readPre":
         if (varIds.has(expr.var)) reads.add(expr.var);
         break;
       case "eq":
@@ -276,6 +232,7 @@ function inferReads(
         }
         break;
       }
+      case "readOpArg":
       case "lit":
         break;
     }
@@ -337,6 +294,8 @@ function inferEnabledTransitions(
         walkExpr(expr.arg);
         break;
       case "read":
+      case "readPre":
+      case "readOpArg":
       case "lit":
       case "freshToken":
         break;

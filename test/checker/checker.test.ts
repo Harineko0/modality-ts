@@ -1179,7 +1179,7 @@ describe("checker", () => {
     );
   });
 
-  it("executes opaque effects and validates their declared write footprint", () => {
+  it("rejects opaque effects in the Rust checker", () => {
     const m: Model = {
       ...model(),
       transitions: [
@@ -1210,70 +1210,10 @@ describe("checker", () => {
         reads: ["done"],
       }),
     ]);
-    expect(result.verdicts[0]?.status).toBe("reachable");
-
-    const undeclaredWrite: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "writeUndeclared",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(undeclaredWrite, [])).toThrow(
-      "wrote undeclared var auth",
-    );
-
-    const invalidValue: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "invalidDone",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(invalidValue, [])).toThrow(
-      "produced invalid value for done",
-    );
-
-    const nondeterministic: Model = {
-      ...m,
-      transitions: [
-        {
-          ...firstTransition(m),
-          effect: {
-            kind: "opaque",
-            ref: {
-              module: "test/checker/opaque-effects.cjs",
-              export: "nondeterministicDone",
-              declaredReads: [],
-              declaredWrites: ["done"],
-            },
-          },
-        },
-      ],
-    };
-    expect(() => checkModel(nondeterministic, [])).toThrow(
-      "returned nondeterministic results for identical input",
-    );
+    expect(result.verdicts[0]?.status).toBe("error");
+    expect(
+      result.verdicts[0]?.status === "error" ? result.verdicts[0].message : "",
+    ).toContain("unsupported opaque effect");
   });
 
   it("reports run-level vacuity warnings", () => {

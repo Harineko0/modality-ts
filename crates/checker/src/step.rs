@@ -237,13 +237,18 @@ pub fn matches_step_spec(
         crate::model::StepPredicateSpec::Composite(c) => {
             let mut matched = true;
             if let Some(pre_expr) = &c.pre {
-                if !crate::expr::eval_state_predicate(
+                let step_ctx = crate::expr::StepEvalContext {
+                    pre: Some(pre),
+                    step: Some(step),
+                };
+                if !crate::expr::eval_state_predicate_with_step(
                     compiled,
                     pre,
                     pre_expr,
                     allowed,
                     property_name,
                     "step pre-state",
+                    Some(step_ctx),
                 )? {
                     matched = false;
                 }
@@ -253,13 +258,18 @@ pub fn matches_step_spec(
             }
             if matched {
                 if let Some(post_expr) = &c.post {
-                    if !crate::expr::eval_state_predicate(
+                    let step_ctx = crate::expr::StepEvalContext {
+                        pre: Some(pre),
+                        step: Some(step),
+                    };
+                    if !crate::expr::eval_state_predicate_with_step(
                         compiled,
                         post,
                         post_expr,
                         allowed,
                         property_name,
                         "step post-state",
+                        Some(step_ctx),
                     )? {
                         matched = false;
                     }

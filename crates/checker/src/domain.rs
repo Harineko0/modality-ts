@@ -93,7 +93,11 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
             }
             ExprIR::TagIs { arg, .. } => walk_expr(arg, reads),
             ExprIR::LenCat { arg } => walk_expr(arg, reads),
-            ExprIR::FreshToken { .. } | ExprIR::TransitionEnabled { .. } | ExprIR::Lit { .. } => {}
+            ExprIR::FreshToken { .. }
+            | ExprIR::TransitionEnabled { .. }
+            | ExprIR::Lit { .. }
+            | ExprIR::ReadPre { .. }
+            | ExprIR::ReadOpArg { .. } => {}
         }
     }
     fn walk_effect(effect: &EffectIR, reads: &mut HashSet<String>) {

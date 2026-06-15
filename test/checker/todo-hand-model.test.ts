@@ -3,8 +3,15 @@ import { checkModel } from "modality-ts/check";
 import {
   always,
   alwaysStep,
+  andExpr,
   enabled,
+  notExpr,
+  orExpr,
   reachable,
+  readPreVar,
+  readVar,
+  stepEnqueued,
+  stepResolved,
   type ExprIR,
   type Model,
   type Property,
@@ -289,29 +296,64 @@ function resolveGet(suffix: string, data: "0" | "1" | null) {
   };
 }
 
+function atMostOnePendingOp(opId: string): ExprIR {
+  return andExpr(
+    orExpr(
+      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+    ),
+    orExpr(
+      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    ),
+    orExpr(
+      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    ),
+  );
+}
+
 function todoProperties(model: Model): Property[] {
   return [
     alwaysStep(
       model,
-      (pre, step) => !(step.enqueued("POST_TODO") && pre.auth === "guest"),
+      {
+        negate: true,
+        step: stepEnqueued("POST_TODO"),
+        pre: eq(readVar("auth"), lit("guest")),
+      },
       { name: "guestCannotSubmit", reads: ["auth", "sys:pending"] },
     ),
     alwaysStep(
       model,
-      (pre, step) => !(step.enqueued("POST_TODO") && pre.draft === "empty"),
+      {
+        negate: true,
+        step: stepEnqueued("POST_TODO"),
+        pre: eq(readVar("draft"), lit("empty")),
+      },
       { name: "emptyDraftCannotSubmit", reads: ["draft", "sys:pending"] },
     ),
     alwaysStep(
       model,
-      (pre, step) =>
-        !(step.enqueued("POST_TODO") && pre.saveStatus === "posting"),
+      {
+        negate: true,
+        step: stepEnqueued("POST_TODO"),
+        pre: eq(readVar("saveStatus"), lit("posting")),
+      },
       { name: "noSubmitWhilePosting", reads: ["saveStatus", "sys:pending"] },
     ),
     alwaysStep(
       model,
-      (pre, step, post) =>
-        !step.resolved("POST_TODO", "error") ||
-        (post.draft === pre.draft && post.saveStatus === "failed"),
+      {
+        negate: true,
+        step: stepResolved("POST_TODO", "error"),
+        post: notExpr(
+          andExpr(
+            eq(readVar("draft"), readPreVar("draft")),
+            eq(readVar("saveStatus"), lit("failed")),
+          ),
+        ),
+      },
       {
         name: "failedPostKeepsDraft",
         reads: ["draft", "saveStatus", "sys:pending"],
@@ -319,34 +361,58 @@ function todoProperties(model: Model): Property[] {
     ),
     alwaysStep(
       model,
-      (_pre, step, post) =>
-        !step.resolved("POST_TODO", "success") ||
-        (post.draft === "empty" && post.saveStatus === "idle"),
+      {
+        negate: true,
+        step: stepResolved("POST_TODO", "success"),
+        post: notExpr(
+          andExpr(
+            eq(readVar("draft"), lit("empty")),
+            eq(readVar("saveStatus"), lit("idle")),
+          ),
+        ),
+      },
       { name: "successResets", reads: ["draft", "saveStatus", "sys:pending"] },
     ),
     always(
       model,
-      (s) =>
-        !(s.auth === "user" && s.todosError === true) ||
-        enabled(model, "App.logout")(s),
-      { name: "logoutAvailableDuringGetError", reads: ["auth", "todosError"] },
+      orExpr(
+        notExpr(
+          andExpr(
+            eq(readVar("auth"), lit("user")),
+            eq(readVar("todosError"), lit(true)),
+          ),
+        ),
+        enabled(model, "App.logout"),
+      ),
+      {
+        name: "logoutAvailableDuringGetError",
+        reads: ["auth", "todosError", "sys:route"],
+        enabledTransitions: ["App.logout"],
+      },
     ),
     reachable(
       model,
-      (s) =>
-        s.auth === "user" && (s.todosData === "1" || s.todosData === "many"),
+      andExpr(
+        eq(readVar("auth"), lit("user")),
+        orExpr(
+          eq(readVar("todosData"), lit("1")),
+          eq(readVar("todosData"), lit("many")),
+        ),
+      ),
       { name: "loadedTodosReachable", reads: ["auth", "todosData"] },
     ),
-    always(model, (s) => postCount(s) <= 1, {
+    always(model, atMostOnePendingOp("POST_TODO"), {
       name: "naiveNoDoubleSubmitInvariant",
       reads: ["sys:pending"],
     }),
     alwaysStep(
       model,
-      (pre, step, post) =>
-        !(
-          step.resolved("POST_TODO", "success") && pre.saveStatus !== "posting"
-        ) || post.draft === pre.draft,
+      {
+        negate: true,
+        step: stepResolved("POST_TODO", "success"),
+        pre: neq(readVar("saveStatus"), lit("posting")),
+        post: neq(readVar("draft"), readPreVar("draft")),
+      },
       {
         name: "staleCompletionIsInert",
         reads: ["saveStatus", "draft", "sys:pending"],
@@ -439,14 +505,3 @@ describe("hand-written ToDo IR", () => {
     );
   });
 });
-
-function postCount(state: Record<string, unknown>): number {
-  return Array.isArray(state["sys:pending"])
-    ? state["sys:pending"].filter(
-        (op) =>
-          op &&
-          typeof op === "object" &&
-          (op as { opId?: string }).opId === "POST_TODO",
-      ).length
-    : 0;
-}

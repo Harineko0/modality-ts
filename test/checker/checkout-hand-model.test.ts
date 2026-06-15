@@ -3,7 +3,12 @@ import { checkModel } from "modality-ts/check";
 import {
   always,
   alwaysStep,
+  andExpr,
+  notExpr,
   reachableFrom,
+  readOpArg,
+  readVar,
+  stepResolved,
   type ExprIR,
   type Model,
   type Property,
@@ -219,15 +224,34 @@ function checkoutModel(): Model {
 
 function checkoutProperties(model: Model): Property[] {
   return [
-    always(model, (s) => !(s.auth === "guest" && s.step === "success"), {
-      name: "guestCannotReachSuccess",
-      reads: ["auth", "step"],
-    }),
+    always(
+      model,
+      notExpr(
+        andExpr(
+          eq(readVar("auth"), lit("guest")),
+          eq(readVar("step"), lit("success")),
+        ),
+      ),
+      {
+        name: "guestCannotReachSuccess",
+        reads: ["auth", "step"],
+      },
+    ),
     alwaysStep(
       model,
-      (_pre, step, post) =>
-        !(step.resolved("POST_ORDER", "success") && post.step === "success") ||
-        (post.auth === "user" && step.op?.args.userId === post.userId),
+      {
+        negate: true,
+        step: stepResolved("POST_ORDER", "success"),
+        post: andExpr(
+          eq(readVar("step"), lit("success")),
+          notExpr(
+            andExpr(
+              eq(readVar("auth"), lit("user")),
+              eq(readOpArg("userId"), readVar("userId")),
+            ),
+          ),
+        ),
+      },
       {
         name: "orderSuccessMatchesUser",
         reads: ["auth", "userId", "step", "sys:pending"],
@@ -235,12 +259,15 @@ function checkoutProperties(model: Model): Property[] {
     ),
     alwaysStep(
       model,
-      (_pre, step, post) =>
-        !(
-          step.resolved("POST_ORDER", "success") &&
-          post.step === "success" &&
-          post.auth === "user"
-        ) || step.op?.args.plan === post.plan,
+      {
+        negate: true,
+        step: stepResolved("POST_ORDER", "success"),
+        post: andExpr(
+          eq(readVar("step"), lit("success")),
+          eq(readVar("auth"), lit("user")),
+          neq(readOpArg("plan"), readVar("plan")),
+        ),
+      },
       {
         name: "orderSuccessMatchesCart",
         reads: ["auth", "plan", "step", "sys:pending"],
@@ -248,9 +275,12 @@ function checkoutProperties(model: Model): Property[] {
     ),
     reachableFrom(
       model,
-      (s) =>
-        s.step === "review" && s.submitStatus === "idle" && s.auth === "user",
-      (s) => s.step === "success",
+      andExpr(
+        eq(readVar("step"), lit("review")),
+        eq(readVar("submitStatus"), lit("idle")),
+        eq(readVar("auth"), lit("user")),
+      ),
+      eq(readVar("step"), lit("success")),
       {
         name: "reviewCanReachSuccess",
         reads: ["submitStatus", "auth", "step"],

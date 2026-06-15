@@ -5,6 +5,7 @@ import type {
   ExtractionReport,
   ReplayReport,
 } from "../report/types.js";
+import type { Property } from "../ir/types.js";
 import type { Trace, TraceArtifact } from "../trace/types.js";
 
 export function parseModelArtifact(json: string): Model {
@@ -155,6 +156,113 @@ export function parseConformReportArtifact(json: string): ConformReport {
   if (!Array.isArray(value.transitionMetrics))
     throw new Error("conform report artifact missing transitionMetrics");
   return value as unknown as ConformReport;
+}
+
+export function parsePropertyArtifact(json: string): Property[] {
+  const value = JSON.parse(json) as unknown;
+  if (!isRecord(value)) throw new Error("property artifact must be an object");
+  if (value.schemaVersion !== 1) {
+    throw new Error(
+      `unsupported property schemaVersion ${String(value.schemaVersion)}`,
+    );
+  }
+  if (!Array.isArray(value.properties)) {
+    throw new Error("property artifact missing properties");
+  }
+  return value.properties.map((property, index) =>
+    assertSerializableProperty(property, `properties[${index}]`),
+  );
+}
+
+export function assertSerializableProperty(
+  value: unknown,
+  path = "property",
+): Property {
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  if (typeof value.kind !== "string") {
+    throw new Error(`${path} missing kind`);
+  }
+  if (typeof value.name !== "string") {
+    throw new Error(`${path} missing name`);
+  }
+  assertNoFunctions(value, path);
+  switch (value.kind) {
+    case "always":
+    case "reachable":
+      if (
+        !isRecord(value.predicate) ||
+        typeof value.predicate.kind !== "string"
+      ) {
+        throw new Error(`${path} missing predicate IR`);
+      }
+      break;
+    case "alwaysStep":
+      assertSerializableStepPredicate(value.predicate, `${path}.predicate`);
+      break;
+    case "reachableFrom":
+      if (!isRecord(value.when) || typeof value.when.kind !== "string") {
+        throw new Error(`${path} missing when predicate IR`);
+      }
+      if (!isRecord(value.goal) || typeof value.goal.kind !== "string") {
+        throw new Error(`${path} missing goal predicate IR`);
+      }
+      break;
+    case "leadsToWithin":
+      assertSerializableStepPredicate(value.trigger, `${path}.trigger`);
+      if (!isRecord(value.goal) || typeof value.goal.kind !== "string") {
+        throw new Error(`${path} missing goal predicate IR`);
+      }
+      if (!isRecord(value.budget)) {
+        throw new Error(`${path} missing budget`);
+      }
+      break;
+    default:
+      throw new Error(`${path} has unsupported kind ${String(value.kind)}`);
+  }
+  return value as unknown as Property;
+}
+
+function assertSerializableStepPredicate(value: unknown, path: string): void {
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  if ("step" in value) {
+    if (!isRecord(value.step)) {
+      throw new Error(`${path}.step must be an object`);
+    }
+    if (value.pre !== undefined)
+      assertSerializableExpr(value.pre, `${path}.pre`);
+    if (value.post !== undefined) {
+      assertSerializableExpr(value.post, `${path}.post`);
+    }
+    return;
+  }
+}
+
+function assertSerializableExpr(value: unknown, path: string): void {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    throw new Error(`${path} must be predicate IR`);
+  }
+}
+
+function assertNoFunctions(value: unknown, path: string): void {
+  if (typeof value === "function") {
+    throw new Error(
+      `${path}: property predicates must be serializable IR, not functions. Migrate .props modules to predicate IR builders from modality-ts/core.`,
+    );
+  }
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      assertNoFunctions(entry, `${path}[${index}]`);
+    }
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, entry] of Object.entries(value)) {
+    assertNoFunctions(entry, `${path}.${key}`);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

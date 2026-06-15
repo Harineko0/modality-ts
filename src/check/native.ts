@@ -12,9 +12,7 @@ interface NativeBinding {
   modelSuccessors(modelJson: string, stateJson: string): string;
 }
 
-type NativeResponse<T> =
-  | { ok: true; result: T }
-  | { ok: false; error: string };
+type NativeResponse<T> = { ok: true; result: T } | { ok: false; error: string };
 
 const require = createRequire(import.meta.url);
 

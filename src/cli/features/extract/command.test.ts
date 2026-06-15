@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import {
+  eq,
+  lit,
   reachable,
+  readVar,
   validateModel,
   type EffectIR,
   type Model,
@@ -119,7 +122,7 @@ describe("runExtractCommand", () => {
     });
 
     const check = checkModel(model, [
-      reachable(model, (state) => state["local:App.saveStatus"] === "posting", {
+      reachable(model, eq(readVar("local:App.saveStatus"), lit("posting")), {
         name: "postingReachable",
         reads: ["local:App.saveStatus"],
       }),
@@ -397,7 +400,7 @@ describe("runExtractCommand", () => {
     });
 
     const check = checkModel(result.model, [
-      reachable(result.model, (state) => state["sys:route"] === "/checkout", {
+      reachable(result.model, eq(readVar("sys:route"), lit("/checkout")), {
         name: "checkoutReachable",
         reads: ["sys:route"],
       }),
@@ -615,7 +618,7 @@ describe("runExtractCommand", () => {
     expect(validateModel(result.model).ok).toBe(true);
 
     const check = checkModel(result.model, [
-      reachable(result.model, (state) => state["sys:route"] === "/signin", {
+      reachable(result.model, eq(readVar("sys:route"), lit("/signin")), {
         name: "signinReachable",
         reads: ["sys:route"],
       }),
@@ -688,7 +691,7 @@ describe("runExtractCommand", () => {
       initial: "tok1",
     });
     const check = checkModel(result.model, [
-      reachable(result.model, (state) => state["local:App.color"] === "tok1", {
+      reachable(result.model, eq(readVar("local:App.color"), lit("tok1")), {
         name: "tokenInitialReachable",
         reads: ["local:App.color"],
       }),

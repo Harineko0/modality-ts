@@ -176,7 +176,7 @@ pub fn check_model_compiled(
             .map(|(var_id, values)| (var_id, values.len()))
             .filter(|(_, count)| *count > 0)
             .collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         entries
             .into_iter()
             .take(5)
@@ -325,6 +325,7 @@ fn explore_depth(
                 &transition.effect,
                 &mut crate::expr::EvalOptions {
                     on_bound_hit: Some(&mut bound_callback),
+                    step_ctx: None,
                 },
             )?;
             if posts.is_empty() && effect_contains_enqueue(&transition.effect) {

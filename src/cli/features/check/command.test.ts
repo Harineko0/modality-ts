@@ -13,6 +13,9 @@ import { runReplayCommand } from "../../replay.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 
+const flagFalseIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }`;
+const flagTrueIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }`;
+
 function model(): Model {
   return {
     schemaVersion: 1,
@@ -103,12 +106,24 @@ describe("runCheckCommand", () => {
       {
         kind: "always",
         name: "flagStartsFalseOnly",
-        predicate: (state) => state.flag === false,
+        predicate: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "flag" },
+            { kind: "lit", value: false },
+          ],
+        },
       },
       {
         kind: "reachable",
         name: "flagCanBecomeTrue",
-        predicate: (state) => state.flag === true,
+        predicate: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "flag" },
+            { kind: "lit", value: true },
+          ],
+        },
       },
     ];
 
@@ -129,8 +144,8 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false },
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] },
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -355,7 +370,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "reachableFrom", name: "flagCannotReturnFalse", when: state => state.flag === true, goal: state => state.flag === false, reads: ["flag"] }
+        { kind: "reachableFrom", name: "flagCannotReturnFalse", when: ${flagTrueIr}, goal: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -399,7 +414,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -521,7 +536,7 @@ describe("runCheckCommand", () => {
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
-      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }];`,
+      `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }];`,
       "utf8",
     );
     await writeFile(
@@ -580,7 +595,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -605,7 +620,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -640,7 +655,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -662,7 +677,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -688,7 +703,7 @@ describe("runCheckCommand", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false, reads: ["flag"] }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -739,8 +754,8 @@ describe("renderHumanCheckTargets", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false },
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] },
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -791,7 +806,7 @@ describe("renderHumanCheckTargets", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true }
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -842,7 +857,7 @@ describe("renderHumanCheckTargets", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -865,7 +880,7 @@ describe("runCheckCommand streaming output", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "always", name: "flagStartsFalseOnly", predicate: state => state.flag === false }
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -887,5 +902,28 @@ describe("runCheckCommand streaming output", () => {
     expect(emitted.some((line) => line.match(/^ [×✓⚠] /))).toBe(true);
     expect(emitted.some((line) => line.includes("Test Files"))).toBe(true);
     expect(result.lines.some((line) => line.startsWith("trace="))).toBe(true);
+  });
+
+  it("rejects function-valued property predicates with a migration error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "legacy", predicate: state => state.flag === false }
+      ];`,
+      "utf8",
+    );
+
+    await expect(
+      runCheckCommand({
+        modelPath,
+        propsPath,
+        reportPath,
+      }),
+    ).rejects.toThrow("serializable IR, not functions");
   });
 });

@@ -1,5 +1,8 @@
 import type { Model, Property } from "modality-ts/core";
-import { sliceModelForProperty, canSliceProperty } from "./slicing/slice-model.js";
+import {
+  sliceModelForProperty,
+  canSliceProperty,
+} from "./slicing/slice-model.js";
 import { runRustCheck } from "./native.js";
 import type {
   CheckDiagnostics,
@@ -127,7 +130,9 @@ function checkModelSliced(
   return {
     verdicts: properties.map(
       (property) =>
-        mergedVerdicts.find((verdict) => verdict.property === property.name) ?? {
+        mergedVerdicts.find(
+          (verdict) => verdict.property === property.name,
+        ) ?? {
           status: "verified-within-bounds",
           property: property.name,
         },

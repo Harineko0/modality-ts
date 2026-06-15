@@ -320,7 +320,7 @@ describe("modality CLI", () => {
     await writeFile(
       propsPath,
       `export const properties = [
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
       ];`,
       "utf8",
     );
@@ -669,15 +669,18 @@ async function writeFixtureApp(dir: string): Promise<void> {
   );
 }
 
+const flagTrueIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }`;
+const flagFalseIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }`;
+
 function passingProps(prefix: string): string {
   return `export const properties = [
-    { kind: "reachable", name: "${prefix}FlagCanBecomeTrue", predicate: state => state.flag === true, reads: ["flag"] }
+    { kind: "reachable", name: "${prefix}FlagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
   ];`;
 }
 
 function failingProps(): string {
   return `export const properties = [
-    { kind: "always", name: "homeFlagAlwaysFalse", predicate: state => state.flag === false, reads: ["flag"] }
+    { kind: "always", name: "homeFlagAlwaysFalse", predicate: ${flagFalseIr}, reads: ["flag"] }
   ];`;
 }
 

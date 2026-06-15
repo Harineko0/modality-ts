@@ -9,6 +9,7 @@ import {
   type PropertyVerdict,
 } from "modality-ts/check";
 import {
+  assertSerializableProperty,
   canonicalJson,
   parseModelArtifact,
   traceArtifact,
@@ -16,6 +17,7 @@ import {
   type DomainReportEntry,
   type Model,
   type Property,
+  type PropertyArtifact,
   type StateVarDecl,
 } from "modality-ts/core";
 import {
@@ -355,12 +357,31 @@ async function loadProperties(
       )) as {
         properties?: Property[] | ((model: Model) => Property[]);
         propertiesFor?: (model: Model) => Property[];
+        default?: Property[] | PropertyArtifact;
       };
-      if (typeof module.propertiesFor === "function")
-        return module.propertiesFor(model);
-      if (typeof module.properties === "function")
-        return module.properties(model);
-      return module.properties ?? [];
+      let loaded: Property[];
+      if (typeof module.propertiesFor === "function") {
+        loaded = module.propertiesFor(model);
+      } else if (typeof module.properties === "function") {
+        loaded = module.properties(model);
+      } else if (module.properties !== undefined) {
+        loaded = module.properties;
+      } else if (
+        module.default &&
+        typeof module.default === "object" &&
+        !Array.isArray(module.default) &&
+        "schemaVersion" in module.default &&
+        "properties" in module.default
+      ) {
+        loaded = [...module.default.properties];
+      } else if (Array.isArray(module.default)) {
+        loaded = module.default;
+      } else {
+        loaded = [];
+      }
+      return loaded.map((property, index) =>
+        assertSerializableProperty(property, `${propsPath}[${index}]`),
+      );
     }),
   );
   return properties.flat();

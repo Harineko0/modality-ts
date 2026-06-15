@@ -118,6 +118,10 @@ pub enum ExprIR {
         #[serde(rename = "transitionId")]
         transition_id: String,
     },
+    #[serde(rename = "readPre")]
+    ReadPre { var: String, path: Option<Vec<String>> },
+    #[serde(rename = "readOpArg")]
+    ReadOpArg { key: String },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

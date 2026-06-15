@@ -17,8 +17,12 @@ describe("checker package architecture", () => {
       expectPath("serialize-properties.ts"),
       expectPath("slicing/slice-model.ts"),
     ]);
-    await expect(access(join(checkerSrc, "engine/check-model.ts"))).rejects.toThrow();
-    await expect(access(join(checkerSrc, "runtime/effects.ts"))).rejects.toThrow();
+    await expect(
+      access(join(checkerSrc, "engine/check-model.ts")),
+    ).rejects.toThrow();
+    await expect(
+      access(join(checkerSrc, "runtime/effects.ts")),
+    ).rejects.toThrow();
     await expect(access(join(checkerSrc, "eval.ts"))).rejects.toThrow();
     await expect(access(join(checkerSrc, "search.ts"))).rejects.toThrow();
     await expect(access(join(checkerSrc, "encode/index.ts"))).rejects.toThrow();
