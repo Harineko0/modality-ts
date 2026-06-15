@@ -1,4 +1,5 @@
 import type { ModelState, Property, Value } from "modality-ts/core/props";
+import { evalStatePredicate } from "modality-ts/core/props";
 
 export interface Observable<TContext = unknown> {
   var: string;
@@ -146,7 +147,12 @@ export function evaluateObservableInvariants<TContext>(
       continue;
     }
     try {
-      if (!property.predicate(runtimeCheckedState(state, observableIds))) {
+      if (
+        !evalStatePredicate(
+          property.predicate,
+          runtimeCheckedState(state, observableIds),
+        )
+      ) {
         violations.push({
           property: property.name,
           message: "observable invariant failed",

@@ -44,7 +44,8 @@ export type ExprIR =
     }
   | { kind: "tagIs"; arg: ExprIR; tag: string }
   | { kind: "lenCat"; arg: ExprIR }
-  | { kind: "freshToken"; domainOf: string };
+  | { kind: "freshToken"; domainOf: string }
+  | { kind: "transitionEnabled"; transitionId: string };
 
 export type GuardIR = ExprIR;
 

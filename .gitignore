@@ -3,6 +3,8 @@
 .kiri/
 node_modules/
 dist/
+native/
+target/
 *.tsbuildinfo
 .modality/
 .rtk
