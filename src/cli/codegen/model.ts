@@ -35,6 +35,8 @@ function typeForDomain(domain: AbstractDomain): string {
         : "never";
     case "boundedInt":
       return domain.min === domain.max ? JSON.stringify(domain.min) : "number";
+    case "intSet":
+      return domain.values.map((value) => JSON.stringify(value)).join(" | ");
     case "option":
       return `${typeForDomain(domain.inner)} | null`;
     case "record":

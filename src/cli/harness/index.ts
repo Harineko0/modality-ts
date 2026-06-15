@@ -655,6 +655,8 @@ export function witnessValue(
       return domain.values[0] ?? "";
     case "boundedInt":
       return domain.min;
+    case "intSet":
+      return domain.values[0] ?? 0;
     case "option":
       return null;
     case "record":

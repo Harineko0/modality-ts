@@ -5,10 +5,22 @@ export type Value =
   | readonly Value[]
   | { readonly [key: string]: Value };
 
+export type NumericOverflowPolicy = "forbid" | "wrap" | "saturate";
+
 export type AbstractDomain =
   | { kind: "bool" }
   | { kind: "enum"; values: readonly string[] }
-  | { kind: "boundedInt"; min: number; max: number }
+  | {
+      kind: "boundedInt";
+      min: number;
+      max: number;
+      overflow?: NumericOverflowPolicy;
+    }
+  | {
+      kind: "intSet";
+      values: readonly number[];
+      overflow?: NumericOverflowPolicy;
+    }
   | { kind: "option"; inner: AbstractDomain }
   | { kind: "record"; fields: Record<string, AbstractDomain> }
   | { kind: "tagged"; tag: string; variants: Record<string, AbstractDomain> }
@@ -47,7 +59,9 @@ export type ExprIR =
   | { kind: "freshToken"; domainOf: string }
   | { kind: "transitionEnabled"; transitionId: string }
   | { kind: "readPre"; var: string; path?: readonly string[] }
-  | { kind: "readOpArg"; key: string };
+  | { kind: "readOpArg"; key: string }
+  | { kind: "lt" | "lte" | "gt" | "gte"; args: readonly [ExprIR, ExprIR] }
+  | { kind: "add" | "sub" | "mod"; args: readonly [ExprIR, ExprIR] };
 
 export type GuardIR = ExprIR;
 
@@ -134,6 +148,32 @@ export interface ExtractionCaveats {
   entries: readonly ExtractionCaveat[];
 }
 
+export type NumericReductionClaim =
+  | "exact"
+  | "property-preserving"
+  | "heuristic";
+
+export type NumericReductionKind =
+  | "exact"
+  | "lazy-range"
+  | "saturation"
+  | "interval"
+  | "predicate"
+  | "input-class"
+  | "dropped";
+
+export interface NumericReduction {
+  varId: string;
+  kind: NumericReductionKind;
+  claim: NumericReductionClaim;
+  reason: string;
+  source?: SourceAnchor;
+}
+
+export interface NumericReductions {
+  entries: readonly NumericReduction[];
+}
+
 export interface Model {
   schemaVersion: 1;
   id: string;
@@ -145,6 +185,7 @@ export interface Model {
     plugins?: readonly PluginProvenance[];
     domainProvenance?: Record<string, "overlay-refined">;
     extractionCaveats?: ExtractionCaveats;
+    numericReductions?: NumericReductions;
   };
 }
 

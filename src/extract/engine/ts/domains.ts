@@ -2,44 +2,86 @@ import * as ts from "typescript";
 import {
   validateValue,
   type AbstractDomain,
+  type ExtractionCaveat,
+  type NumericReduction,
   type Value,
 } from "modality-ts/core";
+import { unprovableNumericDomainCaveat } from "./caveats.js";
+import type { ExtractionWarning } from "./types.js";
+import { resolveNumericDomain } from "./numeric/resolver.js";
+import {
+  exactFirstReduction,
+  mergeNumericReductions,
+} from "./numeric/abstraction.js";
+
+export interface DomainInferenceResult {
+  domain: AbstractDomain;
+  caveats: ExtractionCaveat[];
+  reductions?: NumericReduction[];
+}
+
+export interface DomainInferenceContext {
+  initializer?: ts.Expression;
+  declaration?: ts.VariableDeclaration;
+  sourceFile?: ts.SourceFile;
+  varId?: string;
+}
 
 export function inferDomainFromTypeNode(
   node: ts.TypeNode | undefined,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
-  if (!node) return { kind: "tokens", count: 1 };
+  return inferDomainFromTypeNodeDetailed(node, typeAliases, visited).domain;
+}
+
+export function inferDomainFromTypeNodeDetailed(
+  node: ts.TypeNode | undefined,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  visited: ReadonlySet<string> = new Set(),
+  context: DomainInferenceContext = {},
+): DomainInferenceResult {
+  if (!node) return abstractNumeric("missing type");
   switch (node.kind) {
     case ts.SyntaxKind.BooleanKeyword:
-      return { kind: "bool" };
+      return { domain: { kind: "bool" }, caveats: [] };
     case ts.SyntaxKind.StringKeyword:
-    case ts.SyntaxKind.NumberKeyword:
     case ts.SyntaxKind.AnyKeyword:
     case ts.SyntaxKind.UnknownKeyword:
-      return { kind: "tokens", count: 1 };
+      return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+    case ts.SyntaxKind.NumberKeyword:
+      return inferNumericDomain(node, typeAliases, visited, context);
     case ts.SyntaxKind.LiteralType:
-      return domainFromLiteralType(node as ts.LiteralTypeNode);
+      return {
+        domain: domainFromLiteralType(node as ts.LiteralTypeNode),
+        caveats: [],
+      };
     case ts.SyntaxKind.UnionType:
-      return domainFromUnion(node as ts.UnionTypeNode, typeAliases, visited);
+      return domainFromUnionDetailed(
+        node as ts.UnionTypeNode,
+        typeAliases,
+        visited,
+        context,
+      );
     case ts.SyntaxKind.TypeLiteral:
-      return domainFromTypeLiteral(
+      return domainFromTypeLiteralDetailed(
         node as ts.TypeLiteralNode,
         undefined,
         typeAliases,
         visited,
+        context,
       );
     case ts.SyntaxKind.ArrayType:
-      return { kind: "lengthCat" };
+      return { domain: { kind: "lengthCat" }, caveats: [] };
     case ts.SyntaxKind.TypeReference:
-      return domainFromTypeReference(
+      return domainFromTypeReferenceDetailed(
         node as ts.TypeReferenceNode,
         typeAliases,
         visited,
+        context,
       );
     default:
-      return { kind: "tokens", count: 1 };
+      return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
 }
 
@@ -47,21 +89,75 @@ export function inferUseStateDomain(
   call: ts.CallExpression,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
 ): AbstractDomain {
+  return inferUseStateDomainDetailed(call, typeAliases).domain;
+}
+
+export function inferUseStateDomainDetailed(
+  call: ts.CallExpression,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  sourceFile?: ts.SourceFile,
+  varId?: string,
+): DomainInferenceResult {
   const typeArg = call.typeArguments?.[0];
-  if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
-  const initial = call.arguments[0];
-  if (!initial) return { kind: "tokens", count: 1 };
-  if (
-    initial.kind === ts.SyntaxKind.TrueKeyword ||
-    initial.kind === ts.SyntaxKind.FalseKeyword
-  )
-    return { kind: "bool" };
-  if (ts.isStringLiteral(initial) || ts.isNumericLiteral(initial))
-    return { kind: "enum", values: [initial.text] };
-  if (initial.kind === ts.SyntaxKind.NullKeyword)
-    return { kind: "option", inner: { kind: "tokens", count: 1 } };
-  if (ts.isArrayLiteralExpression(initial)) return { kind: "lengthCat" };
-  return { kind: "tokens", count: 1 };
+  const initializer = call.arguments[0];
+  if (typeArg) {
+    return inferDomainFromTypeNodeDetailed(typeArg, typeAliases, new Set(), {
+      initializer,
+      sourceFile,
+      varId,
+    });
+  }
+  if (initializer) {
+    const schemaResolved = resolveNumericDomain({
+      initializer,
+      sourceFile,
+      typeAliases,
+      visited: new Set(),
+      varId,
+    });
+    if (schemaResolved.domain) {
+      return {
+        domain: schemaResolved.domain,
+        caveats: schemaResolved.caveats,
+        reductions: schemaResolved.reductions,
+      };
+    }
+    if (schemaResolved.caveats.length > 0) {
+      return {
+        domain: { kind: "tokens", count: 1 },
+        caveats: schemaResolved.caveats,
+      };
+    }
+    if (
+      initializer.kind === ts.SyntaxKind.TrueKeyword ||
+      initializer.kind === ts.SyntaxKind.FalseKeyword
+    )
+      return { domain: { kind: "bool" }, caveats: [] };
+    if (ts.isStringLiteral(initializer) || ts.isNumericLiteral(initializer))
+      return {
+        domain: { kind: "enum", values: [initializer.text] },
+        caveats: [],
+      };
+    if (initializer.kind === ts.SyntaxKind.NullKeyword)
+      return {
+        domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
+        caveats: [],
+      };
+    if (ts.isArrayLiteralExpression(initializer))
+      return { domain: { kind: "lengthCat" }, caveats: [] };
+  }
+  return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+}
+
+export function domainInferenceWarnings(
+  result: DomainInferenceResult,
+  anchor?: { line?: number; column?: number },
+): ExtractionWarning[] {
+  return result.caveats.map((caveat) => ({
+    message: caveat.reason,
+    ...anchor,
+    caveat,
+  }));
 }
 
 export function initialValueForUseState(
@@ -102,6 +198,8 @@ export function firstValue(domain: AbstractDomain): Value {
       return domain.values[0] ?? "";
     case "boundedInt":
       return domain.min;
+    case "intSet":
+      return domain.values[0] ?? 0;
     case "option":
       return null;
     case "record":
@@ -138,6 +236,107 @@ export function typeAliasDeclarations(
   };
   visit(source);
   return aliases;
+}
+
+function inferNumericDomain(
+  node: ts.TypeNode,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
+  const resolved = resolveNumericDomain({
+    typeNode: node,
+    initializer: context.initializer,
+    declaration: context.declaration,
+    sourceFile: context.sourceFile,
+    typeAliases,
+    visited,
+    varId: context.varId,
+  });
+  if (resolved.domain) {
+    return withDomainReductions(
+      {
+        domain: resolved.domain,
+        caveats: resolved.caveats,
+        reductions: resolved.reductions,
+      },
+      context,
+    );
+  }
+  if (resolved.caveats.length > 0) {
+    return { domain: { kind: "tokens", count: 1 }, caveats: resolved.caveats };
+  }
+  return abstractNumeric(context.varId ?? "numeric", node, context.sourceFile);
+}
+
+function withDomainReductions(
+  result: DomainInferenceResult,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
+  if (!context.varId) return result;
+  const inferred = exactFirstReduction(context.varId, result.domain);
+  const reductions = mergeNumericReductions(
+    result.reductions,
+    inferred ? [inferred] : [],
+  );
+  return reductions.length > 0 ? { ...result, reductions } : result;
+}
+
+function reductionsForDomain(
+  varId: string,
+  domain: AbstractDomain,
+  context: DomainInferenceContext,
+): NumericReduction[] | undefined {
+  const reduction = exactFirstReduction(
+    varId,
+    domain,
+    sourceFromContext(context),
+  );
+  return reduction ? [reduction] : undefined;
+}
+
+function sourceFromContext(
+  context: DomainInferenceContext,
+): { file: string; line: number; column: number } | undefined {
+  if (!context.declaration || !context.sourceFile) return undefined;
+  const { line, character } = context.sourceFile.getLineAndCharacterOfPosition(
+    context.declaration.getStart(context.sourceFile),
+  );
+  return {
+    file: context.sourceFile.fileName,
+    line: line + 1,
+    column: character + 1,
+  };
+}
+
+function abstractNumeric(
+  id: string,
+  node?: ts.Node,
+  sourceFile?: ts.SourceFile,
+): DomainInferenceResult {
+  const source =
+    node && sourceFile
+      ? (() => {
+          const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart(sourceFile),
+          );
+          return {
+            file: sourceFile.fileName,
+            line: line + 1,
+            column: character + 1,
+          };
+        })()
+      : undefined;
+  return {
+    domain: { kind: "tokens", count: 1 },
+    caveats: [
+      unprovableNumericDomainCaveat(
+        id,
+        "bare number without statically provable finite domain",
+        source,
+      ),
+    ],
+  };
 }
 
 function initialValueFromExpression(
@@ -186,11 +385,12 @@ function domainFromLiteralType(node: ts.LiteralTypeNode): AbstractDomain {
   return { kind: "tokens", count: 1 };
 }
 
-function domainFromUnion(
+function domainFromUnionDetailed(
   node: ts.UnionTypeNode,
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
-  visited: ReadonlySet<string> = new Set(),
-): AbstractDomain {
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
   const nonNull = node.types.filter(
     (part) =>
       part.kind !== ts.SyntaxKind.UndefinedKeyword &&
@@ -200,51 +400,82 @@ function domainFromUnion(
       ),
   );
   if (nonNull.length !== node.types.length && nonNull.length > 0) {
+    const inner =
+      nonNull.length === 1
+        ? inferDomainFromTypeNodeDetailed(
+            nonNull[0],
+            typeAliases,
+            visited,
+            context,
+          )
+        : domainFromUnionMembersDetailed(
+            nonNull,
+            typeAliases,
+            visited,
+            context,
+          );
     return {
-      kind: "option",
-      inner:
-        nonNull.length === 1
-          ? inferDomainFromTypeNode(nonNull[0], typeAliases, visited)
-          : domainFromUnionMembers(nonNull, typeAliases, visited),
+      domain: { kind: "option", inner: inner.domain },
+      caveats: inner.caveats,
+      reductions: inner.reductions,
     };
   }
-  return domainFromUnionMembers(node.types, typeAliases, visited);
+  return domainFromUnionMembersDetailed(
+    node.types,
+    typeAliases,
+    visited,
+    context,
+  );
 }
 
-function domainFromUnionMembers(
+function domainFromUnionMembersDetailed(
   types: readonly ts.TypeNode[],
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
-  visited: ReadonlySet<string> = new Set(),
-): AbstractDomain {
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
   const literalValues: string[] = [];
   const numericValues: number[] = [];
   for (const part of types) {
-    if (!ts.isLiteralTypeNode(part))
-      return (
-        taggedUnionFromMembers(types, typeAliases, visited) ?? {
-          kind: "tokens",
-          count: 1,
-        }
-      );
+    if (!ts.isLiteralTypeNode(part)) {
+      const tagged =
+        taggedUnionFromMembers(types, typeAliases, visited) ??
+        ({ kind: "tokens", count: 1 } as const);
+      return { domain: tagged, caveats: [] };
+    }
     const lit = part.literal;
     if (ts.isStringLiteral(lit)) literalValues.push(lit.text);
     else if (ts.isNumericLiteral(lit)) numericValues.push(Number(lit.text));
-    else
-      return (
-        taggedUnionFromMembers(types, typeAliases, visited) ?? {
-          kind: "tokens",
-          count: 1,
-        }
-      );
+    else {
+      const tagged =
+        taggedUnionFromMembers(types, typeAliases, visited) ??
+        ({ kind: "tokens", count: 1 } as const);
+      return { domain: tagged, caveats: [] };
+    }
   }
   if (numericValues.length === types.length) {
+    const domain = domainFromNumericLiterals(numericValues);
     return {
-      kind: "boundedInt",
-      min: Math.min(...numericValues),
-      max: Math.max(...numericValues),
+      domain,
+      caveats: [],
+      reductions: context.varId
+        ? reductionsForDomain(context.varId, domain, context)
+        : undefined,
     };
   }
-  return { kind: "enum", values: literalValues };
+  return { domain: { kind: "enum", values: literalValues }, caveats: [] };
+}
+
+function domainFromNumericLiterals(values: readonly number[]): AbstractDomain {
+  const sorted = [...new Set(values)].sort((left, right) => left - right);
+  if (sorted.length === 0) return { kind: "tokens", count: 1 };
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  if (min === undefined || max === undefined)
+    return { kind: "tokens", count: 1 };
+  const dense = sorted.length === max - min + 1;
+  if (dense) return { kind: "boundedInt", min, max };
+  return { kind: "intSet", values: sorted };
 }
 
 function taggedUnionFromMembers(
@@ -297,13 +528,15 @@ function taggedUnionFromMembers(
   return { kind: "tagged", tag, variants };
 }
 
-function domainFromTypeLiteral(
+function domainFromTypeLiteralDetailed(
   node: ts.TypeLiteralNode,
-  omitField?: string,
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
-  visited: ReadonlySet<string> = new Set(),
-): AbstractDomain {
+  omitField: string | undefined,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
   const fields: Record<string, AbstractDomain> = {};
+  const caveats: ExtractionCaveat[] = [];
   for (const member of node.members) {
     if (
       !ts.isPropertySignature(member) ||
@@ -312,36 +545,81 @@ function domainFromTypeLiteral(
       member.name.text === omitField
     )
       continue;
-    fields[member.name.text] = inferDomainFromTypeNode(
+    const inferred = inferDomainFromTypeNodeDetailed(
       member.type,
       typeAliases,
       visited,
+      context,
     );
+    fields[member.name.text] = inferred.domain;
+    caveats.push(...inferred.caveats);
   }
-  return { kind: "record", fields };
+  return { domain: { kind: "record", fields }, caveats };
 }
 
-function domainFromTypeReference(
-  node: ts.TypeReferenceNode,
+function domainFromTypeLiteral(
+  node: ts.TypeLiteralNode,
+  omitField?: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   visited: ReadonlySet<string> = new Set(),
 ): AbstractDomain {
+  return domainFromTypeLiteralDetailed(
+    node,
+    omitField,
+    typeAliases,
+    visited,
+    {},
+  ).domain;
+}
+
+function domainFromTypeReferenceDetailed(
+  node: ts.TypeReferenceNode,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
   const name = node.typeName.getText();
-  if (visited.has(name)) return { kind: "tokens", count: 1 };
+  if (visited.has(name))
+    return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  const resolved = resolveNumericDomain({
+    typeNode: node,
+    initializer: context.initializer,
+    declaration: context.declaration,
+    sourceFile: context.sourceFile,
+    typeAliases,
+    visited,
+    varId: context.varId,
+  });
+  if (resolved.domain) {
+    return withDomainReductions(
+      {
+        domain: resolved.domain,
+        caveats: resolved.caveats,
+        reductions: resolved.reductions,
+      },
+      context,
+    );
+  }
+  if (resolved.caveats.length > 0) {
+    return { domain: { kind: "tokens", count: 1 }, caveats: resolved.caveats };
+  }
   const alias = typeAliases.get(name);
-  if (alias)
-    return inferDomainFromTypeNode(
+  if (alias) {
+    return inferDomainFromTypeNodeDetailed(
       alias,
       typeAliases,
       new Set([...visited, name]),
+      context,
     );
+  }
   if (
     (name === "Array" || name === "ReadonlyArray") &&
     node.typeArguments?.length === 1
   )
-    return { kind: "lengthCat" };
-  if (name === "Record") return { kind: "tokens", count: 1 };
-  return { kind: "tokens", count: 1 };
+    return { domain: { kind: "lengthCat" }, caveats: [] };
+  if (name === "Record")
+    return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  return { domain: { kind: "tokens", count: 1 }, caveats: [] };
 }
 
 function literalValue(expression: ts.Expression): Value | undefined {

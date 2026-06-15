@@ -3,7 +3,11 @@ import type { AbstractDomain } from "./types.js";
 import {
   collectTokenDomainPaths,
   domainCardinality,
+  domainFingerprint,
   enumerateDomain,
+  exceedsWideNumericThreshold,
+  validateValue,
+  WIDE_NUMERIC_DOMAIN_THRESHOLD,
 } from "./domains.js";
 
 describe("domainCardinality", () => {
@@ -14,6 +18,10 @@ describe("domainCardinality", () => {
       domain: { kind: "enum", values: ["a", "b", "c"] },
     },
     { label: "boundedInt", domain: { kind: "boundedInt", min: 2, max: 5 } },
+    {
+      label: "intSet",
+      domain: { kind: "intSet", values: [0, 2], overflow: "wrap" },
+    },
     { label: "option", domain: { kind: "option", inner: { kind: "bool" } } },
     {
       label: "record",
@@ -80,6 +88,59 @@ describe("domainCardinality", () => {
     const card = domainCardinality(domain);
     expect(Number.isFinite(card)).toBe(true);
     expect(card).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+  });
+});
+
+describe("intSet domain", () => {
+  const sparse: AbstractDomain = { kind: "intSet", values: [0, 2] };
+  const dense: AbstractDomain = { kind: "boundedInt", min: 0, max: 2 };
+
+  it("enumerates exact sparse values", () => {
+    expect(enumerateDomain(sparse)).toEqual([0, 2]);
+    expect(domainCardinality(sparse)).toBe(2);
+  });
+
+  it("validates integer membership only", () => {
+    expect(validateValue(sparse, 0)).toBe(true);
+    expect(validateValue(sparse, 2)).toBe(true);
+    expect(validateValue(sparse, 1)).toBe(false);
+    expect(validateValue(sparse, 0.5)).toBe(false);
+  });
+
+  it("distinguishes sparse set from dense range in fingerprint", () => {
+    expect(domainFingerprint(sparse)).toBe("intSet(0,2)");
+    expect(domainFingerprint(dense)).toBe("int(0,2)");
+    expect(domainFingerprint(sparse)).not.toBe(domainFingerprint(dense));
+  });
+
+  it("ignores overflow metadata for cardinality and enumeration", () => {
+    const wrapped: AbstractDomain = {
+      kind: "intSet",
+      values: [0, 2],
+      overflow: "wrap",
+    };
+    expect(domainCardinality(wrapped)).toBe(domainCardinality(sparse));
+    expect(enumerateDomain(wrapped)).toEqual(enumerateDomain(sparse));
+  });
+});
+
+describe("wide numeric threshold", () => {
+  it("flags domains above the threshold", () => {
+    expect(WIDE_NUMERIC_DOMAIN_THRESHOLD).toBe(256);
+    expect(
+      exceedsWideNumericThreshold({
+        kind: "boundedInt",
+        min: 0,
+        max: WIDE_NUMERIC_DOMAIN_THRESHOLD - 1,
+      }),
+    ).toBe(false);
+    expect(
+      exceedsWideNumericThreshold({
+        kind: "boundedInt",
+        min: 0,
+        max: WIDE_NUMERIC_DOMAIN_THRESHOLD,
+      }),
+    ).toBe(true);
   });
 });
 

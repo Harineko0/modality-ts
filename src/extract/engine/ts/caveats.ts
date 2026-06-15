@@ -103,6 +103,19 @@ export function modelSlackCaveat(
   };
 }
 
+export function unprovableNumericDomainCaveat(
+  id: string,
+  reason: string,
+  source?: SourceAnchor,
+): ExtractionCaveat {
+  return modelSlackCaveat(
+    id,
+    `Unprovable numeric domain: ${reason}`,
+    source,
+    "over-approx",
+  );
+}
+
 export function formatSource(source: SourceAnchor): string {
   const line = source.line ?? 0;
   const column = source.column ?? 0;

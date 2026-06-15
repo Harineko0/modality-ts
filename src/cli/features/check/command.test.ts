@@ -196,6 +196,7 @@ describe("runCheckCommand", () => {
         overApproxTransitions: ["setFlag"],
         boundHits: [],
         ignoredVars: [],
+        numericReductions: [],
       },
     });
     expect(
@@ -535,6 +536,71 @@ describe("runCheckCommand", () => {
     expect(result.report.trustLedger.unextractableHandlers).toEqual([
       unextractableHandler,
     ]);
+  });
+
+  it("renders numeric reduction metadata and downgrades heuristic claims", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        vars: [
+          ...model().vars,
+          {
+            id: "amount",
+            domain: { kind: "enum", values: ["validSmall", "aboveMax"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "validSmall",
+          },
+        ],
+        metadata: {
+          numericReductions: {
+            entries: [
+              {
+                varId: "amount",
+                kind: "input-class",
+                claim: "heuristic",
+                reason: "User-entered numeric input modeled as classes",
+              },
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+  {
+    kind: "always",
+    name: "amountKnown",
+    predicate: { kind: "eq", args: [{ kind: "read", var: "amount" }, { kind: "lit", value: "validSmall" }] },
+    reads: ["amount"],
+  },
+];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.report.trustLedger.numericReductions).toEqual([
+      {
+        varId: "amount",
+        kind: "input-class",
+        claim: "heuristic",
+        reason: "User-entered numeric input modeled as classes",
+      },
+    ]);
+    expect(result.report.verdicts[0]).toMatchObject({
+      property: "amountKnown",
+      status: "vacuous-warning",
+    });
   });
 
   it("applies overlay artifacts before checking", async () => {

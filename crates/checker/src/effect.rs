@@ -1,9 +1,9 @@
-use crate::domain::enumerate_domain;
+use crate::domain::{apply_numeric_assign, enumerate_domain, NumericAssignOutcome};
 use crate::expr::{eval_expr, EvalOptions};
 use crate::model::{CompiledModel, EffectIR};
 use crate::navigation;
 use crate::state::ModelState;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashSet;
 
 pub enum EffectError {
@@ -43,7 +43,28 @@ fn apply_effect_inner(
 ) -> Result<Vec<ModelState>, EffectError> {
     match effect {
         EffectIR::Assign { var, expr } => {
-            let value = eval_assign_expr(compiled, state, expr, options)?;
+            let raw_value = eval_assign_expr(compiled, state, expr, options)?;
+            let decl = compiled
+                .var_decl(var)
+                .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
+            let value = match &decl.domain {
+                crate::model::AbstractDomain::BoundedInt { .. }
+                | crate::model::AbstractDomain::IntSet { .. } => {
+                    let Some(raw) = as_integer_value(&raw_value) else {
+                        return Ok(vec![]);
+                    };
+                    match apply_numeric_assign(&decl.domain, raw) {
+                        NumericAssignOutcome::Value(value) => json!(value),
+                        NumericAssignOutcome::Forbid(message) => {
+                            if let Some(hit) = options.on_bound_hit.as_mut() {
+                                hit(&message);
+                            }
+                            return Ok(vec![]);
+                        }
+                    }
+                }
+                _ => raw_value,
+            };
             let var_idx = compiled
                 .var_idx(var)
                 .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
@@ -170,6 +191,15 @@ fn eval_assign_expr(
         return fresh_token(compiled, state, domain_of).map(Value::String);
     }
     Ok(eval_expr(compiled, state, expr, options))
+}
+
+fn as_integer_value(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        value
+            .as_f64()
+            .filter(|n| n.fract() == 0.0)
+            .map(|n| n as i64)
+    })
 }
 
 pub fn read_pending(state: &ModelState, pending_idx: usize) -> Vec<Value> {
@@ -398,6 +428,205 @@ mod tests {
                 op: "op".into(),
                 continuation: "c".into(),
                 args: HashMap::new(),
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert!(posts.is_empty());
+    }
+
+    fn numeric_compiled(
+        domain: AbstractDomain,
+        initial: Value,
+    ) -> (CompiledModel, ModelState) {
+        let compiled = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "count".into(),
+                        domain,
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(initial.clone()),
+                    },
+                ],
+                transitions: vec![],
+                bounds: Bounds {
+                    max_depth: 4,
+                    max_pending: 0,
+                    max_internal_steps: 4,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap();
+        let mut state = blank_state(&compiled);
+        let count = *compiled.var_index.get("count").unwrap();
+        state.values[count] = initial;
+        (compiled, state)
+    }
+
+    #[test]
+    fn forbid_overflow_produces_no_successor() {
+        let (compiled, state) = numeric_compiled(
+            AbstractDomain::BoundedInt {
+                min: 0,
+                max: 3,
+                overflow: Some(crate::model::NumericOverflowPolicy::Forbid),
+            },
+            json!(3),
+        );
+        let count = *compiled.var_index.get("count").unwrap();
+        let mut hits = Vec::new();
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Assign {
+                var: "count".into(),
+                expr: ExprIR::Add {
+                    args: vec![
+                        ExprIR::Read {
+                            var: "count".into(),
+                            path: None,
+                        },
+                        ExprIR::Lit { value: json!(1) },
+                    ],
+                },
+            },
+            &mut EvalOptions {
+                on_bound_hit: Some(&mut |hit| hits.push(hit.to_string())),
+                ..EvalOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(posts.is_empty());
+        assert!(!hits.is_empty());
+        let _ = count;
+    }
+
+    #[test]
+    fn wrap_overflow_wraps_dense_range() {
+        let (compiled, state) = numeric_compiled(
+            AbstractDomain::BoundedInt {
+                min: 0,
+                max: 3,
+                overflow: Some(crate::model::NumericOverflowPolicy::Wrap),
+            },
+            json!(3),
+        );
+        let count = *compiled.var_index.get("count").unwrap();
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Assign {
+                var: "count".into(),
+                expr: ExprIR::Add {
+                    args: vec![
+                        ExprIR::Read {
+                            var: "count".into(),
+                            path: None,
+                        },
+                        ExprIR::Lit { value: json!(1) },
+                    ],
+                },
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(posts[0].values[count], json!(0));
+    }
+
+    #[test]
+    fn saturate_overflow_clamps_dense_range() {
+        let (compiled, state) = numeric_compiled(
+            AbstractDomain::BoundedInt {
+                min: 0,
+                max: 3,
+                overflow: Some(crate::model::NumericOverflowPolicy::Saturate),
+            },
+            json!(3),
+        );
+        let count = *compiled.var_index.get("count").unwrap();
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Assign {
+                var: "count".into(),
+                expr: ExprIR::Add {
+                    args: vec![
+                        ExprIR::Read {
+                            var: "count".into(),
+                            path: None,
+                        },
+                        ExprIR::Lit { value: json!(1) },
+                    ],
+                },
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(posts[0].values[count], json!(3));
+    }
+
+    #[test]
+    fn int_set_forbid_rejects_non_member() {
+        let (compiled, state) = numeric_compiled(
+            AbstractDomain::IntSet {
+                values: vec![0, 2],
+                overflow: Some(crate::model::NumericOverflowPolicy::Forbid),
+            },
+            json!(2),
+        );
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Assign {
+                var: "count".into(),
+                expr: ExprIR::Add {
+                    args: vec![
+                        ExprIR::Read {
+                            var: "count".into(),
+                            path: None,
+                        },
+                        ExprIR::Lit { value: json!(1) },
+                    ],
+                },
             },
             &mut EvalOptions::default(),
         )

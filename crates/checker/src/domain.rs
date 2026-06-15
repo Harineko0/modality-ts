@@ -1,4 +1,7 @@
-use crate::model::{AbstractDomain, CompiledModel, InitialValue, Model, StateVarDecl, UNMOUNTED};
+use crate::model::{
+    AbstractDomain, CompiledModel, InitialValue, Model, NumericOverflowPolicy, StateVarDecl,
+    UNMOUNTED,
+};
 use crate::navigation;
 use crate::state::{changed_var_indexes, ModelState};
 use serde_json::{json, Value};
@@ -93,6 +96,17 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
             }
             ExprIR::TagIs { arg, .. } => walk_expr(arg, reads),
             ExprIR::LenCat { arg } => walk_expr(arg, reads),
+            ExprIR::Lt { args }
+            | ExprIR::Lte { args }
+            | ExprIR::Gt { args }
+            | ExprIR::Gte { args }
+            | ExprIR::Add { args }
+            | ExprIR::Sub { args }
+            | ExprIR::Mod { args } => {
+                for arg in args {
+                    walk_expr(arg, reads);
+                }
+            }
             ExprIR::FreshToken { .. }
             | ExprIR::TransitionEnabled { .. }
             | ExprIR::Lit { .. }
@@ -294,7 +308,8 @@ pub fn enumerate_domain(domain: &AbstractDomain) -> Vec<Value> {
     match domain {
         AbstractDomain::Bool => vec![json!(false), json!(true)],
         AbstractDomain::Enum { values } => values.iter().map(|v| json!(v)).collect(),
-        AbstractDomain::BoundedInt { min, max } => (*min..=*max).map(|n| json!(n)).collect(),
+        AbstractDomain::BoundedInt { min, max, .. } => (*min..=*max).map(|n| json!(n)).collect(),
+        AbstractDomain::IntSet { values, .. } => values.iter().map(|n| json!(n)).collect(),
         AbstractDomain::Option { inner } => {
             let mut out = vec![Value::Null];
             out.extend(enumerate_domain(inner));
@@ -374,9 +389,12 @@ pub fn validate_value(domain: &AbstractDomain, value: &Value) -> bool {
         AbstractDomain::Enum { values } => {
             value.as_str().is_some_and(|s| values.contains(&s.to_string()))
         }
-        AbstractDomain::BoundedInt { min, max } => value
+        AbstractDomain::BoundedInt { min, max, .. } => value
             .as_i64()
             .is_some_and(|n| n >= *min && n <= *max),
+        AbstractDomain::IntSet { values, .. } => {
+            value.as_i64().is_some_and(|n| values.contains(&n))
+        }
         AbstractDomain::Option { inner } => {
             value.is_null() || validate_value(inner, value)
         }
@@ -457,6 +475,100 @@ pub fn domain_at_path(domain: &AbstractDomain, path: &[String]) -> Option<Abstra
         };
     }
     Some(current)
+}
+
+pub fn numeric_overflow_policy(domain: &AbstractDomain) -> NumericOverflowPolicy {
+    match domain {
+        AbstractDomain::BoundedInt { overflow, .. } | AbstractDomain::IntSet { overflow, .. } => {
+            overflow.clone().unwrap_or(NumericOverflowPolicy::Forbid)
+        }
+        _ => NumericOverflowPolicy::Forbid,
+    }
+}
+
+pub enum NumericAssignOutcome {
+    Value(i64),
+    Forbid(String),
+}
+
+pub fn apply_numeric_assign(domain: &AbstractDomain, raw_value: i64) -> NumericAssignOutcome {
+    match domain {
+        AbstractDomain::BoundedInt { min, max, .. } => apply_numeric_policy(
+            numeric_overflow_policy(domain),
+            raw_value,
+            *min,
+            *max,
+            None,
+        ),
+        AbstractDomain::IntSet { values, .. } => {
+            if values.is_empty() {
+                return NumericAssignOutcome::Forbid("empty intSet domain".into());
+            }
+            let min = *values.first().unwrap();
+            let max = *values.last().unwrap();
+            apply_numeric_policy(
+                numeric_overflow_policy(domain),
+                raw_value,
+                min,
+                max,
+                Some(values),
+            )
+        }
+        _ => NumericAssignOutcome::Value(raw_value),
+    }
+}
+
+fn apply_numeric_policy(
+    policy: NumericOverflowPolicy,
+    raw_value: i64,
+    min: i64,
+    max: i64,
+    int_set: Option<&[i64]>,
+) -> NumericAssignOutcome {
+    if let Some(values) = int_set {
+        if values.contains(&raw_value) {
+            return NumericAssignOutcome::Value(raw_value);
+        }
+        return match policy {
+            NumericOverflowPolicy::Forbid => NumericAssignOutcome::Forbid(format!(
+                "numeric value {raw_value} outside intSet"
+            )),
+            NumericOverflowPolicy::Wrap => {
+                let len = values.len() as i64;
+                if len == 0 {
+                    return NumericAssignOutcome::Forbid("empty intSet domain".into());
+                }
+                let index = raw_value.rem_euclid(len) as usize;
+                NumericAssignOutcome::Value(values[index])
+            }
+            NumericOverflowPolicy::Saturate => NumericAssignOutcome::Value(if raw_value <= min {
+                min
+            } else {
+                max
+            }),
+        };
+    }
+
+    if raw_value >= min && raw_value <= max {
+        return NumericAssignOutcome::Value(raw_value);
+    }
+    match policy {
+        NumericOverflowPolicy::Forbid => NumericAssignOutcome::Forbid(format!(
+            "numeric overflow {raw_value} outside [{min},{max}]"
+        )),
+        NumericOverflowPolicy::Wrap => {
+            let span = max - min + 1;
+            if span <= 0 {
+                return NumericAssignOutcome::Forbid("invalid boundedInt span".into());
+            }
+            NumericAssignOutcome::Value(min + raw_value.rem_euclid(span))
+        }
+        NumericOverflowPolicy::Saturate => NumericAssignOutcome::Value(if raw_value < min {
+            min
+        } else {
+            max
+        }),
+    }
 }
 
 fn sorted_fields(
@@ -635,5 +747,41 @@ mod tests {
         let result = validate_model_full(&model, false);
         assert!(!result.ok);
         assert!(result.errors.iter().any(|e| e.contains("invalid initial")));
+    }
+
+    #[test]
+    fn int_set_enumeration_and_membership() {
+        let domain = AbstractDomain::IntSet {
+            values: vec![0, 2],
+            overflow: None,
+        };
+        assert_eq!(
+            enumerate_domain(&domain),
+            vec![json!(0), json!(2)]
+        );
+        assert!(validate_value(&domain, &json!(2)));
+        assert!(!validate_value(&domain, &json!(1)));
+    }
+
+    #[test]
+    fn apply_numeric_assign_wrap_and_saturate() {
+        let bounded = AbstractDomain::BoundedInt {
+            min: 0,
+            max: 3,
+            overflow: Some(crate::model::NumericOverflowPolicy::Wrap),
+        };
+        assert!(matches!(
+            apply_numeric_assign(&bounded, 4),
+            NumericAssignOutcome::Value(0)
+        ));
+        let saturated = AbstractDomain::BoundedInt {
+            min: 0,
+            max: 3,
+            overflow: Some(crate::model::NumericOverflowPolicy::Saturate),
+        };
+        assert!(matches!(
+            apply_numeric_assign(&saturated, 5),
+            NumericAssignOutcome::Value(3)
+        ));
     }
 }

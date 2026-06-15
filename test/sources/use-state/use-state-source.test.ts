@@ -33,6 +33,10 @@ describe("useState source plugin", () => {
       min: 0,
       max: 2,
     });
+    expect(inferDomainFromTypeNode(typeNode("0 | 2"))).toEqual({
+      kind: "intSet",
+      values: [0, 2],
+    });
     expect(inferDomainFromTypeNode(typeNode("'user' | null"))).toEqual({
       kind: "option",
       inner: { kind: "enum", values: ["user"] },

@@ -7,9 +7,12 @@ import {
   validateModel,
 } from "modality-ts/core";
 import type {
+  AbstractDomain,
   EffectIR,
   ExprIR,
   Model,
+  NumericOverflowPolicy,
+  StateVarDecl,
   Transition,
   Value,
 } from "modality-ts/core";
@@ -86,12 +89,16 @@ export function generateTlaModule(
   const actions = model.transitions.map((transition) =>
     tlaAction(model, transition),
   );
+  const modHelper = modelUsesTlaMod(model)
+    ? [`Mod(a, b) == IF b = 0 THEN 0 ELSE a - b * (a \\div b)`, ``]
+    : [];
   return [
     `---- MODULE ${moduleName} ----`,
     `EXTENDS Naturals, Sequences, TLC`,
     ``,
     `VARIABLES ${vars.join(", ")}`,
     ``,
+    ...modHelper,
     `Init ==`,
     indent(
       model.vars
@@ -191,18 +198,31 @@ function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
     case "assign":
       if (effect.expr.kind === "freshToken")
         return [withFreshToken(model, env, effect.var, effect.expr.domainOf)];
-      return [withValue(env, effect.var, tlaExpr(effect.expr, env))];
+      {
+        const decl = model.vars.find(
+          (candidate) => candidate.id === effect.var,
+        );
+        const exprTla = tlaExpr(effect.expr, env);
+        if (decl && isNumericDomain(decl.domain)) {
+          return [
+            withNumericAssign(
+              env,
+              effect.var,
+              exprTla,
+              decl.domain as Extract<
+                AbstractDomain,
+                { kind: "boundedInt" } | { kind: "intSet" }
+              >,
+            ),
+          ];
+        }
+        return [withValue(env, effect.var, exprTla)];
+      }
     case "havoc": {
       const decl = model.vars.find((candidate) => candidate.id === effect.var);
       if (!decl)
         throw new Error(`TLA export cannot havoc unknown var ${effect.var}`);
-      return [
-        withExistentialValue(
-          env,
-          effect.var,
-          tlaSet(enumerateDomain(decl.domain)),
-        ),
-      ];
+      return [withExistentialValue(env, effect.var, tlaDomainSet(decl.domain))];
     }
     case "choose":
       return effect.among.map((expr) =>
@@ -329,7 +349,7 @@ function opaqueBranches(
     const decl = model.vars.find((candidate) => candidate.id === id);
     if (!decl)
       throw new Error(`TLA export cannot havoc unknown opaque write ${id}`);
-    next = withExistentialValue(next, id, tlaSet(enumerateDomain(decl.domain)));
+    next = withExistentialValue(next, id, tlaDomainSet(decl.domain));
   }
   return [next];
 }
@@ -510,6 +530,20 @@ function tlaExpr(expr: ExprIR, env: TlaEnv = emptyEnv()): string {
       throw new Error(
         "TLA export only supports freshToken as an assignment expression",
       );
+    case "lt":
+      return `(${tlaExpr(expr.args[0], env)} < ${tlaExpr(expr.args[1], env)})`;
+    case "lte":
+      return `(${tlaExpr(expr.args[0], env)} <= ${tlaExpr(expr.args[1], env)})`;
+    case "gt":
+      return `(${tlaExpr(expr.args[0], env)} > ${tlaExpr(expr.args[1], env)})`;
+    case "gte":
+      return `(${tlaExpr(expr.args[0], env)} >= ${tlaExpr(expr.args[1], env)})`;
+    case "add":
+      return `(${tlaExpr(expr.args[0], env)} + ${tlaExpr(expr.args[1], env)})`;
+    case "sub":
+      return `(${tlaExpr(expr.args[0], env)} - ${tlaExpr(expr.args[1], env)})`;
+    case "mod":
+      return `Mod(${tlaExpr(expr.args[0], env)}, ${tlaExpr(expr.args[1], env)})`;
     default:
       throw new Error("TLA export encountered an unsupported expression kind");
   }
@@ -557,6 +591,135 @@ function tlaInitial(id: string, values: readonly Value[]): string {
 
 function tlaSet(values: readonly Value[]): string {
   return `{${values.map(tlaValue).join(", ")}}`;
+}
+
+function isNumericDomain(
+  domain: AbstractDomain,
+): domain is Extract<AbstractDomain, { kind: "boundedInt" | "intSet" }> {
+  return domain.kind === "boundedInt" || domain.kind === "intSet";
+}
+
+function tlaDomainSet(domain: AbstractDomain): string {
+  switch (domain.kind) {
+    case "boundedInt": {
+      const span = domain.max - domain.min + 1;
+      if (span <= 64) {
+        return `{${Array.from({ length: span }, (_, index) => domain.min + index).join(", ")}}`;
+      }
+      return `{n \\in Nat : n >= ${domain.min} /\\ n <= ${domain.max}}`;
+    }
+    case "intSet":
+      return `{${domain.values.join(", ")}}`;
+    default:
+      return tlaSet(enumerateDomain(domain));
+  }
+}
+
+function withNumericAssign(
+  env: TlaEnv,
+  id: string,
+  rawExpr: string,
+  domain: Extract<AbstractDomain, { kind: "boundedInt" } | { kind: "intSet" }>,
+): TlaEnv {
+  const policy = domain.overflow ?? "forbid";
+  let next = withValue(env, id, tlaNumericAssignExpr(rawExpr, domain, policy));
+  if (policy === "forbid") {
+    next = envWithAssumption(next, tlaNumericMembership(rawExpr, domain));
+  }
+  return next;
+}
+
+function tlaNumericMembership(
+  rawExpr: string,
+  domain: Extract<AbstractDomain, { kind: "boundedInt" } | { kind: "intSet" }>,
+): string {
+  return `(${rawExpr} \\in ${tlaDomainSet(domain)})`;
+}
+
+function tlaNumericAssignExpr(
+  rawExpr: string,
+  domain: Extract<AbstractDomain, { kind: "boundedInt" } | { kind: "intSet" }>,
+  policy: NumericOverflowPolicy,
+): string {
+  if (policy === "forbid") return rawExpr;
+  if (domain.kind === "boundedInt") {
+    const span = domain.max - domain.min + 1;
+    if (policy === "wrap") {
+      return `((${domain.min} + Mod(Mod((${rawExpr} - ${domain.min}), ${span}) + ${span}, ${span})))`;
+    }
+    return `(IF ${rawExpr} < ${domain.min} THEN ${domain.min} ELSE IF ${rawExpr} > ${domain.max} THEN ${domain.max} ELSE ${rawExpr})`;
+  }
+  const min = domain.values[0] ?? 0;
+  const max = domain.values[domain.values.length - 1] ?? min;
+  if (policy === "wrap") {
+    const set = tlaDomainSet(domain);
+    const len = domain.values.length;
+    return `(LET idx == Mod(Mod(${rawExpr}, ${len}) + ${len}, ${len}) IN ${tlaIntSetIndexExpr(set, "idx", domain.values)})`;
+  }
+  return `(IF ${rawExpr} < ${min} THEN ${min} ELSE IF ${rawExpr} > ${max} THEN ${max} ELSE ${rawExpr})`;
+}
+
+function tlaIntSetIndexExpr(
+  _set: string,
+  indexExpr: string,
+  values: readonly number[],
+): string {
+  if (values.length === 0) return "0";
+  if (values.length === 1) return String(values[0]);
+  const branches = values
+    .map((value, index) => `IF ${indexExpr} = ${index} THEN ${value}`)
+    .join(" ELSE ");
+  return `(${branches} ELSE ${values[values.length - 1]})`;
+}
+
+function modelUsesTlaMod(model: Model): boolean {
+  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
+  for (const transition of model.transitions) {
+    if (effectUsesTlaMod(transition.effect, varsById)) return true;
+  }
+  return false;
+}
+
+function effectUsesTlaMod(
+  effect: EffectIR,
+  varsById: Map<string, StateVarDecl>,
+): boolean {
+  switch (effect.kind) {
+    case "assign": {
+      if (exprUsesMod(effect.expr)) return true;
+      const decl = varsById.get(effect.var);
+      if (!decl || !isNumericDomain(decl.domain)) return false;
+      return (decl.domain.overflow ?? "forbid") === "wrap";
+    }
+    case "if":
+      return (
+        exprUsesMod(effect.cond) ||
+        effectUsesTlaMod(effect.then, varsById) ||
+        effectUsesTlaMod(effect.else, varsById)
+      );
+    case "seq":
+      return effect.effects.some((child) => effectUsesTlaMod(child, varsById));
+    default:
+      return false;
+  }
+}
+
+function exprUsesMod(expr: ExprIR): boolean {
+  if (expr.kind === "mod") return true;
+  if ("args" in expr && Array.isArray(expr.args)) {
+    return expr.args.some(exprUsesMod);
+  }
+  if (expr.kind === "not") return exprUsesMod(expr.args[0]);
+  if (expr.kind === "updateField") {
+    return exprUsesMod(expr.target) || exprUsesMod(expr.value);
+  }
+  if (expr.kind === "tagIs" || expr.kind === "lenCat") {
+    return exprUsesMod(expr.arg);
+  }
+  if (expr.kind === "cond") {
+    return expr.args.some(exprUsesMod);
+  }
+  return false;
 }
 
 function tlaName(value: string): string {

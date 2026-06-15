@@ -1,5 +1,5 @@
 use crate::domain::domain_at_path;
-use crate::model::{route_local_mounted, CompiledModel, ExprIR};
+use crate::model::{route_local_mounted, AbstractDomain, CompiledModel, ExprIR};
 use crate::state::{read_path, values_equal, write_path, ModelState};
 use crate::step::StepFacts;
 use serde_json::{json, Value};
@@ -180,6 +180,26 @@ pub fn eval_expr(
             );
             Value::Null
         }
+        ExprIR::Lt { args } => eval_comparison(compiled, state, args, options, |l, r| l < r),
+        ExprIR::Lte { args } => eval_comparison(compiled, state, args, options, |l, r| l <= r),
+        ExprIR::Gt { args } => eval_comparison(compiled, state, args, options, |l, r| l > r),
+        ExprIR::Gte { args } => eval_comparison(compiled, state, args, options, |l, r| l >= r),
+        ExprIR::Add { args } => eval_binary_int(compiled, state, args, options, |l, r| l + r),
+        ExprIR::Sub { args } => eval_binary_int(compiled, state, args, options, |l, r| l - r),
+        ExprIR::Mod { args } => {
+            let left = args
+                .first()
+                .map(|a| eval_expr(compiled, state, a, options))
+                .and_then(|v| as_integer(&v));
+            let right = args
+                .get(1)
+                .map(|a| eval_expr(compiled, state, a, options))
+                .and_then(|v| as_integer(&v));
+            match (left, right) {
+                (Some(l), Some(r)) if r != 0 => json!(l.rem_euclid(r)),
+                _ => Value::Null,
+            }
+        }
     }
 }
 
@@ -219,6 +239,14 @@ fn domain_for_expr(
             let decl = compiled.var_decl(var)?;
             domain_at_path(&decl.domain, path.as_deref().unwrap_or(&[]))
         }
+        ExprIR::Lit { value } => literal_domain(value),
+        ExprIR::Lt { .. }
+        | ExprIR::Lte { .. }
+        | ExprIR::Gt { .. }
+        | ExprIR::Gte { .. } => Some(AbstractDomain::Bool),
+        ExprIR::Add { args }
+        | ExprIR::Sub { args }
+        | ExprIR::Mod { args } => infer_arithmetic_domain(compiled, expr, args),
         ExprIR::Cond { args } => {
             let then_d = args.get(1).and_then(|e| domain_for_expr(compiled, e));
             let else_d = args.get(2).and_then(|e| domain_for_expr(compiled, e));
@@ -239,6 +267,277 @@ fn domain_for_expr(
 
 fn domains_equal(left: &crate::model::AbstractDomain, right: &crate::model::AbstractDomain) -> bool {
     serde_json::to_string(left).unwrap_or_default() == serde_json::to_string(right).unwrap_or_default()
+}
+
+fn as_integer(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        value
+            .as_f64()
+            .filter(|n| n.fract() == 0.0)
+            .map(|n| n as i64)
+    })
+}
+
+fn eval_comparison(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    args: &[ExprIR],
+    options: &mut EvalOptions,
+    cmp: fn(i64, i64) -> bool,
+) -> Value {
+    let left = args
+        .first()
+        .map(|a| eval_expr(compiled, state, a, options))
+        .and_then(|v| as_integer(&v));
+    let right = args
+        .get(1)
+        .map(|a| eval_expr(compiled, state, a, options))
+        .and_then(|v| as_integer(&v));
+    Value::Bool(match (left, right) {
+        (Some(l), Some(r)) => cmp(l, r),
+        _ => false,
+    })
+}
+
+fn eval_binary_int(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    args: &[ExprIR],
+    options: &mut EvalOptions,
+    op: fn(i64, i64) -> i64,
+) -> Value {
+    let left = args
+        .first()
+        .map(|a| eval_expr(compiled, state, a, options))
+        .and_then(|v| as_integer(&v));
+    let right = args
+        .get(1)
+        .map(|a| eval_expr(compiled, state, a, options))
+        .and_then(|v| as_integer(&v));
+    match (left, right) {
+        (Some(l), Some(r)) => json!(op(l, r)),
+        _ => Value::Null,
+    }
+}
+
+fn eval_comparison_checked(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    args: &[ExprIR],
+    options: &mut EvalOptions,
+    allowed: &std::collections::HashSet<String>,
+    property_name: &str,
+    context: &str,
+    cmp: fn(i64, i64) -> bool,
+) -> Result<Value, String> {
+    let left = args
+        .first()
+        .map(|a| {
+            eval_expr_checked(
+                compiled,
+                state,
+                a,
+                options,
+                allowed,
+                property_name,
+                context,
+            )
+        })
+        .transpose()?
+        .and_then(|v| as_integer(&v));
+    let right = args
+        .get(1)
+        .map(|a| {
+            eval_expr_checked(
+                compiled,
+                state,
+                a,
+                options,
+                allowed,
+                property_name,
+                context,
+            )
+        })
+        .transpose()?
+        .and_then(|v| as_integer(&v));
+    Ok(Value::Bool(match (left, right) {
+        (Some(l), Some(r)) => cmp(l, r),
+        _ => false,
+    }))
+}
+
+fn eval_binary_int_checked(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    args: &[ExprIR],
+    options: &mut EvalOptions,
+    allowed: &std::collections::HashSet<String>,
+    property_name: &str,
+    context: &str,
+    op: fn(i64, i64) -> i64,
+) -> Result<Value, String> {
+    let left = args
+        .first()
+        .map(|a| {
+            eval_expr_checked(
+                compiled,
+                state,
+                a,
+                options,
+                allowed,
+                property_name,
+                context,
+            )
+        })
+        .transpose()?
+        .and_then(|v| as_integer(&v));
+    let right = args
+        .get(1)
+        .map(|a| {
+            eval_expr_checked(
+                compiled,
+                state,
+                a,
+                options,
+                allowed,
+                property_name,
+                context,
+            )
+        })
+        .transpose()?
+        .and_then(|v| as_integer(&v));
+    Ok(match (left, right) {
+        (Some(l), Some(r)) => json!(op(l, r)),
+        _ => Value::Null,
+    })
+}
+
+const MAX_INFERRED_INT_SET_PRODUCT: usize = 64;
+
+fn literal_domain(value: &Value) -> Option<AbstractDomain> {
+    as_integer(value).map(|n| AbstractDomain::BoundedInt {
+        min: n,
+        max: n,
+        overflow: None,
+    })
+}
+
+fn infer_arithmetic_domain(
+    compiled: &CompiledModel,
+    kind: &ExprIR,
+    args: &[ExprIR],
+) -> Option<AbstractDomain> {
+    let left = args.first().and_then(|arg| domain_for_expr(compiled, arg))?;
+    let right = args.get(1).and_then(|arg| domain_for_expr(compiled, arg))?;
+    let left_values = numeric_domain_values(&left)?;
+    let right_values = numeric_domain_values(&right)?;
+    if left_values.len() * right_values.len() > MAX_INFERRED_INT_SET_PRODUCT {
+        return conservative_arithmetic_range(kind, &left, &right);
+    }
+    let mut results = std::collections::BTreeSet::new();
+    for l in &left_values {
+        for r in &right_values {
+            if let Some(value) = apply_arithmetic(kind, *l, *r) {
+                results.insert(value);
+            }
+        }
+    }
+    if results.is_empty() {
+        return None;
+    }
+    let sorted: Vec<i64> = results.into_iter().collect();
+    if sorted.len() == (sorted[sorted.len() - 1] - sorted[0] + 1) as usize {
+        return Some(AbstractDomain::BoundedInt {
+            min: sorted[0],
+            max: sorted[sorted.len() - 1],
+            overflow: None,
+        });
+    }
+    Some(AbstractDomain::IntSet {
+        values: sorted,
+        overflow: None,
+    })
+}
+
+fn numeric_domain_values(domain: &AbstractDomain) -> Option<Vec<i64>> {
+    match domain {
+        AbstractDomain::BoundedInt { min, max, .. } => {
+            if (*max - *min + 1) as usize > MAX_INFERRED_INT_SET_PRODUCT {
+                return None;
+            }
+            Some((*min..=*max).collect())
+        }
+        AbstractDomain::IntSet { values, .. } => Some(values.clone()),
+        _ => None,
+    }
+}
+
+fn conservative_arithmetic_range(
+    kind: &ExprIR,
+    left: &AbstractDomain,
+    right: &AbstractDomain,
+) -> Option<AbstractDomain> {
+    let (l_min, l_max) = bounded_domain_range(left)?;
+    let (r_min, r_max) = bounded_domain_range(right)?;
+    match kind {
+        ExprIR::Add { .. } => Some(AbstractDomain::BoundedInt {
+            min: l_min + r_min,
+            max: l_max + r_max,
+            overflow: None,
+        }),
+        ExprIR::Sub { .. } => Some(AbstractDomain::BoundedInt {
+            min: l_min - r_max,
+            max: l_max - r_min,
+            overflow: None,
+        }),
+        ExprIR::Mod { .. } => {
+            let divisor = positive_literal_or_range_max(right)?;
+            if divisor > 0 {
+                Some(AbstractDomain::BoundedInt {
+                    min: 0,
+                    max: divisor - 1,
+                    overflow: None,
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn bounded_domain_range(domain: &AbstractDomain) -> Option<(i64, i64)> {
+    match domain {
+        AbstractDomain::BoundedInt { min, max, .. } => Some((*min, *max)),
+        AbstractDomain::IntSet { values, .. } if !values.is_empty() => {
+            Some((*values.first().unwrap(), *values.last().unwrap()))
+        }
+        _ => None,
+    }
+}
+
+fn positive_literal_or_range_max(domain: &AbstractDomain) -> Option<i64> {
+    match domain {
+        AbstractDomain::BoundedInt { min, max, .. } if *min == *max && *min > 0 => Some(*min),
+        AbstractDomain::BoundedInt { min, max, .. } if *min > 0 => Some(*max),
+        AbstractDomain::IntSet { values, .. } => {
+            if values.iter().all(|value| *value > 0) && !values.is_empty() {
+                Some(*values.iter().max().unwrap())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn apply_arithmetic(kind: &ExprIR, left: i64, right: i64) -> Option<i64> {
+    match kind {
+        ExprIR::Add { .. } => Some(left + right),
+        ExprIR::Sub { .. } => Some(left - right),
+        ExprIR::Mod { .. } if right != 0 => Some(left.rem_euclid(right)),
+        _ => None,
+    }
 }
 
 pub fn eval_state_predicate(
@@ -487,6 +786,60 @@ fn eval_expr_checked(
             };
             Ok(op.args.get(key).cloned().unwrap_or(Value::Null))
         }
+        ExprIR::Lt { args } => Ok(eval_comparison_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l < r,
+        )?),
+        ExprIR::Lte { args } => Ok(eval_comparison_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l <= r,
+        )?),
+        ExprIR::Gt { args } => Ok(eval_comparison_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l > r,
+        )?),
+        ExprIR::Gte { args } => Ok(eval_comparison_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l >= r,
+        )?),
+        ExprIR::Add { args } => eval_binary_int_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l + r,
+        ),
+        ExprIR::Sub { args } => eval_binary_int_checked(
+            compiled, state, args, options, allowed, property_name, context, |l, r| l - r,
+        ),
+        ExprIR::Mod { args } => {
+            let left = args
+                .first()
+                .map(|a| {
+                    eval_expr_checked(
+                        compiled,
+                        state,
+                        a,
+                        options,
+                        allowed,
+                        property_name,
+                        context,
+                    )
+                })
+                .transpose()?
+                .and_then(|v| as_integer(&v));
+            let right = args
+                .get(1)
+                .map(|a| {
+                    eval_expr_checked(
+                        compiled,
+                        state,
+                        a,
+                        options,
+                        allowed,
+                        property_name,
+                        context,
+                    )
+                })
+                .transpose()?
+                .and_then(|v| as_integer(&v));
+            match (left, right) {
+                (Some(l), Some(r)) if r != 0 => Ok(json!(l.rem_euclid(r))),
+                _ => Ok(Value::Null),
+            }
+        }
     }
 }
 
@@ -648,5 +1001,148 @@ mod tests {
             eval_expr(&compiled, &state, &expr, &mut EvalOptions::default()),
             json!(true)
         );
+    }
+
+    fn compiled_with_count(initial: i64) -> (CompiledModel, ModelState) {
+        let compiled = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "count".into(),
+                        domain: AbstractDomain::BoundedInt {
+                            min: 0,
+                            max: 3,
+                            overflow: None,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!(initial)),
+                    },
+                ],
+                transitions: vec![],
+                bounds: Bounds {
+                    max_depth: 4,
+                    max_pending: 0,
+                    max_internal_steps: 4,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap();
+        let mut state = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
+        let count = *compiled.var_index.get("count").unwrap();
+        state.values[count] = json!(initial);
+        (compiled, state)
+    }
+
+    #[test]
+    fn numeric_comparison_and_arithmetic_eval() {
+        let (compiled, state) = compiled_with_count(2);
+        let lt = ExprIR::Lt {
+            args: vec![
+                ExprIR::Read {
+                    var: "count".into(),
+                    path: None,
+                },
+                ExprIR::Lit { value: json!(3) },
+            ],
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &lt, &mut EvalOptions::default()),
+            json!(true)
+        );
+        let add = ExprIR::Add {
+            args: vec![
+                ExprIR::Read {
+                    var: "count".into(),
+                    path: None,
+                },
+                ExprIR::Lit { value: json!(1) },
+            ],
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &add, &mut EvalOptions::default()),
+            json!(3)
+        );
+        let modulo = ExprIR::Mod {
+            args: vec![
+                ExprIR::Lit { value: json!(7) },
+                ExprIR::Lit { value: json!(3) },
+            ],
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &modulo, &mut EvalOptions::default()),
+            json!(1)
+        );
+    }
+
+    #[test]
+    fn mod_by_zero_returns_null() {
+        let (compiled, state) = compiled_with_count(0);
+        let modulo = ExprIR::Mod {
+            args: vec![
+                ExprIR::Lit { value: json!(1) },
+                ExprIR::Lit { value: json!(0) },
+            ],
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &modulo, &mut EvalOptions::default()),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn arithmetic_domain_inference_dense_range() {
+        let (compiled, _) = compiled_with_count(1);
+        let expr = ExprIR::Add {
+            args: vec![
+                ExprIR::Read {
+                    var: "count".into(),
+                    path: None,
+                },
+                ExprIR::Lit { value: json!(1) },
+            ],
+        };
+        let domain = domain_for_expr(&compiled, &expr).unwrap();
+        assert!(matches!(
+            domain,
+            AbstractDomain::BoundedInt { min: 1, max: 4, .. }
+        ));
     }
 }

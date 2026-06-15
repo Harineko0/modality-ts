@@ -103,6 +103,7 @@ function baselineTrustLedger() {
     overApproxTransitions: [],
     boundHits: [],
     ignoredVars: [],
+    numericReductions: [],
   };
 }
 

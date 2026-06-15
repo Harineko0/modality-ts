@@ -19,6 +19,8 @@ import {
   canonicalJson,
   collectTokenDomainPaths,
   domainCardinality,
+  exceedsWideNumericThreshold,
+  initialValues,
   parseModelArtifact,
   type EffectIR,
   type ExtractionCaveat,
@@ -49,11 +51,16 @@ import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import {
   compareCaveats,
+  modelSlackCaveat,
   partitionCaveats,
 } from "../../../extract/engine/ts/caveats.js";
 import { timerStateVarDecl } from "../../../extract/engine/ts/transition/timers.js";
 import { suspenseStateVarDecl } from "../../../extract/engine/ts/transition/suspense.js";
 import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
+import {
+  applyInputClassToWideInputVars,
+  attachNumericReductions,
+} from "../../../extract/engine/ts/numeric/abstraction.js";
 import type { ExtractArtifactEntry } from "./output.js";
 import {
   type EffectApiProvenanceEntry,
@@ -226,6 +233,7 @@ export async function runExtractCommand(
   const structuredWarnings: ExtractionWarning[] = [
     ...project.surfaceWarnings.map((message) => ({ message })),
     ...pipeline.warnings,
+    ...wideNumericReachabilityWarnings(overlay.model),
     ...overlay.warnings.map((message) => ({ message })),
     ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
       (message) => ({ message }),
@@ -233,13 +241,17 @@ export async function runExtractCommand(
   ];
   const warnings = structuredWarnings.map((warning) => warning.message);
   const extractionCaveats = createExtractionCaveats(structuredWarnings);
-  const model: Model = {
-    ...overlay.model,
-    metadata: {
-      ...overlay.model.metadata,
-      extractionCaveats,
+  const withInputClasses = applyInputClassToWideInputVars(overlay.model);
+  const model: Model = attachNumericReductions(
+    {
+      ...withInputClasses.model,
+      metadata: {
+        ...withInputClasses.model.metadata,
+        extractionCaveats,
+      },
     },
-  };
+    withInputClasses.reductions,
+  );
   const report = createExtractionReport(
     project.sourceFiles,
     model,
@@ -1123,6 +1135,9 @@ function createExtractionReport(
         handlers.length === 0 ? 1 : exactOrOverlay / handlers.length,
     },
     warnings,
+    ...(model.metadata?.numericReductions?.entries
+      ? { numericReductions: model.metadata.numericReductions.entries }
+      : {}),
     ...(effectOperations && effectOperations.length > 0
       ? { effectOperations }
       : {}),
@@ -1498,6 +1513,33 @@ function havocWrites(effect: EffectIR): string[] {
   if (effect.kind === "if")
     return [...havocWrites(effect.then), ...havocWrites(effect.else)];
   return [];
+}
+
+function wideNumericReachabilityWarnings(model: Model): ExtractionWarning[] {
+  const warnings: ExtractionWarning[] = [];
+  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
+  for (const decl of model.vars) {
+    if (!exceedsWideNumericThreshold(decl.domain)) continue;
+    const initials = initialValues(decl.domain, decl.initial);
+    if (initials.length <= 1) continue;
+    const caveat = modelSlackCaveat(
+      decl.id,
+      `Wide numeric domain (${domainCardinality(decl.domain)} values) with multiple initials`,
+    );
+    warnings.push({ message: caveat.reason, caveat });
+  }
+  for (const transition of model.transitions) {
+    for (const varId of havocWrites(transition.effect)) {
+      const decl = varsById.get(varId);
+      if (!decl || !exceedsWideNumericThreshold(decl.domain)) continue;
+      const caveat = modelSlackCaveat(
+        varId,
+        `Wide numeric domain (${domainCardinality(decl.domain)} values) reachable via havoc in ${transition.id}`,
+      );
+      warnings.push({ message: caveat.reason, caveat });
+    }
+  }
+  return warnings;
 }
 
 const GENERIC_UNEXTRACTABLE_CATEGORIES = new Set([

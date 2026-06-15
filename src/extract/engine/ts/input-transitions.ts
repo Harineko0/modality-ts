@@ -5,6 +5,11 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import { exceedsWideNumericThreshold } from "modality-ts/core";
+import {
+  DEFAULT_INPUT_CLASSES,
+  inputClassDomain,
+} from "./numeric/abstraction.js";
 import { lineAndColumn } from "./ast.js";
 import type { SetterBinding } from "./types.js";
 
@@ -18,11 +23,12 @@ export function inputTransitions(
   locator: Locator | undefined,
 ): Transition[] {
   const literalValues = literalInputValues(node);
+  const inputDomain = effectiveInputDomain(setter.domain);
   const finite = literalValues
-    ? finiteInputValues(setter.domain).filter(({ valueClass }) =>
+    ? finiteInputValues(inputDomain).filter(({ valueClass }) =>
         literalValues.has(valueClass),
       )
-    : finiteInputValues(setter.domain);
+    : finiteInputValues(inputDomain);
   if (finite.length > 0) {
     return finite.map(({ value, valueClass }) => ({
       id: `${component}.${attr}.${setter.stateName}.${safeId(valueClass)}`,
@@ -50,7 +56,7 @@ export function inputTransitions(
       cls: "user",
       label: {
         kind: "input",
-        valueClass: valueClassForDomain(setter.domain),
+        valueClass: valueClassForDomain(inputDomain),
         ...(locator ? { locator } : {}),
       },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -61,6 +67,13 @@ export function inputTransitions(
       confidence: "over-approx",
     },
   ];
+}
+
+function effectiveInputDomain(domain: AbstractDomain): AbstractDomain {
+  if (domain.kind === "boundedInt" && exceedsWideNumericThreshold(domain)) {
+    return inputClassDomain({ classes: [...DEFAULT_INPUT_CLASSES] });
+  }
+  return domain;
 }
 
 function literalInputValues(
@@ -115,7 +128,7 @@ function finiteInputValues(
 ): { value: Value; valueClass: string }[] {
   if (domain.kind === "enum")
     return domain.values.map((value) => ({ value, valueClass: value }));
-  if (domain.kind === "boundedInt") {
+  if (domain.kind === "boundedInt" && !exceedsWideNumericThreshold(domain)) {
     return Array.from({ length: domain.max - domain.min + 1 }, (_, index) => {
       const value = domain.min + index;
       return { value, valueClass: String(value) };

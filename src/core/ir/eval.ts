@@ -66,12 +66,65 @@ function evalExpr(expr: ExprIR, state: ModelState): Value {
       throw new StatePredicateEvalError(
         "transitionEnabled is only valid in step predicates, not plain state predicates",
       );
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte":
+      return compareNumbers(expr.kind, expr.args, state);
+    case "add":
+    case "sub":
+    case "mod":
+      return applyNumbers(expr.kind, expr.args, state);
     default: {
       const _exhaustive: never = expr;
       throw new StatePredicateEvalError(
         `unsupported expression kind: ${(_exhaustive as ExprIR).kind}`,
       );
     }
+  }
+}
+
+function asInteger(value: Value): number | undefined {
+  return typeof value === "number" && Number.isInteger(value)
+    ? value
+    : undefined;
+}
+
+function compareNumbers(
+  kind: "lt" | "lte" | "gt" | "gte",
+  args: readonly [ExprIR, ExprIR],
+  state: ModelState,
+): boolean {
+  const left = asInteger(evalExpr(args[0], state));
+  const right = asInteger(evalExpr(args[1], state));
+  if (left === undefined || right === undefined) return false;
+  switch (kind) {
+    case "lt":
+      return left < right;
+    case "lte":
+      return left <= right;
+    case "gt":
+      return left > right;
+    case "gte":
+      return left >= right;
+  }
+}
+
+function applyNumbers(
+  kind: "add" | "sub" | "mod",
+  args: readonly [ExprIR, ExprIR],
+  state: ModelState,
+): number | null {
+  const left = asInteger(evalExpr(args[0], state));
+  const right = asInteger(evalExpr(args[1], state));
+  if (left === undefined || right === undefined) return null;
+  switch (kind) {
+    case "add":
+      return left + right;
+    case "sub":
+      return left - right;
+    case "mod":
+      return right === 0 ? null : ((left % right) + right) % right;
   }
 }
 

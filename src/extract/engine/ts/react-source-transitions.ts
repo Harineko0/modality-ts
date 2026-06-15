@@ -50,7 +50,8 @@ import { tagStableIdKey, withStableTransitionIds } from "./ids.js";
 import { staticNavigationTransitions } from "./static-navigation.js";
 import {
   firstValue,
-  inferUseStateDomain,
+  domainInferenceWarnings,
+  inferUseStateDomainDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
 } from "./domains.js";
@@ -328,9 +329,17 @@ export function extractReactSourceTransitions(
       const stateName = node.name.elements[0];
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
-        const domain = inferUseStateDomain(node.initializer, typeAliases);
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
+        const anchor = lineAndColumn(source, node);
+        const inferred = inferUseStateDomainDetailed(
+          node.initializer,
+          typeAliases,
+          source,
+          varId,
+        );
+        const domain = inferred.domain;
+        warnings.push(...domainInferenceWarnings(inferred, anchor));
         if (!options.stateVars) {
           vars.push({
             id: varId,

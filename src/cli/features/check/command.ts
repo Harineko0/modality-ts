@@ -28,6 +28,13 @@ import {
 import { loadAndApplyOverlay } from "../../overlay.js";
 import { partitionCaveats } from "../../../extract/engine/ts/caveats.js";
 import {
+  downgradeVerdictForReductions,
+  mergeNumericReductions,
+  numericCoiDroppedReductions,
+  reductionsAffectingProperty,
+} from "../../../extract/engine/ts/numeric/abstraction.js";
+import { sliceModelForProperty } from "../../../check/slicing/slice-model.js";
+import {
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
   type ArtifactPathEntry,
@@ -108,6 +115,7 @@ export async function runCheckCommand(
     options.now ?? new Date(),
     overlay.warnings,
     overlay.ignoredVars,
+    properties,
   );
   if (options.reportPath) {
     await mkdir(dirname(options.reportPath), { recursive: true });
@@ -177,13 +185,17 @@ export function createCheckReport(
   now: Date,
   overlayWarnings: readonly string[] = [],
   ignoredVars: readonly string[] = [],
+  properties: readonly Property[] = [],
 ): CheckReport {
+  const numericReductions = collectCheckNumericReductions(model, properties);
   return {
     schemaVersion: 1,
     kind: "check-report",
     modelId: model.id,
     generatedAt: now.toISOString(),
-    verdicts: check.verdicts.map(reportVerdict),
+    verdicts: check.verdicts.map((verdict) =>
+      reportVerdict(verdict, model, properties, numericReductions),
+    ),
     stats: check.stats,
     vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
     ...(check.diagnostics ? { diagnostics: check.diagnostics } : {}),
@@ -214,8 +226,24 @@ export function createCheckReport(
         .map((transition) => transition.id),
       boundHits: check.boundHits,
       ignoredVars,
+      numericReductions,
     },
   };
+}
+
+function collectCheckNumericReductions(
+  model: Model,
+  properties: readonly Property[],
+): CheckReport["trustLedger"]["numericReductions"] {
+  const coiReductions = properties.flatMap((property) => {
+    if (!property.reads) return [];
+    const sliced = sliceModelForProperty(model, property);
+    return numericCoiDroppedReductions(model, sliced, property.reads);
+  });
+  return mergeNumericReductions(
+    model.metadata?.numericReductions?.entries,
+    coiReductions,
+  );
 }
 
 function domainReportEntry(
@@ -403,6 +431,9 @@ async function importableCopy(path: string): Promise<string> {
 
 function reportVerdict(
   verdict: PropertyVerdict,
+  _model: Model,
+  properties: readonly Property[],
+  numericReductions: readonly import("modality-ts/core").NumericReduction[],
 ): CheckReport["verdicts"][number] {
   if (verdict.status === "violated" || verdict.status === "reachable") {
     return {
@@ -422,6 +453,19 @@ function reportVerdict(
       property: verdict.property,
       status: verdict.status,
       message: verdict.message,
+    };
+  }
+  const property = properties.find((entry) => entry.name === verdict.property);
+  const relevant = reductionsAffectingProperty(
+    numericReductions,
+    property?.reads,
+  );
+  const downgraded = downgradeVerdictForReductions(verdict.status, relevant);
+  if (downgraded.status === "vacuous-warning") {
+    return {
+      property: verdict.property,
+      status: downgraded.status,
+      message: downgraded.message,
     };
   }
   return { property: verdict.property, status: verdict.status };

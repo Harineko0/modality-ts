@@ -3236,6 +3236,82 @@ describe("checker", () => {
     );
   });
 
+  it("drops irrelevant numeric vars when slicing and retains numeric guards", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "numeric-slice",
+      bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 2 },
+      vars: [
+        {
+          id: "counter",
+          domain: { kind: "boundedInt", min: 0, max: 3 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: 0,
+        },
+        {
+          id: "noise",
+          domain: { kind: "boundedInt", min: 0, max: 100 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: 0,
+        },
+      ],
+      transitions: [
+        {
+          id: "inc",
+          cls: "user",
+          label: { kind: "click", text: "inc" },
+          source: [],
+          guard: {
+            kind: "lt",
+            args: [read("counter"), lit(3)],
+          },
+          effect: {
+            kind: "assign",
+            var: "counter",
+            expr: { kind: "add", args: [read("counter"), lit(1)] },
+          },
+          reads: ["counter"],
+          writes: ["counter"],
+          confidence: "exact",
+        },
+        {
+          id: "touchNoise",
+          cls: "user",
+          label: { kind: "click", text: "touchNoise" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: { kind: "assign", var: "noise", expr: lit(1) },
+          reads: [],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const sliced = sliceModel(m, ["counter"]);
+    expect(sliced.vars.map((decl) => decl.id)).toEqual(["counter"]);
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "inc",
+    ]);
+    const props: Property[] = [
+      always(
+        m,
+        {
+          kind: "lte",
+          args: [readVar("counter"), lit(3)],
+        },
+        { name: "counterBounded", reads: ["counter"] },
+      ),
+    ];
+    expect(
+      checkModel(m, props, { slicing: true }).verdicts.map((verdict) => [
+        verdict.property,
+        verdict.status,
+      ]),
+    ).toEqual([["counterBounded", "verified-within-bounds"]]);
+  });
+
   it("stops gracefully when maxStates is exceeded", () => {
     const m = model();
     const props: Property[] = [

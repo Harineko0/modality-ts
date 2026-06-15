@@ -80,7 +80,7 @@ fn encode_value(
         AbstractDomain::Enum { .. } | AbstractDomain::LengthCat { .. } => {
             encode_string(value.as_str().unwrap_or(""), out);
         }
-        AbstractDomain::BoundedInt { .. } => {
+        AbstractDomain::BoundedInt { .. } | AbstractDomain::IntSet { .. } => {
             let n = value.as_i64().unwrap_or(0);
             out.push(TAG_INT);
             out.extend_from_slice(&n.to_le_bytes());

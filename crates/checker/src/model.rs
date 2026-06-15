@@ -4,6 +4,17 @@ use std::collections::{HashMap, HashSet};
 
 pub const UNMOUNTED: &str = "__modality_unmounted__";
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NumericOverflowPolicy {
+    #[serde(rename = "forbid")]
+    Forbid,
+    #[serde(rename = "wrap")]
+    Wrap,
+    #[serde(rename = "saturate")]
+    Saturate,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub enum AbstractDomain {
@@ -12,7 +23,18 @@ pub enum AbstractDomain {
     #[serde(rename = "enum")]
     Enum { values: Vec<String> },
     #[serde(rename = "boundedInt")]
-    BoundedInt { min: i64, max: i64 },
+    BoundedInt {
+        min: i64,
+        max: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        overflow: Option<NumericOverflowPolicy>,
+    },
+    #[serde(rename = "intSet")]
+    IntSet {
+        values: Vec<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        overflow: Option<NumericOverflowPolicy>,
+    },
     #[serde(rename = "option")]
     Option { inner: Box<AbstractDomain> },
     #[serde(rename = "record")]
@@ -124,6 +146,20 @@ pub enum ExprIR {
     ReadPre { var: String, path: Option<Vec<String>> },
     #[serde(rename = "readOpArg")]
     ReadOpArg { key: String },
+    #[serde(rename = "lt")]
+    Lt { args: Vec<ExprIR> },
+    #[serde(rename = "lte")]
+    Lte { args: Vec<ExprIR> },
+    #[serde(rename = "gt")]
+    Gt { args: Vec<ExprIR> },
+    #[serde(rename = "gte")]
+    Gte { args: Vec<ExprIR> },
+    #[serde(rename = "add")]
+    Add { args: Vec<ExprIR> },
+    #[serde(rename = "sub")]
+    Sub { args: Vec<ExprIR> },
+    #[serde(rename = "mod")]
+    Mod { args: Vec<ExprIR> },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

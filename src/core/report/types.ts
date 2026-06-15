@@ -1,6 +1,7 @@
 import type {
   Bounds,
   ExtractionCaveat,
+  NumericReduction,
   PluginProvenance,
 } from "../ir/types.js";
 import type { Trace } from "../trace/types.js";
@@ -19,6 +20,7 @@ export interface ReportTrustLedger {
   overApproxTransitions: readonly string[];
   boundHits: readonly string[];
   ignoredVars: readonly string[];
+  numericReductions: readonly NumericReduction[];
 }
 
 export interface DomainReportEntry {
@@ -176,6 +178,7 @@ export interface ExtractionReport {
     percentExactOrOverlay: number;
   };
   warnings: readonly string[];
+  numericReductions?: readonly NumericReduction[];
   effectOperations?: readonly {
     opId: string;
     source?: string;

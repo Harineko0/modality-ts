@@ -59,6 +59,39 @@ async function main(): Promise<void> {
       );
     }
 
+    const numericModels = [
+      { name: "NumericCounter", model: withDepth(boundedCounterModel(), 8) },
+      { name: "NumericSparseSet", model: withDepth(sparseIntSetModel(), 8) },
+      { name: "NumericWrap", model: withDepth(wrapOverflowModel(), 8) },
+      { name: "NumericSaturate", model: withDepth(saturateOverflowModel(), 8) },
+      {
+        name: "NumericSatCounter",
+        model: withDepth(saturationCounterReducedModel(), 8),
+      },
+    ];
+    for (const { name, model } of numericModels) {
+      const checker = checkModel(model, []);
+      const tlc = await runTlc(
+        tlcJar,
+        workDir,
+        name,
+        generateTlaModule(model, name),
+      );
+      assertEqual(
+        `${name} reachable states`,
+        tlc.distinctStates,
+        checker.stats.states,
+      );
+      assertEqual(
+        `${name} generated states`,
+        tlc.statesGenerated,
+        checker.stats.edges + modelInitialStates(model).length,
+      );
+      console.log(
+        `${name}: checker states=${checker.stats.states} edges=${checker.stats.edges}; TLC distinct=${tlc.distinctStates} generated=${tlc.statesGenerated}`,
+      );
+    }
+
     const randomModels = Array.from({ length: randomCount }, (_value, index) =>
       randomModel(index),
     );
@@ -127,6 +160,230 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
 
 function withDepth(model: Model, maxDepth: number): Model {
   return { ...model, bounds: { ...model.bounds, maxDepth } };
+}
+
+function boundedCounterModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "numeric-counter",
+    bounds: { maxDepth: 8, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "count",
+        domain: { kind: "boundedInt", min: 0, max: 3, overflow: "forbid" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: 0,
+      },
+    ],
+    transitions: [
+      {
+        id: "inc",
+        cls: "user",
+        label: { kind: "click", text: "inc" },
+        source: [],
+        guard: {
+          kind: "lt",
+          args: [read("count"), lit(3)],
+        },
+        effect: {
+          kind: "assign",
+          var: "count",
+          expr: {
+            kind: "add",
+            args: [read("count"), lit(1)],
+          },
+        },
+        reads: ["count"],
+        writes: ["count"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function sparseIntSetModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "numeric-sparse",
+    bounds: { maxDepth: 8, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "phase",
+        domain: { kind: "intSet", values: [0, 2], overflow: "forbid" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: 0,
+      },
+    ],
+    transitions: [
+      {
+        id: "advance",
+        cls: "user",
+        label: { kind: "click", text: "advance" },
+        source: [],
+        guard: { kind: "lit", value: true },
+        effect: {
+          kind: "assign",
+          var: "phase",
+          expr: {
+            kind: "add",
+            args: [read("phase"), lit(2)],
+          },
+        },
+        reads: ["phase"],
+        writes: ["phase"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function wrapOverflowModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "numeric-wrap",
+    bounds: { maxDepth: 8, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "count",
+        domain: { kind: "boundedInt", min: 0, max: 3, overflow: "wrap" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: 3,
+      },
+    ],
+    transitions: [
+      {
+        id: "inc",
+        cls: "user",
+        label: { kind: "click", text: "inc" },
+        source: [],
+        guard: { kind: "lit", value: true },
+        effect: {
+          kind: "assign",
+          var: "count",
+          expr: {
+            kind: "add",
+            args: [read("count"), lit(1)],
+          },
+        },
+        reads: ["count"],
+        writes: ["count"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function saturationCounterReducedModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "numeric-sat-counter",
+    bounds: { maxDepth: 8, maxPending: 0, maxInternalSteps: 4 },
+    metadata: {
+      numericReductions: {
+        entries: [
+          {
+            varId: "count",
+            kind: "saturation",
+            claim: "property-preserving",
+            reason: "Saturation counter: 3+ collapsed to sentinel 4",
+          },
+        ],
+      },
+    },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "count",
+        domain: {
+          kind: "intSet",
+          values: [0, 1, 2, 3, 4],
+          overflow: "saturate",
+        },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: 0,
+      },
+    ],
+    transitions: [
+      {
+        id: "inc",
+        cls: "user",
+        label: { kind: "click", text: "inc" },
+        source: [],
+        guard: { kind: "lit", value: true },
+        effect: {
+          kind: "assign",
+          var: "count",
+          expr: {
+            kind: "add",
+            args: [read("count"), lit(1)],
+          },
+        },
+        reads: ["count"],
+        writes: ["count"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function saturateOverflowModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "numeric-saturate",
+    bounds: { maxDepth: 8, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "count",
+        domain: { kind: "boundedInt", min: 0, max: 3, overflow: "saturate" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: 3,
+      },
+    ],
+    transitions: [
+      {
+        id: "inc",
+        cls: "user",
+        label: { kind: "click", text: "inc" },
+        source: [],
+        guard: { kind: "lit", value: true },
+        effect: {
+          kind: "assign",
+          var: "count",
+          expr: {
+            kind: "add",
+            args: [read("count"), lit(1)],
+          },
+        },
+        reads: ["count"],
+        writes: ["count"],
+        confidence: "exact",
+      },
+    ],
+  };
 }
 
 async function resolveTlcJar(): Promise<string> {

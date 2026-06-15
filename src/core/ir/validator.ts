@@ -261,6 +261,27 @@ function validateDomainShape(
       else if (domain.min > domain.max)
         errors.push(`${owner}: boundedInt min must be <= max`);
       return;
+    case "intSet":
+      if (!Array.isArray(domain.values) || domain.values.length === 0) {
+        errors.push(`${owner}: intSet domain must have at least one value`);
+      } else {
+        if (!domain.values.every((value) => Number.isInteger(value)))
+          errors.push(`${owner}: intSet values must be integers`);
+        pushDuplicateNumericValues(
+          errors,
+          owner,
+          "intSet value",
+          domain.values,
+        );
+        if (
+          domain.values.some((value, index) => {
+            const previous = domain.values[index - 1];
+            return index > 0 && previous !== undefined && value <= previous;
+          })
+        )
+          errors.push(`${owner}: intSet values must be sorted and unique`);
+      }
+      return;
     case "option":
       validateDomainShape(errors, `${owner}.inner`, domain.inner);
       return;
@@ -317,6 +338,19 @@ function pushDuplicateDomainValues(
   values: readonly string[],
 ): void {
   const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) errors.push(`${owner}: duplicate ${kind} ${value}`);
+    seen.add(value);
+  }
+}
+
+function pushDuplicateNumericValues(
+  errors: string[],
+  owner: string,
+  kind: string,
+  values: readonly number[],
+): void {
+  const seen = new Set<number>();
   for (const value of values) {
     if (seen.has(value)) errors.push(`${owner}: duplicate ${kind} ${value}`);
     seen.add(value);
@@ -567,6 +601,18 @@ function validateExprShape(
         if (!Array.isArray(node.path) || node.path.length === 0)
           errors.push(`${transitionId}: updateField path must not be empty`);
         break;
+      case "lt":
+      case "lte":
+      case "gt":
+      case "gte":
+      case "add":
+      case "sub":
+      case "mod":
+        if (!Array.isArray(node.args) || node.args.length !== 2)
+          errors.push(
+            `${transitionId}: ${node.kind} expression must have exactly 2 args`,
+          );
+        break;
       default:
         break;
     }
@@ -643,6 +689,16 @@ function walkExpr(expr: ExprIR, visit: (expr: ExprIR) => void): void {
     case "lenCat":
       walkExpr(expr.arg, visit);
       break;
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte":
+    case "add":
+    case "sub":
+    case "mod":
+      walkExpr(expr.args[0], visit);
+      walkExpr(expr.args[1], visit);
+      break;
     default:
       break;
   }
@@ -705,7 +761,13 @@ function validateAssignedExpr(
     );
   }
   const exprDomain = inferExprDomain(errors, transitionId, expr, varsById);
-  if (exprDomain && !sameDomain(exprDomain, decl.domain)) {
+  if (isNumericDomain(decl.domain)) {
+    if (exprDomain && !isNumericDomain(exprDomain)) {
+      errors.push(
+        `${transitionId}: assignment to ${varId} expects a numeric expression but got ${domainFingerprint(exprDomain)}`,
+      );
+    }
+  } else if (exprDomain && !sameDomain(exprDomain, decl.domain)) {
     errors.push(
       `${transitionId}: assignment to ${varId} expects ${domainFingerprint(decl.domain)} but got ${domainFingerprint(exprDomain)}`,
     );
@@ -862,6 +924,27 @@ function inferExprDomain(
       }
       return { kind: "lengthCat" };
     }
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte":
+      return inferComparisonDomain(
+        errors,
+        transitionId,
+        expr.kind,
+        expr.args,
+        varsById,
+      );
+    case "add":
+    case "sub":
+    case "mod":
+      return inferArithmeticDomain(
+        errors,
+        transitionId,
+        expr.kind,
+        expr.args,
+        varsById,
+      );
     default:
       return undefined;
   }
@@ -871,7 +954,170 @@ const bool: AbstractDomain = { kind: "bool" };
 
 function inferLiteralDomain(value: Value): AbstractDomain | undefined {
   if (typeof value === "boolean") return bool;
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return { kind: "boundedInt", min: value, max: value };
+  }
   return undefined;
+}
+
+function isNumericDomain(domain: AbstractDomain): boolean {
+  return domain.kind === "boundedInt" || domain.kind === "intSet";
+}
+
+function inferComparisonDomain(
+  errors: string[],
+  transitionId: string,
+  kind: "lt" | "lte" | "gt" | "gte",
+  args: readonly [ExprIR, ExprIR],
+  varsById: Map<string, StateVarDecl>,
+): AbstractDomain {
+  const left = inferExprDomain(errors, transitionId, args[0], varsById);
+  const right = inferExprDomain(errors, transitionId, args[1], varsById);
+  if (left && !isNumericDomain(left)) {
+    errors.push(
+      `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
+    );
+  }
+  if (right && !isNumericDomain(right)) {
+    errors.push(
+      `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
+    );
+  }
+  return bool;
+}
+
+const MAX_INFERRED_INT_SET_PRODUCT = 64;
+
+function inferArithmeticDomain(
+  errors: string[],
+  transitionId: string,
+  kind: "add" | "sub" | "mod",
+  args: readonly [ExprIR, ExprIR],
+  varsById: Map<string, StateVarDecl>,
+): AbstractDomain | undefined {
+  const left = inferExprDomain(errors, transitionId, args[0], varsById);
+  const right = inferExprDomain(errors, transitionId, args[1], varsById);
+  if (left && !isNumericDomain(left)) {
+    errors.push(
+      `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
+    );
+  }
+  if (right && !isNumericDomain(right)) {
+    errors.push(
+      `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
+    );
+  }
+  if (!left || !right || !isNumericDomain(left) || !isNumericDomain(right)) {
+    return undefined;
+  }
+  const leftValues = numericDomainValues(left);
+  const rightValues = numericDomainValues(right);
+  if (!leftValues || !rightValues) return undefined;
+  const product = leftValues.length * rightValues.length;
+  if (product > MAX_INFERRED_INT_SET_PRODUCT) {
+    return conservativeArithmeticRange(kind, left, right);
+  }
+  const results = new Set<number>();
+  for (const l of leftValues) {
+    for (const r of rightValues) {
+      const value = applyArithmetic(kind, l, r);
+      if (value === undefined) continue;
+      results.add(value);
+    }
+  }
+  if (results.size === 0) return undefined;
+  const sorted = [...results].sort((a, b) => a - b);
+  if (sorted.length === sorted[sorted.length - 1]! - sorted[0]! + 1) {
+    return {
+      kind: "boundedInt",
+      min: sorted[0]!,
+      max: sorted[sorted.length - 1]!,
+    };
+  }
+  return { kind: "intSet", values: sorted };
+}
+
+function numericDomainValues(
+  domain: AbstractDomain,
+): readonly number[] | undefined {
+  if (domain.kind === "boundedInt") {
+    if (domain.max - domain.min + 1 > MAX_INFERRED_INT_SET_PRODUCT) {
+      return undefined;
+    }
+    return Array.from(
+      { length: domain.max - domain.min + 1 },
+      (_, index) => domain.min + index,
+    );
+  }
+  if (domain.kind === "intSet") return domain.values;
+  return undefined;
+}
+
+function conservativeArithmeticRange(
+  kind: "add" | "sub" | "mod",
+  left: AbstractDomain,
+  right: AbstractDomain,
+): AbstractDomain | undefined {
+  const leftRange = boundedDomainRange(left);
+  const rightRange = boundedDomainRange(right);
+  if (!leftRange || !rightRange) return undefined;
+  if (kind === "mod") {
+    const divisor = positiveLiteralOrRangeMax(right);
+    if (divisor !== undefined && divisor > 0) {
+      return { kind: "boundedInt", min: 0, max: divisor - 1 };
+    }
+    return undefined;
+  }
+  const [lMin, lMax] = leftRange;
+  const [rMin, rMax] = rightRange;
+  if (kind === "add") {
+    return { kind: "boundedInt", min: lMin + rMin, max: lMax + rMax };
+  }
+  return { kind: "boundedInt", min: lMin - rMax, max: lMax - rMin };
+}
+
+function boundedDomainRange(
+  domain: AbstractDomain,
+): readonly [number, number] | undefined {
+  if (domain.kind === "boundedInt") return [domain.min, domain.max];
+  if (domain.kind === "intSet" && domain.values.length > 0) {
+    return [domain.values[0]!, domain.values[domain.values.length - 1]!];
+  }
+  return undefined;
+}
+
+function positiveLiteralOrRangeMax(domain: AbstractDomain): number | undefined {
+  if (
+    domain.kind === "boundedInt" &&
+    domain.min === domain.max &&
+    domain.min > 0
+  ) {
+    return domain.min;
+  }
+  if (domain.kind === "boundedInt" && domain.min > 0) return domain.max;
+  if (domain.kind === "intSet") {
+    const positives = domain.values.filter((value) => value > 0);
+    if (positives.length === domain.values.length && positives.length > 0) {
+      return Math.max(...positives);
+    }
+  }
+  return undefined;
+}
+
+function applyArithmetic(
+  kind: "add" | "sub" | "mod",
+  left: number,
+  right: number,
+): number | undefined {
+  switch (kind) {
+    case "add":
+      return left + right;
+    case "sub":
+      return left - right;
+    case "mod":
+      if (right === 0) return undefined;
+      return ((left % right) + right) % right;
+  }
 }
 
 function inferCondDomain(

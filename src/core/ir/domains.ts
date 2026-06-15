@@ -4,6 +4,9 @@ export const UNMOUNTED = "__modality_unmounted__";
 
 const CARDINALITY_CAP = Number.MAX_SAFE_INTEGER;
 
+/** Cardinality above which havoc/multi-initial over numeric domains emits a warning. */
+export const WIDE_NUMERIC_DOMAIN_THRESHOLD = 256;
+
 function clamp(n: number): number {
   return Math.min(n, CARDINALITY_CAP);
 }
@@ -16,6 +19,8 @@ export function domainCardinality(domain: AbstractDomain): number {
       return clamp(domain.values.length);
     case "boundedInt":
       return clamp(domain.max - domain.min + 1);
+    case "intSet":
+      return clamp(domain.values.length);
     case "option":
       return clamp(1 + domainCardinality(domain.inner));
     case "record": {
@@ -61,6 +66,8 @@ export function enumerateDomain(domain: AbstractDomain): Value[] {
         { length: domain.max - domain.min + 1 },
         (_, i) => domain.min + i,
       );
+    case "intSet":
+      return [...domain.values];
     case "option":
       return [null, ...enumerateDomain(domain.inner)];
     case "record": {
@@ -118,6 +125,12 @@ export function validateValue(domain: AbstractDomain, value: Value): boolean {
         value >= domain.min &&
         value <= domain.max
       );
+    case "intSet":
+      return (
+        typeof value === "number" &&
+        Number.isInteger(value) &&
+        domain.values.includes(value)
+      );
     case "option":
       return value === null || validateValue(domain.inner, value);
     case "record":
@@ -166,6 +179,8 @@ export function domainFingerprint(domain: AbstractDomain): string {
       return `enum(${domain.values.join("|")})`;
     case "boundedInt":
       return `int(${domain.min},${domain.max})`;
+    case "intSet":
+      return `intSet(${domain.values.join(",")})`;
     case "option":
       return `option(${domainFingerprint(domain.inner)})`;
     case "record":
@@ -196,6 +211,7 @@ export function collectTokenDomainPaths(domain: AbstractDomain): string[] {
       case "bool":
       case "enum":
       case "boundedInt":
+      case "intSet":
       case "lengthCat":
         break;
       case "option":
@@ -235,4 +251,22 @@ function cartesian<T>(sets: readonly (readonly T[])[]): T[][] {
 
 function isRecord(value: Value): value is Record<string, Value> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function exceedsWideNumericThreshold(domain: AbstractDomain): boolean {
+  switch (domain.kind) {
+    case "boundedInt":
+    case "intSet":
+      return domainCardinality(domain) > WIDE_NUMERIC_DOMAIN_THRESHOLD;
+    case "record":
+      return Object.values(domain.fields).some(exceedsWideNumericThreshold);
+    case "option":
+      return exceedsWideNumericThreshold(domain.inner);
+    case "tagged":
+      return Object.values(domain.variants).some(exceedsWideNumericThreshold);
+    case "boundedList":
+      return exceedsWideNumericThreshold(domain.inner);
+    default:
+      return false;
+  }
 }

@@ -33,6 +33,7 @@ describe("artifact parsers", () => {
       overApproxTransitions: [],
       boundHits: [],
       ignoredVars: [],
+      numericReductions: [],
     },
   };
 

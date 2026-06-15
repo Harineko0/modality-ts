@@ -813,6 +813,79 @@ describe("TLA export", () => {
     expect(source).toContain("\\/\n  (~(flag) /\\");
   });
 
+  it("exports numeric domains and operators", () => {
+    const numeric: Model = {
+      ...model(),
+      vars: [
+        ...model().vars.filter((decl) => decl.id !== "flag"),
+        {
+          id: "count",
+          domain: { kind: "boundedInt", min: 0, max: 3, overflow: "forbid" },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: 0,
+        },
+        {
+          id: "sparse",
+          domain: { kind: "intSet", values: [0, 2] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: 0,
+        },
+      ],
+      transitions: [
+        {
+          id: "inc",
+          cls: "user",
+          label: { kind: "click", text: "inc" },
+          source: [],
+          guard: {
+            kind: "lt",
+            args: [
+              { kind: "read", var: "count" },
+              { kind: "lit", value: 3 },
+            ],
+          },
+          effect: {
+            kind: "assign",
+            var: "count",
+            expr: {
+              kind: "add",
+              args: [
+                { kind: "read", var: "count" },
+                { kind: "lit", value: 1 },
+              ],
+            },
+          },
+          reads: ["count"],
+          writes: ["count"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const source = generateTlaModule(numeric, "NumericFixture");
+    expect(source).toContain("(count < 3)");
+    expect(source).toContain("(count + 1)");
+    expect(source).toContain("(count + 1) \\in {0, 1, 2, 3}");
+    const havocSparse: Model = {
+      ...numeric,
+      transitions: [
+        {
+          id: "havocSparse",
+          cls: "user",
+          label: { kind: "click", text: "havoc" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: { kind: "havoc", var: "sparse" },
+          reads: [],
+          writes: ["sparse"],
+          confidence: "exact",
+        },
+      ],
+    };
+    expect(generateTlaModule(havocSparse, "SparseFixture")).toContain("{0, 2}");
+  });
+
   it("rejects TLA identifier collisions before emitting ambiguous modules", () => {
     const colliding: Model = {
       ...model(),
