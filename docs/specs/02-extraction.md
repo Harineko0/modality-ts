@@ -23,6 +23,15 @@ modality.config.ts ──► P0 project load (ts-morph / TS compiler API, full t
 
 P0 input from config: route table (`pattern → RootComponent`), include globs, the list of **effect APIs** (functions whose calls are network operations, e.g. `api.*`, `fetch` wrappers — needed by P4), and test-locator conventions.
 
+**P0 client-reachable module surface (default route/component extraction).** The project loader builds a *client-reachable* module surface instead of concatenating every local import from a route file. It distinguishes:
+
+- **Render surface** — modules/declarations walked to discover JSX child components, props, and client islands (including from server-rendered route modules).
+- **Interaction surface** — modules/declarations that may contribute modeled event handlers, effects, state writes, and discovered effect APIs (`fetch`, configured effect APIs).
+
+Router adapters describe framework-specific module roles through optional `NavigationAdapter` methods (`classifyModule`, `moduleEntryExports`, `classifyImportEdge`, `isServerOnlyModule`). React Router route modules treat `loader`/`action`/`headers` as server entry exports; `.server` paths are an additional fast-path exclusion. Type-only import edges pull type declarations (and their type dependencies) without value-side server code.
+
+Default extraction models **client UI transitions** only; server/full-route execution (loaders, actions, initial data loading) is future work. **Safety rule (E1):** ambiguous client-reachable imports are included with warnings; imports used only from server roots are excluded. Effect-operation provenance is recorded in the extraction report when operations are discovered from interaction-surface source.
+
 ## 2. P1 — State inventory
 
 **Jotai atoms.** Find module-level calls to `atom`, utility atom creators (`atomWithStorage`, `atomWithReset`, `atomFamily`, `loadable`, …), and static `atomFamily(...)` instantiations from Jotai's module graph (`jotai`, `jotai/utils`, `jotai-family`, …), resolved via import aliases rather than callee names alone.

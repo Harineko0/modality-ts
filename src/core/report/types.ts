@@ -177,6 +177,13 @@ export interface ExtractionReport {
     percentExactOrOverlay: number;
   };
   warnings: readonly string[];
+  effectOperations?: readonly {
+    opId: string;
+    source?: string;
+    line?: number;
+    column?: number;
+    origin: "source" | "config" | "option";
+  }[];
 }
 
 export interface ConformReport {

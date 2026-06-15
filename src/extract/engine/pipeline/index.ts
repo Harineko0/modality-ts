@@ -13,7 +13,9 @@ import type {
   LocationLowering,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
+import { typeAliasDeclarations } from "../ts/domains.js";
 import { synthesizeRedirectTransitions } from "../../sources/router/redirects.js";
+import * as ts from "typescript";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -41,6 +43,7 @@ export interface ExtractionPipelineOptions {
   routerPlugin?: RouterPlugin;
   inventory?: RouteInventory;
   lowering?: LocationLowering;
+  discoverFragments?: readonly { sourceText: string; fileName: string }[];
 }
 
 export interface ExtractionPipelineResult {
@@ -91,31 +94,58 @@ export function runExtractionPipeline(
 ): ExtractionPipelineResult {
   const sourcePlugins = options.sourcePlugins ?? [];
   const plugins = createPluginRegistry(sourcePlugins, options.routerPlugin);
-  const discoverCtx = {
-    sourceText: options.sourceText,
+  const discoveryFragments = options.discoverFragments ?? [
+    { sourceText: options.sourceText, fileName: options.fileName },
+  ];
+  const mergedDiscoveryFragment = {
+    sourceText: discoveryFragments
+      .map((fragment) => fragment.sourceText)
+      .join("\n"),
     fileName: options.fileName,
-    route: options.route,
   };
-  const discoveries = sourcePlugins.map((plugin) => ({
-    plugin,
-    decls: plugin.discover(discoverCtx),
-  }));
+  const discoveryInputs =
+    discoveryFragments.length > 1
+      ? [mergedDiscoveryFragment]
+      : discoveryFragments;
+  const discoveries = discoveryInputs.flatMap((fragment) =>
+    sourcePlugins.map((plugin) => ({
+      plugin,
+      decls: plugin.discover({
+        sourceText: fragment.sourceText,
+        fileName: fragment.fileName,
+        route: options.route,
+      }),
+    })),
+  );
   const stateVars = discoveries
     .flatMap((discovery) => discovery.decls)
     .map((decl) => decl.var)
-    .filter((decl): decl is StateVarDecl => Boolean(decl));
-  const writeChannels = sourcePlugins.flatMap((plugin) =>
-    plugin.writeChannels({
-      sourceText: options.sourceText,
-      fileName: options.fileName,
-    }),
-  );
-  const pluginWarnings = sourcePlugins.flatMap(
-    (plugin) =>
-      plugin.safetyWarnings?.({
-        sourceText: options.sourceText,
-        fileName: options.fileName,
-      }) ?? [],
+    .filter((decl): decl is StateVarDecl => Boolean(decl))
+    .filter(
+      (decl, index, all) =>
+        all.findIndex((candidate) => candidate.id === decl.id) === index,
+    );
+  const writeChannels = discoveryInputs
+    .flatMap((fragment) =>
+      sourcePlugins.flatMap((plugin) =>
+        plugin.writeChannels({
+          sourceText: fragment.sourceText,
+          fileName: fragment.fileName,
+        }),
+      ),
+    )
+    .filter(
+      (channel, index, all) =>
+        all.findIndex((candidate) => candidate.id === channel.id) === index,
+    );
+  const pluginWarnings = discoveryInputs.flatMap((fragment) =>
+    sourcePlugins.flatMap(
+      (plugin) =>
+        plugin.safetyWarnings?.({
+          sourceText: fragment.sourceText,
+          fileName: fragment.fileName,
+        }) ?? [],
+    ),
   );
   const templateFragments = discoveries.flatMap(({ plugin, decls }) =>
     decls.flatMap((decl) =>
@@ -137,6 +167,18 @@ export function runExtractionPipeline(
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
   };
+  const supplementalTypeText = discoveryInputs
+    .map((fragment) => fragment.sourceText)
+    .join("\n");
+  const supplementalTypes = typeAliasDeclarations(
+    ts.createSourceFile(
+      "__types__.ts",
+      supplementalTypeText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    ),
+  );
   const genericExtraction = extractReactSourceTransitions(options.sourceText, {
     route: options.route,
     fileName: options.fileName,
@@ -145,6 +187,10 @@ export function runExtractionPipeline(
     stateVars: extractionCtx.stateVars,
     writeChannels,
     sourcePlugins,
+    additionalTypeAliases: supplementalTypes,
+    additionalComponentSources: discoveryFragments
+      .filter((fragment) => fragment.fileName !== options.fileName)
+      .map((fragment) => fragment.sourceText),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
   });

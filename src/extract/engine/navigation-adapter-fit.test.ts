@@ -218,4 +218,59 @@ describe("navigation adapter interface fit", () => {
       "/settings",
     ]);
   });
+
+  it("accepts optional module-context methods on a Next-style adapter", () => {
+    const adapter: NavigationAdapter = {
+      ...nextStyleAdapter(),
+      classifyModule(ctx) {
+        const directives: ("use client" | "use server")[] = [];
+        if (ctx.sourceText.includes('"use client"'))
+          directives.push("use client");
+        if (ctx.sourceText.includes('"use server"'))
+          directives.push("use server");
+        if (directives.includes("use client"))
+          return { defaultContext: "client", directives };
+        if (ctx.fileName.endsWith("/route.ts"))
+          return { defaultContext: "server", serverOnly: true };
+        return { defaultContext: "shared" };
+      },
+      moduleEntryExports(ctx) {
+        if (!ctx.fileName.endsWith("/page.tsx")) return [];
+        return [
+          {
+            name: "default",
+            context: "shared",
+            reason: "server page render root",
+          },
+          {
+            name: "generateMetadata",
+            context: "server",
+            reason: "metadata export",
+          },
+        ];
+      },
+      classifyImportEdge(ctx) {
+        return ctx.isTypeOnly ? "type" : "unknown";
+      },
+      isServerOnlyModule(fileName) {
+        return (
+          fileName.endsWith(".server.ts") || fileName.endsWith(".server.tsx")
+        );
+      },
+    };
+    expect(
+      adapter.classifyModule?.({
+        fileName: "app/dashboard/page.tsx",
+        sourceText: '"use client";\nexport default function Dashboard() {}',
+      }),
+    ).toEqual({ defaultContext: "client", directives: ["use client"] });
+    expect(
+      adapter
+        .moduleEntryExports?.({
+          fileName: "app/settings/page.tsx",
+          sourceText: "export default function Settings() {}",
+        })
+        .map((entry) => entry.name),
+    ).toEqual(["default", "generateMetadata"]);
+  });
 });

@@ -11,7 +11,10 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
-import { runExtractionPipeline } from "modality-ts/extract";
+import {
+  runExtractionPipeline,
+  type ExtractionPipelineResult,
+} from "modality-ts/extract";
 import {
   canonicalJson,
   collectTokenDomainPaths,
@@ -45,6 +48,11 @@ import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import type { ExtractArtifactEntry } from "./output.js";
+import {
+  type EffectApiProvenanceEntry,
+  type TsConfigResolution,
+  sourceWithReachableImports,
+} from "./project.js";
 
 export interface ModalityConfig {
   navigation?: {
@@ -121,7 +129,14 @@ export async function runExtractCommand(
     routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
   const routerAdapter = registry.routerPlugin ?? routerSource();
-  const project = await attachRouteInventory(projectBase, routerAdapter);
+  const projectWithInventory = await attachRouteInventory(
+    projectBase,
+    routerAdapter,
+  );
+  const project = await buildClientProjectSurface(
+    projectWithInventory,
+    routerAdapter,
+  );
   const route = resolveExtractionRoute(project, config, options, sourcePaths);
   const routePatterns = project.inventory.routes.map((node) => node.pattern);
   const effectApis = uniqueStrings([
@@ -136,9 +151,7 @@ export async function runExtractCommand(
     ...(config.bounds ?? {}),
     ...(options.bounds ?? {}),
   };
-  const pipeline = runExtractionPipeline({
-    sourceText: project.sourceText,
-    fileName: project.entryFile,
+  const pipeline = runProjectExtractionPipeline(project, {
     route,
     routePatterns,
     effectApis,
@@ -204,6 +217,7 @@ export async function runExtractCommand(
     );
   }
   const warnings = [
+    ...project.surfaceWarnings,
     ...pipeline.warnings,
     ...overlay.warnings,
     ...pluginConformanceWarnings(registry.sourcePlugins, dependencies),
@@ -223,6 +237,11 @@ export async function runExtractCommand(
     overlay.ignoredVars,
     options.now ?? new Date(),
     project.inventory,
+    buildEffectOperations(
+      project.effectApiProvenance,
+      config.effectApis,
+      options.effectApis,
+    ),
   );
   await mkdir(dirname(options.modelPath), { recursive: true });
   await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
@@ -311,16 +330,16 @@ export async function runExtractCommand(
 interface ExtractionProject {
   entryFile: string;
   sourceText: string;
+  interactionSources: Array<{ path: string; text: string }>;
   sourceFiles: string[];
   sources: Array<{ path: string; text: string }>;
   inventory: RouteInventory;
   effectApis: string[];
+  effectApiProvenance: EffectApiProvenanceEntry[];
+  surfaceWarnings: string[];
   configStartDir: string;
-}
-
-interface TsConfigResolution {
-  baseUrl?: string;
-  paths: Array<{ prefix: string; suffix: string; targets: string[] }>;
+  rawEntries: Array<{ path: string; text: string }>;
+  tsconfig: TsConfigResolution;
 }
 
 function normalizedSourcePaths(options: ExtractCommandOptions): string[] {
@@ -341,24 +360,18 @@ async function loadExtractionProject(
   const resolved = sourcePaths[0];
   if (!resolved) throw new Error("extract requires at least one source path");
   const info = await stat(resolved);
+  const tsconfig = await readTsConfigResolution(
+    info.isDirectory() ? resolved : dirname(resolved),
+  );
   if (!info.isDirectory()) {
     const source = await readFile(resolved, "utf8");
-    const tsconfig = await readTsConfigResolution(dirname(resolved));
-    const imported = await sourceWithLocalImports(
-      [{ path: resolved, text: source }],
-      tsconfig,
-    );
-    return {
+    const rawEntries = [{ path: resolved, text: source }];
+    return emptySurfaceProject({
       entryFile: resolved,
-      sourceText: imported.sources.map((entry) => entry.text).join("\n"),
-      sourceFiles: imported.sources.map((entry) => entry.path),
-      sources: imported.sources,
-      inventory: { routes: [] },
-      effectApis: fetchEffectApis(
-        imported.sources.map((entry) => entry.text).join("\n"),
-      ),
+      rawEntries,
+      tsconfig,
       configStartDir: dirname(resolved),
-    };
+    });
   }
   const routesPath = join(resolved, "app", "routes.ts");
   const routeEntries = parseReactRouterRoutes(
@@ -366,7 +379,7 @@ async function loadExtractionProject(
   );
   const rootPath = join(resolved, "app", "root.tsx");
   const roots = await existingFiles([rootPath]);
-  const entries = [
+  const rawEntries = [
     { path: routesPath, text: await readFile(routesPath, "utf8") },
     ...(await Promise.all(
       roots.map(async (path) => ({ path, text: await readFile(path, "utf8") })),
@@ -378,17 +391,181 @@ async function loadExtractionProject(
       })),
     )),
   ];
-  const tsconfig = await readTsConfigResolution(resolved);
-  const imported = await sourceWithLocalImports(entries, tsconfig);
-  const sourceText = imported.sources.map((entry) => entry.text).join("\n");
-  return {
+  return emptySurfaceProject({
     entryFile: routesPath,
-    sourceText,
-    sourceFiles: imported.sources.map((entry) => entry.path),
-    sources: imported.sources,
-    inventory: { routes: [] },
-    effectApis: fetchEffectApis(sourceText),
+    rawEntries,
+    tsconfig,
     configStartDir: resolved,
+  });
+}
+
+function emptySurfaceProject(input: {
+  entryFile: string;
+  rawEntries: Array<{ path: string; text: string }>;
+  tsconfig: TsConfigResolution;
+  configStartDir: string;
+}): ExtractionProject {
+  return {
+    entryFile: input.entryFile,
+    sourceText: "",
+    interactionSources: [],
+    sourceFiles: [],
+    sources: [],
+    inventory: { routes: [] },
+    effectApis: [],
+    effectApiProvenance: [],
+    surfaceWarnings: [],
+    configStartDir: input.configStartDir,
+    rawEntries: input.rawEntries,
+    tsconfig: input.tsconfig,
+  };
+}
+
+async function buildClientProjectSurface(
+  project: ExtractionProject,
+  adapter: NavigationAdapter,
+): Promise<ExtractionProject> {
+  const reachable = await sourceWithReachableImports(
+    project.rawEntries,
+    project.tsconfig,
+    adapter,
+    project.inventory,
+  );
+  const includedSources = reachable.sources.filter((entry) => entry.included);
+  const interactionSources = includedSources
+    .filter((entry) => entry.interactionText.trim().length > 0)
+    .map((entry) => ({ path: entry.path, text: entry.interactionText }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const interactionSourcePaths = new Set(
+    interactionSources.map((entry) => entry.path),
+  );
+  const reportSources = includedSources.filter(
+    (entry) =>
+      interactionSourcePaths.has(entry.path) ||
+      entry.path.endsWith("routes.ts"),
+  );
+  return {
+    ...project,
+    sourceText: interactionSources.map((entry) => entry.text).join("\n"),
+    interactionSources,
+    sourceFiles: reportSources
+      .map((entry) => entry.path)
+      .sort((left, right) => left.localeCompare(right)),
+    sources: reportSources.map((entry) => ({
+      path: entry.path,
+      text: entry.text,
+    })),
+    effectApis: reachable.effectApis,
+    effectApiProvenance: reachable.effectApiProvenance,
+    surfaceWarnings: reachable.warnings,
+  };
+}
+
+function runProjectExtractionPipeline(
+  project: ExtractionProject,
+  options: {
+    route: string;
+    routePatterns: readonly string[];
+    effectApis: readonly string[];
+    sourcePlugins: readonly StateSourcePlugin[];
+    routerPlugin?: RouterPlugin;
+    inventory: RouteInventory;
+  },
+): ExtractionPipelineResult {
+  const fragments =
+    project.interactionSources.length > 0
+      ? project.interactionSources
+      : project.sourceText.trim().length > 0
+        ? [{ path: project.entryFile, text: project.sourceText }]
+        : [];
+  if (fragments.length === 0) {
+    return runExtractionPipeline({
+      sourceText: "",
+      fileName: project.entryFile,
+      ...options,
+    });
+  }
+  const discoverFragments = fragments.map((entry) => ({
+    sourceText: entry.text,
+    fileName: entry.path,
+  }));
+  if (fragments.length === 1) {
+    const fragment = fragments[0]!;
+    return runExtractionPipeline({
+      sourceText: fragment.text,
+      fileName: fragment.path,
+      discoverFragments,
+      ...options,
+    });
+  }
+  return mergeExtractionPipelineResults(
+    fragments.map((fragment) =>
+      runExtractionPipeline({
+        sourceText: fragment.text,
+        fileName: fragment.path,
+        discoverFragments,
+        ...options,
+        inventory: { routes: [] },
+      }),
+    ),
+    runExtractionPipeline({
+      sourceText: "",
+      fileName: project.entryFile,
+      ...options,
+    }),
+  );
+}
+
+function mergeExtractionPipelineResults(
+  fragmentResults: readonly ExtractionPipelineResult[],
+  inventoryResult: ExtractionPipelineResult,
+): ExtractionPipelineResult {
+  const transitionIds = new Set<string>();
+  const transitions = [];
+  for (const result of fragmentResults) {
+    for (const transition of result.transitions) {
+      if (transitionIds.has(transition.id)) continue;
+      transitionIds.add(transition.id);
+      transitions.push(transition);
+    }
+  }
+  for (const transition of inventoryResult.transitions) {
+    if (transitionIds.has(transition.id)) continue;
+    transitionIds.add(transition.id);
+    transitions.push(transition);
+  }
+  const varIds = new Set<string>();
+  const stateVars = [];
+  for (const result of fragmentResults) {
+    for (const decl of result.stateVars) {
+      if (varIds.has(decl.id)) continue;
+      varIds.add(decl.id);
+      stateVars.push(decl);
+    }
+  }
+  const writeChannelIds = new Set<string>();
+  const writeChannels = [];
+  for (const result of fragmentResults) {
+    for (const channel of result.writeChannels) {
+      if (writeChannelIds.has(channel.id)) continue;
+      writeChannelIds.add(channel.id);
+      writeChannels.push(channel);
+    }
+  }
+  const templateFragments = fragmentResults.flatMap(
+    (result) => result.templateFragments,
+  );
+  const warnings = uniqueStrings(
+    fragmentResults.flatMap((result) => [...result.warnings]),
+  );
+  return {
+    transitions,
+    warnings,
+    stateVars,
+    templateFragments,
+    routeVars: inventoryResult.routeVars,
+    writeChannels,
+    plugins: inventoryResult.plugins,
   };
 }
 
@@ -398,37 +575,29 @@ async function loadMultiFileExtractionProject(
   const projects = await Promise.all(
     sourcePaths.map((sourcePath) => loadExtractionProject([sourcePath])),
   );
-  const sourcesByPath = new Map<string, { path: string; text: string }>();
+  const rawEntriesByPath = new Map<string, { path: string; text: string }>();
   for (const project of projects) {
-    for (const source of project.sources) {
-      sourcesByPath.set(source.path, source);
+    for (const entry of project.rawEntries) {
+      rawEntriesByPath.set(resolve(entry.path), entry);
     }
   }
-  const sources = [...sourcesByPath.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
-  );
-  const sourceText = sources.map((entry) => entry.text).join("\n");
-  return {
+  return emptySurfaceProject({
     entryFile: projects.map((project) => project.entryFile).join(","),
-    sourceText,
-    sourceFiles: sources.map((entry) => entry.path),
-    sources,
-    inventory: { routes: [] },
-    effectApis: uniqueStrings([
-      ...projects.flatMap((project) => project.effectApis),
-      ...fetchEffectApis(sourceText),
-    ]),
+    rawEntries: [...rawEntriesByPath.values()].sort((left, right) =>
+      left.path.localeCompare(right.path),
+    ),
+    tsconfig: projects[0]?.tsconfig ?? { paths: [] },
     configStartDir: commonAncestor(
       projects.map((project) => project.configStartDir),
     ),
-  };
+  });
 }
 
 async function attachRouteInventory(
   project: ExtractionProject,
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
-  const files = [...project.sources];
+  const files = [...project.rawEntries];
   const manifestPath =
     files.find((file) => file.path.endsWith("routes.ts"))?.path ??
     (await findNearestRoutesManifest(project.configStartDir));
@@ -446,11 +615,12 @@ async function attachRouteInventory(
     files,
     readFile: (path) => readFile(path, "utf8"),
   });
-  return { ...project, sources: files, inventory };
+  return { ...project, rawEntries: files, inventory };
 }
 
 function findManifestPath(project: ExtractionProject): string | undefined {
-  return project.sources.find((file) => file.path.endsWith("routes.ts"))?.path;
+  return project.rawEntries.find((file) => file.path.endsWith("routes.ts"))
+    ?.path;
 }
 
 function resolveProjectRoot(
@@ -494,7 +664,7 @@ function routesForSourceFile(
 function manifestRouteFiles(project: ExtractionProject): string[] {
   const manifestPath = findManifestPath(project);
   if (!manifestPath) return [];
-  const manifest = project.sources.find(
+  const manifest = project.rawEntries.find(
     (file) => resolve(file.path) === resolve(manifestPath),
   );
   if (!manifest) return [];
@@ -586,144 +756,6 @@ async function findNearestRoutesManifest(
   return undefined;
 }
 
-async function sourceWithLocalImports(
-  entries: Array<{ path: string; text: string }>,
-  tsconfig: TsConfigResolution,
-): Promise<{ sources: Array<{ path: string; text: string }> }> {
-  const seen = new Set<string>();
-  const sources: Array<{ path: string; text: string }> = [];
-  const queue = [...entries];
-  while (queue.length > 0) {
-    const next = queue.shift();
-    if (!next) break;
-    const canonical = resolve(next.path);
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    sources.push({ path: canonical, text: next.text });
-    for (const specifier of localImportSpecifiers(next.text)) {
-      const imported = await resolveImportPath(
-        dirname(canonical),
-        specifier,
-        tsconfig,
-      );
-      if (imported)
-        queue.push({ path: imported, text: await readFile(imported, "utf8") });
-    }
-  }
-  return { sources };
-}
-
-function localImportSpecifiers(source: string): string[] {
-  const specs: string[] = [];
-  const parsed = tsCreateSourceFile(source);
-  const visit = (node: import("typescript").Node): void => {
-    if (
-      tsIsImportDeclaration(node) &&
-      tsIsStringLiteral(node.moduleSpecifier) &&
-      isLocalImportSpecifier(node.moduleSpecifier.text)
-    ) {
-      specs.push(node.moduleSpecifier.text);
-    }
-    tsForEachChild(node, visit);
-  };
-  visit(parsed);
-  return specs;
-}
-
-function tsCreateSourceFile(source: string): import("typescript").SourceFile {
-  return ts.createSourceFile(
-    "imports.tsx",
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-}
-
-function tsIsImportDeclaration(
-  node: import("typescript").Node,
-): node is import("typescript").ImportDeclaration {
-  return ts.isImportDeclaration(node);
-}
-
-function tsIsStringLiteral(
-  node: import("typescript").Node,
-): node is import("typescript").StringLiteral {
-  return ts.isStringLiteral(node);
-}
-
-function tsForEachChild(
-  node: import("typescript").Node,
-  cb: (node: import("typescript").Node) => void,
-): void {
-  ts.forEachChild(node, cb);
-}
-
-function isLocalImportSpecifier(specifier: string): boolean {
-  return specifier.startsWith(".") || specifier.startsWith("~/");
-}
-
-async function resolveImportPath(
-  baseDir: string,
-  specifier: string,
-  tsconfig: TsConfigResolution,
-): Promise<string | undefined> {
-  if (specifier.startsWith("./+types/") || specifier.startsWith("../+types/"))
-    return undefined;
-  const bases = importBases(baseDir, specifier, tsconfig);
-  for (const base of bases) {
-    const resolved = await firstExistingModulePath(base);
-    if (resolved) return resolved;
-  }
-  return undefined;
-}
-
-function importBases(
-  baseDir: string,
-  specifier: string,
-  tsconfig: TsConfigResolution,
-): string[] {
-  if (specifier.startsWith(".")) return [resolve(baseDir, specifier)];
-  const matches = tsconfig.paths.flatMap((entry) => {
-    if (
-      !specifier.startsWith(entry.prefix) ||
-      !specifier.endsWith(entry.suffix)
-    )
-      return [];
-    const star = specifier.slice(
-      entry.prefix.length,
-      specifier.length - entry.suffix.length,
-    );
-    return entry.targets.map((target) => resolve(target.replace("*", star)));
-  });
-  if (matches.length > 0) return matches;
-  return tsconfig.baseUrl ? [resolve(tsconfig.baseUrl, specifier)] : [];
-}
-
-async function firstExistingModulePath(
-  base: string,
-): Promise<string | undefined> {
-  const candidates = /\.[cm]?[jt]sx?$/.test(base)
-    ? [base]
-    : [
-        `${base}.ts`,
-        `${base}.tsx`,
-        `${base}.mts`,
-        `${base}.cts`,
-        join(base, "index.ts"),
-        join(base, "index.tsx"),
-      ];
-  for (const candidate of candidates) {
-    try {
-      const candidateStat = await stat(candidate);
-      if (candidateStat.isFile()) return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-  }
-  return undefined;
-}
-
 async function readTsConfigResolution(
   startDir: string,
 ): Promise<TsConfigResolution> {
@@ -788,73 +820,6 @@ function sourceHashes(
   return Object.fromEntries(
     sources.map((source) => [source.path, sha256(source.text)]),
   );
-}
-
-function fetchEffectApis(sourceText: string): string[] {
-  const source = tsCreateSourceFile(sourceText);
-  const ops = new Set<string>();
-  const visit = (node: import("typescript").Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "fetch"
-    ) {
-      const op = fetchOpId(node);
-      if (op) ops.add(op);
-    }
-    tsForEachChild(node, visit);
-  };
-  visit(source);
-  return [...ops].sort();
-}
-
-function fetchOpId(
-  call: import("typescript").CallExpression,
-): string | undefined {
-  const first = call.arguments[0];
-  if (!first) return undefined;
-  const path = fetchPathValue(first);
-  if (!path) return undefined;
-  const method = fetchMethodValue(call.arguments[1]) ?? "GET";
-  return `${method} ${path}`;
-}
-
-function fetchPathValue(
-  expression: import("typescript").Expression,
-): string | undefined {
-  if (
-    ts.isStringLiteral(expression) ||
-    ts.isNoSubstitutionTemplateLiteral(expression)
-  )
-    return normalizeFetchPath(expression.text);
-  if (ts.isTemplateExpression(expression)) {
-    let value = expression.head.text;
-    for (const span of expression.templateSpans)
-      value += `:id${span.literal.text}`;
-    return normalizeFetchPath(value);
-  }
-  return undefined;
-}
-
-function normalizeFetchPath(path: string): string {
-  return (path.startsWith("/") ? path : `/${path}`).replace(
-    /\/:param(?=\/|$)/g,
-    "/:id",
-  );
-}
-
-function fetchMethodValue(
-  expression: import("typescript").Expression | undefined,
-): string | undefined {
-  if (!expression || !ts.isObjectLiteralExpression(expression))
-    return undefined;
-  const method = expression.properties.find(
-    (property): property is import("typescript").PropertyAssignment =>
-      ts.isPropertyAssignment(property) &&
-      propertyName(property.name) === "method",
-  );
-  const value = method ? literalString(method.initializer) : undefined;
-  return value?.toUpperCase();
 }
 
 function literalString(
@@ -1066,6 +1031,7 @@ function createExtractionReport(
   ignoredVars: readonly string[],
   now: Date,
   inventory?: RouteInventory,
+  effectOperations?: ExtractionReport["effectOperations"],
 ): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
   const varDomains = new Map(
@@ -1144,7 +1110,37 @@ function createExtractionReport(
         handlers.length === 0 ? 1 : exactOrOverlay / handlers.length,
     },
     warnings,
+    ...(effectOperations && effectOperations.length > 0
+      ? { effectOperations }
+      : {}),
   };
+}
+
+function buildEffectOperations(
+  provenance: readonly EffectApiProvenanceEntry[],
+  configApis: readonly string[] | undefined,
+  optionApis: readonly string[] | undefined,
+): ExtractionReport["effectOperations"] {
+  const entries: NonNullable<ExtractionReport["effectOperations"]>[number][] =
+    provenance.map((entry) => ({
+      opId: entry.opId,
+      source: entry.source.file,
+      line: entry.source.line,
+      column: entry.source.column,
+      origin: "source" as const,
+    }));
+  for (const opId of configApis ?? []) {
+    entries.push({ opId, origin: "config" });
+  }
+  for (const opId of optionApis ?? []) {
+    entries.push({ opId, origin: "option" });
+  }
+  return entries.sort(
+    (left, right) =>
+      left.opId.localeCompare(right.opId) ||
+      (left.origin ?? "").localeCompare(right.origin ?? "") ||
+      (left.source ?? "").localeCompare(right.source ?? ""),
+  );
 }
 
 function buildRouteCoverage(

@@ -4,6 +4,12 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
+import {
+  classifyReactRouterImportEdge,
+  classifyReactRouterModule,
+  isServerOnlyModulePath,
+  reactRouterModuleEntryExports,
+} from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
 import { locationVars } from "./routes.js";
 
@@ -35,6 +41,10 @@ export function reactRouterAdapter(
     classifyNavigationCall,
     classifyNavigationJsx,
     routeForComponent,
+    classifyModule: classifyReactRouterModule,
+    moduleEntryExports: reactRouterModuleEntryExports,
+    classifyImportEdge: classifyReactRouterImportEdge,
+    isServerOnlyModule: isServerOnlyModulePath,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
     harness,

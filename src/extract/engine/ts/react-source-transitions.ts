@@ -91,6 +91,8 @@ export interface ReactSourceTransitionOptions {
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
+  additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
+  additionalComponentSources?: readonly string[];
 }
 
 export interface ReactSourceTransitionResult {
@@ -112,6 +114,9 @@ export function extractReactSourceTransitions(
     ts.ScriptKind.TSX,
   );
   const typeAliases = typeAliasDeclarations(source);
+  for (const [name, typeNode] of options.additionalTypeAliases ?? []) {
+    if (!typeAliases.has(name)) typeAliases.set(name, typeNode);
+  }
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
@@ -130,8 +135,32 @@ export function extractReactSourceTransitions(
   );
   const globalTaints = new Set<string>();
   const components = componentDeclarations(source);
+  for (const fragment of options.additionalComponentSources ?? []) {
+    const supplemental = ts.createSourceFile(
+      fileName,
+      fragment,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    for (const [name, decl] of componentDeclarations(supplemental)) {
+      if (!components.has(name)) components.set(name, decl);
+    }
+  }
   const providerComponents = providerComponentNames(source);
   const customHooks = customHookDeclarations(source);
+  for (const fragment of options.additionalComponentSources ?? []) {
+    const supplemental = ts.createSourceFile(
+      fileName,
+      fragment,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    for (const [name, decl] of customHookDeclarations(supplemental)) {
+      if (!customHooks.has(name)) customHooks.set(name, decl);
+    }
+  }
   const statefulListComponents = detectStatefulListComponents(
     source,
     components,

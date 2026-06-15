@@ -166,6 +166,48 @@ export interface StateSourcePlugin {
   };
 }
 
+export type ModuleRuntimeContext = "client" | "server" | "shared" | "type";
+
+export type ModuleDirective = "use client" | "use server";
+
+export type ImportEdgeContext =
+  | "client-value"
+  | "server-value"
+  | "render-value"
+  | "type"
+  | "asset"
+  | "unknown";
+
+export type ModuleExtractionSurface = "render" | "interaction";
+
+export interface ModuleClassification {
+  defaultContext: ModuleRuntimeContext | "unknown";
+  directives?: readonly ModuleDirective[];
+  serverOnly?: boolean;
+  reason?: string;
+}
+
+export interface ModuleEntryExport {
+  name: "default" | string;
+  context: ModuleRuntimeContext;
+  reason: string;
+}
+
+export interface ModuleRoleCtx {
+  fileName: string;
+  sourceText: string;
+  route?: RouteNode;
+}
+
+export interface ImportEdgeCtx {
+  importer: string;
+  specifier: string;
+  imported?: string;
+  isTypeOnly: boolean;
+  importerContext: ModuleRuntimeContext | "unknown";
+  surface: ModuleExtractionSurface;
+}
+
 export interface NavigationAdapter {
   id: string;
   version?: string;
@@ -183,6 +225,10 @@ export interface NavigationAdapter {
     componentName: string,
     inventory: RouteInventory,
   ): string | undefined;
+  classifyModule?(ctx: ModuleRoleCtx): ModuleClassification;
+  moduleEntryExports?(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
+  classifyImportEdge?(ctx: ImportEdgeCtx): ImportEdgeContext;
+  isServerOnlyModule?(fileName: string): boolean;
   locationVars(
     inventory: RouteInventory,
     options: ResolvedOptions,
