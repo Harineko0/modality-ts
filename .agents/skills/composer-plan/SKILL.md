@@ -7,7 +7,7 @@ description: Create implementation plans optimized for Cursor Composer 2 executi
 
 Do not edit code.
 
-Inspect the repository and produce a implementation plan as .cursor/plans/<YYMMdd-Index-plan-name>.md intended for Cursor Composer 2. e.g. .cursor/plans/260614-01-provider-shared-transition-engine.md
+Inspect the repository and produce a implementation plan as .cursor/plans/<YYMMdd-Index-plan-name>.md intended for Cursor Composer 2. e.g. .cursor/plans/260614-01-provider-shared-transition-engine.md. Index resets to 01 everyday.
 
 The plan must include:
 
