@@ -1,14 +1,16 @@
 use crate::model::Model;
 use crate::stabilize::enabled_transitions;
+use crate::state::ModelState;
 use std::collections::HashSet;
 
 pub fn record_max_depth_bound_hits(
     model: &Model,
-    frontier: &[crate::model::ModelState],
+    frontier: &[ModelState],
     enabled_transition_ids: &mut HashSet<String>,
     bound_hits: &mut HashSet<String>,
     compiled: &crate::model::CompiledModel,
 ) {
+    let _ = model;
     if frontier.is_empty() {
         return;
     }
@@ -28,7 +30,7 @@ pub fn record_max_depth_bound_hits(
 
 pub fn vacuity_warnings(
     model: &Model,
-    states: &std::collections::HashMap<String, crate::model::ModelState>,
+    states: &std::collections::HashMap<Vec<u8>, ModelState>,
     enabled_transition_ids: &HashSet<String>,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
@@ -37,11 +39,18 @@ pub fn vacuity_warnings(
             warnings.push(format!("transition never enabled: {}", transition.id));
         }
     }
+  let compiled_lookup: std::collections::HashMap<_, _> = model
+        .vars
+        .iter()
+        .enumerate()
+        .map(|(idx, decl)| (decl.id.as_str(), idx))
+        .collect();
     for decl in &model.vars {
         if let crate::model::AbstractDomain::Enum { values } = &decl.domain {
+            let var_idx = compiled_lookup[decl.id.as_str()];
             let inhabited: HashSet<String> = states
                 .values()
-                .filter_map(|state| state.get(&decl.id))
+                .filter_map(|state| state.values.get(var_idx))
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
             for value in values {

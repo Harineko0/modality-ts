@@ -1,6 +1,6 @@
 use crate::effect::read_pending;
-use crate::model::{ModelState, Transition};
-use crate::state::values_equal;
+use crate::model::{CompiledModel, Transition};
+use crate::state::{values_equal, ModelState};
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -27,9 +27,16 @@ pub struct StepFacts {
     pub op: Option<StepOp>,
 }
 
-pub fn facts(pre: &ModelState, post: &ModelState, transition: &Transition) -> StepFacts {
-    let before = read_pending_ops(pre);
-    let after = read_pending_ops(post);
+pub fn facts(
+    compiled: &CompiledModel,
+    pre: &ModelState,
+    post: &ModelState,
+    transition: &Transition,
+) -> StepFacts {
+    let pending_idx = compiled.sys_pending_index;
+    let route_idx = compiled.sys_route_index;
+    let before = read_pending_ops_with_idx(pre, pending_idx);
+    let after = read_pending_ops_with_idx(post, pending_idx);
     let enqueued = after
         .iter()
         .find(|op| !before.iter().any(|c| same_op(c, op)))
@@ -39,11 +46,12 @@ pub fn facts(pre: &ModelState, post: &ModelState, transition: &Transition) -> St
         .find(|op| !after.iter().any(|c| same_op(c, op)))
         .cloned();
 
-    let navigated = pre.get("sys:route") != post.get("sys:route");
+    let pre_route = route_idx.map(|idx| pre.get(idx).clone());
+    let post_route = route_idx.map(|idx| post.get(idx).clone());
+    let navigated = pre_route != post_route;
     let navigated_to = if navigated {
-        post.get("sys:route")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+        post_route
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
     } else {
         None
     };
@@ -84,8 +92,11 @@ fn resolve_facts(transition: &Transition) -> Option<(String, Option<String>)> {
     None
 }
 
-fn read_pending_ops(state: &ModelState) -> Vec<PendingOp> {
-    read_pending(state)
+fn read_pending_ops_with_idx(state: &ModelState, pending_idx: Option<usize>) -> Vec<PendingOp> {
+    let Some(pending_idx) = pending_idx else {
+        return vec![];
+    };
+    read_pending(state, pending_idx)
         .into_iter()
         .filter_map(|v| {
             let obj = v.as_object()?;
@@ -171,7 +182,7 @@ pub fn matches_step_predicate(
     if let Some(resolved_spec) = &pred.resolved {
         let op = resolved_spec.first().map(|s| s.as_str());
         let outcome = resolved_spec.get(1).map(|s| s.as_str());
-        if !op.is_some_and(|o| crate::step::resolved(step, o, outcome)) {
+        if !op.is_some_and(|o| resolved(step, o, outcome)) {
             return false;
         }
     }

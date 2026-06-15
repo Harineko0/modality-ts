@@ -1,24 +1,24 @@
-use crate::domain::diff;
-use crate::model::{CompiledModel, ModelState, Transition};
-use crate::step::StepFacts;
+use crate::state::diff;
+use crate::model::{CompiledModel, Transition};
+use crate::state::ModelState;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Parent {
-    pub parent: Option<String>,
+    pub parent: Option<Vec<u8>>,
     pub transition_id: Option<String>,
 }
 
 pub struct TraceContext<'a> {
     pub compiled: &'a CompiledModel,
-    pub parents: &'a HashMap<String, Parent>,
-    pub states: &'a HashMap<String, ModelState>,
+    pub parents: &'a HashMap<Vec<u8>, Parent>,
+    pub states: &'a HashMap<Vec<u8>, ModelState>,
 }
 
-pub fn trace_to(ctx: &TraceContext, canon: &str) -> Value {
+pub fn trace_to(ctx: &TraceContext, canon: &[u8]) -> Value {
     let mut steps = Vec::new();
-    let mut current = Some(canon.to_string());
+    let mut current = Some(canon.to_vec());
     while let Some(ref c) = current {
         let Some(parent) = ctx.parents.get(c) else {
             break;
@@ -31,7 +31,7 @@ pub fn trace_to(ctx: &TraceContext, canon: &str) -> Value {
                     .get(tid)
                     .map(|&idx| ctx.compiled.transition(idx).clone())
                 {
-                    steps.push(make_trace_step(pre, post, &transition));
+                    steps.push(make_trace_step(ctx.compiled, pre, post, &transition));
                 }
             }
         }
@@ -41,13 +41,18 @@ pub fn trace_to(ctx: &TraceContext, canon: &str) -> Value {
     json!({ "steps": steps })
 }
 
-pub fn make_trace_step(pre: &ModelState, post: &ModelState, transition: &Transition) -> Value {
+pub fn make_trace_step(
+    compiled: &CompiledModel,
+    pre: &ModelState,
+    post: &ModelState,
+    transition: &Transition,
+) -> Value {
     json!({
         "transitionId": transition.id,
         "label": transition.label,
-        "pre": Value::Object(pre.clone()),
-        "post": Value::Object(post.clone()),
-        "diff": Value::Object(diff(pre, post)),
+        "pre": Value::Object(pre.to_json(compiled)),
+        "post": Value::Object(post.to_json(compiled)),
+        "diff": Value::Object(diff(pre, post, compiled)),
     })
 }
 
@@ -86,30 +91,28 @@ fn replay_blocked_reason_for_trace(trace: &Value) -> Option<String> {
     if blocked.is_empty() {
         None
     } else {
-        Some(format!(
-            "trace contains locatorless replay steps: {}",
-            blocked.join(", ")
-        ))
+        Some(blocked.join(", "))
     }
 }
 
 pub fn trace_with_edge(
     ctx: &TraceContext,
-    pre_canon: &str,
+    pre_canon: &[u8],
     pre: &ModelState,
     post: &ModelState,
     transition: &Transition,
 ) -> Value {
     let mut trace = trace_to(ctx, pre_canon);
+    let step = make_trace_step(ctx.compiled, pre, post, transition);
     if let Some(steps) = trace.get_mut("steps").and_then(|v| v.as_array_mut()) {
-        steps.push(make_trace_step(pre, post, transition));
+        steps.push(step);
     }
     trace
 }
 
 pub fn trace_with_suffix(
     ctx: &TraceContext,
-    pre_canon: &str,
+    pre_canon: &[u8],
     pre: &ModelState,
     post: &ModelState,
     transition: &Transition,
@@ -118,7 +121,7 @@ pub fn trace_with_suffix(
     let mut trace = trace_with_edge(ctx, pre_canon, pre, post, transition);
     if let Some(steps) = trace.get_mut("steps").and_then(|v| v.as_array_mut()) {
         for (s_pre, s_post, t) in suffix {
-            steps.push(make_trace_step(s_pre, s_post, t));
+            steps.push(make_trace_step(ctx.compiled, s_pre, s_post, t));
         }
     }
     trace

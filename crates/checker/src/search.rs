@@ -1,11 +1,12 @@
-use crate::canon::canonical_state;
+use crate::canon::canonical_identity;
 use crate::diagnostics::{record_max_depth_bound_hits, vacuity_warnings};
-use crate::domain::{initial_changed_vars, initial_states};
+use crate::domain::{initial_changed_var_indexes, initial_states};
 use crate::effect::{apply_effect, effect_contains_enqueue};
 use crate::graph::{resolve_edge_mode, GraphRecording};
-use crate::model::{CheckOptionsIR, CheckRequest, CompiledModel, Model, ModelState};
+use crate::model::{CheckOptionsIR, CheckRequest, CompiledModel, Model};
 use crate::property::{finalize_properties, observe_edge, observe_states};
 use crate::report::{build_check_result, invalid_model_result};
+use crate::state::ModelState;
 use crate::step::facts;
 use crate::stabilize::{enabled_transitions, sort_states_by_canon, stabilize};
 use crate::trace::{Parent, TraceContext};
@@ -47,17 +48,15 @@ pub fn check_model_compiled(
         None
     };
 
-    let mut parents: HashMap<String, Parent> = HashMap::new();
-    let mut states: HashMap<String, ModelState> = HashMap::new();
-    let mut canon_cache: HashMap<String, String> = HashMap::new();
-    let mut canon_fn = |state: &ModelState| -> String {
-        let key = serde_json::to_string(state).unwrap_or_default();
-        if let Some(cached) = canon_cache.get(&key) {
-            return cached.clone();
-        }
-        let encoded = canonical_state(&compiled.model, state);
-        canon_cache.insert(key, encoded.clone());
-        encoded
+    let mut parents: HashMap<Vec<u8>, crate::trace::Parent> = HashMap::new();
+    let mut states: HashMap<Vec<u8>, ModelState> = HashMap::new();
+    let mut canon_cache: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    let mut canon_fn = |state: &ModelState| -> Vec<u8> {
+        let identity = canonical_identity(compiled, state);
+        canon_cache
+            .entry(identity.bytes.clone())
+            .or_insert_with(|| identity.bytes.clone());
+        identity.bytes
     };
 
     let graph_mode = resolve_edge_mode(properties);
@@ -77,7 +76,6 @@ pub fn check_model_compiled(
         .map(|v| (v.id.clone(), HashSet::new()))
         .collect();
 
-    let var_ids: Vec<String> = compiled.model.vars.iter().map(|v| v.id.clone()).collect();
     let mut frontier = seed_frontier(compiled, &mut parents, &mut states, &mut canon_fn);
     max_frontier = max_frontier.max(frontier.len() as u32);
     final_frontier = frontier.len() as u32;
@@ -88,7 +86,7 @@ pub fn check_model_compiled(
         states: &states,
     };
     observe_states(compiled, properties, &frontier, &trace_ctx, &mut verdicts);
-    record_dominant_vars(&compiled.model, &frontier, &mut dominant_vars);
+    record_dominant_vars(compiled, &frontier, &mut dominant_vars);
 
     let mut depth = 0u32;
     let mut edge_count = 0u32;
@@ -124,7 +122,6 @@ pub fn check_model_compiled(
             edge_count,
             depth,
             &mut canon_fn,
-            &var_ids,
         )?;
         frontier = explore.next;
         edge_count += explore.edges;
@@ -135,7 +132,7 @@ pub fn check_model_compiled(
             states: &states,
         };
         observe_states(compiled, properties, &frontier, &trace_ctx, &mut verdicts);
-        record_dominant_vars(&compiled.model, &frontier, &mut dominant_vars);
+        record_dominant_vars(compiled, &frontier, &mut dominant_vars);
         depth += 1;
         expanded_depths = depth;
 
@@ -260,17 +257,15 @@ struct ExploreResult {
 
 fn seed_frontier(
     compiled: &CompiledModel,
-    parents: &mut HashMap<String, Parent>,
-    states: &mut HashMap<String, ModelState>,
-    canon: &mut dyn FnMut(&ModelState) -> String,
+    parents: &mut HashMap<Vec<u8>, crate::trace::Parent>,
+    states: &mut HashMap<Vec<u8>, ModelState>,
+    canon: &mut dyn FnMut(&ModelState) -> Vec<u8>,
 ) -> Vec<ModelState> {
-    let var_ids = initial_changed_vars(&compiled.model);
+    let changed = initial_changed_var_indexes(compiled);
     let frontier = sort_states_by_canon(
-        initial_states(&compiled.model)
+        initial_states(compiled)
             .into_iter()
-            .flat_map(|state| {
-                stabilize(compiled, state, var_ids.clone(), canon).unwrap_or_default()
-            })
+            .flat_map(|state| stabilize(compiled, state, changed.clone(), canon).unwrap_or_default())
             .collect(),
         canon,
     );
@@ -294,8 +289,8 @@ fn explore_depth(
     compiled: &CompiledModel,
     properties: &[crate::model::PropertyIR],
     frontier: &[ModelState],
-    parents: &mut HashMap<String, Parent>,
-    states: &mut HashMap<String, ModelState>,
+    parents: &mut HashMap<Vec<u8>, crate::trace::Parent>,
+    states: &mut HashMap<Vec<u8>, ModelState>,
     graph: &mut GraphRecording,
     verdicts: &mut HashMap<String, Value>,
     enabled_transition_ids: &mut HashSet<String>,
@@ -303,8 +298,7 @@ fn explore_depth(
     options: &CheckOptionsIR,
     starting_edge_count: u32,
     depth: u32,
-    canon: &mut dyn FnMut(&ModelState) -> String,
-    var_ids: &[String],
+    canon: &mut dyn FnMut(&ModelState) -> Vec<u8>,
 ) -> Result<ExploreResult, String> {
     let mut next = Vec::new();
     let mut edge_count = 0u32;
@@ -337,12 +331,12 @@ fn explore_depth(
                 bound_hits.insert(format!("pending cap saturated at {}", transition.id));
             }
             for raw_post in posts {
-                let changed = crate::domain::changed_vars(pre, &raw_post, var_ids);
+                let changed = crate::state::changed_var_indexes(pre, &raw_post);
                 let stabilized = stabilize(compiled, raw_post, changed, canon).unwrap_or_default();
                 for post in stabilized {
                     edge_count += 1;
                     let post_canon = canon(&post);
-                    let step = facts(pre, &post, transition);
+                    let step = facts(compiled, pre, &post, transition);
                     graph.record(
                         properties,
                         &pre_canon,
@@ -493,51 +487,50 @@ fn apply_search_limit_verdicts(
 }
 
 fn record_dominant_vars(
-    model: &Model,
+    compiled: &CompiledModel,
     frontier: &[ModelState],
     tracker: &mut HashMap<String, HashSet<String>>,
 ) {
     for state in frontier {
-        for decl in &model.vars {
+        for (idx, decl) in compiled.model.vars.iter().enumerate() {
             if let Some(values) = tracker.get_mut(&decl.id) {
-                if let Some(value) = state.get(&decl.id) {
-                    values.insert(serde_json::to_string(value).unwrap_or_default());
-                }
+                values.insert(serde_json::to_string(&state.values[idx]).unwrap_or_default());
             }
         }
     }
 }
 
-pub fn model_initial_states(model: Model) -> Result<Vec<ModelState>, String> {
+pub fn model_initial_states(model: Model) -> Result<Vec<serde_json::Map<String, Value>>, String> {
     let compiled = CompiledModel::compile(model, false)?;
-    let mut canon_cache: HashMap<String, String> = HashMap::new();
-    let mut canon_fn = |state: &ModelState| -> String {
-        let key = serde_json::to_string(state).unwrap_or_default();
-        if let Some(cached) = canon_cache.get(&key) {
-            return cached.clone();
-        }
-        let encoded = canonical_state(&compiled.model, state);
-        canon_cache.insert(key, encoded.clone());
-        encoded
+    let mut canon_cache: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    let mut canon_fn = |state: &ModelState| -> Vec<u8> {
+        let identity = canonical_identity(&compiled, state);
+        canon_cache
+            .entry(identity.bytes.clone())
+            .or_insert_with(|| identity.bytes.clone());
+        identity.bytes
     };
-    let var_ids = initial_changed_vars(&compiled.model);
+    let changed = initial_changed_var_indexes(&compiled);
     Ok(sort_states_by_canon(
-        initial_states(&compiled.model)
+        initial_states(&compiled)
             .into_iter()
             .flat_map(|state| {
-                stabilize(&compiled, state, var_ids.clone(), &mut canon_fn).unwrap_or_default()
+                stabilize(&compiled, state, changed.clone(), &mut canon_fn).unwrap_or_default()
             })
             .collect(),
         &mut canon_fn,
-    ))
+    )
+    .into_iter()
+    .map(|state| state.to_json(&compiled))
+    .collect())
 }
 
 pub fn model_successors(
     model: Model,
-    pre: ModelState,
+    pre: serde_json::Map<String, Value>,
 ) -> Result<Vec<Value>, String> {
     let compiled = CompiledModel::compile(model, false)?;
-    let var_ids: Vec<String> = compiled.model.vars.iter().map(|v| v.id.clone()).collect();
+    let pre = ModelState::from_json(&compiled, &pre)?;
     let mut out = Vec::new();
     for transition in enabled_transitions(&compiled, &pre) {
         for raw_post in apply_effect(
@@ -548,11 +541,12 @@ pub fn model_successors(
         )
         .unwrap_or_default()
         {
-            let changed = crate::domain::changed_vars(&pre, &raw_post, &var_ids);
-            let mut canon_fn = |s: &ModelState| canonical_state(&compiled.model, s);
+            let changed = crate::state::changed_var_indexes(&pre, &raw_post);
+            let mut canon_fn =
+                |s: &ModelState| canonical_identity(&compiled, s).bytes;
             if let Ok(posts) = stabilize(&compiled, raw_post, changed, &mut canon_fn) {
                 for post in posts {
-                    out.push(crate::trace::make_trace_step(&pre, &post, transition));
+                    out.push(crate::trace::make_trace_step(&compiled, &pre, &post, transition));
                 }
             }
         }

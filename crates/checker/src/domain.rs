@@ -1,4 +1,6 @@
-use crate::model::{AbstractDomain, InitialValue, Model, ModelState, StateVarDecl, UNMOUNTED};
+use crate::model::{AbstractDomain, CompiledModel, InitialValue, Model, StateVarDecl, UNMOUNTED};
+use crate::navigation;
+use crate::state::{changed_var_indexes, ModelState};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
@@ -295,7 +297,7 @@ pub fn enumerate_domain(domain: &AbstractDomain) -> Vec<Value> {
             out
         }
         AbstractDomain::Record { fields } => {
-            let entries: Vec<_> = fields.iter().collect();
+            let entries: Vec<_> = sorted_fields(fields);
             cartesian(
                 entries
                     .iter()
@@ -316,7 +318,10 @@ pub fn enumerate_domain(domain: &AbstractDomain) -> Vec<Value> {
         }
         AbstractDomain::Tagged { tag, variants } => {
             let mut out = Vec::new();
-            for (tag_value, record_domain) in variants {
+            let mut variant_keys: Vec<_> = variants.keys().collect();
+            variant_keys.sort();
+            for tag_value in variant_keys {
+                let record_domain = &variants[tag_value];
                 if let AbstractDomain::Record { fields } = record_domain {
                     for v in enumerate_domain(&AbstractDomain::Record {
                         fields: fields.clone(),
@@ -450,6 +455,14 @@ pub fn domain_at_path(domain: &AbstractDomain, path: &[String]) -> Option<Abstra
     Some(current)
 }
 
+fn sorted_fields(
+    fields: &std::collections::HashMap<String, AbstractDomain>,
+) -> Vec<(String, AbstractDomain)> {
+    let mut entries: Vec<_> = fields.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries
+}
+
 fn cartesian<T: Clone>(sets: Vec<Vec<T>>) -> Vec<Vec<T>> {
     sets.into_iter().fold(vec![vec![]], |acc, set| {
         acc.into_iter()
@@ -466,15 +479,16 @@ fn cartesian<T: Clone>(sets: Vec<Vec<T>>) -> Vec<Vec<T>> {
     })
 }
 
-pub fn initial_states(model: &Model) -> Vec<ModelState> {
-    let mut states: Vec<ModelState> = vec![ModelState::new()];
-    for decl in &model.vars {
+pub fn initial_states(compiled: &CompiledModel) -> Vec<ModelState> {
+    let n = compiled.model.vars.len();
+    let mut states = vec![ModelState::new(vec![Value::Null; n])];
+    for (var_idx, decl) in compiled.model.vars.iter().enumerate() {
         let initials = initial_values(&decl.domain, &decl.initial);
         let mut next = Vec::new();
         for state in states {
             for value in &initials {
                 let mut s = state.clone();
-                s.insert(decl.id.clone(), value.clone());
+                s.values[var_idx] = value.clone();
                 next.push(s);
             }
         }
@@ -482,46 +496,140 @@ pub fn initial_states(model: &Model) -> Vec<ModelState> {
     }
     states
         .into_iter()
-        .flat_map(|s| crate::navigation::normalize_initial_route_locals(model, s))
+        .flat_map(|s| navigation::normalize_initial_route_locals(compiled, s))
         .collect()
 }
 
-pub fn changed_vars(pre: &ModelState, post: &ModelState, var_ids: &[String]) -> HashSet<String> {
-    let changed: HashSet<String> = var_ids
-        .iter()
-        .filter(|id| {
-            let a = pre.get(id.as_str());
-            let b = post.get(id.as_str());
-            serde_json::to_string(&a).unwrap_or_default()
-                != serde_json::to_string(&b).unwrap_or_default()
+pub fn initial_changed_var_indexes(compiled: &CompiledModel) -> HashSet<usize> {
+    (0..compiled.model.vars.len()).collect()
+}
+
+pub fn changed_vars(
+    pre: &ModelState,
+    post: &ModelState,
+    var_ids: &[String],
+    compiled: &CompiledModel,
+) -> HashSet<String> {
+    changed_var_indexes(pre, post)
+        .into_iter()
+        .filter_map(|idx| {
+            let id = compiled.model.vars.get(idx)?.id.clone();
+            if var_ids.contains(&id) {
+                Some(id)
+            } else {
+                None
+            }
         })
-        .cloned()
-        .collect();
-    changed
+        .collect()
 }
 
 pub fn initial_changed_vars(model: &Model) -> HashSet<String> {
     model.vars.iter().map(|v| v.id.clone()).collect()
 }
 
-pub fn diff(pre: &ModelState, post: &ModelState) -> serde_json::Map<String, Value> {
-    let mut ids: HashSet<String> = pre.keys().cloned().collect();
-    ids.extend(post.keys().cloned());
-    let mut out = serde_json::Map::new();
-    for id in ids {
-        let before = pre.get(&id);
-        let after = post.get(&id);
-        if serde_json::to_string(&before).unwrap_or_default()
-            != serde_json::to_string(&after).unwrap_or_default()
-        {
-            let mut entry = serde_json::Map::new();
-            entry.insert(
-                "before".into(),
-                before.cloned().unwrap_or(Value::Null),
-            );
-            entry.insert("after".into(), after.cloned().unwrap_or(Value::Null));
-            out.insert(id, Value::Object(entry));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Bounds, Scope};
+    use serde_json::json;
+
+    fn minimal_decl(id: &str, domain: AbstractDomain, initial: Value) -> StateVarDecl {
+        StateVarDecl {
+            id: id.into(),
+            domain,
+            origin: json!("system"),
+            scope: Scope::Global,
+            initial: InitialValue::Single(initial),
         }
     }
-    out
+
+    fn minimal_model(vars: Vec<StateVarDecl>) -> Model {
+        Model {
+            schema_version: 1,
+            id: "m".into(),
+            vars,
+            transitions: vec![],
+            bounds: Bounds {
+                max_depth: 1,
+                max_pending: 0,
+                max_internal_steps: 1,
+            },
+            metadata: None,
+        }
+    }
+
+    fn with_system_vars(extra: Vec<StateVarDecl>) -> Model {
+        let mut vars = vec![
+            minimal_decl(
+                "sys:route",
+                AbstractDomain::Enum {
+                    values: vec!["/".into()],
+                },
+                json!("/"),
+            ),
+            minimal_decl(
+                "sys:history",
+                AbstractDomain::BoundedList {
+                    inner: Box::new(AbstractDomain::Enum {
+                        values: vec!["/".into()],
+                    }),
+                    max_len: 0,
+                },
+                json!([]),
+            ),
+            minimal_decl(
+                "sys:pending",
+                AbstractDomain::BoundedList {
+                    inner: Box::new(AbstractDomain::Record {
+                        fields: std::collections::HashMap::new(),
+                    }),
+                    max_len: 0,
+                },
+                json!([]),
+            ),
+        ];
+        vars.extend(extra);
+        minimal_model(vars)
+    }
+
+    #[test]
+    fn enumerate_domain_covers_bool_and_enum() {
+        assert_eq!(
+            enumerate_domain(&AbstractDomain::Bool),
+            vec![json!(false), json!(true)]
+        );
+        assert_eq!(
+            enumerate_domain(&AbstractDomain::Enum {
+                values: vec!["a".into(), "b".into()]
+            }),
+            vec![json!("a"), json!("b")]
+        );
+    }
+
+    #[test]
+    fn enumerate_record_uses_schema_order() {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("b".into(), AbstractDomain::Bool);
+        fields.insert("a".into(), AbstractDomain::Bool);
+        let values = enumerate_domain(&AbstractDomain::Record { fields });
+        assert_eq!(values.len(), 4);
+        assert!(values.iter().all(|value| {
+            value
+                .as_object()
+                .and_then(|obj| obj.get("a"))
+                .is_some()
+        }));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_initial() {
+        let model = with_system_vars(vec![minimal_decl(
+            "x",
+            AbstractDomain::Bool,
+            json!("nope"),
+        )]);
+        let result = validate_model_full(&model, false);
+        assert!(!result.ok);
+        assert!(result.errors.iter().any(|e| e.contains("invalid initial")));
+    }
 }

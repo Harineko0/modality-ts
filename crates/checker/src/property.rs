@@ -1,7 +1,8 @@
-use crate::canon::canonical_state;
+use crate::canon::canonical_key;
 use crate::expr::{allowed_reads, eval_state_predicate};
 use crate::graph::{FullEdge, GraphRecording};
-use crate::model::{CompiledModel, ModelState, PropertyIR, Scope, StepPredicateIR, UNMOUNTED};
+use crate::model::{CompiledModel, PropertyIR, Scope, StepPredicateIR, UNMOUNTED};
+use crate::state::ModelState;
 use crate::step::{facts, matches_step_predicate, matches_step_spec, StepFacts};
 use crate::trace::{replay_checked_verdict, trace_to, trace_with_edge, trace_with_suffix, TraceContext};
 use serde_json::{json, Value};
@@ -15,7 +16,7 @@ pub fn observe_states(
     verdicts: &mut HashMap<String, Value>,
 ) {
     for state in candidates {
-        let canon = canonical_state(&compiled.model, state);
+        let canon = canonical_key(compiled, state);
         for property in properties {
             let name = property_name(property);
             if verdicts.contains_key(&name) {
@@ -136,7 +137,7 @@ pub fn observe_edge(
             }
         };
         if !ok {
-            let pre_canon = canonical_state(&compiled.model, pre);
+            let pre_canon = canonical_key(compiled, pre);
             let trace = trace_with_edge(ctx, &pre_canon, pre, post, transition);
             verdicts.insert(
                 name.clone(),
@@ -317,7 +318,7 @@ fn materialize_edge(
         .transition_index
         .get(&edge.transition_id)
         .map(|&idx| compiled.transition(idx).clone())?;
-    let step = facts(pre, post, &transition);
+    let step = facts(ctx.compiled, pre, post, &transition);
     Some(FullEdge {
         pre_canon: edge.pre_canon.clone(),
         post_canon: edge.post_canon.clone(),
@@ -337,8 +338,8 @@ fn unreachable_witness(
     allowed_when: &HashSet<String>,
     allowed_goal: &HashSet<String>,
     include_unmounted: Option<bool>,
-) -> Option<(String, ModelState)> {
-    let goal_canons: HashSet<String> = ctx
+) -> Option<(Vec<u8>, ModelState)> {
+    let goal_canons: HashSet<Vec<u8>> = ctx
         .states
         .iter()
         .filter(|(_, state)| {
@@ -422,8 +423,8 @@ fn failing_suffix_within(
         )? {
             return Ok(None);
         }
-        let canon = canonical_state(&compiled.model, state);
-        let key = format!("{canon}:{depth}");
+        let _canon = canonical_key(compiled, state);
+        let key = format!("{}:{depth}", crate::canon::canonical_state(compiled, state));
         if let Some(cached) = memo.get(&key) {
             return Ok(cached.clone());
         }
@@ -484,8 +485,7 @@ fn scheduler_successors(
     allow_user_events: bool,
     include_unmounted: Option<bool>,
 ) -> Vec<FullEdge> {
-    let pre_canon = canonical_state(&compiled.model, pre);
-    let var_ids: Vec<String> = compiled.model.vars.iter().map(|v| v.id.clone()).collect();
+    let pre_canon = canonical_key(compiled, pre);
     let mut out = Vec::new();
     for transition in crate::stabilize::enabled_transitions(compiled, pre) {
         if !scheduler_allows(transition, allow_user_events) {
@@ -499,16 +499,16 @@ fn scheduler_successors(
         )
         .unwrap_or_default();
         for raw_post in posts {
-            let changed = crate::domain::changed_vars(pre, &raw_post, &var_ids);
+            let changed = crate::state::changed_var_indexes(pre, &raw_post);
             if let Ok(stabilized) = crate::stabilize::stabilize(
                 compiled,
                 raw_post,
                 changed,
-                &mut |s| canonical_state(&compiled.model, s),
+                &mut |s| canonical_key(compiled, s),
             ) {
                 for post in stabilized {
-                    let post_canon = canonical_state(&compiled.model, &post);
-                    let step = facts(pre, &post, transition);
+                    let post_canon = canonical_key(compiled, &post);
+                    let step = facts(compiled, pre, &post, transition);
                     let _ = include_unmounted;
                     out.push(FullEdge {
                         pre_canon: pre_canon.clone(),
@@ -601,15 +601,19 @@ fn route_local_reads_ok(
     if reads.is_empty() {
         return true;
     }
-    let route = state.get("sys:route").and_then(|v| v.as_str());
+    let route = compiled
+        .sys_route_index
+        .and_then(|idx| state.get(idx).as_str());
     for id in reads {
         if let Some(decl) = compiled.var_decl(id) {
             if let Scope::RouteLocal { route: r, .. } = &decl.scope {
                 if route != Some(r.as_str()) {
                     return false;
                 }
-                if state.get(id) == Some(&Value::String(UNMOUNTED.into())) {
-                    return false;
+                if let Some(var_idx) = compiled.var_idx(id) {
+                    if state.get(var_idx) == &Value::String(UNMOUNTED.into()) {
+                        return false;
+                    }
                 }
             }
         }

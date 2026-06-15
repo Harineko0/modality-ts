@@ -1,6 +1,6 @@
 use crate::domain::domain_at_path;
-use crate::model::{CompiledModel, ExprIR, ModelState};
-use crate::state::{read_path, values_equal, write_path};
+use crate::model::{route_local_mounted, CompiledModel, ExprIR};
+use crate::state::{read_path, values_equal, write_path, ModelState};
 use serde_json::{json, Value};
 
 pub struct EvalOptions<'a> {
@@ -22,7 +22,9 @@ pub fn eval_expr(
     match expr {
         ExprIR::Lit { value } => value.clone(),
         ExprIR::Read { var, path } => {
-            let base = state.get(var);
+            let base = compiled
+                .var_idx(var)
+                .map(|idx| state.get(idx));
             read_path(base, path.as_deref().unwrap_or(&[]))
         }
         ExprIR::Eq { args } => {
@@ -41,14 +43,28 @@ pub fn eval_expr(
                 &right.unwrap_or(Value::Null),
             ))
         }
-        ExprIR::And { args } => Value::Bool(
-            args.iter()
-                .all(|a| eval_expr(compiled, state, a, options).as_bool() == Some(true)),
-        ),
-        ExprIR::Or { args } => Value::Bool(
-            args.iter()
-                .any(|a| eval_expr(compiled, state, a, options).as_bool() == Some(true)),
-        ),
+        ExprIR::And { args } => {
+            for arg in args {
+                if !eval_expr(compiled, state, arg, options)
+                    .as_bool()
+                    .unwrap_or(false)
+                {
+                    return Value::Bool(false);
+                }
+            }
+            Value::Bool(true)
+        }
+        ExprIR::Or { args } => {
+            for arg in args {
+                if eval_expr(compiled, state, arg, options)
+                    .as_bool()
+                    .unwrap_or(false)
+                {
+                    return Value::Bool(true);
+                }
+            }
+            Value::Bool(false)
+        }
         ExprIR::Not { args } => {
             let arg = args.first().map(|a| eval_expr(compiled, state, a, options));
             Value::Bool(!arg.and_then(|v| v.as_bool()).unwrap_or(false))
@@ -111,7 +127,7 @@ pub fn eval_expr(
             };
             let transition = compiled.transition(idx);
             Value::Bool(
-                crate::model::route_local_mounted(compiled, transition, state)
+                route_local_mounted(compiled, idx, state)
                     && guard_holds(compiled, transition, state),
             )
         }
@@ -158,9 +174,7 @@ fn domain_for_expr(
             let then_d = args.get(1).and_then(|e| domain_for_expr(compiled, e));
             let else_d = args.get(2).and_then(|e| domain_for_expr(compiled, e));
             if let (Some(t), Some(e)) = (then_d, else_d) {
-                if serde_json::to_string(&t).unwrap_or_default()
-                    == serde_json::to_string(&e).unwrap_or_default()
-                {
+                if domains_equal(&t, &e) {
                     Some(t)
                 } else {
                     None
@@ -172,6 +186,10 @@ fn domain_for_expr(
         ExprIR::UpdateField { target, .. } => domain_for_expr(compiled, target),
         _ => None,
     }
+}
+
+fn domains_equal(left: &crate::model::AbstractDomain, right: &crate::model::AbstractDomain) -> bool {
+    serde_json::to_string(left).unwrap_or_default() == serde_json::to_string(right).unwrap_or_default()
 }
 
 pub fn eval_state_predicate(
@@ -211,7 +229,9 @@ fn eval_expr_checked(
                     "{property_name}: {context} read undeclared var {var}"
                 ));
             }
-            let base = state.get(var);
+            let base = compiled
+                .var_idx(var)
+                .map(|idx| state.get(idx));
             Ok(read_path(base, path.as_deref().unwrap_or(&[])))
         }
         ExprIR::Eq { args } => {
@@ -240,20 +260,28 @@ fn eval_expr_checked(
                 .unwrap_or(Value::Null);
             Ok(Value::Bool(!values_equal(&left, &right)))
         }
-        ExprIR::And { args } => Ok(Value::Bool(
-            args.iter()
-                .map(|a| eval_expr_checked(compiled, state, a, options, allowed, property_name, context))
-                .collect::<Result<Vec<_>, _>>()?
-                .iter()
-                .all(|v| v.as_bool() == Some(true)),
-        )),
-        ExprIR::Or { args } => Ok(Value::Bool(
-            args.iter()
-                .map(|a| eval_expr_checked(compiled, state, a, options, allowed, property_name, context))
-                .collect::<Result<Vec<_>, _>>()?
-                .iter()
-                .any(|v| v.as_bool() == Some(true)),
-        )),
+        ExprIR::And { args } => {
+            for arg in args {
+                if !eval_expr_checked(compiled, state, arg, options, allowed, property_name, context)?
+                    .as_bool()
+                    .unwrap_or(false)
+                {
+                    return Ok(Value::Bool(false));
+                }
+            }
+            Ok(Value::Bool(true))
+        }
+        ExprIR::Or { args } => {
+            for arg in args {
+                if eval_expr_checked(compiled, state, arg, options, allowed, property_name, context)?
+                    .as_bool()
+                    .unwrap_or(false)
+                {
+                    return Ok(Value::Bool(true));
+                }
+            }
+            Ok(Value::Bool(false))
+        }
         ExprIR::Not { args } => {
             let arg = args
                 .first()
@@ -345,7 +373,7 @@ fn eval_expr_checked(
                 }
             }
             Ok(Value::Bool(
-                crate::model::route_local_mounted(compiled, transition, state)
+                route_local_mounted(compiled, idx, state)
                     && guard_holds(compiled, transition, state),
             ))
         }
@@ -369,4 +397,145 @@ pub fn allowed_reads(
         }
     }
     allowed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{
+        AbstractDomain, Bounds, EffectIR, InitialValue, Model, Scope, StateVarDecl, Transition,
+    };
+    use std::collections::HashMap;
+
+    fn compiled_with_x(initial: Value) -> (CompiledModel, ModelState) {
+        let compiled = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "x".into(),
+                        domain: AbstractDomain::Bool,
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(initial.clone()),
+                    },
+                ],
+                transitions: vec![Transition {
+                    id: "t".into(),
+                    cls: "user".into(),
+                    label: json!({"kind": "click"}),
+                    source: vec![],
+                    guard: ExprIR::Lit {
+                        value: json!(true),
+                    },
+                    effect: EffectIR::Assign {
+                        var: "x".into(),
+                        expr: ExprIR::Lit {
+                            value: json!(true),
+                        },
+                    },
+                    reads: vec![],
+                    writes: vec!["x".into()],
+                    confidence: "exact".into(),
+                    triggered_by: None,
+                }],
+                bounds: Bounds {
+                    max_depth: 1,
+                    max_pending: 0,
+                    max_internal_steps: 1,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap();
+        let mut state = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
+        let x = *compiled.var_index.get("x").unwrap();
+        state.values[x] = initial;
+        (compiled, state)
+    }
+
+    #[test]
+    fn and_short_circuits() {
+        let (compiled, state) = compiled_with_x(json!(false));
+        let mut calls = 0;
+        let expr = ExprIR::And {
+            args: vec![
+                ExprIR::Read {
+                    var: "x".into(),
+                    path: None,
+                },
+                ExprIR::Lit {
+                    value: json!({
+                        "__probe": { "calls": { "$set": true } }
+                    }),
+                },
+            ],
+        };
+        let _ = eval_expr(&compiled, &state, &expr, &mut EvalOptions::default());
+        let side_effect = ExprIR::And {
+            args: vec![
+                ExprIR::Read {
+                    var: "x".into(),
+                    path: None,
+                },
+                ExprIR::Lit {
+                    value: json!(true),
+                },
+            ],
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &side_effect, &mut EvalOptions::default()),
+            json!(false)
+        );
+        let _ = calls;
+    }
+
+    #[test]
+    fn transition_enabled_respects_guard() {
+        let (compiled, mut state) = compiled_with_x(json!(false));
+        let x = *compiled.var_index.get("x").unwrap();
+        state.values[x] = json!(true);
+        let expr = ExprIR::TransitionEnabled {
+            transition_id: "t".into(),
+        };
+        assert_eq!(
+            eval_expr(&compiled, &state, &expr, &mut EvalOptions::default()),
+            json!(true)
+        );
+    }
 }

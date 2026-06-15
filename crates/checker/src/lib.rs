@@ -14,7 +14,7 @@ mod state;
 mod step;
 mod trace;
 
-use model::{CheckRequest, Model, ModelState};
+use model::{CheckRequest, Model};
 use napi_derive::napi;
 use search::{check_model_request, model_initial_states as compute_initial_states, model_successors as compute_successors};
 use report::{wrap_err, wrap_ok};
@@ -54,7 +54,7 @@ pub fn model_successors(model_json: String, state_json: String) -> napi::Result<
         Ok(m) => m,
         Err(error) => return Ok(wrap_err(format!("invalid model JSON: {error}"))),
     };
-    let state: ModelState = match serde_json::from_str(&state_json) {
+    let state: serde_json::Map<String, Value> = match serde_json::from_str(&state_json) {
         Ok(s) => s,
         Err(error) => return Ok(wrap_err(format!("invalid state JSON: {error}"))),
     };

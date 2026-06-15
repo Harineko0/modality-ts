@@ -1,7 +1,7 @@
 use crate::domain::initial_values;
 use crate::expr::{eval_expr, EvalOptions};
-use crate::model::{CompiledModel, ExprIR, Model, ModelState, UNMOUNTED};
-use crate::state::{clone_state, set_var};
+use crate::model::{CompiledModel, ExprIR, UNMOUNTED};
+use crate::state::ModelState;
 use serde_json::Value;
 
 pub fn navigate(
@@ -11,10 +11,17 @@ pub fn navigate(
     to: Option<&ExprIR>,
     options: &mut EvalOptions,
 ) -> Result<Vec<ModelState>, crate::effect::EffectError> {
-    let route = state.get("sys:route").cloned();
+    let route_idx = compiled
+        .sys_route_index
+        .ok_or_else(|| crate::effect::EffectError::TokenExhausted("sys:route".into()))?;
+    let history_idx = compiled
+        .sys_history_index
+        .ok_or_else(|| crate::effect::EffectError::TokenExhausted("sys:history".into()))?;
+
+    let route = state.get(route_idx).clone();
     let history = state
-        .get("sys:history")
-        .and_then(|v| v.as_array())
+        .get(history_idx)
+        .as_array()
         .cloned()
         .unwrap_or_default();
 
@@ -24,17 +31,13 @@ pub fn navigate(
             return Ok(vec![state.clone()]);
         }
         let previous = previous.unwrap().to_string();
-        let mut next = clone_state(state);
-        set_var(&mut next, "sys:route", Value::String(previous));
-        set_var(
-            &mut next,
-            "sys:history",
-            Value::Array(history[..history.len().saturating_sub(1)].to_vec()),
-        );
+        let mut next = state.clone();
+        next.values[route_idx] = Value::String(previous);
+        next.values[history_idx] = Value::Array(history[..history.len().saturating_sub(1)].to_vec());
         return Ok(reset_route_locals(
-            &compiled.model,
+            compiled,
             next,
-            route.as_ref(),
+            Some(&route),
             false,
         ));
     }
@@ -68,7 +71,7 @@ pub fn navigate(
     }
 
     let next_history = if mode == "push" {
-        if let Some(Value::String(r)) = &route {
+        if let Value::String(r) = &route {
             let mut h = history;
             h.push(Value::String(r.clone()));
             h
@@ -79,33 +82,40 @@ pub fn navigate(
         history
     };
 
-    let mut next = clone_state(state);
-    set_var(&mut next, "sys:route", Value::String(to_str));
-    set_var(&mut next, "sys:history", Value::Array(next_history));
+    let mut next = state.clone();
+    next.values[route_idx] = Value::String(to_str);
+    next.values[history_idx] = Value::Array(next_history);
     Ok(reset_route_locals(
-        &compiled.model,
+        compiled,
         next,
-        route.as_ref(),
+        Some(&route),
         false,
     ))
 }
 
-pub fn normalize_initial_route_locals(model: &Model, state: ModelState) -> Vec<ModelState> {
-    reset_route_locals(model, state, None, true)
+pub fn normalize_initial_route_locals(
+    compiled: &CompiledModel,
+    state: ModelState,
+) -> Vec<ModelState> {
+    reset_route_locals(compiled, state, None, true)
 }
 
 fn reset_route_locals(
-    model: &Model,
+    compiled: &CompiledModel,
     state: ModelState,
     previous_route: Option<&Value>,
     preserve_mounted: bool,
 ) -> Vec<ModelState> {
-    let current_route = state.get("sys:route").cloned();
-    if previous_route == current_route.as_ref() {
+    let route_idx = match compiled.sys_route_index {
+        Some(idx) => idx,
+        None => return vec![state],
+    };
+    let current_route = state.get(route_idx).clone();
+    if previous_route == Some(&current_route) {
         return vec![state];
     }
     let mut states = vec![state];
-    for decl in &model.vars {
+    for (var_idx, decl) in compiled.model.vars.iter().enumerate() {
         let route_local = match &decl.scope {
             crate::model::Scope::RouteLocal { route, .. } => Some(route.as_str()),
             _ => None,
@@ -114,7 +124,7 @@ fn reset_route_locals(
             continue;
         }
         let route = route_local.unwrap();
-        if current_route.as_ref() == Some(&Value::String(route.to_string())) {
+        if current_route == Value::String(route.to_string()) {
             if preserve_mounted {
                 continue;
             }
@@ -123,7 +133,7 @@ fn reset_route_locals(
             for candidate in states {
                 for value in &initials {
                     let mut s = candidate.clone();
-                    s.insert(decl.id.clone(), value.clone());
+                    s.values[var_idx] = value.clone();
                     next_states.push(s);
                 }
             }
@@ -132,10 +142,7 @@ fn reset_route_locals(
             states = states
                 .into_iter()
                 .map(|mut candidate| {
-                    candidate.insert(
-                        decl.id.clone(),
-                        Value::String(UNMOUNTED.to_string()),
-                    );
+                    candidate.values[var_idx] = Value::String(UNMOUNTED.to_string());
                     candidate
                 })
                 .collect();

@@ -1,16 +1,13 @@
 use crate::domain::enumerate_domain;
 use crate::expr::{eval_expr, EvalOptions};
-use crate::model::{CompiledModel, EffectIR, ModelState};
+use crate::model::{CompiledModel, EffectIR};
 use crate::navigation;
-use crate::state::{clone_state, set_var};
+use crate::state::ModelState;
 use serde_json::Value;
 use std::collections::HashSet;
 
-pub struct TokenExhausted(pub String);
-
 pub enum EffectError {
     TokenExhausted(String),
-    Opaque(String),
 }
 
 pub fn apply_effect(
@@ -27,7 +24,6 @@ pub fn apply_effect(
             }
             Ok(vec![])
         }
-        Err(EffectError::Opaque(message)) => Err(message),
     }
 }
 
@@ -40,31 +36,34 @@ fn apply_effect_inner(
     match effect {
         EffectIR::Assign { var, expr } => {
             let value = eval_assign_expr(compiled, state, expr, options)?;
-            let mut next = clone_state(state);
-            set_var(&mut next, var, value);
-            Ok(vec![next])
+            let var_idx = compiled
+                .var_idx(var)
+                .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
+            Ok(vec![state.with_var(var_idx, value)])
         }
         EffectIR::Havoc { var } => {
             let decl = compiled
                 .var_decl(var)
                 .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
+            let var_idx = compiled
+                .var_idx(var)
+                .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
             Ok(enumerate_domain(&decl.domain)
                 .into_iter()
-                .map(|value| {
-                    let mut next = clone_state(state);
-                    set_var(&mut next, var, value);
-                    next
+                .map(|value| state.with_var(var_idx, value))
+                .collect())
+        }
+        EffectIR::Choose { var, among } => {
+            let var_idx = compiled
+                .var_idx(var)
+                .ok_or_else(|| EffectError::TokenExhausted(var.clone()))?;
+            Ok(among
+                .iter()
+                .map(|expr| {
+                    state.with_var(var_idx, eval_expr(compiled, state, expr, options))
                 })
                 .collect())
         }
-        EffectIR::Choose { var, among } => Ok(among
-            .iter()
-            .map(|expr| {
-                let mut next = clone_state(state);
-                set_var(&mut next, var, eval_expr(compiled, state, expr, options));
-                next
-            })
-            .collect()),
         EffectIR::If {
             cond,
             then,
@@ -97,7 +96,10 @@ fn apply_effect_inner(
             continuation,
             args,
         } => {
-            let pending = read_pending(state);
+            let pending_idx = compiled
+                .sys_pending_index
+                .ok_or_else(|| EffectError::TokenExhausted("sys:pending".into()))?;
+            let pending = read_pending(state, pending_idx);
             if pending.len() >= compiled.model.bounds.max_pending as usize {
                 return Ok(vec![]);
             }
@@ -112,31 +114,30 @@ fn apply_effect_inner(
                 Value::String(continuation.clone()),
             );
             op_obj.insert("args".into(), Value::Object(op_args));
-            let mut next = clone_state(state);
             let mut new_pending = pending;
             new_pending.push(Value::Object(op_obj));
-            set_var(&mut next, "sys:pending", Value::Array(new_pending));
-            Ok(vec![next])
+            Ok(vec![state.with_var(pending_idx, Value::Array(new_pending))])
         }
         EffectIR::Dequeue { index } => {
-            let pending = read_pending(state);
+            let pending_idx = compiled
+                .sys_pending_index
+                .ok_or_else(|| EffectError::TokenExhausted("sys:pending".into()))?;
+            let pending = read_pending(state, pending_idx);
             if *index >= pending.len() {
                 return Ok(vec![state.clone()]);
             }
-            let mut next = clone_state(state);
             let filtered: Vec<_> = pending
                 .into_iter()
                 .enumerate()
                 .filter(|(i, _)| *i != *index)
                 .map(|(_, v)| v)
                 .collect();
-            set_var(&mut next, "sys:pending", Value::Array(filtered));
-            Ok(vec![next])
+            Ok(vec![state.with_var(pending_idx, Value::Array(filtered))])
         }
-        EffectIR::Navigate { mode, to } => {
-            navigation::navigate(compiled, state, mode, to.as_ref(), options)
-        }
-        EffectIR::Opaque { r#ref } => apply_opaque(compiled, state, r#ref),
+        EffectIR::Navigate { mode, to } => navigation::navigate(compiled, state, mode, to.as_ref(), options),
+        EffectIR::Opaque { .. } => Err(EffectError::TokenExhausted(
+            "unsupported opaque effect".into(),
+        )),
     }
 }
 
@@ -147,127 +148,15 @@ fn eval_assign_expr(
     options: &mut EvalOptions,
 ) -> Result<Value, EffectError> {
     if let crate::model::ExprIR::FreshToken { domain_of } = expr {
-        return fresh_token(compiled, state, domain_of).map(|token| Value::String(token));
+        return fresh_token(compiled, state, domain_of).map(Value::String);
     }
     Ok(eval_expr(compiled, state, expr, options))
 }
 
-fn apply_opaque(
-    compiled: &CompiledModel,
-    state: &ModelState,
-    opaque_ref: &crate::model::OpaqueRef,
-) -> Result<Vec<ModelState>, EffectError> {
-    execute_opaque_effect(compiled, state, opaque_ref).map_err(EffectError::Opaque)
-}
-
-fn execute_opaque_effect(
-    compiled: &CompiledModel,
-    state: &ModelState,
-    opaque_ref: &crate::model::OpaqueRef,
-) -> Result<Vec<ModelState>, String> {
-    if !opaque_ref.module.ends_with("opaque-effects.cjs") {
-        return Err(format!(
-            "unsupported opaque module {} (only test/checker/opaque-effects.cjs is bundled)",
-            opaque_ref.module
-        ));
-    }
-    let first = apply_opaque_export(compiled, state, &opaque_ref.export_name)?;
-    let second = apply_opaque_export(compiled, state, &opaque_ref.export_name)?;
-    if serde_json::to_string(&first).unwrap_or_default()
-        != serde_json::to_string(&second).unwrap_or_default()
-    {
-        return Err(format!(
-            "Opaque effect {}#{} returned nondeterministic results for identical input",
-            opaque_ref.module, opaque_ref.export_name
-        ));
-    }
-    first
-        .into_iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            validate_opaque_state(compiled, state, &candidate, opaque_ref, index)
-        })
-        .collect()
-}
-
-fn apply_opaque_export(
-    compiled: &CompiledModel,
-    state: &ModelState,
-    export_name: &str,
-) -> Result<Vec<ModelState>, String> {
-    let mut next = clone_state(state);
-    match export_name {
-        "setDone" => set_var(&mut next, "done", serde_json::json!(true)),
-        "writeUndeclared" => set_var(&mut next, "auth", serde_json::json!(true)),
-        "invalidDone" => set_var(&mut next, "done", serde_json::json!("yes")),
-        "nondeterministicDone" => {
-            use std::cell::Cell;
-            thread_local! {
-                static FLIP: Cell<bool> = const { Cell::new(false) };
-            }
-            FLIP.with(|flip| {
-                let value = !flip.get();
-                flip.set(value);
-                set_var(&mut next, "done", serde_json::json!(value));
-            });
-        }
-        other => {
-            return Err(format!(
-                "unknown opaque export {other} in test/checker/opaque-effects.cjs"
-            ));
-        }
-    }
-    Ok(vec![next])
-}
-
-fn validate_opaque_state(
-    compiled: &CompiledModel,
-    pre: &ModelState,
-    post: &ModelState,
-    opaque_ref: &crate::model::OpaqueRef,
-    index: usize,
-) -> Result<ModelState, String> {
-    let declared_writes: HashSet<_> = opaque_ref.declared_writes.iter().cloned().collect();
-    let var_ids: HashSet<_> = compiled.model.vars.iter().map(|v| v.id.clone()).collect();
-    for key in post.keys() {
-        if !var_ids.contains(key) {
-            return Err(format!(
-                "Opaque effect {}#{} wrote unknown var {key}",
-                opaque_ref.module, opaque_ref.export_name
-            ));
-        }
-    }
-    for decl in &compiled.model.vars {
-        let post_value = post.get(&decl.id).cloned().unwrap_or(Value::Null);
-        if !post.contains_key(&decl.id) {
-            return Err(format!(
-                "Opaque effect {}#{} result {index} omitted var {}",
-                opaque_ref.module, opaque_ref.export_name, decl.id
-            ));
-        }
-        if !declared_writes.contains(&decl.id)
-            && serde_json::to_string(pre.get(&decl.id).unwrap_or(&Value::Null)).unwrap_or_default()
-                != serde_json::to_string(&post_value).unwrap_or_default()
-        {
-            return Err(format!(
-                "Opaque effect {}#{} wrote undeclared var {}",
-                opaque_ref.module, opaque_ref.export_name, decl.id
-            ));
-        }
-        if !crate::domain::validate_value(&decl.domain, &post_value) {
-            return Err(format!(
-                "Opaque effect {}#{} produced invalid value for {}",
-                opaque_ref.module, opaque_ref.export_name, decl.id
-            ));
-        }
-    }
-    Ok(post.clone())
-}
-
-pub fn read_pending(state: &ModelState) -> Vec<Value> {
+pub fn read_pending(state: &ModelState, pending_idx: usize) -> Vec<Value> {
     state
-        .get("sys:pending")
-        .and_then(|v| v.as_array())
+        .get(pending_idx)
+        .as_array()
         .cloned()
         .unwrap_or_default()
 }
@@ -288,7 +177,7 @@ pub fn fresh_token(
     };
     let token_set: HashSet<_> = names.iter().cloned().collect();
     let mut used = HashSet::new();
-    for value in state.values() {
+    for value in &state.values {
         collect_tokens(value, &mut used, &token_set);
     }
     names
@@ -324,5 +213,158 @@ pub fn effect_contains_enqueue(effect: &EffectIR) -> bool {
             effect_contains_enqueue(then) || effect_contains_enqueue(else_branch)
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{
+        AbstractDomain, Bounds, ExprIR, InitialValue, Model, Scope, StateVarDecl,
+    };
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    fn base_compiled() -> CompiledModel {
+        CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into(), "/next".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into(), "/next".into()],
+                            }),
+                            max_len: 2,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::from([
+                                    (
+                                        "opId".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["op".into()],
+                                        },
+                                    ),
+                                    (
+                                        "continuation".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["c".into()],
+                                        },
+                                    ),
+                                    (
+                                        "args".into(),
+                                        AbstractDomain::Record {
+                                            fields: HashMap::new(),
+                                        },
+                                    ),
+                                ]),
+                            }),
+                            max_len: 1,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "x".into(),
+                        domain: AbstractDomain::Bool,
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!(false)),
+                    },
+                ],
+                transitions: vec![],
+                bounds: Bounds {
+                    max_depth: 2,
+                    max_pending: 1,
+                    max_internal_steps: 2,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap()
+    }
+
+    fn blank_state(compiled: &CompiledModel) -> ModelState {
+        let mut state = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
+        for (idx, decl) in compiled.model.vars.iter().enumerate() {
+            state.values[idx] =
+                crate::domain::initial_values(&decl.domain, &decl.initial)[0].clone();
+        }
+        state
+    }
+
+    #[test]
+    fn assign_and_havoc_branch_states() {
+        let compiled = base_compiled();
+        let state = blank_state(&compiled);
+        let x = *compiled.var_index.get("x").unwrap();
+        let assigned = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Assign {
+                var: "x".into(),
+                expr: ExprIR::Lit {
+                    value: json!(true),
+                },
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(assigned[0].values[x], json!(true));
+        let havoc = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Havoc { var: "x".into() },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(havoc.len(), 2);
+    }
+
+    #[test]
+    fn enqueue_respects_pending_cap() {
+        let compiled = base_compiled();
+        let state = blank_state(&compiled);
+        let pending_idx = compiled.sys_pending_index.unwrap();
+        let full = state.with_var(
+            pending_idx,
+            json!([{
+                "opId": "op",
+                "continuation": "c",
+                "args": {}
+            }]),
+        );
+        let posts = apply_effect(
+            &compiled,
+            &full,
+            &EffectIR::Enqueue {
+                op: "op".into(),
+                continuation: "c".into(),
+                args: HashMap::new(),
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert!(posts.is_empty());
     }
 }
