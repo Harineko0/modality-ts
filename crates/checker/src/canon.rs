@@ -45,6 +45,10 @@ pub fn canonical_state(compiled: &CompiledModel, state: &ModelState) -> String {
     format!("{:016x}", identity.hash)
 }
 
+pub fn canonical_identity_hash(bytes: &[u8]) -> u64 {
+    fnv1a64(bytes)
+}
+
 fn fnv1a64(bytes: &[u8]) -> u64 {
     const OFFSET: u64 = 0xcbf29ce484222325;
     const PRIME: u64 = 0x100000001b3;

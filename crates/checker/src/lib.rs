@@ -3,6 +3,7 @@ mod diagnostics;
 mod domain;
 mod effect;
 mod expr;
+mod frontier;
 mod graph;
 mod model;
 mod navigation;
@@ -13,6 +14,8 @@ mod stabilize;
 mod state;
 mod step;
 mod trace;
+mod transition_index;
+mod visited;
 
 use model::{CheckRequest, Model};
 use napi_derive::napi;

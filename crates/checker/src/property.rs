@@ -322,6 +322,8 @@ fn materialize_edge(
     Some(FullEdge {
         pre_canon: edge.pre_canon.clone(),
         post_canon: edge.post_canon.clone(),
+        pre_id: edge.pre_id,
+        post_id: edge.post_id,
         pre: pre.clone(),
         post: post.clone(),
         transition,
@@ -513,6 +515,8 @@ fn scheduler_successors(
                     out.push(FullEdge {
                         pre_canon: pre_canon.clone(),
                         post_canon,
+                        pre_id: None,
+                        post_id: None,
                         pre: pre.clone(),
                         post,
                         transition: (*transition).clone(),
