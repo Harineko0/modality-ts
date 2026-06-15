@@ -289,7 +289,10 @@ function assertSerializableStepPredicateFlat(
       throw new Error(`${path} has unknown step predicate key ${key}`);
     }
   }
-  if (value.transitionId !== undefined && typeof value.transitionId !== "string") {
+  if (
+    value.transitionId !== undefined &&
+    typeof value.transitionId !== "string"
+  ) {
     throw new Error(`${path}.transitionId must be a string`);
   }
   if (
@@ -304,13 +307,19 @@ function assertSerializableStepPredicateFlat(
   if (value.enqueued !== undefined && typeof value.enqueued !== "string") {
     throw new Error(`${path}.enqueued must be a string`);
   }
-  if (value.navigatedTo !== undefined && typeof value.navigatedTo !== "string") {
+  if (
+    value.navigatedTo !== undefined &&
+    typeof value.navigatedTo !== "string"
+  ) {
     throw new Error(`${path}.navigatedTo must be a string`);
   }
   if (value.opId !== undefined && typeof value.opId !== "string") {
     throw new Error(`${path}.opId must be a string`);
   }
-  if (value.continuation !== undefined && typeof value.continuation !== "string") {
+  if (
+    value.continuation !== undefined &&
+    typeof value.continuation !== "string"
+  ) {
     throw new Error(`${path}.continuation must be a string`);
   }
   if (value.navigated !== undefined && typeof value.navigated !== "boolean") {
@@ -405,7 +414,9 @@ function assertSerializableExpr(value: unknown, path: string): void {
       }
       break;
     default:
-      throw new Error(`${path} has unsupported expression kind ${String(value.kind)}`);
+      throw new Error(
+        `${path} has unsupported expression kind ${String(value.kind)}`,
+      );
   }
 }
 

@@ -22,8 +22,8 @@ importers:
         version: 2.4.1(react@18.3.1)
     devDependencies:
       modality-ts:
-        specifier: ^0.0.17
-        version: 0.0.17
+        specifier: ^0.0.18
+        version: 0.0.18
 
 packages:
 
@@ -165,8 +165,8 @@ packages:
   mdn-data@2.27.1:
     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
 
-  modality-ts@0.0.17:
-    resolution: {integrity: sha512-EpL43b/E/AkO1Kn4fBLAL1KPo+7f78FdOVP8NZ5caWg4+mgj87XK3pjbqahSAP59X+eqSrCPIINzcE3ViuXsFQ==}
+  modality-ts@0.0.18:
+    resolution: {integrity: sha512-OI7YUbnKiJOHq5wZlcUjPWn8uL3gKOhY05mpemK75+9ov/1Oq2P9Vq+4JeyOtiO6PAgp0xfYowM+L36Ey5hQoA==}
     hasBin: true
 
   parse5@8.0.1:
@@ -382,7 +382,7 @@ snapshots:
 
   mdn-data@2.27.1: {}
 
-  modality-ts@0.0.17:
+  modality-ts@0.0.18:
     dependencies:
       jsdom: 29.1.1
       typescript: 5.9.3

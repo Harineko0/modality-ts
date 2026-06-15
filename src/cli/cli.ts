@@ -112,7 +112,7 @@ async function main(): Promise<void> {
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
     );
     console.log(
-      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]",
+      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits] [--artifact|-A]",
     );
     console.log(
       "         no args checks each discovered *.props.mjs against its matching .modality/models/**/*.model.json",
@@ -550,6 +550,7 @@ async function main(): Promise<void> {
   const replayTestsFlag = flagValue(args, "--replay-tests");
   const actionReplayTestsFlag = flagValue(args, "--action-replay-tests");
   const noSearchLimits = args.includes("--no-search-limits");
+  const showArtifacts = args.includes("--artifact") || args.includes("-A");
   const maxStatesRaw = flagValue(args, "--max-states");
   const maxEdgesRaw = flagValue(args, "--max-edges");
   const maxFrontierRaw = flagValue(args, "--max-frontier");
@@ -590,18 +591,21 @@ async function main(): Promise<void> {
       ? parsePositiveIntegerValue("--memory-guard-mb", memoryGuardMbRaw)
       : undefined;
   const statesPath = flagValue(args, "--states");
-  const positional = positionals(args, [
-    "--report",
-    "--overlay",
-    "--traces",
-    "--replay-tests",
-    "--action-replay-tests",
-    "--states",
-    "--max-states",
-    "--max-edges",
-    "--max-frontier",
-    "--memory-guard-mb",
-  ]);
+  const positional = positionals(
+    args.filter((arg) => arg !== "-A"),
+    [
+      "--report",
+      "--overlay",
+      "--traces",
+      "--replay-tests",
+      "--action-replay-tests",
+      "--states",
+      "--max-states",
+      "--max-edges",
+      "--max-frontier",
+      "--memory-guard-mb",
+    ],
+  );
   const [modelPath, ...propsPaths] = positional;
   const overlayPath = flagValue(args, "--overlay");
   if (args.includes("--report") && !reportPath)
@@ -699,6 +703,7 @@ async function main(): Promise<void> {
           color,
           startedAt,
           totalDurationMs: performance.now() - startedMs,
+          showArtifacts,
         }),
       );
       process.exit(exitCode);
@@ -742,6 +747,7 @@ async function main(): Promise<void> {
         color,
         startedAt,
         totalDurationMs: performance.now() - startedMs,
+        showArtifacts,
       },
     ),
   );

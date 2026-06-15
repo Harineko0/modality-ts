@@ -7,6 +7,6 @@
     "swr": "^2.0.0"
   },
   "devDependencies": {
-    "modality-ts": "^0.0.17"
+    "modality-ts": "^0.0.18"
   }
 }

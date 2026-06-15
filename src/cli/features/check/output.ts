@@ -31,6 +31,7 @@ export interface HumanCheckTargetResult {
 export interface HumanCheckRenderOptions extends OutputOptions {
   startedAt: Date;
   totalDurationMs: number;
+  showArtifacts?: boolean;
 }
 
 export function symbolForStatus(status: PropertyVerdict["status"]): string {
@@ -43,6 +44,21 @@ export function symbolForStatus(status: PropertyVerdict["status"]): string {
       return statusSymbol("fail");
     case "vacuous-warning":
       return statusSymbol("warn");
+  }
+}
+
+function verdictStatusKind(
+  status: PropertyVerdict["status"],
+): "pass" | "fail" | "warn" {
+  switch (status) {
+    case "verified-within-bounds":
+    case "reachable":
+      return "pass";
+    case "violated":
+    case "error":
+      return "fail";
+    case "vacuous-warning":
+      return "warn";
   }
 }
 
@@ -150,7 +166,9 @@ function renderTargetRows(
   lines.push(` ${symbol} ${target.propsPath}${duration}`);
   lines.push(`  ${formatTargetStats(target.check)}`);
   for (const verdict of target.check.verdicts) {
-    lines.push(`  - ${verdict.property} ${verdict.status}`);
+    lines.push(
+      `  ${formatStatusSymbol(verdictStatusKind(verdict.status), options)} ${verdict.property} ${verdict.status}`,
+    );
     if (verdict.status === "violated" || verdict.status === "reachable") {
       lines.push(`    trace: ${traceSteps(verdict)}`);
     }
@@ -226,7 +244,7 @@ export function renderHumanCheckTargets(
       artifacts.push(entry);
     }
   }
-  if (artifacts.length > 0) {
+  if (options.showArtifacts === true && artifacts.length > 0) {
     lines.push(formatSummaryLabel("Artifacts", ""));
     for (const entry of artifacts) {
       lines.push(formatArtifactLine(entry.kind, entry.path, options));

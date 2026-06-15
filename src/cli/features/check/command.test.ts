@@ -775,13 +775,14 @@ describe("renderHumanCheckTargets", () => {
       {
         startedAt: new Date("2026-06-12T11:36:28.000Z"),
         totalDurationMs: 1270,
+        showArtifacts: true,
       },
     );
     expect(lines[0]).toMatch(/^ [×✓⚠] props\.mjs /);
     expect(lines.join("\n")).not.toContain("Properties");
     expect(lines.join("\n")).not.toContain("Stats");
     expect(
-      lines.some((line) => line === "  - flagStartsFalseOnly violated"),
+      lines.some((line) => line === "  × flagStartsFalseOnly violated"),
     ).toBe(true);
     expect(lines.some((line) => line.includes("Test Files"))).toBe(true);
     expect(lines.some((line) => line.includes("Tests"))).toBe(true);
@@ -796,6 +797,84 @@ describe("renderHumanCheckTargets", () => {
     expect(artifactsIndex).toBeGreaterThanOrEqual(0);
     expect(artifactsIndex).toBeGreaterThan(testFilesIndex);
     expect(lines.some((line) => line.includes("(trace)"))).toBe(true);
+  });
+
+  it("hides Artifacts by default and shows them when showArtifacts is true", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] },
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const target = {
+      modelPath,
+      propsPath: "props.mjs",
+      check: result.check,
+      reportPath: "report.json",
+      artifacts: [{ kind: "trace" as const, path: "traces/foo.trace.json" }],
+      durationMs: 12,
+    };
+    const renderOptions = {
+      startedAt: new Date("2026-06-12T11:36:28.000Z"),
+      totalDurationMs: 1270,
+    };
+
+    const hidden = renderHumanCheckTargets([target], renderOptions);
+    expect(
+      hidden.some((line) => line.trimStart().startsWith("Artifacts")),
+    ).toBe(false);
+    expect(hidden.some((line) => line.includes("(trace)"))).toBe(false);
+
+    const shown = renderHumanCheckTargets([target], {
+      ...renderOptions,
+      showArtifacts: true,
+    });
+    expect(shown.some((line) => line.trimStart().startsWith("Artifacts"))).toBe(
+      true,
+    );
+    expect(shown.some((line) => line.includes("(trace)"))).toBe(true);
+  });
+
+  it("prefixes passing property verdicts with a pass symbol", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "props.mjs",
+          check: result.check,
+          artifacts: [],
+          durationMs: 5,
+        },
+      ],
+      {
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+        totalDurationMs: 12,
+      },
+    );
+    expect(
+      lines.some((line) => line === "  ✓ flagCanBecomeTrue reachable"),
+    ).toBe(true);
   });
 
   it("aggregates multiple targets before the summary block", async () => {

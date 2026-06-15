@@ -76,11 +76,7 @@ function evalExpr(expr: ExprIR, state: ModelState): Value {
 }
 
 function tagMatches(value: Value, expectedTag: string): boolean {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
   const record = value as Record<string, Value>;

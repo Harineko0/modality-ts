@@ -414,8 +414,8 @@ describe("modality CLI", () => {
     expect(stdout).not.toContain("Properties\n");
     expect(stdout).not.toContain("Stats\n");
     expect(stdout).toContain("Test Files");
-    expect(stdout).toContain("  - rootFlagCanBecomeTrue reachable");
-    expect(stdout).toContain("  - homeFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  ✓ homeFlagCanBecomeTrue reachable");
     await access(join(dir, ".modality", "models", "app", "root.report.json"));
     await access(
       join(dir, ".modality", "models", "app", "routes", "home.report.json"),
@@ -434,8 +434,8 @@ describe("modality CLI", () => {
       expect(execError.code).toBe(2);
       stdout = execError.stdout ?? "";
     }
-    expect(stdout).toContain("  - rootFlagCanBecomeTrue reachable");
-    expect(stdout).toContain("  - homeFlagAlwaysFalse violated");
+    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  × homeFlagAlwaysFalse violated");
   });
 
   it("fails clearly when generated models are missing for no-arg check", async () => {
