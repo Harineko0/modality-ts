@@ -1,5 +1,12 @@
 import type { ExprIR, ModelState, Value } from "./types.js";
 
+export class StatePredicateEvalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StatePredicateEvalError";
+  }
+}
+
 export function evalStatePredicate(expr: ExprIR, state: ModelState): boolean {
   return Boolean(evalExpr(expr, state));
 }
@@ -36,17 +43,49 @@ function evalExpr(expr: ExprIR, state: ModelState): Value {
         expr.path,
         evalExpr(expr.value, state),
       );
-    case "tagIs":
-      return false;
+    case "tagIs": {
+      const value = evalExpr(expr.arg, state);
+      return tagMatches(value, expr.tag);
+    }
     case "lenCat": {
       const value = evalExpr(expr.arg, state);
       if (!Array.isArray(value)) return "0";
       return value.length === 0 ? "0" : value.length === 1 ? "1" : "many";
     }
     case "freshToken":
-    case "transitionEnabled":
       return false;
+    case "readPre":
+      throw new StatePredicateEvalError(
+        "readPre is only valid in step predicates, not plain state predicates",
+      );
+    case "readOpArg":
+      throw new StatePredicateEvalError(
+        "readOpArg is only valid in step predicates, not plain state predicates",
+      );
+    case "transitionEnabled":
+      throw new StatePredicateEvalError(
+        "transitionEnabled is only valid in step predicates, not plain state predicates",
+      );
+    default: {
+      const _exhaustive: never = expr;
+      throw new StatePredicateEvalError(
+        `unsupported expression kind: ${(_exhaustive as ExprIR).kind}`,
+      );
+    }
   }
+}
+
+function tagMatches(value: Value, expectedTag: string): boolean {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const record = value as Record<string, Value>;
+  const discriminant = record.kind;
+  return typeof discriminant === "string" && discriminant === expectedTag;
 }
 
 function readPath(value: Value | undefined, path: readonly string[]): Value {

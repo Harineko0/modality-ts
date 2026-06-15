@@ -8,6 +8,7 @@ import {
   enabled,
   enumerateDomain,
   eq,
+  evalStatePredicate,
   lit,
   notExpr,
   reachableFrom,
@@ -1155,5 +1156,37 @@ describe("property DSL", () => {
       enabledTransitions: ["toggle"],
     });
     expect(property.enabledTransitions).toEqual(["toggle"]);
+  });
+});
+
+describe("evalStatePredicate", () => {
+  it("matches tagIs against the tagged discriminant field", () => {
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "admin" } },
+      ),
+    ).toBe(true);
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "guest", role: "admin" } },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects step-only expressions in plain state predicates", () => {
+    expect(() =>
+      evalStatePredicate({ kind: "readPre", var: "flag" }, { flag: true }),
+    ).toThrow(/readPre is only valid in step predicates/);
+    expect(() =>
+      evalStatePredicate({ kind: "readOpArg", key: "plan" }, {}),
+    ).toThrow(/readOpArg is only valid in step predicates/);
+    expect(() =>
+      evalStatePredicate(
+        { kind: "transitionEnabled", transitionId: "toggle" },
+        {},
+      ),
+    ).toThrow(/transitionEnabled is only valid in step predicates/);
   });
 });

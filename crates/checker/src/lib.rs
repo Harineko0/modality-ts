@@ -5,6 +5,7 @@ mod effect;
 mod expr;
 mod frontier;
 mod graph;
+mod memory;
 mod model;
 mod navigation;
 mod property;

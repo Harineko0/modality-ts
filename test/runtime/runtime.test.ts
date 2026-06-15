@@ -3,11 +3,13 @@ import {
   always,
   andExpr,
   eq,
+  evalStatePredicate,
   lit,
   neq,
   orExpr,
   reachable,
   readVar,
+  StatePredicateEvalError,
   type Model,
 } from "modality-ts/core";
 import {
@@ -193,5 +195,37 @@ describe("modality-ts/cli/runtime observable assertions", () => {
     expect(() => controller.check()).toThrow(
       "flagTrue: observable invariant failed",
     );
+  });
+});
+
+describe("evalStatePredicate", () => {
+  it("matches tagIs against the tagged discriminant field", () => {
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "admin" } },
+      ),
+    ).toBe(true);
+    expect(
+      evalStatePredicate(
+        { kind: "tagIs", arg: readVar("session"), tag: "admin" },
+        { session: { kind: "guest", role: "admin" } },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects step-only expressions in plain state predicates", () => {
+    expect(() =>
+      evalStatePredicate({ kind: "readPre", var: "flag" }, { flag: true }),
+    ).toThrow(StatePredicateEvalError);
+    expect(() =>
+      evalStatePredicate({ kind: "readOpArg", key: "plan" }, {}),
+    ).toThrow(/step predicates/);
+    expect(() =>
+      evalStatePredicate(
+        { kind: "transitionEnabled", transitionId: "toggle" },
+        {},
+      ),
+    ).toThrow(/step predicates/);
   });
 });

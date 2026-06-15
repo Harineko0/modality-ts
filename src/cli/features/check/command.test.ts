@@ -926,4 +926,35 @@ describe("runCheckCommand streaming output", () => {
       }),
     ).rejects.toThrow("serializable IR, not functions");
   });
+
+  it("propagates memory guard limits to the Rust checker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.mjs");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      reportPath,
+      searchLimits: { memoryGuardBytes: 1 },
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.check.diagnostics?.limits?.memoryGuardBytes).toBe(1);
+    expect(result.check.diagnostics?.limits?.reason).toContain(
+      "memoryGuardBytes=1",
+    );
+    expect(
+      result.lines.some((line) => line.startsWith("search-limit=memoryGuard")),
+    ).toBe(true);
+  });
 });

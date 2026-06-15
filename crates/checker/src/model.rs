@@ -189,7 +189,7 @@ pub struct Model {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StepPredicateIR {
     pub transition_id: Option<String>,
     pub transition_class: Option<String>,
@@ -211,6 +211,7 @@ pub enum StepPredicateSpec {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct StepPredicateComposite {
     pub pre: Option<ExprIR>,
     pub step: StepPredicateIR,
@@ -342,6 +343,7 @@ pub struct CheckOptionsIR {
     pub max_edges: Option<u32>,
     pub max_frontier: Option<u32>,
     pub track_elapsed: Option<bool>,
+    pub memory_guard_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

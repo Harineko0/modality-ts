@@ -4,6 +4,7 @@ import {
   parseConformReportArtifact,
   parseExtractionReportArtifact,
   parseModelArtifact,
+  parsePropertyArtifact,
   parseReplayReportArtifact,
   parseTraceArtifact,
   traceArtifact,
@@ -264,5 +265,53 @@ describe("artifact parsers", () => {
         }),
       ),
     ).toThrow("conform report artifact missing transitionMetrics");
+  });
+
+  it("rejects malformed step predicate artifacts", () => {
+    expect(() =>
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "badStep",
+              predicate: { transitionID: "toggle" },
+            },
+          ],
+        }),
+      ),
+    ).toThrow("unknown step predicate key transitionID");
+    expect(() =>
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "badComposite",
+              predicate: {
+                step: { transitionId: "toggle" },
+                typo: true,
+              },
+            },
+          ],
+        }),
+      ),
+    ).toThrow("unknown step predicate key typo");
+    expect(
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "stepAnyOk",
+              predicate: {},
+            },
+          ],
+        }),
+      ),
+    ).toHaveLength(1);
   });
 });

@@ -16,7 +16,6 @@ use crate::visited::{merge_candidates, sort_merge_candidates, MergeCandidate, St
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 pub fn check_model_request(request: CheckRequest) -> Result<Value, String> {
@@ -45,6 +44,7 @@ pub fn check_model_compiled(
         max_edges: None,
         max_frontier: None,
         track_elapsed: None,
+        memory_guard_bytes: None,
     });
 
     let started = if options.track_elapsed == Some(true) {
@@ -109,7 +109,9 @@ pub fn check_model_compiled(
             visited.len() as u32,
             edge_count,
             frontier.len() as u32,
-        ) {
+        )
+        .or_else(|| check_memory_guard(&options))
+        {
             limit_hit = Some(limit);
             break;
         }
@@ -158,7 +160,9 @@ pub fn check_model_compiled(
                 visited.len() as u32,
                 edge_count,
                 frontier.len() as u32,
-            ) {
+            )
+            .or_else(|| check_memory_guard(&options))
+            {
                 limit_hit = Some(limit);
             }
         }
@@ -323,14 +327,18 @@ fn explore_depth_parallel(
     _canon: &mut dyn FnMut(&ModelState) -> Vec<u8>,
 ) -> Result<ExploreResult, String> {
     let worker_count = rayon::current_num_threads();
+    let frontier_positions: HashMap<StateId, u32> = frontier
+        .iter()
+        .enumerate()
+        .map(|(index, &id)| (id, index as u32))
+        .collect();
     let chunks = chunk_frontier(frontier, worker_count);
-    let seq_counter = AtomicU64::new(0);
 
     let worker_outputs: Vec<WorkerOutput> = {
         let visited_ref: &VisitedSet = &*visited;
         chunks
             .par_iter()
-            .map(|chunk| expand_chunk(compiled, chunk, visited_ref, &seq_counter))
+            .map(|chunk| expand_chunk(compiled, chunk, &frontier_positions, visited_ref))
             .collect::<Result<Vec<_>, String>>()?
     };
 
@@ -430,8 +438,8 @@ fn explore_depth_parallel(
 fn expand_chunk(
     compiled: &CompiledModel,
     chunk: &[StateId],
+    frontier_positions: &HashMap<StateId, u32>,
     visited: &VisitedSet,
-    seq_counter: &AtomicU64,
 ) -> Result<WorkerOutput, String> {
     let mut edges = Vec::new();
     let mut candidates = Vec::new();
@@ -447,6 +455,10 @@ fn expand_chunk(
     };
 
     for &pre_id in chunk {
+        let parent_frontier_position = frontier_positions
+            .get(&pre_id)
+            .copied()
+            .unwrap_or(u32::MAX);
         let pre = visited.arena.state(pre_id);
         let pre_canon = visited.arena.canon(pre_id).to_vec();
         for transition_id in enabled_non_internal(compiled, pre) {
@@ -472,11 +484,11 @@ fn expand_chunk(
             if posts.is_empty() && effect_contains_enqueue(&transition.effect) {
                 bound_hits.insert(format!("pending cap saturated at {}", transition.id));
             }
-            for raw_post in posts {
+            for (raw_post_branch, raw_post) in posts.into_iter().enumerate() {
                 let changed = crate::state::changed_var_indexes(pre, &raw_post);
                 let stabilized =
                     stabilize(compiled, raw_post, changed, &mut canon).unwrap_or_default();
-                for post in stabilized {
+                for (stabilization_branch, post) in stabilized.into_iter().enumerate() {
                     let post_canon = canon(&post);
                     let sort_key = (
                         pre_canon.clone(),
@@ -486,18 +498,19 @@ fn expand_chunk(
                     edges.push(GeneratedEdge {
                         pre_id,
                         post_canon: post_canon.clone(),
-                        post_state: post,
+                        post_state: post.clone(),
                         transition_id,
                         sort_key,
                     });
                     if !visited.contains_canon(&post_canon) {
-                        let local_seq = seq_counter.fetch_add(1, Ordering::SeqCst);
                         candidates.push(MergeCandidate {
                             parent_id: pre_id,
+                            parent_frontier_position,
                             transition_id,
-                            post_state: edges.last().unwrap().post_state.clone(),
+                            raw_post_branch: raw_post_branch as u32,
+                            stabilization_branch: stabilization_branch as u32,
+                            post_state: post,
                             post_canon,
-                            local_seq,
                         });
                     }
                 }
@@ -570,7 +583,18 @@ fn check_search_limits(
             }));
         }
     }
-    let _ = frontier;
+    None
+}
+
+fn check_memory_guard(options: &CheckOptionsIR) -> Option<Value> {
+    let max = options.memory_guard_bytes?;
+    let used = crate::memory::current_process_memory_bytes()?;
+    if used >= max {
+        return Some(json!({
+            "reason": format!("search limit exceeded: memoryGuardBytes={max}"),
+            "memoryGuardBytes": max,
+        }));
+    }
     None
 }
 
@@ -793,6 +817,7 @@ mod tests {
             max_edges: None,
             max_frontier: None,
             track_elapsed: None,
+            memory_guard_bytes: None,
         };
         let result = explore_depth_parallel(
             &compiled,
@@ -853,24 +878,191 @@ mod tests {
         let candidates = vec![
             MergeCandidate {
                 parent_id: pre_id,
-                transition_id: 1,
+                parent_frontier_position: 1,
+                transition_id: 0,
+                raw_post_branch: 0,
+                stabilization_branch: 0,
                 post_state: post.clone(),
                 post_canon: post_canon.clone(),
-                local_seq: 1,
             },
             MergeCandidate {
                 parent_id: pre_id,
+                parent_frontier_position: 0,
                 transition_id: 0,
+                raw_post_branch: 0,
+                stabilization_branch: 0,
                 post_state: post,
                 post_canon,
-                local_seq: 0,
             },
         ];
         let inserted = merge_candidates(&mut visited, &compiled, candidates, 0);
         assert_eq!(inserted.len(), 1);
         let child = inserted[0];
+        assert_eq!(visited.parent_record(child).parent, Some(pre_id));
         assert_eq!(visited.parent_record(child).transition_id, Some(0));
         let _ = pre_canon;
+    }
+
+    fn dual_parent_model() -> CompiledModel {
+        CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "dual-parent".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "a".into(),
+                        domain: AbstractDomain::Bool,
+                        origin: json!("test"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Many(vec![json!(false), json!(true)]),
+                    },
+                    StateVarDecl {
+                        id: "out".into(),
+                        domain: AbstractDomain::Bool,
+                        origin: json!("test"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!(false)),
+                    },
+                ],
+                transitions: vec![Transition {
+                    id: "t-finish".into(),
+                    cls: "user".into(),
+                    label: json!({"kind": "click"}),
+                    source: vec![],
+                    guard: ExprIR::Lit {
+                        value: json!(true),
+                    },
+                    effect: EffectIR::Seq {
+                        effects: vec![
+                            EffectIR::Assign {
+                                var: "out".into(),
+                                expr: ExprIR::Lit {
+                                    value: json!(true),
+                                },
+                            },
+                            EffectIR::Assign {
+                                var: "a".into(),
+                                expr: ExprIR::Lit {
+                                    value: json!(false),
+                                },
+                            },
+                        ],
+                    },
+                    reads: vec![],
+                    writes: vec!["out".into(), "a".into()],
+                    confidence: "exact".into(),
+                    triggered_by: None,
+                }],
+                bounds: Bounds {
+                    max_depth: 2,
+                    max_pending: 0,
+                    max_internal_steps: 1,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn duplicate_discovery_prefers_lower_frontier_position_parent() {
+        let compiled = dual_parent_model();
+        let mut visited = VisitedSet::new(8);
+        let mut canon_cache: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut canon_fn = |state: &ModelState| -> Vec<u8> {
+            let identity = canonical_identity(&compiled, state);
+            canon_cache
+                .entry(identity.bytes.clone())
+                .or_insert_with(|| identity.bytes.clone());
+            identity.bytes
+        };
+        let mut frontier = seed_frontier(&compiled, &mut visited, &mut canon_fn);
+        assert_eq!(frontier.len(), 2);
+        sort_frontier_by_canon(&mut frontier, |id| visited.arena.canon(id).to_vec());
+        let parent_low = frontier[0];
+        let parent_high = frontier[1];
+        let transition_id = 0usize;
+        let transition = compiled.transition(transition_id);
+        let make_post = |pre_id: StateId| {
+            let pre = visited.arena.state(pre_id).clone();
+            let raw_post = apply_effect(
+                &compiled,
+                &pre,
+                &transition.effect,
+                &mut crate::expr::EvalOptions::default(),
+            )
+            .unwrap()
+            .pop()
+            .unwrap();
+            let changed = crate::state::changed_var_indexes(&pre, &raw_post);
+            let mut local_canon = |state: &ModelState| canonical_identity(&compiled, state).bytes;
+            stabilize(&compiled, raw_post, changed, &mut local_canon)
+                .unwrap()
+                .pop()
+                .unwrap()
+        };
+        let post = make_post(parent_low);
+        let post_canon = canon_fn(&post);
+        assert_eq!(canon_fn(&make_post(parent_high)), post_canon);
+        let candidates = vec![
+            MergeCandidate {
+                parent_id: parent_high,
+                parent_frontier_position: 1,
+                transition_id,
+                raw_post_branch: 0,
+                stabilization_branch: 0,
+                post_state: post.clone(),
+                post_canon: post_canon.clone(),
+            },
+            MergeCandidate {
+                parent_id: parent_low,
+                parent_frontier_position: 0,
+                transition_id,
+                raw_post_branch: 0,
+                stabilization_branch: 0,
+                post_state: post,
+                post_canon,
+            },
+        ];
+        let inserted = merge_candidates(&mut visited, &compiled, candidates, 0);
+        assert_eq!(inserted.len(), 1);
+        let child = inserted[0];
+        assert_eq!(visited.parent_record(child).parent, Some(parent_low));
+        assert_eq!(visited.parent_record(child).transition_id, Some(transition_id));
     }
 
     #[test]
@@ -895,6 +1087,7 @@ mod tests {
                 max_edges: Some(1),
                 max_frontier: None,
                 track_elapsed: None,
+                memory_guard_bytes: None,
             }),
         )
         .unwrap();
@@ -935,6 +1128,7 @@ mod tests {
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,
+                memory_guard_bytes: None,
             }),
         )
         .unwrap();
@@ -968,6 +1162,7 @@ mod tests {
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,
+                memory_guard_bytes: None,
             }),
         )
         .unwrap();
@@ -1003,6 +1198,7 @@ mod tests {
                 max_edges: None,
                 max_frontier: Some(1),
                 track_elapsed: None,
+                memory_guard_bytes: None,
             }),
         )
         .unwrap();
@@ -1010,5 +1206,41 @@ mod tests {
             .pointer("/diagnostics/limits/reason")
             .and_then(|v| v.as_str());
         assert!(limits.unwrap_or("").contains("maxFrontier=1"));
+    }
+
+    #[test]
+    fn memory_guard_limit_produces_structured_error() {
+        let compiled = toggle_model();
+        let properties = vec![PropertyIR::Always {
+            name: "p".into(),
+            predicate: ExprIR::Lit {
+                value: json!(true),
+            },
+            reads: None,
+            enabled_transitions: None,
+            include_unmounted: None,
+        }];
+        let result = check_model_compiled(
+            &compiled,
+            &properties,
+            Some(&CheckOptionsIR {
+                slicing: None,
+                sliced_model: None,
+                max_states: None,
+                max_edges: None,
+                max_frontier: None,
+                track_elapsed: None,
+                memory_guard_bytes: Some(1),
+            }),
+        )
+        .unwrap();
+        let limits = result
+            .pointer("/diagnostics/limits/reason")
+            .and_then(|v| v.as_str());
+        assert!(limits.unwrap_or("").contains("memoryGuardBytes=1"));
+        let memory_guard = result
+            .pointer("/diagnostics/limits/memoryGuardBytes")
+            .and_then(|v| v.as_u64());
+        assert_eq!(memory_guard, Some(1));
     }
 }

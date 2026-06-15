@@ -9,7 +9,7 @@ import type {
   Value,
 } from "../ir/types.js";
 
-export { evalStatePredicate } from "../ir/eval.js";
+export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
 export type {
   ModelState,
   Property,

@@ -70,6 +70,7 @@ export function runRustCheck(
       maxEdges: options.maxEdges,
       maxFrontier: options.maxFrontier,
       trackElapsed: options.trackElapsed,
+      memoryGuardBytes: options.memoryGuard?.maxHeapUsedBytes,
     },
   };
   const raw = loadBinding().checkModel(JSON.stringify(request));

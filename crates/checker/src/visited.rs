@@ -159,10 +159,12 @@ impl VisitedSet {
 #[derive(Debug, Clone)]
 pub struct MergeCandidate {
     pub parent_id: StateId,
+    pub parent_frontier_position: u32,
     pub transition_id: usize,
+    pub raw_post_branch: u32,
+    pub stabilization_branch: u32,
     pub post_state: ModelState,
     pub post_canon: Vec<u8>,
-    pub local_seq: u64,
 }
 
 /// Sort candidates for deterministic merge without inserting.
@@ -183,12 +185,12 @@ pub fn sort_merge_candidates(
             a.post_canon
                 .cmp(&b.post_canon)
                 .then_with(|| {
-                    visited
-                        .depth(a.parent_id)
-                        .cmp(&visited.depth(b.parent_id))
+                    a.parent_frontier_position
+                        .cmp(&b.parent_frontier_position)
                 })
                 .then_with(|| a.transition_id.cmp(&b.transition_id))
-                .then_with(|| a.local_seq.cmp(&b.local_seq))
+                .then_with(|| a.raw_post_branch.cmp(&b.raw_post_branch))
+                .then_with(|| a.stabilization_branch.cmp(&b.stabilization_branch))
         });
         sorted.extend(shard_candidates);
     }
