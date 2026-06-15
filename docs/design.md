@@ -220,7 +220,7 @@ A shortest (BFS) trace of *user-meaningful* events with per-step state diffs and
 
 ### Workflow integration
 
-`modality.config.ts` (entry points, routes, bounds) + generated `app.model.ts` (state types + extracted skeleton, regenerated; annotations live in a separate overlay so regeneration doesn't clobber them) + `*.props.ts`. CLI: `modality extract`, `modality check [--watch]`, `modality replay <trace>`. CI: bounded checks are deterministic and fast (seconds–minutes at MVP scale) → a normal CI gate; the report artifact states bounds, abstractions, assumptions, and unmodeled handlers — the honesty ledger. A stale-model detector (extraction diff vs. last verified model) fails CI when code changed under an unregenerated model.
+`modality.config.ts` (entry points, routes, bounds) + generated `app.model.ts` (state types + extracted skeleton, regenerated; annotations live in a separate overlay so regeneration doesn't clobber them) + `*.props.ts`. CLI: `modality extract`, `modality check [--watch]`, `modality replay <trace>`. A no-argument `modality extract` with discovered `*.props.mjs` files writes one `.modality/models/**/*.model.json` and companion `.props.ts` per props file. CI: bounded checks are deterministic and fast (seconds–minutes at MVP scale) → a normal CI gate; the report artifact states bounds, abstractions, assumptions, and unmodeled handlers — the honesty ledger. A stale-model detector (extraction diff vs. last verified model) fails CI when code changed under an unregenerated model.
 
 ## 7. Relationship to existing testing
 

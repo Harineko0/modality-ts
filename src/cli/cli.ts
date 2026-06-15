@@ -10,6 +10,7 @@ import {
   defaultTlaPath,
   defaultTracesDir,
   discoverPropsFiles,
+  inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
 } from "./defaults.js";
 import { runCheckCommand } from "./features/check/index.js";
@@ -67,6 +68,9 @@ async function main(): Promise<void> {
     console.log("Usage: modality init");
     console.log(
       "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
+    );
+    console.log(
+      "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
     );
     console.log(
       "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]",
@@ -291,12 +295,12 @@ async function main(): Promise<void> {
       throw new Error("Missing --package-json path");
     if (args.includes("--disable-plugin") && disabledPlugins.length === 0)
       throw new Error("Missing --disable-plugin id");
-    const effectiveSourcePaths =
-      sourcePaths.length > 0 ? sourcePaths : await inferSourceFilesFromProps();
-    const result = await runExtractCommand({
-      sourcePaths: effectiveSourcePaths,
-      modelPath,
-      appModelPath,
+    const wantsSingleMergedOutput =
+      outFlag !== undefined ||
+      appModelFlag !== undefined ||
+      reportPath !== undefined ||
+      expectModelPath !== undefined;
+    const sharedOptions = {
       reportPath,
       overlayPath,
       expectModelPath,
@@ -305,8 +309,31 @@ async function main(): Promise<void> {
       disabledPlugins,
       effectApis: effectApiFlags,
       explainDrift,
-    });
-    for (const line of result.lines) console.log(line);
+    };
+    if (sourcePaths.length > 0 || wantsSingleMergedOutput) {
+      const effectiveSourcePaths =
+        sourcePaths.length > 0
+          ? sourcePaths
+          : await inferSourceFilesFromProps();
+      const result = await runExtractCommand({
+        sourcePaths: effectiveSourcePaths,
+        modelPath,
+        appModelPath,
+        ...sharedOptions,
+      });
+      for (const line of result.lines) console.log(line);
+    } else {
+      const targets = await inferExtractTargetsFromProps();
+      for (const target of targets) {
+        const result = await runExtractCommand({
+          sourcePath: target.sourcePath,
+          modelPath: target.modelPath,
+          appModelPath: target.appModelPath,
+          ...sharedOptions,
+        });
+        for (const line of result.lines) console.log(line);
+      }
+    }
     process.exit(0);
   }
   if (command === "replay") {

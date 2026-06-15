@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import {
+  access,
   mkdir,
   mkdtemp,
   readFile,
@@ -54,7 +55,7 @@ describe("modality CLI", () => {
     expect(model.transitions.length).toBeGreaterThan(0);
   });
 
-  it("extracts inferred source files into default artifacts", async () => {
+  it("extracts inferred source files into per-props artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
 
@@ -62,19 +63,110 @@ describe("modality CLI", () => {
       cwd: dir,
     });
 
+    const appModelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "src",
+      "App.props.ts",
+    );
+    const homeModelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "src",
+      "HomePage.model.json",
+    );
+    const homeAppModelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "src",
+      "HomePage.props.ts",
+    );
+    const model = JSON.parse(
+      await readFile(
+        join(dir, ".modality", "models", "src", "App.model.json"),
+        "utf8",
+      ),
+    );
+    const realDir = await realpath(dir);
+    expect(stdout).toContain("model=.modality/models/src/App.model.json");
+    expect(stdout).toContain("appModel=.modality/models/src/App.props.ts");
+    expect(stdout).toContain("model=.modality/models/src/HomePage.model.json");
+    expect(stdout).toContain("appModel=.modality/models/src/HomePage.props.ts");
+    expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
+    expect(await readFile(homeModelPath, "utf8")).toContain('"schemaVersion"');
+    expect(await readFile(homeAppModelPath, "utf8")).toContain(
+      "export const M = ",
+    );
+    expect(model.metadata.sourceHashes).toHaveProperty(
+      join(realDir, "src", "App.tsx"),
+    );
+    await expect(
+      access(join(dir, ".modality", "model.json")),
+    ).rejects.toThrow();
+  });
+
+  it("extracts discovered props into route-scoped artifacts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writeRouteFixtureApp(dir);
+
+    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract"], {
+      cwd: dir,
+    });
+
+    const artifacts = [
+      ".modality/models/app/root.model.json",
+      ".modality/models/app/root.props.ts",
+      ".modality/models/app/routes/home.model.json",
+      ".modality/models/app/routes/home.props.ts",
+      ".modality/models/app/routes/analytics.model.json",
+      ".modality/models/app/routes/analytics.props.ts",
+    ];
+    for (const artifact of artifacts) {
+      await access(join(dir, artifact));
+      expect(stdout).toContain(
+        artifact.endsWith(".model.json")
+          ? `model=${artifact}`
+          : `appModel=${artifact}`,
+      );
+    }
+    await expect(
+      access(join(dir, ".modality", "model.json")),
+    ).rejects.toThrow();
+  });
+
+  it("keeps merged extraction when explicit output flags are used", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writeFixtureApp(dir);
+
+    const { stdout } = await execFileAsync(
+      tsxBin,
+      [
+        cliPath,
+        "extract",
+        "--out",
+        ".modality/model.json",
+        "--app-model",
+        ".modality/app.model.ts",
+      ],
+      { cwd: dir },
+    );
+
     const modelPath = join(dir, ".modality", "model.json");
     const appModelPath = join(dir, ".modality", "app.model.ts");
     const model = JSON.parse(await readFile(modelPath, "utf8"));
     const realDir = await realpath(dir);
     expect(stdout).toContain("model=.modality/model.json");
     expect(stdout).toContain("appModel=.modality/app.model.ts");
-    expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
     expect(model.metadata.sourceHashes).toHaveProperty(
       join(realDir, "src", "App.tsx"),
     );
     expect(model.metadata.sourceHashes).toHaveProperty(
       join(realDir, "src", "HomePage.tsx"),
     );
+    expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
   });
 
   it("extracts multiple explicit source files", async () => {
@@ -103,7 +195,18 @@ describe("modality CLI", () => {
   it("checks, exports, and conforms using default artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
-    await execFileAsync(tsxBin, [cliPath, "extract"], { cwd: dir });
+    await execFileAsync(
+      tsxBin,
+      [
+        cliPath,
+        "extract",
+        "--out",
+        ".modality/model.json",
+        "--app-model",
+        ".modality/app.model.ts",
+      ],
+      { cwd: dir },
+    );
 
     const check = await execFileAsync(tsxBin, [cliPath, "check"], {
       cwd: dir,
@@ -269,6 +372,58 @@ function tinyCheckModel() {
       },
     ],
   };
+}
+
+async function writeRouteFixtureApp(dir: string): Promise<void> {
+  await mkdir(join(dir, "app", "routes"), { recursive: true });
+  await writeFile(
+    join(dir, "app", "root.tsx"),
+    `
+    import { useState } from "react";
+    export function Root() {
+      const [ready, setReady] = useState(false);
+      return <button onClick={() => setReady(true)}>Ready {String(ready)}</button>;
+    }
+    `,
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "routes", "home.tsx"),
+    `
+    import { useState } from "react";
+    export function Home() {
+      const [count, setCount] = useState(0);
+      return <button onClick={() => setCount(count + 1)}>Count {count}</button>;
+    }
+    `,
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "routes", "analytics.tsx"),
+    `
+    import { useState } from "react";
+    export function Analytics() {
+      const [viewed, setViewed] = useState(false);
+      return <button onClick={() => setViewed(true)}>Viewed {String(viewed)}</button>;
+    }
+    `,
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "root.props.mjs"),
+    "export const properties = [];",
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "routes", "home.props.mjs"),
+    "export const properties = [];",
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "app", "routes", "analytics.props.mjs"),
+    "export const properties = [];",
+    "utf8",
+  );
 }
 
 async function writeFixtureApp(dir: string): Promise<void> {

@@ -1,7 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 export const defaultArtifactDir = ".modality";
+export const defaultModelsDir = join(defaultArtifactDir, "models");
 export const defaultModelPath = join(defaultArtifactDir, "model.json");
 export const defaultAppModelPath = join(defaultArtifactDir, "app.model.ts");
 export const defaultTlaPath = join(defaultArtifactDir, "model.tla");
@@ -30,9 +31,27 @@ export async function discoverPropsFiles(
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-export async function inferSourceFilesFromProps(
+export interface ExtractTargetFromProps {
+  propsPath: string;
+  sourcePath: string;
+  modelPath: string;
+  appModelPath: string;
+}
+
+export function artifactPathsForPropsFile(
+  propsPath: string,
   root = process.cwd(),
-): Promise<string[]> {
+): { modelPath: string; appModelPath: string } {
+  const base = relative(root, propsPath).replace(/\.props\.mjs$/, "");
+  return {
+    modelPath: join(defaultModelsDir, `${base}.model.json`),
+    appModelPath: join(defaultModelsDir, `${base}.props.ts`),
+  };
+}
+
+export async function inferExtractTargetsFromProps(
+  root = process.cwd(),
+): Promise<ExtractTargetFromProps[]> {
   const propsFiles = await discoverPropsFiles(root);
   if (propsFiles.length === 0) {
     throw new Error(`No *.props.mjs files found under ${root}`);
@@ -55,7 +74,21 @@ export async function inferSourceFilesFromProps(
       `Missing inferred source files for props: ${missing.join(", ")}`,
     );
   }
-  return sourceFiles;
+  return propsFiles.map((propsPath) => {
+    const sourcePath = propsPath.replace(/\.props\.mjs$/, ".tsx");
+    const { modelPath, appModelPath } = artifactPathsForPropsFile(
+      propsPath,
+      root,
+    );
+    return { propsPath, sourcePath, modelPath, appModelPath };
+  });
+}
+
+export async function inferSourceFilesFromProps(
+  root = process.cwd(),
+): Promise<string[]> {
+  const targets = await inferExtractTargetsFromProps(root);
+  return targets.map((target) => target.sourcePath);
 }
 
 async function discoverPropsFilesIn(dir: string): Promise<string[]> {
