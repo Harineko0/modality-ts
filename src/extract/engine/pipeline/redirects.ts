@@ -1,7 +1,7 @@
 import type { EffectIR, Transition } from "modality-ts/core";
-import type { RouteInventory } from "modality-ts/extract/engine/spi";
-import { safeId } from "../../engine/ts/ids.js";
-import { routeMountGuard } from "../../engine/ts/routes.js";
+import type { RouteInventory } from "../spi/index.js";
+import { safeId } from "../ts/ids.js";
+import { routeMountGuard } from "../ts/routes.js";
 
 export function synthesizeRedirectTransitions(
   inventory: RouteInventory,

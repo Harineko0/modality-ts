@@ -16,7 +16,7 @@ import { extractReactSourceTransitions } from "../ts/react-source-transitions.js
 import { globalTaintCaveat } from "../ts/caveats.js";
 import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
-import { synthesizeRedirectTransitions } from "../../sources/router/redirects.js";
+import { synthesizeRedirectTransitions } from "./redirects.js";
 import * as ts from "typescript";
 
 export interface HandlerExtractionResult {

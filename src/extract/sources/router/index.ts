@@ -55,6 +55,5 @@ export function reactRouterAdapter(
 export const routerSource = reactRouterAdapter;
 
 export { parseReactRouterRoutes } from "./discover.js";
-export { synthesizeRedirectTransitions } from "./redirects.js";
 
 export default reactRouterAdapter;
