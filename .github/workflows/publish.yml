@@ -11,9 +11,98 @@ permissions:
   id-token: write
 
 jobs:
+  build-js:
+    name: Build JS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  build-native:
+    name: Build native (${{ matrix.artifact }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: modality-checker.linux-x64-gnu.node
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: modality-checker.linux-arm64-gnu.node
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: modality-checker.darwin-arm64.node
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: modality-checker.darwin-x64.node
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: modality-checker.win32-x64-msvc.node
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native artifact
+        run: pnpm exec napi build --platform --release --cargo-cwd crates/checker native --target ${{ matrix.target }}
+
+      - name: Verify native artifact
+        shell: bash
+        run: test -f "native/${{ matrix.artifact }}"
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.artifact }}
+          path: native/${{ matrix.artifact }}
+          if-no-files-found: error
+
   publish:
     name: Publish
+    needs:
+      - build-js
+      - build-native
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,8 +122,37 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      - name: Prepare native directory
+        run: rm -rf native && mkdir -p native
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: native
+          merge-multiple: true
+
+      - name: Build TypeScript
+        run: pnpm typecheck
+
+      - name: Verify native artifacts
+        run: pnpm exec tsx tools/verify-native-artifacts.ts
+
+      - name: Package native artifacts
+        if: github.event_name == 'release'
+        run: |
+          mkdir -p dist
+          (cd native && zip -r ../dist/modality-ts-native.zip ./*.node)
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload \
+            "${{ github.event.release.tag_name }}" \
+            dist/modality-ts-native.zip \
+            --clobber
 
       - name: Publish package
         run: pnpm publish:npm

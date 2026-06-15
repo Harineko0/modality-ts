@@ -43,6 +43,20 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Packaging smoke
+        run: |
+          files="$(npm pack --dry-run --json | node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(0,'utf8'));process.stdout.write((data[0]?.files??[]).map((f)=>f.path).join('\n'));")"
+          echo "$files" | grep -q '^dist/'
+          case "$(uname -s)-$(uname -m)" in
+            Darwin-arm64) expected='native/modality-checker.darwin-arm64.node' ;;
+            Darwin-x86_64) expected='native/modality-checker.darwin-x64.node' ;;
+            Linux-x86_64) expected='native/modality-checker.linux-x64-gnu.node' ;;
+            Linux-aarch64) expected='native/modality-checker.linux-arm64-gnu.node' ;;
+            MINGW*-x86_64|MSYS*-x86_64) expected='native/modality-checker.win32-x64-msvc.node' ;;
+            *) echo "No packaging smoke mapping for $(uname -s)-$(uname -m)"; exit 1 ;;
+          esac
+          echo "$files" | grep -qx "$expected"
+
       - name: Demo acceptance
         run: pnpm demo
 
