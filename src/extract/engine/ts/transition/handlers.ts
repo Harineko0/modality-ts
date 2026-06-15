@@ -294,6 +294,7 @@ export function transitionsFromResolvedHandler(
     effectApis,
     asyncOutcomes,
     locator,
+    routerPlugin,
     routePatterns,
     warnings,
   );

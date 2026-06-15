@@ -9,6 +9,15 @@ import type {
   RouterPlugin,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
+import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
+
+const routerExtraction = { routerPlugin: reactRouterAdapter() };
+const analyticsInventory = {
+  routes: [
+    { pattern: "/", kind: "index" as const, file: "home.tsx" },
+    { pattern: "/analytics", kind: "page" as const, file: "Analytics.tsx" },
+  ],
+};
 
 describe("useState inventory", () => {
   it("extracts route-local state declarations with stable ids", () => {
@@ -272,6 +281,7 @@ describe("useState inventory", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/", "/links", "/analytics", "/tags"],
+        ...routerExtraction,
       },
     );
     expect(
@@ -303,7 +313,12 @@ describe("useState inventory", () => {
         return <Link to={\`/analytics?linkId=\${id}\`}>Analytics</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] },
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/analytics"],
+        ...routerExtraction,
+      },
     );
     expect(
       result.transitions.find(
@@ -327,7 +342,13 @@ describe("useState inventory", () => {
         return <Link to="/analytics">Clear</Link>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routePatterns: ["/", "/analytics"] },
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/analytics"],
+        ...routerExtraction,
+        inventory: analyticsInventory,
+      },
     );
     expect(
       result.transitions.find(
@@ -358,6 +379,7 @@ describe("useState inventory", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/", "/admin", "/links"],
+        ...routerExtraction,
       },
     );
     const nav = result.transitions.filter(
@@ -394,6 +416,7 @@ describe("useState inventory", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/", "/analytics", "/tags"],
+        ...routerExtraction,
       },
     );
     const nav = result.transitions.filter(
@@ -1387,7 +1410,7 @@ describe("useState inventory", () => {
         return <button onClick={() => router.push('/checkout')}>Checkout</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx" },
+      { route: "/", fileName: "App.tsx", ...routerExtraction },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
@@ -3080,11 +3103,12 @@ describe("useState inventory", () => {
     const routerPlugin: RouterPlugin = {
       id: "custom-router",
       packageNames: ["custom-router"],
-      routeVars: () => [],
-      navigationCall: (callee, args) =>
+      discoverRoutes: async () => ({ routes: [] }),
+      classifyNavigationCall: (callee, args) =>
         callee === "go" && typeof args[0] === "string"
           ? { mode: "replace", to: args[0] }
           : "unsupported",
+      locationVars: () => [],
       harness: {
         setup: () => ({}),
         observe: () => "unobservable",

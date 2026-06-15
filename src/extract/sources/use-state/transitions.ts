@@ -29,6 +29,7 @@ export function extractUseStateSkeleton(
     ...(options.stateVars ? { stateVars: options.stateVars } : {}),
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.inventory ? { inventory: options.inventory } : {}),
   };
   const result = extractSharedReactTransitionInventory(ctx);
   return {

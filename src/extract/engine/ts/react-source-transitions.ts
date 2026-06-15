@@ -41,6 +41,8 @@ import type {
   SetterBinding,
 } from "./types.js";
 import type {
+  NavigationAdapter,
+  RouteInventory,
   RouterPlugin,
   StateSourcePlugin,
   WriteChannel,
@@ -64,7 +66,7 @@ import {
 import { componentGuardLocalsFor } from "./transition/locals.js";
 import { forwardsComponentProp } from "./transition/component-props.js";
 import { isEventAttribute } from "./transition/ui.js";
-import { linkNavigationTransition } from "./transition/navigation.js";
+import { navigationJsxTransition } from "./transition/navigation.js";
 import {
   transitionsFromUseEffect,
   useEffectWritesModeledState,
@@ -80,6 +82,7 @@ export interface ReactSourceTransitionOptions {
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
+  inventory?: RouteInventory;
 }
 
 export interface ReactSourceTransitionResult {
@@ -109,6 +112,7 @@ export function extractReactSourceTransitions(
   const effectApis = new Set(options.effectApis ?? []);
   const sourcePlugins = options.sourcePlugins ?? [];
   const routerPlugin = options.routerPlugin;
+  const inventory = options.inventory;
   const setters = new Map<string, SetterBinding>();
   const contextBindings = discoverContextBindings(
     source,
@@ -250,12 +254,20 @@ export function extractReactSourceTransitions(
         });
       }
     }
-    const link = linkNavigationTransition(
+    const activeComponent = nextComponent ?? "Anonymous";
+    const routePattern = resolveComponentRoutePattern(
+      routerPlugin,
+      inventory,
+      activeComponent,
+    );
+    const link = navigationJsxTransition(
       source,
       fileName,
       node,
-      nextComponent ?? "Anonymous",
+      activeComponent,
       routePatterns,
+      routerPlugin,
+      routePattern,
     );
     if (link) transitions.push(link);
     const scopedSetters = settersForComponent(setters, nextComponent);
@@ -435,7 +447,23 @@ export function extractReactSourceTransitions(
   };
   visit(source, undefined);
   transitions.push(
-    ...staticNavigationTransitions(source, fileName, routePatterns, components),
+    ...staticNavigationTransitions(
+      source,
+      fileName,
+      routePatterns,
+      components,
+      routerPlugin,
+      inventory,
+    ),
   );
   return { vars, transitions: withStableTransitionIds(transitions), warnings };
+}
+
+function resolveComponentRoutePattern(
+  adapter: NavigationAdapter | undefined,
+  inventory: RouteInventory | undefined,
+  componentName: string,
+): string | undefined {
+  if (!adapter?.routeForComponent || !inventory) return undefined;
+  return adapter.routeForComponent(componentName, inventory);
 }

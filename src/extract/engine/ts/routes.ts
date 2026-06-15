@@ -2,27 +2,20 @@ import * as ts from "typescript";
 import type { ExprIR } from "modality-ts/core";
 import { literalValue } from "./ast.js";
 
-export function routeMountGuard(
-  component: string,
-  routePatterns: readonly string[],
-): ExprIR {
-  const route = routeForComponent(component, routePatterns);
-  return route
+export function routeMountGuard(routePattern: string | undefined): ExprIR {
+  return routePattern
     ? {
         kind: "eq",
         args: [
           { kind: "read", var: "sys:route" },
-          { kind: "lit", value: route },
+          { kind: "lit", value: routePattern },
         ],
       }
     : { kind: "lit", value: true };
 }
 
-export function routeMountReads(
-  component: string,
-  routePatterns: readonly string[],
-): string[] {
-  return routeForComponent(component, routePatterns)
+export function routeMountReads(routePattern: string | undefined): string[] {
+  return routePattern
     ? ["sys:history", "sys:route"]
     : ["sys:route", "sys:history"];
 }
@@ -83,29 +76,6 @@ export function normalizeRouteTarget(
     )
     .find((pattern) => routePatternMatches(pattern, slash));
   return matched ?? slash.replace(/\/:param(?=\/|$)/g, "/:id");
-}
-
-function routeForComponent(
-  component: string,
-  routePatterns: readonly string[],
-): string | undefined {
-  const normalized = normalizeComponentRouteName(component);
-  if (!normalized) return undefined;
-  return routePatterns.find(
-    (pattern) => normalizeRouteComponentName(pattern) === normalized,
-  );
-}
-
-function normalizeComponentRouteName(component: string): string {
-  return component.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-}
-
-function normalizeRouteComponentName(route: string): string {
-  const parts = route.replace(/^\/+/, "").split("/").filter(Boolean);
-  if (parts.length !== 1) return "";
-  const [part] = parts;
-  if (!part || part.startsWith(":") || part === "*") return "";
-  return part.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
 
 function routePatternSpecificity(pattern: string): number {

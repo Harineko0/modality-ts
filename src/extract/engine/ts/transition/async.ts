@@ -9,6 +9,7 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import type { NavigationAdapter } from "../../spi/index.js";
 import type {
   BoundExpr,
   ExtractableHandler,
@@ -19,7 +20,11 @@ import type {
 import { effectWriteVars, summarizeAsyncSegment } from "./effects.js";
 import { valueExpr } from "./expressions.js";
 import { andGuard } from "./guards.js";
-import { navigationCall } from "./navigation.js";
+import {
+  firstNavigationInStatements,
+  navigationEffect,
+  appendEffect,
+} from "./navigation.js";
 import { labelForEvent } from "./ui.js";
 
 export function transitionsFromAsyncHandler(
@@ -32,6 +37,7 @@ export function transitionsFromAsyncHandler(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   locator: Locator | undefined,
+  adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[],
   warnings: ExtractionWarning[],
 ): Transition[] {
@@ -133,6 +139,7 @@ export function transitionsFromAsyncHandler(
   ]);
   const successNavigate = firstNavigationInStatements(
     successStatements,
+    adapter,
     routePatterns,
   );
   if (
@@ -586,59 +593,6 @@ export function fetchMethod(
   );
   const value = method ? literalValue(method.initializer) : undefined;
   return typeof value === "string" ? value.toUpperCase() : undefined;
-}
-
-export function firstNavigationInStatements(
-  statements: readonly ts.Statement[],
-  routePatterns: readonly string[],
-): { mode: "push" | "replace" | "back"; to?: string } | undefined {
-  for (const statement of statements) {
-    let found: { mode: "push" | "replace" | "back"; to?: string } | undefined;
-    const visit = (node: ts.Node): void => {
-      if (found) return;
-      if (ts.isCallExpression(node))
-        found = navigationCall(node, undefined, routePatterns);
-      ts.forEachChild(node, visit);
-    };
-    visit(statement);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-export function navigationEffect(navigation: {
-  mode: "push" | "replace" | "back";
-  to?: string;
-}): EffectIR {
-  return {
-    kind: "navigate",
-    mode: navigation.mode,
-    ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {}),
-  };
-}
-
-export function appendEffect(
-  transition: Transition,
-  effect: EffectIR,
-): Transition {
-  const current =
-    transition.effect.kind === "seq"
-      ? transition.effect.effects
-      : [transition.effect];
-  const writes = uniqueStrings([
-    ...transition.writes,
-    ...effectWriteVars(effect),
-  ]);
-  const reads = uniqueStrings([
-    ...transition.reads,
-    ...(effect.kind === "navigate" ? ["sys:route", "sys:history"] : []),
-  ]);
-  return {
-    ...transition,
-    effect: { kind: "seq", effects: [...current, effect] },
-    reads,
-    writes,
-  };
 }
 
 export function effectCallArgs(

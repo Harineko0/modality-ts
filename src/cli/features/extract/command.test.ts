@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { reachable, type EffectIR, type Model } from "modality-ts/core";
+import {
+  reachable,
+  validateModel,
+  type EffectIR,
+  type Model,
+} from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {
@@ -397,6 +402,262 @@ describe("runExtractCommand", () => {
       }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
+  });
+
+  it("discovers UI routes from a manifest in single-file mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-manifest-"));
+    await mkdir(join(dir, "app"), { recursive: true });
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `
+      import { index, route } from '@react-router/dev/routes';
+      export default [
+        index('routes/home.tsx'),
+        route('links', 'routes/dashboard.tsx'),
+        route('signin', 'routes/signin.tsx'),
+        route('api/links', 'routes/api.links.tsx'),
+      ];
+      `,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      export function App() {
+        return null;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(
+      result.model.vars.find((decl) => decl.id === "sys:route")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["/", "/links", "/signin"],
+    });
+    expect(
+      result.report.routeCoverage?.routes.find(
+        (entry) => entry.pattern === "/api/links",
+      ),
+    ).toMatchObject({
+      modeled: false,
+      classification: "api",
+    });
+    expect(
+      result.lines.some((line) => line.startsWith("routes configured=")),
+    ).toBe(true);
+  });
+
+  it("synthesizes redirect replace transitions for redirect-only routes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-redirect-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const sourcePath = dir;
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { "react-router": "^7.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `
+      import { index, route } from '@react-router/dev/routes';
+      export default [
+        index('routes/home.tsx'),
+        route('links', 'routes/links.tsx'),
+        route('legacy', 'routes/legacy.tsx'),
+      ];
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "home.tsx"),
+      `export default function Home() { return null; }`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "links.tsx"),
+      `export default function Links() { return null; }`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "legacy.tsx"),
+      `export function loader() { return redirect("/links"); }`,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(
+      result.model.transitions.find(
+        (transition) => transition.id === "route:/legacy.redirect._links",
+      ),
+    ).toMatchObject({
+      cls: "nav",
+      effect: {
+        kind: "navigate",
+        mode: "replace",
+        to: { kind: "lit", value: "/links" },
+      },
+    });
+  });
+
+  it("reduces sys:history within sys:route when pushes are route-bound", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-history-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { "react-router": "^7.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `
+      import { index, route } from '@react-router/dev/routes';
+      export default [
+        index('routes/home.tsx'),
+        route('links', 'routes/links.tsx'),
+        route('signin', 'routes/signin.tsx'),
+      ];
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "home.tsx"),
+      `
+      import { Link } from 'react-router';
+      export default function Home() {
+        return <Link to="/signin">Sign in</Link>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "signin.tsx"),
+      `export default function Signin() { return null; }`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "links.tsx"),
+      `export default function Links() { return null; }`,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath: dir, modelPath });
+    const routeValues =
+      result.model.vars.find((decl) => decl.id === "sys:route")?.domain.kind ===
+      "enum"
+        ? result.model.vars.find((decl) => decl.id === "sys:route")?.domain
+            .values
+        : [];
+    const historyDomain = result.model.vars.find(
+      (decl) => decl.id === "sys:history",
+    )?.domain;
+    const historyValues =
+      historyDomain?.kind === "boundedList" &&
+      historyDomain.inner.kind === "enum"
+        ? historyDomain.inner.values
+        : [];
+    expect(historyValues.every((route) => routeValues?.includes(route))).toBe(
+      true,
+    );
+    expect(historyValues.length).toBeLessThan(routeValues?.length ?? 0);
+  });
+
+  it("extracts a route-bound-push app that passes validation and checking", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-check-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { "react-router": "^7.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `
+      import { index, route } from '@react-router/dev/routes';
+      export default [
+        index('routes/home.tsx'),
+        route('links', 'routes/links.tsx'),
+        route('signin', 'routes/signin.tsx'),
+      ];
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "home.tsx"),
+      `
+      import { Link } from 'react-router';
+      export default function Home() {
+        return <Link to="/signin">Sign in</Link>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "signin.tsx"),
+      `export default function Signin() { return null; }`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "links.tsx"),
+      `export default function Links() { return null; }`,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath: dir, modelPath });
+    expect(validateModel(result.model).ok).toBe(true);
+
+    const check = checkModel(result.model, [
+      reachable(result.model, (state) => state["sys:route"] === "/signin", {
+        name: "signinReachable",
+        reads: ["sys:route"],
+      }),
+    ]);
+    expect(check.verdicts[0]?.status).not.toBe("error");
+
+    const routeValues =
+      result.model.vars.find((decl) => decl.id === "sys:route")?.domain.kind ===
+      "enum"
+        ? result.model.vars.find((decl) => decl.id === "sys:route")?.domain
+            .values
+        : [];
+    for (const transition of result.model.transitions) {
+      if (
+        transition.effect.kind === "navigate" &&
+        transition.effect.to?.kind === "lit"
+      ) {
+        expect(routeValues).toContain(transition.effect.to.value);
+      }
+    }
+  });
+
+  it("omits the routes summary line when no manifest is present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-no-manifest-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [open, setOpen] = useState(false);
+        return <button onClick={() => setOpen(true)}>Open</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.lines[0]).toBe("extracted vars=1 transitions=1");
+    expect(
+      result.lines.some((line) => line.startsWith("routes configured=")),
+    ).toBe(false);
   });
 
   it("normalizes unresolved typed useState literal initials to token representatives", async () => {
@@ -1396,6 +1657,7 @@ describe("runExtractCommand", () => {
       "app/components/Button.tsx",
       "app/components/UploadForm.tsx",
       "app/root.tsx",
+      "app/routes.ts",
       "app/routes/home.tsx",
       "app/routes/image.tsx",
     ]);
@@ -2118,14 +2380,24 @@ describe("runExtractCommand", () => {
       result.model.vars.find((decl) => decl.id === "sys:route")?.domain,
     ).toEqual({
       kind: "enum",
-      values: [
-        "/",
-        "/api/delete/:id",
-        "/api/replace/:id",
-        "/api/upload",
-        "/i/:id",
-      ],
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: extracted template-literal route token
+      values: ["/", "/i/:id", "/`/i/${id}`"],
     });
+    expect(result.report.routeCoverage).toMatchObject({
+      configured: 5,
+      modeled: 2,
+    });
+    expect(
+      result.report.routeCoverage?.routes.find(
+        (entry) => entry.pattern === "/api/upload",
+      ),
+    ).toMatchObject({
+      modeled: false,
+      classification: "api",
+    });
+    expect(
+      result.lines.some((line) => line.startsWith("routes configured=")),
+    ).toBe(true);
     expect(result.model.vars.map((decl) => decl.id)).toEqual(
       expect.arrayContaining([
         "local:UploadForm.busy",

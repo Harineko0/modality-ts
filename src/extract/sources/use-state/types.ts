@@ -19,6 +19,7 @@ export interface UseStateExtractionOptions {
   writeChannels?: readonly import("../../engine/spi/index.js").WriteChannel[];
   sourcePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];
   routerPlugin?: import("../../engine/spi/index.js").RouterPlugin;
+  inventory?: import("../../engine/spi/index.js").RouteInventory;
 }
 
 export interface ExtractionWarning {

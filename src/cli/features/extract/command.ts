@@ -14,15 +14,25 @@ import {
   type ExtractionReport,
   type Model,
   type OverlaySpec,
+  type RouteCoverage,
+  type RouteCoverageClassification,
+  type RouteCoverageEntry,
   type StateSpaceContributors,
   type StateVarDecl,
+  type Transition,
 } from "modality-ts/core";
 import type { Bounds } from "modality-ts/core";
 import type {
   RouterPlugin,
   StateSourcePlugin,
+  RouteInventory,
+  LocationLowering,
+  NavigationAdapter,
 } from "modality-ts/extract/engine/spi";
-import { routerSource } from "modality-ts/extract/sources/router";
+import {
+  parseReactRouterRoutes,
+  routerSource,
+} from "modality-ts/extract/sources/router";
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
@@ -67,9 +77,9 @@ export async function runExtractCommand(
   options: ExtractCommandOptions,
 ): Promise<ExtractCommandResult> {
   const sourcePaths = normalizedSourcePaths(options);
-  const project = await loadExtractionProject(sourcePaths);
+  const projectBase = await loadExtractionProject(sourcePaths);
   const config = await loadModalityConfig(
-    options.configPath ?? (await findNearestConfig(project.configStartDir)),
+    options.configPath ?? (await findNearestConfig(projectBase.configStartDir)),
   );
   const route = options.route ?? config.route ?? "/";
   const appModelPath =
@@ -77,7 +87,7 @@ export async function runExtractCommand(
   const packageJsonPath =
     options.packageJsonPath ??
     config.packageJsonPath ??
-    (await findNearestPackageJson(project.configStartDir));
+    (await findNearestPackageJson(projectBase.configStartDir));
   const dependencies = await readPackageDependencies(packageJsonPath);
   const registry = createBuiltinModalityRegistry({
     dependencies,
@@ -91,6 +101,9 @@ export async function runExtractCommand(
     ],
     routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
+  const routerAdapter = registry.routerPlugin ?? routerSource();
+  const project = await attachRouteInventory(projectBase, routerAdapter);
+  const routePatterns = project.inventory.routes.map((node) => node.pattern);
   const effectApis = uniqueStrings([
     ...(config.effectApis ?? []),
     ...(options.effectApis ?? []),
@@ -107,27 +120,23 @@ export async function runExtractCommand(
     sourceText: project.sourceText,
     fileName: project.entryFile,
     route,
-    routePatterns: project.routes,
+    routePatterns,
     effectApis,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: registry.routerPlugin,
+    inventory: project.inventory,
   });
   const transitions = [...pipeline.transitions];
-  const discoveredRoutes = uniqueStrings([
-    route,
-    ...project.routes,
-    ...transitionNavigatedRoutes(transitions),
-  ]);
-  const defaultRouter = routerSource();
-  const routeVars = registry.routerPlugin
-    ? registry.routerPlugin.routeVars(discoveredRoutes, {
-        route,
-        bounds: { maxHistory: 4 },
-      })
-    : defaultRouter.routeVars(discoveredRoutes, {
-        route,
-        bounds: { maxHistory: 4 },
-      });
+  const lowering = buildLocationLowering(
+    transitions,
+    routerAdapter,
+    project.inventory,
+  );
+  const routeVars = routerAdapter.locationVars(
+    project.inventory,
+    { route, bounds: { maxHistory: 4 } },
+    lowering,
+  );
   const templateVars = pipeline.templateFragments.flatMap(
     (fragment) => fragment.vars,
   );
@@ -193,6 +202,7 @@ export async function runExtractCommand(
     warnings,
     overlay.ignoredVars,
     options.now ?? new Date(),
+    project.inventory,
   );
   await mkdir(dirname(options.modelPath), { recursive: true });
   await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
@@ -224,12 +234,18 @@ export async function runExtractCommand(
     const examplePath = first.paths[0];
     return `coarse-domains=${count} e.g. ${first.varId}[${examplePath ?? ""}]`;
   })();
+  const routeCoverageLine = (() => {
+    const coverage = report.routeCoverage;
+    if (!coverage || coverage.configured === 0) return undefined;
+    return formatRouteCoverageLine(coverage);
+  })();
   return {
     model,
     report,
     lines: [
       `extracted vars=${pipeline.stateVars.length + pipeline.templateFragments.flatMap((fragment) => fragment.vars).length} transitions=${transitions.length}`,
       ...(stateSpaceLine ? [stateSpaceLine] : []),
+      ...(routeCoverageLine ? [routeCoverageLine] : []),
       ...(coarseDomainsLine ? [coarseDomainsLine] : []),
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
@@ -254,7 +270,7 @@ interface ExtractionProject {
   sourceText: string;
   sourceFiles: string[];
   sources: Array<{ path: string; text: string }>;
-  routes: string[];
+  inventory: RouteInventory;
   effectApis: string[];
   configStartDir: string;
 }
@@ -294,7 +310,7 @@ async function loadExtractionProject(
       sourceText: imported.sources.map((entry) => entry.text).join("\n"),
       sourceFiles: imported.sources.map((entry) => entry.path),
       sources: imported.sources,
-      routes: [],
+      inventory: { routes: [] },
       effectApis: fetchEffectApis(
         imported.sources.map((entry) => entry.text).join("\n"),
       ),
@@ -308,6 +324,7 @@ async function loadExtractionProject(
   const rootPath = join(resolved, "app", "root.tsx");
   const roots = await existingFiles([rootPath]);
   const entries = [
+    { path: routesPath, text: await readFile(routesPath, "utf8") },
     ...(await Promise.all(
       roots.map(async (path) => ({ path, text: await readFile(path, "utf8") })),
     )),
@@ -326,7 +343,7 @@ async function loadExtractionProject(
     sourceText,
     sourceFiles: imported.sources.map((entry) => entry.path),
     sources: imported.sources,
-    routes: uniqueStrings(routeEntries.map((entry) => entry.pattern)),
+    inventory: { routes: [] },
     effectApis: fetchEffectApis(sourceText),
     configStartDir: resolved,
   };
@@ -353,7 +370,7 @@ async function loadMultiFileExtractionProject(
     sourceText,
     sourceFiles: sources.map((entry) => entry.path),
     sources,
-    routes: uniqueStrings(projects.flatMap((project) => project.routes)),
+    inventory: { routes: [] },
     effectApis: uniqueStrings([
       ...projects.flatMap((project) => project.effectApis),
       ...fetchEffectApis(sourceText),
@@ -362,6 +379,50 @@ async function loadMultiFileExtractionProject(
       projects.map((project) => project.configStartDir),
     ),
   };
+}
+
+async function attachRouteInventory(
+  project: ExtractionProject,
+  adapter: NavigationAdapter,
+): Promise<ExtractionProject> {
+  const files = [...project.sources];
+  const manifestPath =
+    files.find((file) => file.path.endsWith("routes.ts"))?.path ??
+    (await findNearestRoutesManifest(project.configStartDir));
+  if (
+    manifestPath &&
+    !files.some((file) => resolve(file.path) === resolve(manifestPath))
+  ) {
+    files.push({
+      path: manifestPath,
+      text: await readFile(manifestPath, "utf8"),
+    });
+  }
+  const inventory = await adapter.discoverRoutes({
+    rootDir: project.configStartDir,
+    files,
+    readFile: (path) => readFile(path, "utf8"),
+  });
+  return { ...project, inventory };
+}
+
+async function findNearestRoutesManifest(
+  startDir: string,
+): Promise<string | undefined> {
+  let current = resolve(startDir);
+  for (let depth = 0; depth < 8; depth += 1) {
+    const candidate = join(current, "app", "routes.ts");
+    try {
+      const info = await stat(candidate);
+      if (info.isFile()) return candidate;
+    } catch {
+      // keep walking upward
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
 }
 
 async function sourceWithLocalImports(
@@ -558,41 +619,6 @@ async function existingFiles(paths: readonly string[]): Promise<string[]> {
     }
   }
   return found;
-}
-
-function parseReactRouterRoutes(
-  source: string,
-): Array<{ pattern: string; file: string }> {
-  const routes: Array<{ pattern: string; file: string }> = [];
-  const parsed = tsCreateSourceFile(source);
-  const visit = (node: import("typescript").Node): void => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      if (
-        node.expression.text === "index" &&
-        ts.isStringLiteral(node.arguments[0])
-      ) {
-        routes.push({ pattern: "/", file: node.arguments[0].text });
-      }
-      if (
-        node.expression.text === "route" &&
-        ts.isStringLiteral(node.arguments[0]) &&
-        ts.isStringLiteral(node.arguments[1])
-      ) {
-        routes.push({
-          pattern: reactRouterPathPattern(node.arguments[0].text),
-          file: node.arguments[1].text,
-        });
-      }
-    }
-    tsForEachChild(node, visit);
-  };
-  visit(parsed);
-  return routes;
-}
-
-function reactRouterPathPattern(pattern: string): string {
-  const normalized = pattern.startsWith("/") ? pattern : `/${pattern}`;
-  return normalized.replace(/\$([A-Za-z0-9_]+)/g, ":$1").replace(/\*$/, "*");
 }
 
 function sourceHashes(
@@ -878,6 +904,7 @@ function createExtractionReport(
   warnings: readonly string[],
   ignoredVars: readonly string[],
   now: Date,
+  inventory?: RouteInventory,
 ): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
   const varDomains = new Map(
@@ -920,6 +947,7 @@ function createExtractionReport(
     }))
     .filter((entry) => entry.paths.length > 0)
     .sort((a, b) => a.varId.localeCompare(b.varId));
+  const routeCoverage = buildRouteCoverage(inventory, model);
   return {
     schemaVersion: 1,
     kind: "extraction-report",
@@ -945,6 +973,7 @@ function createExtractionReport(
     })),
     ...(coarseDomains.length > 0 ? { coarseDomains } : {}),
     stateContributors: buildStateContributors(model),
+    ...(routeCoverage ? { routeCoverage } : {}),
     coverage: {
       handlersTotal: handlers.length,
       exactOrOverlay,
@@ -955,6 +984,119 @@ function createExtractionReport(
     },
     warnings,
   };
+}
+
+function buildRouteCoverage(
+  inventory: RouteInventory | undefined,
+  model: Model,
+): RouteCoverage | undefined {
+  if (!inventory || inventory.routes.length === 0) return undefined;
+  const routeVar = model.vars.find((decl) => decl.id === "sys:route");
+  const modeledValues = new Set(
+    routeVar?.domain.kind === "enum" ? routeVar.domain.values : [],
+  );
+  const routes: RouteCoverageEntry[] = inventory.routes
+    .map((node) => {
+      const modeled = modeledValues.has(node.pattern);
+      if (modeled) return { pattern: node.pattern, modeled: true };
+      let classification: RouteCoverageClassification;
+      let reason: string;
+      if (node.kind === "resource") {
+        classification = "api";
+        reason = "API/resource route excluded from client state";
+      } else if (node.redirectTo) {
+        classification = "redirect-only";
+        reason = "Redirect-only route excluded from client state";
+      } else if (node.pattern.includes("*")) {
+        classification = "unsupported";
+        reason = "Splat/wildcard route pattern not modeled";
+      } else {
+        classification = "no-client-state";
+        reason = "No client-side state modeled for this route";
+      }
+      return { pattern: node.pattern, modeled: false, classification, reason };
+    })
+    .sort((left, right) => left.pattern.localeCompare(right.pattern));
+  const modeled = routes.filter((entry) => entry.modeled).length;
+  return { configured: inventory.routes.length, modeled, routes };
+}
+
+function formatRouteCoverageLine(coverage: RouteCoverage): string {
+  const omitted = coverage.configured - coverage.modeled;
+  const counts = new Map<RouteCoverageClassification, number>();
+  for (const entry of coverage.routes) {
+    if (entry.modeled || !entry.classification) continue;
+    counts.set(
+      entry.classification,
+      (counts.get(entry.classification) ?? 0) + 1,
+    );
+  }
+  const parts = [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([classification, count]) => `${classification}=${count}`);
+  const suffix = parts.length > 0 ? ` [${parts.join(",")}]` : "";
+  return `routes configured=${coverage.configured} modeled=${coverage.modeled} omitted=${omitted}${suffix}`;
+}
+
+function buildLocationLowering(
+  transitions: readonly Transition[],
+  adapter: NavigationAdapter,
+  inventory: RouteInventory,
+): LocationLowering {
+  const pushTargets = new Set<string>();
+  const pushOrigins = new Set<string>();
+  let hasUnboundPush = false;
+
+  for (const transition of transitions) {
+    if (transition.id.startsWith("route:")) continue;
+    const navigations = collectPushReplaceNavigations(transition.effect);
+    if (navigations.length === 0) continue;
+
+    const component = transition.id.split(".")[0] ?? "";
+    const origin = adapter.routeForComponent?.(component, inventory);
+
+    for (const navigation of navigations) {
+      if (navigation.to) pushTargets.add(navigation.to);
+      if (!origin) hasUnboundPush = true;
+      else pushOrigins.add(origin);
+    }
+  }
+
+  return {
+    pushTargets: [...pushTargets].sort(),
+    pushOrigins: [...pushOrigins].sort(),
+    hasUnboundPush,
+  };
+}
+
+function collectPushReplaceNavigations(
+  effect: EffectIR,
+): Array<{ mode: "push" | "replace"; to?: string }> {
+  const navigations: Array<{ mode: "push" | "replace"; to?: string }> = [];
+  const visit = (current: EffectIR): void => {
+    if (
+      current.kind === "navigate" &&
+      (current.mode === "push" || current.mode === "replace")
+    ) {
+      const to =
+        current.to?.kind === "lit" && typeof current.to.value === "string"
+          ? current.to.value
+          : undefined;
+      navigations.push({
+        mode: current.mode,
+        ...(to !== undefined ? { to } : {}),
+      });
+    }
+    if (current.kind === "seq") {
+      for (const child of current.effects) visit(child);
+    }
+    if (current.kind === "if") {
+      visit(current.then);
+      visit(current.else);
+    }
+  };
+  visit(effect);
+  return navigations;
 }
 
 function emptyExtractionCaveats(): NonNullable<
@@ -1083,29 +1225,6 @@ function pluginProvenance(
     (left, right) =>
       left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
   );
-}
-
-function transitionNavigatedRoutes(
-  transitions: readonly Model["transitions"][number][],
-): string[] {
-  const routes = new Set<string>();
-  const visit = (effect: EffectIR): void => {
-    if (
-      effect.kind === "navigate" &&
-      effect.to?.kind === "lit" &&
-      typeof effect.to.value === "string"
-    )
-      routes.add(effect.to.value);
-    if (effect.kind === "seq") {
-      for (const child of effect.effects) visit(child);
-    }
-    if (effect.kind === "if") {
-      visit(effect.then);
-      visit(effect.else);
-    }
-  };
-  for (const transition of transitions) visit(transition.effect);
-  return [...routes].sort();
 }
 
 function overApproxReasons(

@@ -413,10 +413,60 @@ describe("validator", () => {
     expect(systemErrors).toContain("sys:route must use an enum domain");
     expect(systemErrors).toContain("sys:history must have system origin");
     expect(systemErrors).toContain(
-      "sys:history inner domain must match sys:route domain",
+      "sys:history inner domain must be a subset of sys:route domain",
     );
     expect(systemErrors).toContain(
       "sys:pending maxLen must match bounds.maxPending",
+    );
+  });
+
+  it("accepts sys:history inner domain as a subset of sys:route", () => {
+    const model = baseModel();
+    const subsetHistory: Model = {
+      ...model,
+      vars: model.vars.map((decl) => {
+        if (decl.id === "sys:route")
+          return {
+            ...decl,
+            domain: {
+              kind: "enum" as const,
+              values: ["/", "/signin", "/links"],
+            },
+          };
+        if (decl.id === "sys:history")
+          return {
+            ...decl,
+            domain: {
+              kind: "boundedList" as const,
+              inner: { kind: "enum" as const, values: ["/", "/signin"] },
+              maxLen: 4,
+            },
+          };
+        return decl;
+      }),
+    };
+    expect(validateModel(subsetHistory).ok).toBe(true);
+
+    const foreignHistory: Model = {
+      ...subsetHistory,
+      vars: subsetHistory.vars.map((decl) => {
+        if (decl.id === "sys:history")
+          return {
+            ...decl,
+            domain: {
+              kind: "boundedList" as const,
+              inner: {
+                kind: "enum" as const,
+                values: ["/", "/signin", "/ghost"],
+              },
+              maxLen: 4,
+            },
+          };
+        return decl;
+      }),
+    };
+    expect(validateModel(foreignHistory).errors).toContain(
+      "sys:history inner domain must be a subset of sys:route domain",
     );
   });
 

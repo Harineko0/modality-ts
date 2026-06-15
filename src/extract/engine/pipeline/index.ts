@@ -1,5 +1,4 @@
 import type {
-  EffectIR,
   Model,
   PluginProvenance,
   StateVarDecl,
@@ -10,8 +9,11 @@ import type {
   StateSourcePlugin,
   RouterPlugin,
   WriteChannel,
+  RouteInventory,
+  LocationLowering,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
+import { synthesizeRedirectTransitions } from "../../sources/router/redirects.js";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -37,6 +39,8 @@ export interface ExtractionPipelineOptions {
   effectApis?: readonly string[];
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
+  inventory?: RouteInventory;
+  lowering?: LocationLowering;
 }
 
 export interface ExtractionPipelineResult {
@@ -131,6 +135,7 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.inventory ? { inventory: options.inventory } : {}),
   };
   const genericExtraction = extractReactSourceTransitions(options.sourceText, {
     route: options.route,
@@ -141,6 +146,7 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.inventory ? { inventory: options.inventory } : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
@@ -156,11 +162,18 @@ export function runExtractionPipeline(
     ...genericExtraction.transitions,
     ...extractedTransitions,
     ...templateFragments.flatMap((fragment) => fragment.transitions),
+    ...(options.inventory
+      ? synthesizeRedirectTransitions(options.inventory)
+      : []),
   ];
-  const routes = [
-    options.route,
-    ...navigatedRoutes(transitions.map((transition) => transition.effect)),
-  ];
+  const routeVars =
+    options.routerPlugin && options.inventory && options.lowering
+      ? options.routerPlugin.locationVars(
+          options.inventory,
+          { route: options.route, bounds: { maxHistory: 4 } },
+          options.lowering,
+        )
+      : [];
   return {
     transitions,
     warnings: [
@@ -170,8 +183,7 @@ export function runExtractionPipeline(
     ].sort(),
     stateVars,
     templateFragments,
-    routeVars:
-      options.routerPlugin?.routeVars(routes, { route: options.route }) ?? [],
+    routeVars,
     writeChannels,
     plugins,
   };
@@ -211,24 +223,4 @@ function validateUniquePlugins(
       throw new Error(`Duplicate extraction source plugin ${plugin.id}`);
     seen.add(plugin.id);
   }
-}
-
-function navigatedRoutes(effects: readonly EffectIR[]): string[] {
-  const routes = new Set<string>();
-  const visit = (effect: EffectIR): void => {
-    if (
-      effect.kind === "navigate" &&
-      effect.to?.kind === "lit" &&
-      typeof effect.to.value === "string"
-    ) {
-      routes.add(effect.to.value);
-    }
-    if (effect.kind === "seq") effect.effects.forEach(visit);
-    if (effect.kind === "if") {
-      visit(effect.then);
-      visit(effect.else);
-    }
-  };
-  effects.forEach(visit);
-  return [...routes].sort();
 }

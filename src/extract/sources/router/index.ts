@@ -1,7 +1,11 @@
-import type { RouterPlugin } from "modality-ts/extract/engine/spi";
+import type {
+  NavigationAdapter,
+  ResolvedOptions,
+} from "modality-ts/extract/engine/spi";
+import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
-import { navigationCall } from "./navigation.js";
-import { routeVars } from "./routes.js";
+import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
+import { locationVars } from "./routes.js";
 
 export interface RouterSourceOptions {
   id?: string;
@@ -9,23 +13,38 @@ export interface RouterSourceOptions {
   historyMaxLen?: number;
 }
 
-export function routerSource(options: RouterSourceOptions = {}): RouterPlugin {
+export function reactRouterAdapter(
+  options: RouterSourceOptions = {},
+): NavigationAdapter {
   const historyMaxLen = options.historyMaxLen ?? 4;
+  const withHistoryBounds = (
+    resolvedOptions: ResolvedOptions,
+  ): ResolvedOptions => ({
+    ...resolvedOptions,
+    bounds: {
+      ...resolvedOptions.bounds,
+      maxHistory: resolvedOptions.bounds?.maxHistory ?? historyMaxLen,
+    },
+  });
+
   return {
     id: options.id ?? "router",
     version: "0.1.0",
     packageNames: options.packageNames ?? ["react-router", "react-router-dom"],
-    routeVars: (routes, resolvedOptions) =>
-      routeVars(routes, {
-        ...resolvedOptions,
-        bounds: {
-          ...resolvedOptions.bounds,
-          maxHistory: resolvedOptions.bounds?.maxHistory ?? historyMaxLen,
-        },
-      }),
-    navigationCall,
+    discoverRoutes,
+    classifyNavigationCall,
+    classifyNavigationJsx,
+    routeForComponent,
+    locationVars: (inventory, resolvedOptions, lowering) =>
+      locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
     harness,
   };
 }
 
-export default routerSource;
+/** @deprecated use reactRouterAdapter */
+export const routerSource = reactRouterAdapter;
+
+export { parseReactRouterRoutes } from "./discover.js";
+export { synthesizeRedirectTransitions } from "./redirects.js";
+
+export default reactRouterAdapter;

@@ -13,6 +13,7 @@ export type SharedReactTransitionCtx = Omit<
   stateVars?: readonly ExtractCtx["stateVars"][number][];
   writeChannels?: readonly WriteChannel[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  inventory?: import("../../engine/spi/index.js").RouteInventory;
 };
 
 function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
@@ -26,6 +27,7 @@ function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
     ...(ctx.stateVars ? { stateVars: ctx.stateVars } : {}),
     ...(ctx.writeChannels ? { writeChannels: ctx.writeChannels } : {}),
     ...(ctx.routerPlugin ? { routerPlugin: ctx.routerPlugin } : {}),
+    ...(ctx.inventory ? { inventory: ctx.inventory } : {}),
   };
 }
 

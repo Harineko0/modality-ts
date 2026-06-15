@@ -67,7 +67,7 @@ export interface ExtractCtx {
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
   sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
 }
 
 export interface SourceExtractionResult {
@@ -86,6 +86,38 @@ export interface ResolvedOptions {
     maxPending?: number;
     maxHistory?: number;
   };
+}
+
+export type NavMode = "push" | "replace" | "back";
+
+export interface NavIntent {
+  mode: NavMode;
+  to?: string;
+}
+
+export type RouteKind = "page" | "index" | "layout" | "resource";
+
+export interface RouteNode {
+  pattern: string;
+  kind: RouteKind;
+  file?: string;
+  redirectTo?: string;
+}
+
+export interface RouteInventory {
+  routes: readonly RouteNode[];
+}
+
+export interface RouteDiscoveryCtx {
+  rootDir?: string;
+  files: readonly { path: string; text: string }[];
+  readFile(path: string): Promise<string>;
+}
+
+export interface LocationLowering {
+  pushTargets: readonly string[];
+  pushOrigins: readonly string[];
+  hasUnboundPush: boolean;
 }
 
 export interface HarnessHooks {
@@ -134,18 +166,28 @@ export interface StateSourcePlugin {
   };
 }
 
-export interface RouterPlugin {
+export interface NavigationAdapter {
   id: string;
   version?: string;
   packageNames: readonly string[];
-  routeVars(
-    routes: readonly string[],
-    options: ResolvedOptions,
-  ): readonly StateVarDecl[];
-  navigationCall(
+  discoverRoutes(ctx: RouteDiscoveryCtx): Promise<RouteInventory>;
+  classifyNavigationCall(
     callee: string,
     args: readonly unknown[],
-  ): { mode: "push" | "replace" | "back"; to?: string } | "unsupported";
+  ): NavIntent | "unsupported";
+  classifyNavigationJsx?(
+    tag: string,
+    attrs: ReadonlyMap<string, unknown>,
+  ): NavIntent | "unsupported";
+  routeForComponent?(
+    componentName: string,
+    inventory: RouteInventory,
+  ): string | undefined;
+  locationVars(
+    inventory: RouteInventory,
+    options: ResolvedOptions,
+    lowering: LocationLowering,
+  ): readonly StateVarDecl[];
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
     observe(handles: HarnessHooks): ObservedRead | "unobservable";
@@ -156,3 +198,6 @@ export interface RouterPlugin {
     ): Promise<void> | void;
   };
 }
+
+/** @deprecated use NavigationAdapter */
+export type RouterPlugin = NavigationAdapter;

@@ -14,6 +14,11 @@ import {
   routeMountReads,
   templateRoutePattern,
 } from "./routes.js";
+import {
+  isNavigationJsxTag,
+  navigationRouteJsxAttribute,
+} from "./transition/navigation.js";
+import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
 import type {
   ComponentDecl,
   InternalTransition,
@@ -26,6 +31,8 @@ export function staticNavigationTransitions(
   fileName: string,
   routePatterns: readonly string[],
   components: ReadonlyMap<string, ComponentDecl>,
+  adapter?: NavigationAdapter,
+  inventory?: RouteInventory,
 ): Transition[] {
   const transitions: InternalTransition[] = [];
   const topEnv = topLevelStaticEnv(source);
@@ -38,14 +45,21 @@ export function staticNavigationTransitions(
     if (depth > 5) return;
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const tag = node.tagName.getText(source);
-      if (tag === "Link") {
-        const extracted = staticLinkTransitions(
+      if (isNavigationJsxTag(adapter, tag)) {
+        const routePattern = adapter?.routeForComponent?.(
+          component,
+          inventory ?? { routes: [] },
+        );
+        const extracted = staticNavigationJsxTransitions(
           source,
           fileName,
           node,
+          tag,
           component,
           env,
           routePatterns,
+          adapter,
+          routePattern,
         );
         transitions.push(...extracted);
       } else if (startsUppercase(tag)) {
@@ -162,19 +176,22 @@ function uniqueStaticTransitions(
   return unique;
 }
 
-function staticLinkTransitions(
+function staticNavigationJsxTransitions(
   source: ts.SourceFile,
   fileName: string,
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  tag: string,
   component: string,
   env: StaticEnv,
   routePatterns: readonly string[],
+  adapter: NavigationAdapter | undefined,
+  routePattern: string | undefined,
 ): InternalTransition[] {
-  const toAttr = node.attributes.properties.find(
-    (property): property is ts.JsxAttribute =>
-      ts.isJsxAttribute(property) &&
-      ts.isIdentifier(property.name) &&
-      property.name.text === "to",
+  if (!adapter) return [];
+  const toAttr = navigationRouteJsxAttribute(
+    adapter,
+    tag,
+    node.attributes.properties,
   );
   if (!toAttr) return [];
   const legacyTarget = jsxRouteTarget(toAttr, routePatterns);
@@ -186,7 +203,7 @@ function staticLinkTransitions(
   return targets
     .filter((target) => target.to !== legacyTarget)
     .map((target) => ({
-      id: `${component}.Link.navigate.${safeId(target.to)}`,
+      id: `${component}.${tag}.navigate.${safeId(target.to)}`,
       cls: "nav" as const,
       label: {
         kind: "navigate" as const,
@@ -194,13 +211,13 @@ function staticLinkTransitions(
         to: target.to,
       },
       source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
-      guard: routeMountGuard(component, routePatterns),
+      guard: routeMountGuard(routePattern),
       effect: {
         kind: "navigate" as const,
         mode: "push" as const,
         to: { kind: "lit" as const, value: target.to },
       },
-      reads: routeMountReads(component, routePatterns),
+      reads: routeMountReads(routePattern),
       writes: ["sys:route", "sys:history"],
       confidence: target.confidence,
       __stableIdKey: `${component}:${toAttr.getText(source)}:${target.to}`,

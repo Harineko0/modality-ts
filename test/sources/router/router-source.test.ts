@@ -11,10 +11,12 @@ describe("router source plugin", () => {
     const plugin = routerSource({ historyMaxLen: 2 });
     expect(plugin.id).toBe("router");
     expect(plugin.packageNames).toEqual(["react-router", "react-router-dom"]);
-    expect(plugin.navigationCall("router.push", ["/checkout"])).toEqual({
-      mode: "push",
-      to: "/checkout",
-    });
+    expect(plugin.classifyNavigationCall("router.push", ["/checkout"])).toEqual(
+      {
+        mode: "push",
+        to: "/checkout",
+      },
+    );
     expect(plugin.harness.observe(plugin.harness.setup({}))).toEqual({
       value: "/",
     });
@@ -32,12 +34,19 @@ describe("router source plugin", () => {
     expect(observe(handles, "sys:route")).toEqual({ value: "/start" });
   });
 
-  it("owns route and history system vars", () => {
+  it("owns route and history system vars via locationVars", () => {
+    const inventory = {
+      routes: [
+        { pattern: "/", kind: "index" as const },
+        { pattern: "/checkout", kind: "page" as const },
+      ],
+    };
     expect(
-      routerSource().routeVars(["/checkout", "/"], {
-        route: "/",
-        bounds: { maxHistory: 3 },
-      }),
+      routerSource().locationVars(
+        inventory,
+        { route: "/", bounds: { maxHistory: 3 } },
+        { pushTargets: [], pushOrigins: [], hasUnboundPush: true },
+      ),
     ).toEqual([
       {
         id: "sys:route",
@@ -62,15 +71,21 @@ describe("router source plugin", () => {
 
   it("classifies supported navigation call shapes", () => {
     const plugin = routerSource();
-    expect(plugin.navigationCall("navigate", ["/settings"])).toEqual({
+    expect(plugin.classifyNavigationCall("navigate", ["/settings"])).toEqual({
       mode: "push",
       to: "/settings",
     });
-    expect(plugin.navigationCall("router.replace", ["/login"])).toEqual({
-      mode: "replace",
-      to: "/login",
+    expect(plugin.classifyNavigationCall("router.replace", ["/login"])).toEqual(
+      {
+        mode: "replace",
+        to: "/login",
+      },
+    );
+    expect(plugin.classifyNavigationCall("router.back", [])).toEqual({
+      mode: "back",
     });
-    expect(plugin.navigationCall("router.back", [])).toEqual({ mode: "back" });
-    expect(plugin.navigationCall("router.push", [42])).toBe("unsupported");
+    expect(plugin.classifyNavigationCall("router.push", [42])).toBe(
+      "unsupported",
+    );
   });
 });

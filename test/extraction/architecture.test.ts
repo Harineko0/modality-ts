@@ -10,6 +10,7 @@ import {
   type StateSourcePlugin,
 } from "modality-ts/extract";
 import type { RouterPlugin } from "modality-ts/extract/engine/spi";
+import { locationVars } from "../../src/extract/sources/router/routes.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(testDir, "../../src");
@@ -153,18 +154,19 @@ describe("extraction architecture surface", () => {
         ],
       }),
     };
+    const inventory = {
+      routes: [
+        { pattern: "/", kind: "index" as const },
+        { pattern: "/next", kind: "page" as const },
+      ],
+    };
     const routerPlugin: RouterPlugin = {
       id: "router",
       packageNames: ["router"],
-      routeVars: (routes) =>
-        routes.map((route) => ({
-          id: `route:${route}`,
-          domain: { kind: "enum", values: [route] },
-          origin: "system",
-          scope: { kind: "global" },
-          initial: route,
-        })),
-      navigationCall: () => "unsupported",
+      discoverRoutes: async () => inventory,
+      classifyNavigationCall: () => "unsupported",
+      locationVars: (routeInventory, options, lowering) =>
+        locationVars(routeInventory, options, lowering),
       harness: {
         setup: () => ({}),
         observe: () => "unobservable",
@@ -178,6 +180,12 @@ describe("extraction architecture surface", () => {
       route: "/",
       sourcePlugins: [sourcePlugin],
       routerPlugin,
+      inventory,
+      lowering: {
+        pushTargets: ["/next"],
+        pushOrigins: [],
+        hasUnboundPush: true,
+      },
     });
 
     expect(result.plugins).toEqual({
@@ -209,9 +217,15 @@ describe("extraction architecture surface", () => {
       "lib:ready",
     ]);
     expect(result.routeVars.map((decl) => decl.id)).toEqual([
-      "route:/",
-      "route:/next",
+      "sys:route",
+      "sys:history",
     ]);
+    expect(
+      result.routeVars.find((decl) => decl.id === "sys:route")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["/", "/next"],
+    });
   });
 
   it("root package exports source harness entry points", () => {

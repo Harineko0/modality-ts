@@ -1,6 +1,6 @@
 import type { PluginProvenance } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  NavigationAdapter,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
@@ -10,21 +10,21 @@ import { useStateSource } from "modality-ts/extract/sources/use-state";
 
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
 }
 
 export interface BuiltinRegistryOptions {
   dependencies?: Readonly<Record<string, string>>;
   disabledPlugins?: readonly string[];
   extraSourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin | false;
+  routerPlugin?: NavigationAdapter | false;
 }
 
 export interface RegistrySummary {
   sourcePluginIds: readonly string[];
   routerPluginId?: string;
   sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
   plugins: readonly PluginProvenance[];
 }
 
@@ -123,15 +123,19 @@ function validateStateSourcePlugin(plugin: StateSourcePlugin): void {
   }
 }
 
-function validateRouterPlugin(plugin: RouterPlugin): void {
+function validateRouterPlugin(plugin: NavigationAdapter): void {
   validateCommonPluginShape(plugin, "router plugin");
-  if (typeof plugin.routeVars !== "function")
+  if (typeof plugin.discoverRoutes !== "function")
     throw new Error(
-      `Invalid router plugin ${plugin.id}: routeVars must be a function`,
+      `Invalid router plugin ${plugin.id}: discoverRoutes must be a function`,
     );
-  if (typeof plugin.navigationCall !== "function")
+  if (typeof plugin.classifyNavigationCall !== "function")
     throw new Error(
-      `Invalid router plugin ${plugin.id}: navigationCall must be a function`,
+      `Invalid router plugin ${plugin.id}: classifyNavigationCall must be a function`,
+    );
+  if (typeof plugin.locationVars !== "function")
+    throw new Error(
+      `Invalid router plugin ${plugin.id}: locationVars must be a function`,
     );
   if (
     !plugin.harness ||

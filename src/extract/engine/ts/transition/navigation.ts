@@ -1,14 +1,14 @@
 import * as ts from "typescript";
-import { callName, lineAndColumn } from "../ast.js";
+import { callName, lineAndColumn, literalValue } from "../ast.js";
 import { safeId, uniqueStrings } from "../ids.js";
 import {
-  jsxRouteTarget,
+  normalizeRouteTarget,
   routeMountGuard,
   routeMountReads,
   routeTargetValue,
 } from "../routes.js";
 import type { EffectIR, Locator, Transition } from "modality-ts/core";
-import type { RouterPlugin } from "../../spi/index.js";
+import type { NavigationAdapter } from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { effectWriteVars } from "./effects.js";
 import { callArgumentValue } from "./plugin-calls.js";
@@ -21,10 +21,10 @@ export function navigationTransition(
   component: string,
   call: ts.CallExpression,
   _locator: Locator | undefined,
-  routerPlugin: RouterPlugin | undefined,
+  adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[] = [],
 ): Transition | undefined {
-  const navigation = navigationCall(call, routerPlugin, routePatterns);
+  const navigation = navigationCall(call, adapter, routePatterns);
   if (!navigation) return undefined;
   const routeId = navigation.to ? safeId(navigation.to) : "back";
   return {
@@ -53,67 +53,130 @@ export function navigationTransition(
 
 export function navigationCall(
   call: ts.CallExpression,
-  routerPlugin: RouterPlugin | undefined,
+  adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[] = [],
 ): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   const name = callName(call.expression);
-  if (!name) return undefined;
-  const pluginNavigation = routerPlugin?.navigationCall(
+  if (!name || !adapter) return undefined;
+  const classified = adapter.classifyNavigationCall(
     name,
     call.arguments.map(callArgumentValue),
   );
-  if (pluginNavigation && pluginNavigation !== "unsupported")
-    return pluginNavigation;
-  if (name === "navigate" && call.arguments.length === 1) {
-    const to = routeTargetValue(call.arguments[0], routePatterns);
-    return typeof to === "string" ? { mode: "push", to } : undefined;
-  }
-  if (
-    (name.endsWith(".push") || name.endsWith(".replace")) &&
-    call.arguments.length === 1
-  ) {
-    const to = routeTargetValue(call.arguments[0], routePatterns);
-    if (typeof to !== "string") return undefined;
-    return { mode: name.endsWith(".replace") ? "replace" : "push", to };
-  }
-  if (name.endsWith(".back") && call.arguments.length === 0) {
-    return { mode: "back" };
-  }
-  return undefined;
+  if (!classified || classified === "unsupported") return undefined;
+  const to =
+    classified.to !== undefined
+      ? normalizeRouteTarget(classified.to, routePatterns)
+      : undefined;
+  return { mode: classified.mode, ...(to !== undefined ? { to } : {}) };
 }
 
-export function linkNavigationTransition(
+export function navigationJsxTransition(
   source: ts.SourceFile,
   fileName: string,
   node: ts.Node,
   component: string,
   routePatterns: readonly string[],
+  adapter: NavigationAdapter | undefined,
+  routePattern: string | undefined,
 ): Transition | undefined {
   if (
-    (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) ||
-    node.tagName.getText(source) !== "Link"
+    !adapter?.classifyNavigationJsx ||
+    (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node))
   )
     return undefined;
-  const toAttr = node.attributes.properties.find(
-    (property): property is ts.JsxAttribute =>
-      ts.isJsxAttribute(property) &&
-      ts.isIdentifier(property.name) &&
-      property.name.text === "to",
-  );
-  if (!toAttr) return undefined;
-  const to = jsxRouteTarget(toAttr, routePatterns);
-  if (!to) return undefined;
+  const tag = node.tagName.getText(source);
+  const attrs = jsxLiteralAttrs(source, node, routePatterns);
+  const classified = adapter.classifyNavigationJsx(tag, attrs);
+  if (!classified || classified === "unsupported") return undefined;
+  const to =
+    classified.to !== undefined
+      ? normalizeRouteTarget(classified.to, routePatterns)
+      : undefined;
+  if (classified.mode !== "back" && !to) return undefined;
+  const routeId = to ? safeId(to) : "back";
   return {
-    id: `${component}.Link.navigate.${safeId(to)}`,
+    id: `${component}.${tag}.navigate.${routeId}`,
     cls: "nav",
-    label: { kind: "navigate", mode: "push", to },
-    source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
-    guard: routeMountGuard(component, routePatterns),
-    effect: { kind: "navigate", mode: "push", to: { kind: "lit", value: to } },
-    reads: routeMountReads(component, routePatterns),
+    label: {
+      kind: "navigate",
+      mode: classified.mode === "replace" ? "push" : classified.mode,
+      ...(to ? { to } : {}),
+    },
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: routeMountGuard(routePattern),
+    effect: {
+      kind: "navigate",
+      mode: classified.mode,
+      ...(to ? { to: { kind: "lit", value: to } } : {}),
+    },
+    reads: routeMountReads(routePattern),
     writes: ["sys:route", "sys:history"],
     confidence: "exact",
   };
+}
+
+export function isNavigationJsxTag(
+  adapter: NavigationAdapter | undefined,
+  tag: string,
+): boolean {
+  if (!adapter?.classifyNavigationJsx) return false;
+  return ["to", "href"].some(
+    (attr) =>
+      adapter.classifyNavigationJsx?.(tag, new Map([[attr, ""]])) !==
+      "unsupported",
+  );
+}
+
+export function navigationRouteJsxAttribute(
+  adapter: NavigationAdapter,
+  tag: string,
+  properties: ts.NodeArray<ts.JsxAttributeLike>,
+): ts.JsxAttribute | undefined {
+  for (const property of properties) {
+    if (!ts.isJsxAttribute(property) || !ts.isIdentifier(property.name))
+      continue;
+    const probe = new Map<string, unknown>([[property.name.text, ""]]);
+    if (adapter.classifyNavigationJsx?.(tag, probe) !== "unsupported")
+      return property;
+  }
+  return undefined;
+}
+
+function jsxLiteralAttrs(
+  source: ts.SourceFile,
+  node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  routePatterns: readonly string[],
+): Map<string, unknown> {
+  const attrs = new Map<string, unknown>();
+  for (const property of node.attributes.properties) {
+    if (!ts.isJsxAttribute(property) || !ts.isIdentifier(property.name))
+      continue;
+    const name = property.name.text;
+    if (!property.initializer) {
+      attrs.set(name, true);
+      continue;
+    }
+    if (ts.isStringLiteral(property.initializer)) {
+      attrs.set(name, property.initializer.text);
+      continue;
+    }
+    if (
+      ts.isJsxExpression(property.initializer) &&
+      property.initializer.expression
+    ) {
+      const routeValue = routeTargetValue(
+        property.initializer.expression,
+        routePatterns,
+      );
+      if (routeValue !== undefined) {
+        attrs.set(name, routeValue);
+        continue;
+      }
+      const literal = literalValue(property.initializer.expression);
+      if (literal !== undefined) attrs.set(name, literal);
+    }
+  }
+  return attrs;
 }
 
 export function escapedSetters(
@@ -129,6 +192,7 @@ export function escapedSetters(
 
 export function firstNavigationInStatements(
   statements: readonly ts.Statement[],
+  adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[],
 ): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   for (const statement of statements) {
@@ -136,7 +200,7 @@ export function firstNavigationInStatements(
     const visit = (node: ts.Node): void => {
       if (found) return;
       if (ts.isCallExpression(node))
-        found = navigationCall(node, undefined, routePatterns);
+        found = navigationCall(node, adapter, routePatterns);
       ts.forEachChild(node, visit);
     };
     visit(statement);

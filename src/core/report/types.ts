@@ -132,6 +132,25 @@ export interface StateSpaceContributors {
   bySource: readonly { source: string; bits: number }[];
 }
 
+export type RouteCoverageClassification =
+  | "api"
+  | "redirect-only"
+  | "no-client-state"
+  | "unsupported";
+
+export interface RouteCoverageEntry {
+  pattern: string;
+  modeled: boolean;
+  classification?: RouteCoverageClassification;
+  reason?: string;
+}
+
+export interface RouteCoverage {
+  configured: number;
+  modeled: number;
+  routes: readonly RouteCoverageEntry[];
+}
+
 export interface ExtractionReport {
   schemaVersion: 1;
   kind: "extraction-report";
@@ -149,6 +168,7 @@ export interface ExtractionReport {
   domains: readonly DomainReportEntry[];
   coarseDomains?: readonly { varId: string; paths: readonly string[] }[];
   stateContributors?: StateSpaceContributors;
+  routeCoverage?: RouteCoverage;
   coverage: {
     handlersTotal: number;
     exactOrOverlay: number;

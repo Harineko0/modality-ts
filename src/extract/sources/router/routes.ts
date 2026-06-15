@@ -1,12 +1,36 @@
-import type { ResolvedOptions } from "modality-ts/extract/engine/spi";
+import type {
+  LocationLowering,
+  ResolvedOptions,
+  RouteInventory,
+} from "modality-ts/extract/engine/spi";
 import type { AbstractDomain, StateVarDecl } from "modality-ts/core";
 
-export function routeVars(
-  routes: readonly string[],
+export function locationVars(
+  inventory: RouteInventory,
   options: ResolvedOptions,
+  lowering: LocationLowering,
 ): readonly StateVarDecl[] {
-  const values = uniqueRoutes(routes, options.route);
-  const routeDomain: AbstractDomain = { kind: "enum", values };
+  const uiPatterns = inventory.routes
+    .filter((node) => node.kind === "page" || node.kind === "index")
+    .map((node) => node.pattern);
+  const routeValues = uniqueRoutes([
+    options.route,
+    ...uiPatterns,
+    ...lowering.pushTargets,
+  ]);
+  const routeDomain: AbstractDomain = { kind: "enum", values: routeValues };
+
+  const historyRoutes = clampToRouteDomain(
+    lowering.hasUnboundPush
+      ? routeValues
+      : uniqueRoutes([
+          options.route,
+          ...lowering.pushTargets,
+          ...lowering.pushOrigins,
+        ]),
+    routeValues,
+  );
+
   return [
     {
       id: "sys:route",
@@ -19,7 +43,7 @@ export function routeVars(
       id: "sys:history",
       domain: {
         kind: "boundedList",
-        inner: routeDomain,
+        inner: { kind: "enum", values: historyRoutes },
         maxLen: options.bounds?.maxHistory ?? 4,
       },
       origin: "system",
@@ -29,9 +53,14 @@ export function routeVars(
   ];
 }
 
-function uniqueRoutes(
-  routes: readonly string[],
-  initialRoute: string,
+function clampToRouteDomain(
+  historyRoutes: readonly string[],
+  routeValues: readonly string[],
 ): string[] {
-  return [...new Set([initialRoute, ...routes])];
+  const allowed = new Set(routeValues);
+  return uniqueRoutes(historyRoutes.filter((route) => allowed.has(route)));
+}
+
+function uniqueRoutes(routes: readonly string[]): string[] {
+  return [...new Set(routes)];
 }

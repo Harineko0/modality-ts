@@ -157,12 +157,17 @@ function validateSystemVarShapes(
   if (history) {
     if (history.domain.kind !== "boundedList") {
       errors.push("sys:history must use a boundedList domain");
-    } else if (
-      route &&
-      domainFingerprint(history.domain.inner) !==
-        domainFingerprint(route.domain)
-    ) {
-      errors.push("sys:history inner domain must match sys:route domain");
+    } else if (route) {
+      const inner = history.domain.inner;
+      const routeDomain = route.domain;
+      const within =
+        inner.kind === "enum" && routeDomain.kind === "enum"
+          ? inner.values.every((v) => routeDomain.values.includes(v))
+          : domainFingerprint(inner) === domainFingerprint(routeDomain);
+      if (!within)
+        errors.push(
+          "sys:history inner domain must be a subset of sys:route domain",
+        );
     }
   }
   if (pending) {
