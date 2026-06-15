@@ -227,29 +227,47 @@ export function parseGuardExpression(
   expression: ts.Expression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
+  snapshotReads = false,
 ): ParsedGuard | undefined {
   const unwrapped = unwrapTsExpression(expression);
   if (unwrapped !== expression)
-    return parseGuardExpression(unwrapped, setters, locals);
+    return parseGuardExpression(unwrapped, setters, locals, snapshotReads);
   if (expression.kind === ts.SyntaxKind.TrueKeyword)
     return { expr: { kind: "lit", value: true }, reads: [] };
   if (expression.kind === ts.SyntaxKind.FalseKeyword)
     return { expr: { kind: "lit", value: false }, reads: [] };
-  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
-    return valueExpr(expression, setters, locals);
+  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) {
+    const bound = valueExpr(expression, setters, locals, snapshotReads);
+    return bound ? guardExprFromBound(bound, snapshotReads) : undefined;
+  }
   if (
     ts.isPrefixUnaryExpression(expression) &&
     expression.operator === ts.SyntaxKind.ExclamationToken
   ) {
-    const parsed = parseGuardExpression(expression.operand, setters, locals);
+    const parsed = parseGuardExpression(
+      expression.operand,
+      setters,
+      locals,
+      snapshotReads,
+    );
     return parsed
       ? { expr: { kind: "not", args: [parsed.expr] }, reads: parsed.reads }
       : undefined;
   }
   if (ts.isParenthesizedExpression(expression))
-    return parseGuardExpression(expression.expression, setters, locals);
+    return parseGuardExpression(
+      expression.expression,
+      setters,
+      locals,
+      snapshotReads,
+    );
   if (ts.isBinaryExpression(expression))
-    return parseBinaryGuardExpression(expression, setters, locals);
+    return parseBinaryGuardExpression(
+      expression,
+      setters,
+      locals,
+      snapshotReads,
+    );
   return undefined;
 }
 
@@ -257,13 +275,24 @@ export function parseBinaryGuardExpression(
   expression: ts.BinaryExpression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
+  snapshotReads = false,
 ): ParsedGuard | undefined {
   if (
     expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
     expression.operatorToken.kind === ts.SyntaxKind.BarBarToken
   ) {
-    const left = parseGuardExpression(expression.left, setters, locals);
-    const right = parseGuardExpression(expression.right, setters, locals);
+    const left = parseGuardExpression(
+      expression.left,
+      setters,
+      locals,
+      snapshotReads,
+    );
+    const right = parseGuardExpression(
+      expression.right,
+      setters,
+      locals,
+      snapshotReads,
+    );
     if (!left || !right) return undefined;
     return {
       expr: {
@@ -284,8 +313,18 @@ export function parseBinaryGuardExpression(
       ts.SyntaxKind.ExclamationEqualsEqualsToken ||
     expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
   ) {
-    const left = parseGuardOperand(expression.left, setters, locals);
-    const right = parseGuardOperand(expression.right, setters, locals);
+    const left = parseGuardOperand(
+      expression.left,
+      setters,
+      locals,
+      snapshotReads,
+    );
+    const right = parseGuardOperand(
+      expression.right,
+      setters,
+      locals,
+      snapshotReads,
+    );
     if (!left || !right) return undefined;
     return {
       expr: {
@@ -307,15 +346,18 @@ export function parseGuardOperand(
   expression: ts.Expression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr> = new Map(),
+  snapshotReads = false,
 ): ParsedGuard | undefined {
   const unwrapped = unwrapTsExpression(expression);
   if (unwrapped !== expression)
-    return parseGuardOperand(unwrapped, setters, locals);
+    return parseGuardOperand(unwrapped, setters, locals, snapshotReads);
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
-  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
-    return valueExpr(expression, setters, locals);
-  return parseGuardExpression(expression, setters, locals);
+  if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) {
+    const bound = valueExpr(expression, setters, locals, snapshotReads);
+    return bound ? guardExprFromBound(bound, snapshotReads) : undefined;
+  }
+  return parseGuardExpression(expression, setters, locals, snapshotReads);
 }
 
 export function parseConjunctiveGuardExpression(
@@ -348,6 +390,39 @@ export function andGuard(left: ExprIR, right: ExprIR): ExprIR {
   if (isTrueLiteral(left)) return right;
   if (isTrueLiteral(right)) return left;
   return { kind: "and", args: [left, right] };
+}
+
+export function guardExprFromBound(
+  bound: BoundExpr,
+  snapshotReads: boolean,
+): ParsedGuard {
+  return {
+    expr: snapshotReads ? bound.expr : remapReadPreToRead(bound.expr),
+    reads: bound.reads,
+  };
+}
+
+function remapReadPreToRead(expr: ExprIR): ExprIR {
+  if (expr.kind === "readPre") {
+    return {
+      kind: "read",
+      var: expr.var,
+      ...(expr.path ? { path: expr.path } : {}),
+    };
+  }
+  if (expr.kind === "not")
+    return { kind: "not", args: [remapReadPreToRead(expr.args[0])] };
+  if (expr.kind === "and" || expr.kind === "or")
+    return {
+      kind: expr.kind,
+      args: expr.args.map(remapReadPreToRead),
+    };
+  if (expr.kind === "eq" || expr.kind === "neq")
+    return {
+      kind: expr.kind,
+      args: expr.args.map(remapReadPreToRead),
+    };
+  return expr;
 }
 
 export function isTrueLiteral(expr: ExprIR): boolean {

@@ -26,6 +26,10 @@ import {
   appendEffect,
 } from "./navigation.js";
 import { labelForEvent } from "./ui.js";
+import {
+  unhandledRejectionCaveat,
+  unextractableHandlerCaveat,
+} from "../caveats.js";
 
 export function transitionsFromAsyncHandler(
   source: ts.SourceFile,
@@ -47,6 +51,12 @@ export function transitionsFromAsyncHandler(
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${line}:${column})`,
       line,
+      column,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "await-in-loop",
+        { file: fileName, line, column },
+      ),
     });
     return [];
   }
@@ -105,11 +115,20 @@ export function transitionsFromAsyncHandler(
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [awaited-effect-in-async] (${fileName}:${line}:${column})`,
       line,
+      column,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "awaited-effect-in-async",
+        { file: fileName, line, column },
+      ),
     });
     return [];
   }
-  const successSummaries = summarizeAsyncSegment(successStatements, setters);
-  const catchSummaries = tryStatement?.catchClause
+  const successSummariesInitial = summarizeAsyncSegment(
+    successStatements,
+    setters,
+  );
+  const catchSummariesInitial = tryStatement?.catchClause
     ? summarizeAsyncSegment(tryStatement.catchClause.block.statements, setters)
     : [];
   const preEffects = preSummaries.map((summary) => summary.effect);
@@ -117,6 +136,31 @@ export function transitionsFromAsyncHandler(
     ? summarizeAsyncSegment(tryStatement.finallyBlock.statements, setters)
     : [];
   const finallyEffects = finallySummaries.map((summary) => summary.effect);
+  const preReads = uniqueStrings([
+    ...preSummaries.flatMap((summary) => summary.reads),
+    ...opArgs.reads,
+  ]);
+  const successReads = uniqueStrings([
+    ...successSummariesInitial.flatMap((summary) => summary.reads),
+    ...finallySummaries.flatMap((summary) => summary.reads),
+  ]);
+  const catchReads = uniqueStrings([
+    ...catchSummariesInitial.flatMap((summary) => summary.reads),
+    ...finallySummaries.flatMap((summary) => summary.reads),
+  ]);
+  const snapshotted = new Set(uniqueStrings([...successReads, ...catchReads]));
+  const successSummaries = summarizeAsyncSegment(
+    successStatements,
+    setters,
+    snapshotted,
+  );
+  const catchSummaries = tryStatement?.catchClause
+    ? summarizeAsyncSegment(
+        tryStatement.catchClause.block.statements,
+        setters,
+        snapshotted,
+      )
+    : [];
   const successEffects = [
     ...successSummaries.map((summary) => summary.effect),
     ...finallyEffects,
@@ -125,18 +169,6 @@ export function transitionsFromAsyncHandler(
     ...catchSummaries.map((summary) => summary.effect),
     ...finallyEffects,
   ];
-  const preReads = uniqueStrings([
-    ...preSummaries.flatMap((summary) => summary.reads),
-    ...opArgs.reads,
-  ]);
-  const successReads = uniqueStrings([
-    ...successSummaries.flatMap((summary) => summary.reads),
-    ...finallySummaries.flatMap((summary) => summary.reads),
-  ]);
-  const catchReads = uniqueStrings([
-    ...catchSummaries.flatMap((summary) => summary.reads),
-    ...finallySummaries.flatMap((summary) => summary.reads),
-  ]);
   const successNavigate = firstNavigationInStatements(
     successStatements,
     adapter,
@@ -149,12 +181,13 @@ export function transitionsFromAsyncHandler(
   )
     return [];
   const baseId = `${component}.${attr}.${op}`;
-  for (const read of uniqueStrings([...successReads, ...catchReads])) {
-    warnings.push({
-      message: `Stale-read risk ${baseId}:${read}`,
-      ...lineAndColumn(source, awaitStatement),
-    });
-  }
+  const snapshotReads = uniqueStrings([...successReads, ...catchReads]);
+  const snapshotArgs = Object.fromEntries(
+    snapshotReads.map(
+      (varId) =>
+        [`snap:${varId}`, { kind: "read", var: varId }] as [string, ExprIR],
+    ),
+  );
   const sourceAnchor = [
     { file: fileName, ...lineAndColumn(source, expression) },
   ];
@@ -172,7 +205,7 @@ export function transitionsFromAsyncHandler(
           kind: "enqueue",
           op,
           continuation: `${baseId}.cont`,
-          args: opArgs.args,
+          args: { ...opArgs.args, ...snapshotArgs },
         },
       ],
     },
@@ -224,9 +257,14 @@ export function transitionsFromAsyncHandler(
     };
     transitions.push(errorTransition);
   } else {
+    const anchor = lineAndColumn(source, awaitStatement);
     warnings.push({
       message: `Unhandled rejection ${baseId}`,
-      ...lineAndColumn(source, awaitStatement),
+      ...anchor,
+      caveat: unhandledRejectionCaveat(baseId, {
+        file: fileName,
+        ...anchor,
+      }),
     });
   }
   return transitions.map((transition) => ({
@@ -614,15 +652,15 @@ export function effectCallArgs(
       const name = propertyName(property.name);
       if (!name) return { args: {}, reads: [] };
       const value = ts.isShorthandPropertyAssignment(property)
-        ? valueExpr(property.name, setters, locals)
-        : valueExpr(property.initializer, setters, locals);
+        ? valueExpr(property.name, setters, locals, false)
+        : valueExpr(property.initializer, setters, locals, false);
       if (!value) return { args: {}, reads: [] };
       args[name] = value.expr;
       for (const read of value.reads) reads.add(read);
     }
     return { args, reads: [...reads] };
   }
-  const value = valueExpr(first, setters, locals);
+  const value = valueExpr(first, setters, locals, false);
   return value
     ? { args: { value: value.expr }, reads: value.reads }
     : { args: {}, reads: [] };

@@ -13,13 +13,15 @@ import type {
   LocationLowering,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
+import { globalTaintCaveat } from "../ts/caveats.js";
+import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
 import { synthesizeRedirectTransitions } from "../../sources/router/redirects.js";
 import * as ts from "typescript";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
-  warnings: readonly { message: string }[];
+  warnings: readonly ExtractionWarning[];
 }
 
 export interface HandlerExtractorOptions {
@@ -49,7 +51,7 @@ export interface ExtractionPipelineOptions {
 export interface ExtractionPipelineResult {
   model?: Model;
   transitions: readonly Transition[];
-  warnings: readonly string[];
+  warnings: readonly ExtractionWarning[];
   stateVars: readonly StateVarDecl[];
   templateFragments: readonly TemplateFragment[];
   routeVars: readonly StateVarDecl[];
@@ -223,10 +225,10 @@ export function runExtractionPipeline(
   return {
     transitions,
     warnings: [
-      ...extractedWarnings.map((warning) => warning.message),
-      ...genericExtraction.warnings.map((warning) => warning.message),
-      ...pluginWarnings.map((warning) => warning.message),
-    ].sort(),
+      ...extractedWarnings,
+      ...genericExtraction.warnings,
+      ...pluginWarnings.map((warning) => pluginSafetyWarning(warning)),
+    ],
     stateVars,
     templateFragments,
     routeVars,
@@ -258,6 +260,36 @@ function comparePluginProvenance(
   right: PluginProvenance,
 ): number {
   return left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind);
+}
+
+function pluginSafetyWarning(warning: {
+  message: string;
+  source?: import("modality-ts/core").SourceAnchor;
+}): ExtractionWarning {
+  const globalTaintPrefix = "Global taint ";
+  if (warning.message.startsWith(globalTaintPrefix)) {
+    const id = warning.message.slice(globalTaintPrefix.length);
+    const caveat = globalTaintCaveat(id, warning.source);
+    return {
+      message: warning.message,
+      ...(warning.source?.line !== undefined
+        ? { line: warning.source.line }
+        : {}),
+      ...(warning.source?.column !== undefined
+        ? { column: warning.source.column }
+        : {}),
+      caveat,
+    };
+  }
+  return {
+    message: warning.message,
+    ...(warning.source?.line !== undefined
+      ? { line: warning.source.line }
+      : {}),
+    ...(warning.source?.column !== undefined
+      ? { column: warning.source.column }
+      : {}),
+  };
 }
 
 function validateUniquePlugins(

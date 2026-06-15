@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 pub struct EvalOptions<'a> {
     pub on_bound_hit: Option<&'a mut dyn FnMut(&str)>,
     pub step_ctx: Option<StepEvalContext<'a>>,
+    pub pre_state: Option<ModelState>,
+    pub resolving_op_args: Option<serde_json::Map<String, Value>>,
 }
 
 pub struct StepEvalContext<'a> {
@@ -19,6 +21,8 @@ impl Default for EvalOptions<'_> {
         Self {
             on_bound_hit: None,
             step_ctx: None,
+            pre_state: None,
+            resolving_op_args: None,
         }
     }
 }
@@ -141,7 +145,41 @@ pub fn eval_expr(
                     && guard_holds(compiled, transition, state),
             )
         }
-        ExprIR::ReadPre { .. } | ExprIR::ReadOpArg { .. } => Value::Null,
+        ExprIR::ReadPre { var, path } => {
+            let read_state = options
+                .pre_state
+                .as_ref()
+                .or_else(|| options.step_ctx.as_ref().and_then(|ctx| ctx.pre))
+                .unwrap_or(state);
+            if options.pre_state.is_none()
+                && options.step_ctx.as_ref().and_then(|ctx| ctx.pre).is_none()
+            {
+                debug_assert!(
+                    false,
+                    "readPre requires pre-state evaluation context"
+                );
+            }
+            let base = compiled.var_idx(var).map(|idx| read_state.get(idx));
+            read_path(base, path.as_deref().unwrap_or(&[]))
+        }
+        ExprIR::ReadOpArg { key } => {
+            if let Some(args) = &options.resolving_op_args {
+                return args.get(key).cloned().unwrap_or(Value::Null);
+            }
+            if let Some(step) = options
+                .step_ctx
+                .as_ref()
+                .and_then(|ctx| ctx.step.as_ref())
+                .and_then(|step| step.op.as_ref())
+            {
+                return step.args.get(key).cloned().unwrap_or(Value::Null);
+            }
+            debug_assert!(
+                false,
+                "readOpArg requires op-arg evaluation context"
+            );
+            Value::Null
+        }
     }
 }
 
@@ -234,6 +272,8 @@ pub fn eval_state_predicate_with_step(
     let mut options = EvalOptions {
         on_bound_hit: None,
         step_ctx,
+        pre_state: None,
+        resolving_op_args: None,
     };
     let result = eval_expr_checked(
         compiled,
@@ -542,6 +582,7 @@ mod tests {
                     writes: vec!["x".into()],
                     confidence: "exact".into(),
                     triggered_by: None,
+                    phase: None,
                 }],
                 bounds: Bounds {
                     max_depth: 1,

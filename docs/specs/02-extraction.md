@@ -166,7 +166,7 @@ Transition/var ids must survive `modality extract` re-runs or overlays rot. Id =
 Emitted on every extract; embedded in check reports:
 
 - per-handler classification: `exact` / `over-approx (reasons)` / `unextractable (reason)` / `overlay`;
-- global taints and their sources; stale-read flags; unhandled-rejection flags;
+- structured extraction caveats (`ExtractionCaveat[]` with kinds `global-taint`, `stale-read`, `unhandled-rejection`, `unextractable`, `model-slack`) emitted at warning sites and partitioned for the trust ledger;
 - domain table with abstraction provenance (type-derived / default-token / overlay-refined);
 - coverage: % of discovered handlers exact+overlay, count of ignored vars;
 - everything the verification claim is conditional on, in one place.
@@ -179,7 +179,13 @@ Emitted on every extract; embedded in check reports:
 | `useReducer` | unsupported (suggest in report; natural v2 — reducers are *good* for extraction) |
 | Stateful list items (`items.map(<Row/>)` with `useState` in Row) | detected, vars `unextractable` |
 | Refs (`useRef`) | not state-vector members; a ref holding a setter ⇒ global taint (§5) |
-| Setter called inside `setTimeout`/`setInterval` | timer modeled as an env event if the callback is M0; else taint |
+| `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` | modeled: `sys:timer:*` state machine; fire transitions guarded on `scheduled`; clear disables fire |
+| `useLayoutEffect` / `useInsertionEffect` / `useEffect` | modeled as `internal` transitions with `triggeredBy` deps and `phase` ordinals (layout/insertion ⇒ 0, passive ⇒ 1) |
+| Direct setter batching (`setX(x); setX(x)`) | `readPre` in effect summaries; functional updaters keep `read` |
+| Async continuation stale reads | vars read after `await` are snapshotted into pending `op.args` and read via `readOpArg` in continuations |
+| `useTransition` / `useDeferredValue` / `flushSync` | modeled: `isPending` window, deferred lag, `flushSync` opts out of snapshot batching |
 | Conditional rendering changing available events | guard on transitions: extracted from the JSX condition when M0, else transition always enabled (over-approx, may produce model-only counterexamples caught by replay) |
-| StrictMode double-invoke, concurrent rendering | invisible at event granularity; documented exclusion |
-| Suspense/ErrorBoundary | v1: not modeled; SWR template assumes non-suspense mode (config-checked) |
+| StrictMode double-invoke | invisible at event granularity; documented exclusion |
+| `<Suspense>` / `React.lazy` / `use()` | modeled: `sys:suspense:*` gating + resolve transitions; fallback interactions enabled while `suspended` |
+| ErrorBoundary | v1: not modeled; unhandled paths remain reported |
+| SWR under Suspense | suspending keys route through boundary resolve instead of focus-revalidate env model |

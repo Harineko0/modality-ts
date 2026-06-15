@@ -47,6 +47,13 @@ import {
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
+import {
+  compareCaveats,
+  partitionCaveats,
+} from "../../../extract/engine/ts/caveats.js";
+import { timerStateVarDecl } from "../../../extract/engine/ts/transition/timers.js";
+import { suspenseStateVarDecl } from "../../../extract/engine/ts/transition/suspense.js";
+import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
 import type { ExtractArtifactEntry } from "./output.js";
 import {
   type EffectApiProvenanceEntry,
@@ -187,9 +194,9 @@ export async function runExtractCommand(
     },
     vars: [
       ...routeVars,
-      ...pendingVars(
-        effectApis,
+      ...synthesizeSystemVars(
         transitions,
+        effectApis,
         [...routeVars, ...stateVars],
         bounds.maxPending,
       ),
@@ -216,13 +223,16 @@ export async function runExtractCommand(
       ].join("\n"),
     );
   }
-  const warnings = [
-    ...project.surfaceWarnings,
+  const structuredWarnings: ExtractionWarning[] = [
+    ...project.surfaceWarnings.map((message) => ({ message })),
     ...pipeline.warnings,
-    ...overlay.warnings,
-    ...pluginConformanceWarnings(registry.sourcePlugins, dependencies),
+    ...overlay.warnings.map((message) => ({ message })),
+    ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
+      (message) => ({ message }),
+    ),
   ];
-  const extractionCaveats = createExtractionCaveats(warnings);
+  const warnings = structuredWarnings.map((warning) => warning.message);
+  const extractionCaveats = createExtractionCaveats(structuredWarnings);
   const model: Model = {
     ...overlay.model,
     metadata: {
@@ -234,6 +244,7 @@ export async function runExtractCommand(
     project.sourceFiles,
     model,
     warnings,
+    structuredWarnings,
     overlay.ignoredVars,
     options.now ?? new Date(),
     project.inventory,
@@ -555,9 +566,9 @@ function mergeExtractionPipelineResults(
   const templateFragments = fragmentResults.flatMap(
     (result) => result.templateFragments,
   );
-  const warnings = uniqueStrings(
-    fragmentResults.flatMap((result) => [...result.warnings]),
-  );
+  const warnings: ExtractionWarning[] = fragmentResults.flatMap((result) => [
+    ...result.warnings,
+  ]);
   return {
     transitions,
     warnings,
@@ -1028,12 +1039,14 @@ function createExtractionReport(
   sourceFiles: readonly string[],
   model: Model,
   warnings: readonly string[],
+  structuredWarnings: readonly ExtractionWarning[],
   ignoredVars: readonly string[],
   now: Date,
   inventory?: RouteInventory,
   effectOperations?: ExtractionReport["effectOperations"],
 ): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
+  const partitioned = partitionCaveats(caveats.entries);
   const varDomains = new Map(
     model.vars.map((decl) => [decl.id, decl.domain] as const),
   );
@@ -1051,7 +1064,7 @@ function createExtractionReport(
   const transitionIds = new Set(
     transitionHandlers.map((handler) => handler.id),
   );
-  const unextractableHandlers = dedupeUnextractableHandlers(warnings)
+  const unextractableHandlers = dedupeUnextractableHandlers(structuredWarnings)
     .filter((handler) => !transitionIds.has(handler.id))
     .map((handler) => ({
       id: handler.id,
@@ -1082,9 +1095,9 @@ function createExtractionReport(
     sourceFiles,
     plugins: model.metadata?.plugins ?? [],
     handlers,
-    globalTaints: caveats.globalTaints,
-    staleReads: caveats.staleReads,
-    unhandledRejections: caveats.unhandledRejections,
+    globalTaints: partitioned.globalTaints,
+    staleReads: partitioned.staleReads,
+    unhandledRejections: partitioned.unhandledRejections,
     domains: model.vars.map((decl) => ({
       varId: decl.id,
       domainKind: decl.domain.kind,
@@ -1259,64 +1272,60 @@ function collectPushReplaceNavigations(
 function emptyExtractionCaveats(): NonNullable<
   NonNullable<Model["metadata"]>["extractionCaveats"]
 > {
-  return {
-    globalTaints: [],
-    staleReads: [],
-    unhandledRejections: [],
-    unextractableHandlers: [],
-  };
+  return { entries: [] };
 }
 
 function createExtractionCaveats(
-  warnings: readonly string[],
+  warnings: readonly ExtractionWarning[],
 ): NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]> {
   return {
-    globalTaints: warnings
-      .map(globalTaintFromWarning)
-      .filter(isCaveat)
+    entries: warnings
+      .map((warning) => warning.caveat)
+      .filter((caveat): caveat is ExtractionCaveat => Boolean(caveat))
       .sort(compareCaveats),
-    staleReads: warnings
-      .map(staleReadFromWarning)
-      .filter(isCaveat)
-      .sort(compareCaveats),
-    unhandledRejections: warnings
-      .map(unhandledRejectionFromWarning)
-      .filter(isCaveat)
-      .sort(compareCaveats),
-    unextractableHandlers: dedupeUnextractableHandlers(warnings),
   };
 }
 
-function globalTaintFromWarning(warning: string): ExtractionCaveat | undefined {
-  const match = /^Global taint (.+)$/.exec(warning);
-  return match?.[1] ? { id: match[1], reason: warning } : undefined;
+function synthesizeSystemVars(
+  transitions: readonly Model["transitions"][number][],
+  effectApis: readonly string[],
+  vars: readonly StateVarDecl[],
+  maxPending: number,
+): StateVarDecl[] {
+  const timerIds = collectSystemVarIds(transitions, "sys:timer:");
+  const suspenseIds = collectSystemVarIds(transitions, "sys:suspense:");
+  return [
+    ...pendingVars(effectApis, transitions, vars, maxPending),
+    ...timerIds.sort().map((id) => timerStateVarDecl(id)),
+    ...suspenseIds
+      .sort()
+      .map((id) => suspenseStateVarDecl(id.replace(/^sys:suspense:/, ""))),
+  ];
 }
 
-function staleReadFromWarning(warning: string): ExtractionCaveat | undefined {
-  const match = /^Stale-read risk (.+)$/.exec(warning);
-  return match?.[1] ? { id: match[1], reason: warning } : undefined;
-}
-
-function unhandledRejectionFromWarning(
-  warning: string,
-): ExtractionCaveat | undefined {
-  const match = /^Unhandled rejection (.+)$/.exec(warning);
-  return match?.[1] ? { id: match[1], reason: warning } : undefined;
-}
-
-function isCaveat(
-  value: ExtractionCaveat | undefined,
-): value is ExtractionCaveat {
-  return Boolean(value);
-}
-
-function compareCaveats(
-  left: ExtractionCaveat,
-  right: ExtractionCaveat,
-): number {
-  return (
-    left.id.localeCompare(right.id) || left.reason.localeCompare(right.reason)
-  );
+function collectSystemVarIds(
+  transitions: readonly Model["transitions"][number][],
+  prefix: string,
+): string[] {
+  const ids = new Set<string>();
+  const visit = (effect: EffectIR): void => {
+    if (effect.kind === "assign" && effect.var.startsWith(prefix))
+      ids.add(effect.var);
+    if (effect.kind === "havoc" && effect.var.startsWith(prefix))
+      ids.add(effect.var);
+    if (effect.kind === "seq") effect.effects.forEach(visit);
+    if (effect.kind === "if") {
+      visit(effect.then);
+      visit(effect.else);
+    }
+  };
+  for (const transition of transitions) {
+    visit(transition.effect);
+    for (const varId of [...transition.reads, ...transition.writes]) {
+      if (varId.startsWith(prefix)) ids.add(varId);
+    }
+  }
+  return [...ids];
 }
 
 function pluginConformanceWarnings(
@@ -1497,22 +1506,12 @@ const GENERIC_UNEXTRACTABLE_CATEGORIES = new Set([
 ]);
 
 function dedupeUnextractableHandlers(
-  warnings: readonly string[],
+  warnings: readonly ExtractionWarning[],
 ): ExtractionCaveat[] {
-  const parsed = warnings.map(unextractableHandlerFromWarning).filter(
-    (
-      handler,
-    ): handler is {
-      id: string;
-      reason: string;
-      source?: string;
-      category: string;
-    } => Boolean(handler),
-  );
-  const byId = new Map<
-    string,
-    { id: string; reason: string; source?: string; category: string }
-  >();
+  const parsed = warnings
+    .filter((warning) => warning.caveat?.kind === "unextractable")
+    .map((warning) => warning.caveat as ExtractionCaveat);
+  const byId = new Map<string, ExtractionCaveat>();
   for (const handler of parsed) {
     const existing = byId.get(handler.id);
     if (!existing) {
@@ -1520,18 +1519,14 @@ function dedupeUnextractableHandlers(
       continue;
     }
     const existingIsGeneric = GENERIC_UNEXTRACTABLE_CATEGORIES.has(
-      existing.category,
+      existing.reason,
     );
     const incomingIsGeneric = GENERIC_UNEXTRACTABLE_CATEGORIES.has(
-      handler.category,
+      handler.reason,
     );
     if (existingIsGeneric && !incomingIsGeneric) byId.set(handler.id, handler);
   }
-  return [...byId.values()]
-    .map(({ id, reason, source }) =>
-      source ? { id, reason, source } : { id, reason },
-    )
-    .sort(compareCaveats);
+  return [...byId.values()].sort(compareCaveats);
 }
 
 function unextractableHandlerFromWarning(
@@ -1632,7 +1627,8 @@ function pendingArgDomain(
   varsById: ReadonlyMap<string, StateVarDecl>,
 ): StateVarDecl["domain"] | undefined {
   if (expr.kind === "lit") return domainForLiteral(expr.value);
-  if (expr.kind !== "read") return { kind: "tokens", count: 1 };
+  if (expr.kind !== "read" && expr.kind !== "readPre")
+    return { kind: "tokens", count: 1 };
   const domain = varsById.get(expr.var)?.domain;
   if (!domain) return { kind: "tokens", count: 1 };
   return expr.path?.length ? { kind: "tokens", count: 1 } : domain;

@@ -16,7 +16,11 @@ pub fn apply_effect(
     effect: &EffectIR,
     options: &mut EvalOptions,
 ) -> Result<Vec<ModelState>, String> {
-    match apply_effect_inner(compiled, state, effect, options) {
+    let had_pre = options.pre_state.is_some();
+    if !had_pre {
+        options.pre_state = Some(state.clone());
+    }
+    let result = match apply_effect_inner(compiled, state, effect, options) {
         Ok(states) => Ok(states),
         Err(EffectError::TokenExhausted(domain)) => {
             if let Some(hit) = options.on_bound_hit.as_mut() {
@@ -24,7 +28,11 @@ pub fn apply_effect(
             }
             Ok(vec![])
         }
+    };
+    if !had_pre {
+        options.pre_state = None;
     }
+    result
 }
 
 fn apply_effect_inner(
@@ -81,14 +89,25 @@ fn apply_effect_inner(
         }
         EffectIR::Seq { effects } => {
             let mut states = vec![state.clone()];
+            let saved_args = options.resolving_op_args.take();
             for effect in effects {
+                if let EffectIR::Dequeue { index } = effect {
+                    if let Some(s) = states.first() {
+                        if let Some(args) =
+                            pending_op_args_at(compiled, s, *index)
+                        {
+                            options.resolving_op_args = Some(args);
+                        }
+                    }
+                }
                 states = states
                     .into_iter()
                     .flat_map(|s| {
-                        apply_effect(compiled, &s, effect, options).unwrap_or_default()
+                        apply_effect_inner(compiled, &s, effect, options).unwrap_or_default()
                     })
                     .collect();
             }
+            options.resolving_op_args = saved_args;
             Ok(states)
         }
         EffectIR::Enqueue {
@@ -159,6 +178,24 @@ pub fn read_pending(state: &ModelState, pending_idx: usize) -> Vec<Value> {
         .as_array()
         .cloned()
         .unwrap_or_default()
+}
+
+fn pending_op_args_at(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    index: usize,
+) -> Option<serde_json::Map<String, Value>> {
+    let pending_idx = compiled.sys_pending_index?;
+    let pending = read_pending(state, pending_idx);
+    let op = pending.get(index)?;
+    let Value::Object(op) = op else {
+        return None;
+    };
+    let args = op.get("args")?;
+    let Value::Object(args) = args else {
+        return None;
+    };
+    Some(args.clone())
 }
 
 pub fn fresh_token(

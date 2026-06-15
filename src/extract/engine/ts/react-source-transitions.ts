@@ -3,12 +3,31 @@ import {
   componentNameFor,
   extractableHandlerInitializer,
   isExtractableHandler,
-  isUseEffectCall,
+  isUseDeferredValueCall,
   isUseReducerCall,
   isUseStateCall,
+  isUseCall,
+  isSuspenseElement,
   lineAndColumn,
   providerComponentNames,
+  reactEffectHookName,
 } from "./ast.js";
+import {
+  globalTaintCaveat,
+  unextractableEffectCaveat,
+  unextractableHandlerCaveat,
+} from "./caveats.js";
+
+function unextractableHandlerAlreadyReported(
+  warnings: readonly ExtractionWarning[],
+  handlerId: string,
+): boolean {
+  return warnings.some(
+    (warning) =>
+      warning.caveat?.kind === "unextractable" &&
+      warning.caveat.id === handlerId,
+  );
+}
 import {
   componentDeclarations,
   calledCustomHook,
@@ -30,6 +49,7 @@ import {
 import { tagStableIdKey, withStableTransitionIds } from "./ids.js";
 import { staticNavigationTransitions } from "./static-navigation.js";
 import {
+  firstValue,
   inferUseStateDomain,
   initialValueForUseState,
   typeAliasDeclarations,
@@ -53,11 +73,25 @@ import type {
   WriteChannel,
 } from "../spi/index.js";
 import {
-  transitionsFromTimerCall,
   timerSetterTaints,
   refSetterTaint,
   handlerSchedulesModeledTimer,
+  timerStateVarDecl,
+  type TimerRegistration,
 } from "./transition/timers.js";
+import {
+  deferredSyncTransition,
+  extractUseDeferredValueBinding,
+  extractUseTransitionBinding,
+  type TransitionBinding,
+} from "./transition/concurrent.js";
+import {
+  boundaryIdForComponent,
+  discoverComponentRenderBoundaries,
+  suspenseStateVarDecl,
+  suspenseInitialForBoundary,
+  transitionsFromSuspendingUse,
+} from "./transition/suspense.js";
 import {
   transitionsFromJsxAttribute,
   transitionsFromComponentPropAttribute,
@@ -69,12 +103,13 @@ import {
   renderGuardFor,
 } from "./transition/guards.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
+import { stateVarForName } from "./transition/expressions.js";
 import { forwardsComponentProp } from "./transition/component-props.js";
 import { isEventAttribute } from "./transition/ui.js";
 import { navigationJsxTransition } from "./transition/navigation.js";
 import {
   transitionsFromUseEffect,
-  useEffectWritesModeledState,
+  reactEffectWritesModeledState,
 } from "./transition/effects.js";
 
 export interface ReactSourceTransitionOptions {
@@ -134,6 +169,10 @@ export function extractReactSourceTransitions(
     typeAliases,
   );
   const globalTaints = new Set<string>();
+  let timerCounter = 0;
+  let transitionBindingCounter = 0;
+  let suspenseBoundaryCounter = 0;
+  const transitionBindings = new Map<string, TransitionBinding>();
   const components = componentDeclarations(source);
   for (const fragment of options.additionalComponentSources ?? []) {
     const supplemental = ts.createSourceFile(
@@ -188,9 +227,29 @@ export function extractReactSourceTransitions(
   for (const [symbolName, setter] of contextBindings.setters)
     setters.set(symbolName, setter);
   const handlers = new Map<string, ExtractableHandler>();
-  const visit = (node: ts.Node, componentName: string | undefined): void => {
+  const renderBoundaries = discoverComponentRenderBoundaries(
+    source,
+    components,
+  );
+  const registerTimerVars = (
+    registrations: readonly TimerRegistration[],
+  ): void => {
+    for (const registration of registrations) {
+      if (!vars.some((decl) => decl.id === registration.varId)) {
+        vars.push(timerStateVarDecl(registration.varId));
+      }
+    }
+  };
+  const visit = (
+    node: ts.Node,
+    componentName: string | undefined,
+    activeBoundary: string | undefined,
+  ): void => {
     if (!componentName && isCustomHookDeclaration(node)) return;
     const nextComponent = componentNameFor(node) ?? componentName;
+    const effectiveBoundary =
+      activeBoundary ??
+      (nextComponent ? renderBoundaries.get(nextComponent) : undefined);
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -261,7 +320,9 @@ export function extractReactSourceTransitions(
             ...lineAndColumn(source, node),
           });
         }
-        ts.forEachChild(node, (child) => visit(child, nextComponent));
+        ts.forEachChild(node, (child) =>
+          visit(child, nextComponent, effectiveBoundary),
+        );
         return;
       }
       const stateName = node.name.elements[0];
@@ -302,6 +363,26 @@ export function extractReactSourceTransitions(
       }
     }
     const activeComponent = nextComponent ?? "Anonymous";
+    if (isSuspenseElement(node)) {
+      const boundaryId = boundaryIdForComponent(
+        nextComponent ?? "Anonymous",
+        suspenseBoundaryCounter,
+      );
+      suspenseBoundaryCounter += 1;
+      const suspenseBody = ts.isJsxElement(node)
+        ? node
+        : ts.isJsxSelfClosingElement(node)
+          ? node
+          : undefined;
+      const initial = suspenseBody
+        ? suspenseInitialForBoundary(suspenseBody)
+        : "suspended";
+      if (!vars.some((decl) => decl.id === `sys:suspense:${boundaryId}`)) {
+        vars.push(suspenseStateVarDecl(boundaryId, initial));
+      }
+      ts.forEachChild(node, (child) => visit(child, nextComponent, boundaryId));
+      return;
+    }
     const routePattern = resolveComponentRoutePattern(
       routerPlugin,
       inventory,
@@ -320,32 +401,25 @@ export function extractReactSourceTransitions(
     const scopedSetters = settersForComponent(setters, nextComponent);
     const refTaint = refSetterTaint(node, scopedSetters);
     if (refTaint) {
-      const key = `Global taint ${refTaint.varId}`;
-      if (!globalTaints.has(key)) {
-        globalTaints.add(key);
-        warnings.push({
-          message: key,
-          ...lineAndColumn(source, refTaint.node),
-        });
+      const anchor = lineAndColumn(source, refTaint.node);
+      const caveat = globalTaintCaveat(refTaint.varId, {
+        file: fileName,
+        ...anchor,
+      });
+      if (!globalTaints.has(caveat.id)) {
+        globalTaints.add(caveat.id);
+        warnings.push({ message: caveat.reason, ...anchor, caveat });
       }
     }
-    transitions.push(
-      ...transitionsFromTimerCall(
-        source,
-        fileName,
-        node,
-        scopedSetters,
-        nextComponent ?? "Anonymous",
-      ),
-    );
     for (const timerTaint of timerSetterTaints(node, scopedSetters)) {
-      const key = `Global taint ${timerTaint.varId}`;
-      if (!globalTaints.has(key)) {
-        globalTaints.add(key);
-        warnings.push({
-          message: key,
-          ...lineAndColumn(source, timerTaint.node),
-        });
+      const anchor = lineAndColumn(source, timerTaint.node);
+      const caveat = globalTaintCaveat(timerTaint.varId, {
+        file: fileName,
+        ...anchor,
+      });
+      if (!globalTaints.has(caveat.id)) {
+        globalTaints.add(caveat.id);
+        warnings.push({ message: caveat.reason, ...anchor, caveat });
       }
     }
     if (
@@ -370,11 +444,20 @@ export function extractReactSourceTransitions(
         warnings,
       );
       transitions.push(...extracted);
-      if (extracted.length === 0) {
-        const { line, column } = lineAndColumn(source, node);
+      const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
+      if (
+        extracted.length === 0 &&
+        !unextractableHandlerAlreadyReported(warnings, handlerId)
+      ) {
+        const anchor = lineAndColumn(source, node);
         warnings.push({
-          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text} [no-extractable-effect] (${fileName}:${line}:${column})`,
-          line,
+          message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
+          ...anchor,
+          caveat: unextractableHandlerCaveat(
+            handlerId,
+            "no-extractable-effect",
+            { file: fileName, ...anchor },
+          ),
         });
       }
     }
@@ -407,7 +490,9 @@ export function extractReactSourceTransitions(
           );
           if (extracted.length > 0) {
             transitions.push(...tagStableIdKey(extracted, node));
-            ts.forEachChild(node, (child) => visit(child, nextComponent));
+            ts.forEachChild(node, (child) =>
+              visit(child, nextComponent, effectiveBoundary),
+            );
             return;
           }
         }
@@ -415,7 +500,9 @@ export function extractReactSourceTransitions(
           message: `Unextractable list-rendered handler ${nextComponent ?? "Anonymous"}.${node.name.text} over ${listInfo.domain.kind} ${listInfo.varId}`,
           ...lineAndColumn(source, node),
         });
-        ts.forEachChild(node, (child) => visit(child, nextComponent));
+        ts.forEachChild(node, (child) =>
+          visit(child, nextComponent, effectiveBoundary),
+        );
         return;
       }
       const guardLocals = componentGuardLocalsFor(node, scopedSetters);
@@ -437,6 +524,8 @@ export function extractReactSourceTransitions(
           guardLocals,
         ),
       ]);
+      const timerRegistrations: TimerRegistration[] = [];
+      const envTransitions: Transition[] = [];
       const extracted = transitionsFromJsxAttribute(
         source,
         fileName,
@@ -453,8 +542,18 @@ export function extractReactSourceTransitions(
         contextBindings,
         warnings,
         resetSymbols,
+        {
+          activeBoundary: effectiveBoundary,
+          transitionBindings,
+          timerRegistrations,
+          envTransitions,
+          timerIndex: { value: timerCounter },
+        },
       );
+      registerTimerVars(timerRegistrations);
+      timerCounter += timerRegistrations.length;
       transitions.push(...extracted);
+      const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
       if (
         extracted.length === 0 &&
         !forwardsComponentProp(
@@ -462,38 +561,139 @@ export function extractReactSourceTransitions(
           handlers,
           components.get(nextComponent ?? ""),
         ) &&
-        !handlerSchedulesModeledTimer(node, handlers, scopedSetters)
+        !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
+        !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
-        const { line, column } = lineAndColumn(source, node);
+        const anchor = lineAndColumn(source, node);
         warnings.push({
-          message: `Unextractable handler ${nextComponent ?? "Anonymous"}.${node.name.text} [no-extractable-effect] (${fileName}:${line}:${column})`,
-          line,
+          message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
+          ...anchor,
+          caveat: unextractableHandlerCaveat(
+            handlerId,
+            "no-extractable-effect",
+            { file: fileName, ...anchor },
+          ),
         });
       }
     }
-    if (ts.isCallExpression(node) && isUseEffectCall(node)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      isUseDeferredValueCall(node.initializer) &&
+      nextComponent &&
+      ts.isIdentifier(node.name)
+    ) {
+      const arg = node.initializer.arguments[0];
+      const srcVarId =
+        arg && ts.isIdentifier(arg)
+          ? stateVarForName(arg.text, scopedSetters)
+          : undefined;
+      if (srcVarId) {
+        const srcDecl = vars.find((decl) => decl.id === srcVarId);
+        const srcDomain = srcDecl?.domain ?? { kind: "tokens", count: 1 };
+        const deferred = extractUseDeferredValueBinding(
+          node,
+          nextComponent,
+          srcVarId,
+          srcDomain,
+          srcDecl?.initial ?? firstValue(srcDomain),
+          route,
+          fileName,
+          source,
+          providerComponents.has(nextComponent),
+        );
+        if (deferred && !vars.some((decl) => decl.id === deferred.id)) {
+          vars.push(deferred);
+          transitions.push(
+            deferredSyncTransition(
+              nextComponent,
+              deferred.id,
+              srcVarId,
+              fileName,
+              source,
+              node,
+            ),
+          );
+        }
+      }
+    }
+    if (ts.isVariableDeclaration(node) && nextComponent) {
+      const transitionBinding = extractUseTransitionBinding(
+        node,
+        nextComponent,
+        transitionBindingCounter,
+        route,
+        fileName,
+        source,
+        providerComponents.has(nextComponent),
+      );
+      if (transitionBinding) {
+        transitionBindingCounter += 1;
+        if (!vars.some((decl) => decl.id === transitionBinding.varDecl.id)) {
+          vars.push(transitionBinding.varDecl);
+        }
+        transitionBindings.set(
+          transitionBinding.binding.startTransitionName,
+          transitionBinding.binding,
+        );
+      }
+    }
+    if (ts.isCallExpression(node) && isUseCall(node) && effectiveBoundary) {
+      transitions.push(
+        ...transitionsFromSuspendingUse(
+          source,
+          fileName,
+          node,
+          activeComponent,
+          effectiveBoundary,
+        ),
+      );
+    }
+    const effectHook = ts.isCallExpression(node)
+      ? reactEffectHookName(node)
+      : undefined;
+    if (effectHook && ts.isCallExpression(node)) {
+      const timerRegistrations: TimerRegistration[] = [];
+      const envTransitions: Transition[] = [];
       const extracted = transitionsFromUseEffect(
         source,
         fileName,
         node,
         scopedSetters,
-        nextComponent ?? "Anonymous",
+        activeComponent,
+        effectHook,
+        {
+          timerRegistrations,
+          envTransitions,
+          timerIndex: { value: timerCounter },
+          transitionBindings,
+        },
       );
-      transitions.push(...extracted);
+      registerTimerVars(timerRegistrations);
+      timerCounter += timerRegistrations.length;
+      transitions.push(...extracted, ...envTransitions);
       if (
         extracted.length === 0 &&
-        useEffectWritesModeledState(node, scopedSetters) &&
-        !providerComponents.has(nextComponent ?? "")
+        reactEffectWritesModeledState(node, scopedSetters) &&
+        !providerComponents.has(activeComponent)
       ) {
+        const anchor = lineAndColumn(source, node);
+        const id = `${activeComponent}.${effectHook}`;
         warnings.push({
-          message: `Unextractable effect ${nextComponent ?? "Anonymous"}.useEffect`,
-          ...lineAndColumn(source, node),
+          message: `Unextractable effect ${id}`,
+          ...anchor,
+          caveat: unextractableEffectCaveat(activeComponent, effectHook, {
+            file: fileName,
+            ...anchor,
+          }),
         });
       }
     }
-    ts.forEachChild(node, (child) => visit(child, nextComponent));
+    ts.forEachChild(node, (child) =>
+      visit(child, nextComponent, effectiveBoundary),
+    );
   };
-  visit(source, undefined);
+  visit(source, undefined, undefined);
   transitions.push(
     ...staticNavigationTransitions(
       source,
@@ -504,7 +704,11 @@ export function extractReactSourceTransitions(
       inventory,
     ),
   );
-  return { vars, transitions: withStableTransitionIds(transitions), warnings };
+  return {
+    vars,
+    transitions: withStableTransitionIds(transitions),
+    warnings,
+  };
 }
 
 function resolveComponentRoutePattern(

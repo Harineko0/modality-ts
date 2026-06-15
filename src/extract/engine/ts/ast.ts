@@ -33,8 +33,97 @@ export function isUseRefCall(node: ts.Expression): node is ts.CallExpression {
 }
 
 export function isUseEffectCall(node: ts.CallExpression): boolean {
+  return reactEffectHookName(node) === "useEffect";
+}
+
+export type ReactEffectHookName =
+  | "useEffect"
+  | "useLayoutEffect"
+  | "useInsertionEffect";
+
+export function reactEffectHookName(
+  node: ts.CallExpression,
+): ReactEffectHookName | undefined {
+  if (!ts.isIdentifier(node.expression)) return undefined;
+  const name = node.expression.text;
+  if (
+    name === "useEffect" ||
+    name === "useLayoutEffect" ||
+    name === "useInsertionEffect"
+  ) {
+    return name;
+  }
+  return undefined;
+}
+
+export function isUseTransitionCall(
+  node: ts.Expression,
+): node is ts.CallExpression {
   return (
-    ts.isIdentifier(node.expression) && node.expression.text === "useEffect"
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "useTransition"
+  );
+}
+
+export function isUseDeferredValueCall(
+  node: ts.Expression,
+): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "useDeferredValue"
+  );
+}
+
+export function isStartTransitionCall(
+  node: ts.Node,
+): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "startTransition"
+  );
+}
+
+export function isFlushSyncCall(node: ts.Node): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "flushSync"
+  );
+}
+
+export function isSuspenseElement(
+  node: ts.Node,
+): node is ts.JsxElement | ts.JsxOpeningElement | ts.JsxSelfClosingElement {
+  if (ts.isJsxElement(node)) {
+    const tag = node.openingElement.tagName;
+    return ts.isIdentifier(tag) && tag.text === "Suspense";
+  }
+  if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node))
+    return false;
+  const tag = node.tagName;
+  return ts.isIdentifier(tag) && tag.text === "Suspense";
+}
+
+export function isReactLazyCall(
+  node: ts.Expression,
+): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) &&
+    node.expression.expression.text === "React" &&
+    node.expression.name.text === "lazy"
+  );
+}
+
+export function isUseCall(node: ts.Expression): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "use"
   );
 }
 

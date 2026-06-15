@@ -86,10 +86,12 @@ describe("demo app acceptance fixture", () => {
     expect(extracted.report.globalTaints).toEqual([]);
     expect(extracted.report.staleReads).toEqual([]);
     expect(extracted.report.unhandledRejections).toEqual([
-      {
+      expect.objectContaining({
+        kind: "unhandled-rejection",
         id: "App.onClick.api.placeOrder",
         reason: "Unhandled rejection App.onClick.api.placeOrder",
-      },
+        severity: "over-approx",
+      }),
     ]);
     expect(extracted.report.warnings).toEqual([
       "Unhandled rejection App.onClick.api.placeOrder",
@@ -219,10 +221,12 @@ describe("demo app acceptance fixture", () => {
     expect(extracted.report.globalTaints).toEqual([]);
     expect(extracted.report.staleReads).toEqual([]);
     expect(extracted.report.unhandledRejections).toEqual([
-      {
+      expect.objectContaining({
+        kind: "unhandled-rejection",
         id: "App.onClick.api.createTodo",
         reason: "Unhandled rejection App.onClick.api.createTodo",
-      },
+        severity: "over-approx",
+      }),
     ]);
 
     const checked = await runCheckCommand({
@@ -413,10 +417,12 @@ describe("demo app acceptance fixture", () => {
     expect(extracted.report.globalTaints).toEqual([]);
     expect(extracted.report.staleReads).toEqual([]);
     expect(extracted.report.unhandledRejections).toEqual([
-      {
+      expect.objectContaining({
+        kind: "unhandled-rejection",
         id: "App.onClick.api.fetchQuote",
         reason: "Unhandled rejection App.onClick.api.fetchQuote",
-      },
+        severity: "over-approx",
+      }),
     ]);
 
     const checked = await runCheckCommand({

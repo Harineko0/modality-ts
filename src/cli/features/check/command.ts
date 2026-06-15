@@ -26,6 +26,7 @@ import {
   generateReplayHarness,
 } from "../../codegen/replay-test.js";
 import { loadAndApplyOverlay } from "../../overlay.js";
+import { partitionCaveats } from "../../../extract/engine/ts/caveats.js";
 import {
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
@@ -196,12 +197,12 @@ export function createCheckReport(
             decl.domain.kind === "tokens" || decl.domain.kind === "lengthCat",
         )
         .map((decl) => `${decl.id}:${decl.domain.kind}`),
-      globalTaints: model.metadata?.extractionCaveats?.globalTaints ?? [],
-      staleReads: model.metadata?.extractionCaveats?.staleReads ?? [],
+      globalTaints: partitionExtractionCaveats(model).globalTaints,
+      staleReads: partitionExtractionCaveats(model).staleReads,
       unhandledRejections:
-        model.metadata?.extractionCaveats?.unhandledRejections ?? [],
+        partitionExtractionCaveats(model).unhandledRejections,
       unextractableHandlers:
-        model.metadata?.extractionCaveats?.unextractableHandlers ?? [],
+        partitionExtractionCaveats(model).unextractableHandlers,
       domains: model.vars
         .map((decl) => domainReportEntry(model, decl))
         .sort((left, right) => left.varId.localeCompare(right.varId)),
@@ -503,4 +504,9 @@ async function writeActionReplayTestArtifacts(
     onPath?.("actionReplayTest", path);
   }
   return paths;
+}
+
+function partitionExtractionCaveats(model: Model) {
+  const entries = model.metadata?.extractionCaveats?.entries ?? [];
+  return partitionCaveats(entries);
 }

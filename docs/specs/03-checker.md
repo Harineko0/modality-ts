@@ -45,7 +45,8 @@ while frontier ≠ ∅ and depth < maxDepth:
 
 - `enabled(s)`: user/nav transitions whose guard holds and whose component's route is mounted; `resolve(p, outcome)` for each pending op × assumed-allowed outcome; library/env events per template. Guard evaluation is compiled (ExprIR → JS closure at load time), not interpreted.
 - `apply` executes compiled structured effects or imported opaque effects against a **frozen** input (deep-freeze in debug mode; structural-sharing copies on write). Opaque-effect outputs are domain-validated and write-set-validated in debug mode (Spec 01 §3.2).
-- `stabilize` enforces the internal-transition semantics including the order-exploration rule for write-intersecting internal transitions and the `maxInternalSteps` divergence error.
+- `stabilize` enforces the internal-transition semantics including the order-exploration rule for write-intersecting internal transitions and the `maxInternalSteps` divergence error. When write-sets conflict, internal transitions with lower `phase` commit before higher `phase`; same-tier conflicts preserve both orders (Spec 01 §3).
+- **Effect-context reads**: `readPre` evaluates against the pre-step state snapshot (React batching of direct reads in a handler); `readOpArg` reads enqueue-time snapshots from the resolving pending op's `args`. Both are only valid inside effect/step evaluation — missing context is a hard error in debug mode.
 - **Determinism**: with sorted iteration orders and no wall-clock dependence, two runs on the same model produce identical results and identical counterexamples. This is a hard requirement (CI reproducibility, differential testing).
 
 BFS (not DFS/IDDFS) because shortest counterexamples are the product's core DX promise and memory at target scale (10⁷ × ~100B canon strings ≈ 1–2 GB) is acceptable; IDDFS is the specified fallback if memory, not time, becomes the binding constraint.

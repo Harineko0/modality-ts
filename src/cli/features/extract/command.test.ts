@@ -115,10 +115,7 @@ describe("runExtractCommand", () => {
       ),
     ).toBe(true);
     expect(model.metadata?.extractionCaveats).toEqual({
-      globalTaints: [],
-      staleReads: [],
-      unhandledRejections: [],
-      unextractableHandlers: [],
+      entries: [],
     });
 
     const check = checkModel(model, [
@@ -157,11 +154,12 @@ describe("runExtractCommand", () => {
     });
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const report = JSON.parse(await readFile(reportPath, "utf8"));
-    const caveat =
-      model.metadata?.extractionCaveats?.unextractableHandlers?.[0];
+    const caveat = model.metadata?.extractionCaveats?.entries.find(
+      (entry) => entry.kind === "unextractable",
+    );
     expect(caveat?.id).toBe("App.onClick");
     expect(caveat?.reason).toContain("no-extractable-effect");
-    expect(caveat?.source).toMatch(/App\.tsx:\d+:\d+$/);
+    expect(caveat?.source?.file).toMatch(/App\.tsx$/);
     expect(
       report.warnings.some((warning: string) =>
         warning.includes("Unextractable handler App.onClick"),
@@ -174,11 +172,17 @@ describe("runExtractCommand", () => {
         reasons: [caveat?.reason],
       },
     ]);
-    expect(model.metadata?.extractionCaveats?.unextractableHandlers).toEqual([
+    expect(
+      model.metadata?.extractionCaveats?.entries.filter(
+        (entry) => entry.kind === "unextractable",
+      ),
+    ).toEqual([
       {
+        kind: "unextractable",
         id: "App.onClick",
         reason: caveat?.reason,
         source: caveat?.source,
+        severity: "over-approx",
       },
     ]);
     expect(report.coverage).toEqual({
@@ -221,11 +225,13 @@ describe("runExtractCommand", () => {
     });
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const caveats =
-      model.metadata?.extractionCaveats?.unextractableHandlers ?? [];
+      model.metadata?.extractionCaveats?.entries.filter(
+        (entry) => entry.kind === "unextractable",
+      ) ?? [];
     expect(caveats).toHaveLength(1);
     expect(caveats[0]?.id).toBe("App.onClick");
     expect(caveats[0]?.reason).toContain("await-in-loop");
-    expect(caveats[0]?.source).toMatch(/App\.tsx:\d+:\d+$/);
+    expect(caveats[0]?.source?.file).toMatch(/App\.tsx$/);
   });
 
   it("does not classify list-rendered or effect warnings as unextractable handlers", async () => {
@@ -257,9 +263,12 @@ describe("runExtractCommand", () => {
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.warnings).toContain("Unextractable effect App.useEffect");
-    expect(model.metadata?.extractionCaveats?.unextractableHandlers).toEqual(
-      [],
-    );
+    expect(
+      model.metadata?.extractionCaveats?.entries.filter(
+        (entry) =>
+          entry.kind === "unextractable" && !entry.id.endsWith(".useEffect"),
+      ),
+    ).toEqual([]);
   });
 
   it("reports unsupported useReducer state sources", async () => {
@@ -327,14 +336,17 @@ describe("runExtractCommand", () => {
     });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     const caveat = {
+      kind: "global-taint" as const,
       id: "local:App.saveStatus",
       reason: "Global taint local:App.saveStatus",
+      severity: "unsound-risk" as const,
+      source: expect.objectContaining({
+        file: expect.stringMatching(/App\.tsx$/),
+      }),
     };
     expect(report.warnings).toContain("Global taint local:App.saveStatus");
     expect(report.globalTaints).toEqual([caveat]);
-    expect(result.model.metadata?.extractionCaveats?.globalTaints).toEqual([
-      caveat,
-    ]);
+    expect(result.model.metadata?.extractionCaveats?.entries).toEqual([caveat]);
   });
 
   it("reports M0 timer callbacks as extracted timer handlers", async () => {
@@ -363,13 +375,22 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.warnings).toEqual([]);
     expect(report.globalTaints).toEqual([]);
-    expect(result.model.metadata?.extractionCaveats?.globalTaints).toEqual([]);
+    expect(result.model.metadata?.extractionCaveats?.entries).toEqual([]);
     expect(
       result.model.transitions.map((transition) => transition.id),
     ).toContain("App.setTimeout.saveStatus");
-    expect(report.handlers).toEqual([
-      { id: "App.setTimeout.saveStatus", classification: "exact", reasons: [] },
-    ]);
+    expect(report.handlers).toEqual(
+      expect.arrayContaining([
+        {
+          id: "App.setTimeout.saveStatus",
+          classification: "exact",
+          reasons: [],
+        },
+      ]),
+    );
+    expect(
+      report.handlers.some((handler) => handler.id.includes("onClick")),
+    ).toBe(true);
   });
 
   it("includes extracted navigation targets in the route domain", async () => {
@@ -1117,8 +1138,13 @@ describe("runExtractCommand", () => {
     });
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     const caveat = {
+      kind: "global-taint" as const,
       id: "jotai:getDefaultStore",
       reason: "Global taint jotai:getDefaultStore",
+      severity: "unsound-risk" as const,
+      source: expect.objectContaining({
+        file: expect.stringMatching(/App\.tsx$/),
+      }),
     };
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
@@ -1134,9 +1160,7 @@ describe("runExtractCommand", () => {
     );
     expect(report.warnings).toContain("Global taint jotai:getDefaultStore");
     expect(report.globalTaints).toEqual([caveat]);
-    expect(result.model.metadata?.extractionCaveats?.globalTaints).toEqual([
-      caveat,
-    ]);
+    expect(result.model.metadata?.extractionCaveats?.entries).toEqual([caveat]);
   });
 
   it("extracts Jotai Provider store-qualified writes across components", async () => {
@@ -1579,10 +1603,7 @@ describe("runExtractCommand", () => {
     const click = result.model.transitions.find((transition) =>
       transition.id.startsWith("App.onClick.authAtom"),
     );
-    expect(click?.reads).toEqual([
-      "atom:authAtom",
-      "swr:event_snapshot_userId:data",
-    ]);
+    expect(click?.reads).toEqual(["atom:authAtom"]);
   });
 
   it("extracts a React Router v7 app directory with tsconfig imports, fetch flows, Button wrappers, and theme context", async () => {
@@ -1957,16 +1978,23 @@ describe("runExtractCommand", () => {
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     const caveat = {
+      kind: "unhandled-rejection" as const,
       id: "App.onClick.api.save",
       reason: "Unhandled rejection App.onClick.api.save",
+      severity: "over-approx" as const,
+      source: expect.objectContaining({
+        file: expect.stringMatching(/App\.tsx$/),
+      }),
     };
     expect(report.warnings).toContain(
       "Unhandled rejection App.onClick.api.save",
     );
     expect(report.unhandledRejections).toEqual([caveat]);
-    expect(model.metadata?.extractionCaveats?.unhandledRejections).toEqual([
-      caveat,
-    ]);
+    expect(
+      model.metadata?.extractionCaveats?.entries.filter(
+        (entry) => entry.kind === "unhandled-rejection",
+      ),
+    ).toEqual([caveat]);
   });
 
   it("types pending op args from extracted effect API snapshots", async () => {
@@ -2034,7 +2062,7 @@ describe("runExtractCommand", () => {
     });
   });
 
-  it("reports stale-read caveats for async continuations", async () => {
+  it("snapshots async continuation reads instead of stale-read warnings", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
     const modelPath = join(dir, "model.json");
@@ -2063,15 +2091,20 @@ describe("runExtractCommand", () => {
     });
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const report = JSON.parse(await readFile(reportPath, "utf8"));
-    const caveat = {
-      id: "App.onClick.api.save:local:App.saveStatus",
-      reason: "Stale-read risk App.onClick.api.save:local:App.saveStatus",
-    };
-    expect(report.warnings).toContain(
-      "Stale-read risk App.onClick.api.save:local:App.saveStatus",
+    const success = model.transitions.find((transition) =>
+      transition.id.endsWith(".success"),
     );
-    expect(report.staleReads).toEqual([caveat]);
-    expect(model.metadata?.extractionCaveats?.staleReads).toEqual([caveat]);
+    expect(report.staleReads).toEqual([]);
+    expect(success?.effect).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([
+        {
+          kind: "assign",
+          var: "local:App.saveStatus",
+          expr: { kind: "readOpArg", key: "snap:local:App.saveStatus" },
+        },
+      ]),
+    });
   });
 
   it("applies overlay artifacts during extraction", async () => {

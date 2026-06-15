@@ -1149,7 +1149,7 @@ describe("useState inventory", () => {
       effect: {
         kind: "assign",
         var: "local:App.saved",
-        expr: { kind: "read", var: "local:App.draft" },
+        expr: { kind: "readPre", var: "local:App.draft" },
       },
       reads: ["local:App.draft"],
       writes: ["local:App.saved"],
@@ -1178,7 +1178,7 @@ describe("useState inventory", () => {
       effect: {
         kind: "assign",
         var: "local:App.saved",
-        expr: { kind: "read", var: "local:App.draft" },
+        expr: { kind: "readPre", var: "local:App.draft" },
       },
       reads: ["local:App.draft"],
       writes: ["local:App.saved"],
@@ -1212,7 +1212,7 @@ describe("useState inventory", () => {
           {
             kind: "assign",
             var: "local:App.saved",
-            expr: { kind: "read", var: "local:App.draft" },
+            expr: { kind: "readPre", var: "local:App.draft" },
           },
           {
             kind: "assign",
@@ -1305,7 +1305,7 @@ describe("useState inventory", () => {
       effect: {
         kind: "assign",
         var: "local:App.mode",
-        expr: { kind: "read", var: "local:App.auth", path: ["kind"] },
+        expr: { kind: "readPre", var: "local:App.auth", path: ["kind"] },
       },
       reads: ["local:App.auth"],
       writes: ["local:App.mode"],
@@ -1336,7 +1336,7 @@ describe("useState inventory", () => {
           value: { kind: "lit", value: false },
           target: {
             kind: "updateField",
-            target: { kind: "read", var: "local:App.auth" },
+            target: { kind: "readPre", var: "local:App.auth" },
             path: ["kind"],
             value: { kind: "lit", value: "user" },
           },
@@ -1429,7 +1429,7 @@ describe("useState inventory", () => {
             {
               kind: "eq",
               args: [
-                { kind: "read", var: "local:App.auth" },
+                { kind: "readPre", var: "local:App.auth" },
                 { kind: "lit", value: "user" },
               ],
             },
@@ -1537,8 +1537,11 @@ describe("useState inventory", () => {
         expr: {
           kind: "and",
           args: [
-            { kind: "read", var: "local:App.hasDraft" },
-            { kind: "not", args: [{ kind: "read", var: "local:App.saving" }] },
+            { kind: "readPre", var: "local:App.hasDraft" },
+            {
+              kind: "not",
+              args: [{ kind: "readPre", var: "local:App.saving" }],
+            },
           ],
         },
       },
@@ -1572,7 +1575,7 @@ describe("useState inventory", () => {
         cond: {
           kind: "eq",
           args: [
-            { kind: "read", var: "local:App.auth", path: ["kind"] },
+            { kind: "readPre", var: "local:App.auth", path: ["kind"] },
             { kind: "lit", value: "user" },
           ],
         },
@@ -1643,7 +1646,7 @@ describe("useState inventory", () => {
         cond: {
           kind: "eq",
           args: [
-            { kind: "read", var: "local:App.auth" },
+            { kind: "readPre", var: "local:App.auth" },
             { kind: "lit", value: "user" },
           ],
         },
@@ -2476,7 +2479,7 @@ describe("useState inventory", () => {
             {
               kind: "eq",
               args: [
-                { kind: "read", var: "local:App.auth" },
+                { kind: "readPre", var: "local:App.auth" },
                 { kind: "lit", value: "user" },
               ],
             },
@@ -2735,7 +2738,7 @@ describe("useState inventory", () => {
     ]);
   });
 
-  it("reports stale-read risks for modeled state read after await", () => {
+  it("snapshots modeled state read after await in continuation effects", () => {
     const result = extractUseStateSkeleton(
       `
       import { useState } from 'react';
@@ -2750,7 +2753,6 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx", effectApis: ["api.saveTodo"] },
     );
     expect(result.warnings.map((warning) => warning.message)).toEqual([
-      "Stale-read risk App.onClick.api.saveTodo:local:App.saveStatus",
       "Unhandled rejection App.onClick.api.saveTodo",
     ]);
     expect(
@@ -2773,7 +2775,7 @@ describe("useState inventory", () => {
         {
           kind: "assign",
           var: "local:App.saveStatus",
-          expr: { kind: "read", var: "local:App.saveStatus" },
+          expr: { kind: "readOpArg", key: "snap:local:App.saveStatus" },
         },
       ],
     });
@@ -3422,18 +3424,37 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions).toHaveLength(1);
-    expect(result.transitions[0]).toMatchObject({
+    expect(result.transitions).toHaveLength(2);
+    const click = result.transitions.find((t) => t.cls === "user");
+    expect(click?.effect).toMatchObject({
+      kind: "assign",
+      expr: { kind: "lit", value: "scheduled" },
+    });
+    const fire = result.transitions.find((t) => t.cls === "env");
+    expect(fire).toMatchObject({
       id: "App.setTimeout.saveStatus",
       cls: "env",
       label: { kind: "timer", key: "App.setTimeout.saveStatus" },
-      effect: {
-        kind: "assign",
-        var: "local:App.saveStatus",
-        expr: { kind: "lit", value: "posting" },
+      guard: {
+        kind: "eq",
+        args: [
+          { kind: "read", var: expect.stringMatching(/^sys:timer:/) },
+          { kind: "lit", value: "scheduled" },
+        ],
       },
-      reads: [],
-      writes: ["local:App.saveStatus"],
+      effect: {
+        kind: "seq",
+        effects: [
+          { kind: "assign", var: expect.stringMatching(/^sys:timer:/) },
+          {
+            kind: "assign",
+            var: "local:App.saveStatus",
+            expr: { kind: "lit", value: "posting" },
+          },
+        ],
+      },
+      reads: [expect.stringMatching(/^sys:timer:/)],
+      writes: ["local:App.saveStatus", expect.stringMatching(/^sys:timer:/)],
       confidence: "exact",
     });
   });
@@ -3455,17 +3476,31 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings).toEqual([]);
-    expect(result.transitions).toHaveLength(1);
-    expect(result.transitions[0]).toMatchObject({
+    expect(result.transitions).toHaveLength(2);
+    const fire = result.transitions.find((t) => t.cls === "env");
+    expect(fire).toMatchObject({
       id: "App.setTimeout.saveStatus",
       cls: "env",
-      effect: {
-        kind: "assign",
-        var: "local:App.saveStatus",
-        expr: { kind: "lit", value: "posting" },
+      guard: {
+        kind: "eq",
+        args: [
+          { kind: "read", var: expect.stringMatching(/^sys:timer:/) },
+          { kind: "lit", value: "scheduled" },
+        ],
       },
-      reads: [],
-      writes: ["local:App.saveStatus"],
+      effect: {
+        kind: "seq",
+        effects: [
+          { kind: "assign", var: expect.stringMatching(/^sys:timer:/) },
+          {
+            kind: "assign",
+            var: "local:App.saveStatus",
+            expr: { kind: "lit", value: "posting" },
+          },
+        ],
+      },
+      reads: [expect.stringMatching(/^sys:timer:/)],
+      writes: ["local:App.saveStatus", expect.stringMatching(/^sys:timer:/)],
       confidence: "exact",
     });
   });
@@ -3527,7 +3562,7 @@ describe("useState inventory", () => {
         cond: {
           kind: "eq",
           args: [
-            { kind: "read", var: "local:App.screen" },
+            { kind: "readPre", var: "local:App.screen" },
             { kind: "lit", value: "home" },
           ],
         },
@@ -3577,7 +3612,7 @@ describe("useState inventory", () => {
         cond: {
           kind: "eq",
           args: [
-            { kind: "read", var: "local:App.draft" },
+            { kind: "readPre", var: "local:App.draft" },
             { kind: "lit", value: "empty" },
           ],
         },
@@ -3586,7 +3621,7 @@ describe("useState inventory", () => {
         else: {
           kind: "assign",
           var: "local:App.saved",
-          expr: { kind: "read", var: "local:App.draft" },
+          expr: { kind: "readPre", var: "local:App.draft" },
         },
       },
       reads: ["local:App.draft"],

@@ -272,7 +272,7 @@ describe("Jotai source plugin", () => {
         cond: {
           kind: "eq",
           args: [
-            { kind: "read", var: "atom:authAtom" },
+            { kind: "readPre", var: "atom:authAtom" },
             { kind: "lit", value: "guest" },
           ],
         },

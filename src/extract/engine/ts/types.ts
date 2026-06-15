@@ -53,6 +53,8 @@ export interface ContextBindings {
 export interface ExtractionWarning {
   message: string;
   line?: number;
+  column?: number;
+  caveat?: import("modality-ts/core").ExtractionCaveat;
 }
 
 export type StaticValue =

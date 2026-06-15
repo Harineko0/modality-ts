@@ -8,6 +8,7 @@ import type {
 import * as ts from "typescript";
 import type { RouterPlugin, StateSourcePlugin } from "../../spi/index.js";
 import { lineAndColumn } from "../ast.js";
+import { unextractableHandlerCaveat } from "../caveats.js";
 import { handlerExpression, jsxTagName } from "../components.js";
 import { emptyContextBindings } from "../context.js";
 import { safeId, tagStableIdKey, uniqueStrings } from "../ids.js";
@@ -65,6 +66,9 @@ import {
   effectFromSummaries,
   summarizeHandlerStatements,
 } from "./statement-summary.js";
+import { gateUserTransitionForBoundary } from "./suspense.js";
+import type { TransitionBinding } from "./concurrent.js";
+import type { TimerRegistration } from "./timers.js";
 import {
   isInputValueExpression,
   labelForEvent,
@@ -139,6 +143,14 @@ function directSetterBooleanCallbackTransitions(
   );
 }
 
+export interface HandlerExtractionContext {
+  activeBoundary?: string;
+  transitionBindings?: Map<string, TransitionBinding>;
+  timerRegistrations?: TimerRegistration[];
+  envTransitions?: Transition[];
+  timerIndex?: { value: number };
+}
+
 export function transitionsFromJsxAttribute(
   source: ts.SourceFile,
   fileName: string,
@@ -155,6 +167,7 @@ export function transitionsFromJsxAttribute(
   contextBindings: ContextBindings,
   warnings: ExtractionWarning[],
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  handlerContext: HandlerExtractionContext = {},
 ): Transition[] {
   if (!node.initializer) return [];
   const expression = ts.isJsxExpression(node.initializer)
@@ -165,26 +178,41 @@ export function transitionsFromJsxAttribute(
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
+  const timerRegistrations = handlerContext.timerRegistrations ?? [];
+  const envTransitions = handlerContext.envTransitions ?? [];
+  const timerIndex = handlerContext.timerIndex ?? { value: 0 };
   return tagStableIdKey(
-    transitionsFromResolvedHandler(
-      source,
-      fileName,
-      node,
-      attr,
-      handler,
-      setters,
-      handlers,
-      component,
-      effectApis,
-      asyncOutcomes,
-      sourcePlugins,
-      routerPlugin,
-      disabledGuard,
-      locator,
-      routePatterns,
-      contextBindings,
-      warnings,
-      resetSymbols,
+    applySuspenseGate(
+      [
+        ...transitionsFromResolvedHandler(
+          source,
+          fileName,
+          node,
+          attr,
+          handler,
+          setters,
+          handlers,
+          component,
+          effectApis,
+          asyncOutcomes,
+          sourcePlugins,
+          routerPlugin,
+          disabledGuard,
+          locator,
+          routePatterns,
+          contextBindings,
+          warnings,
+          resetSymbols,
+          {
+            ...handlerContext,
+            timerRegistrations,
+            envTransitions,
+            timerIndex,
+          },
+        ),
+        ...envTransitions,
+      ],
+      handlerContext.activeBoundary,
     ),
     handler,
   );
@@ -366,12 +394,26 @@ export function transitionsFromResolvedHandler(
   contextBindings: ContextBindings,
   warnings: ExtractionWarning[],
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  handlerContext: HandlerExtractionContext = {},
 ): Transition[] {
+  const summaryOptions = handlerSummaryOptions(
+    source,
+    fileName,
+    component,
+    handlers,
+    resetSymbols,
+    handlerContext,
+  );
   if (containsAwaitInLoop(handler)) {
-    const { line, column } = lineAndColumn(source, handler);
+    const anchor = lineAndColumn(source, handler);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${line}:${column})`,
-      line,
+      message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${anchor.line}:${anchor.column})`,
+      ...anchor,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "await-in-loop",
+        { file: fileName, ...anchor },
+      ),
     });
     return [];
   }
@@ -395,10 +437,15 @@ export function transitionsFromResolvedHandler(
     ts.isBlock(handler.body) &&
     containsAwaitedEffect(handler.body.statements, effectApis)
   ) {
-    const { line, column } = lineAndColumn(source, handler);
+    const anchor = lineAndColumn(source, handler);
     warnings.push({
-      message: `Unextractable handler ${component}.${attr} [awaited-effect-in-block] (${fileName}:${line}:${column})`,
-      line,
+      message: `Unextractable handler ${component}.${attr} [awaited-effect-in-block] (${fileName}:${anchor.line}:${anchor.column})`,
+      ...anchor,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "awaited-effect-in-block",
+        { file: fileName, ...anchor },
+      ),
     });
     return [];
   }
@@ -420,6 +467,7 @@ export function transitionsFromResolvedHandler(
           resetSymbols,
           initialLocals,
           valueSuffix,
+          summaryOptions,
         ) ??
         conditionalTransitionFromHandler(
           source,
@@ -475,6 +523,9 @@ export function transitionsFromResolvedHandler(
     component,
     locator,
     resetSymbols,
+    undefined,
+    undefined,
+    summaryOptions,
   );
   if (sequentialTransition)
     return applyParsedGuard([sequentialTransition], disabledGuard);
@@ -677,19 +728,24 @@ export function sequentialTransitionFromHandler(
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
   initialLocals?: Map<string, BoundExpr>,
   valueSuffix?: string,
+  summaryOptions: Parameters<typeof summarizeHandlerStatements>[2] = {},
 ): Transition | undefined {
   const summaries = summarizeHandlerStatements(handler, setters, {
     handlers,
     resetSymbols,
     ...(initialLocals ? { initialLocals } : {}),
+    ...summaryOptions,
   });
   const onlySummary = summaries?.[0];
+  if (!summaries || summaries.length === 0) return undefined;
   if (
-    !summaries ||
-    summaries.length === 0 ||
-    (summaries.length === 1 && onlySummary?.effect.kind !== "if")
-  )
+    summaries.length === 1 &&
+    onlySummary &&
+    onlySummary.effect.kind !== "if" &&
+    !isSequentialSingleSummary(onlySummary)
+  ) {
     return undefined;
+  }
   const effect = effectFromSummaries(summaries);
   const effects = effect.kind === "seq" ? effect.effects : [effect];
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
@@ -767,6 +823,7 @@ export function conditionalTransitionFromHandler(
     statement.expression,
     setters,
     initialLocals,
+    true,
   );
   if (!condition) return undefined;
   const thenEffect =
@@ -832,4 +889,48 @@ export function escapedSetterTransitions(
     writes: [setter.varId],
     confidence: "over-approx" as const,
   }));
+}
+
+function handlerSummaryOptions(
+  source: ts.SourceFile,
+  fileName: string,
+  component: string,
+  handlers: Map<string, ExtractableHandler>,
+  resetSymbols: ReadonlySet<string>,
+  handlerContext: HandlerExtractionContext,
+): Parameters<typeof summarizeHandlerStatements>[2] {
+  return {
+    handlers,
+    resetSymbols,
+    component,
+    timerContext: `${component}.handler`,
+    timerIndex: handlerContext.timerIndex,
+    timerBindings: new Map<string, string>(),
+    timerRegistrations: handlerContext.timerRegistrations,
+    transitionBindings: handlerContext.transitionBindings,
+    envTransitions: handlerContext.envTransitions,
+    fileName,
+    source,
+  };
+}
+
+function isSequentialSingleSummary(summary: {
+  effect: Transition["effect"];
+}): boolean {
+  if (summary.effect.kind === "assign") {
+    return summary.effect.var.startsWith("sys:timer:");
+  }
+  if (summary.effect.kind === "seq") {
+    return summary.effect.effects.some((effect) => effect.kind === "enqueue");
+  }
+  return false;
+}
+
+function applySuspenseGate(
+  transitions: Transition[],
+  activeBoundary: string | undefined,
+): Transition[] {
+  return transitions.map((transition) =>
+    gateUserTransitionForBoundary(transition, activeBoundary),
+  );
 }

@@ -10,6 +10,8 @@ export function setterArgumentExpr(
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  snapshotReads = true,
+  snapshottedReads?: ReadonlySet<string>,
 ): BoundExpr | undefined {
   if (ts.isIdentifier(argument) && resetSymbols.has(argument.text)) {
     if (setter.resettable && setter.initial !== undefined) {
@@ -46,9 +48,10 @@ export function setterArgumentExpr(
         ...locals,
         [argument.parameters[0].name.text, readBinding(setter.varId)],
       ]),
+      false,
     );
   }
-  return valueExpr(argument, setters, locals);
+  return valueExpr(argument, setters, locals, snapshotReads, snapshottedReads);
 }
 
 export function objectLiteralAssignmentExpr(
@@ -103,13 +106,28 @@ export function valueExpr(
   expression: ts.Expression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
+  snapshotReads = true,
+  snapshottedReads?: ReadonlySet<string>,
 ): BoundExpr | undefined {
   const unwrapped = unwrapTsExpression(expression);
-  if (unwrapped !== expression) return valueExpr(unwrapped, setters, locals);
+  if (unwrapped !== expression)
+    return valueExpr(
+      unwrapped,
+      setters,
+      locals,
+      snapshotReads,
+      snapshottedReads,
+    );
   const value = literalValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
-    return modeledReadExpr(expression, setters, locals);
+    return modeledReadExpr(
+      expression,
+      setters,
+      locals,
+      snapshotReads,
+      snapshottedReads,
+    );
   if (
     ts.isPrefixUnaryExpression(expression) &&
     expression.operator === ts.SyntaxKind.ExclamationToken
@@ -333,6 +351,8 @@ export function modeledReadExpr(
   expression: ts.Expression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
+  snapshotReads = true,
+  snapshottedReads?: ReadonlySet<string>,
 ): BoundExpr | undefined {
   const path = propertyAccessPath(expression);
   if (!path || path.length === 0) return undefined;
@@ -340,10 +360,16 @@ export function modeledReadExpr(
   const local = locals.get(base);
   if (local) {
     if (segments.length === 0) return local;
-    if (local.expr.kind !== "read") return undefined;
+    if (local.expr.kind !== "read" && local.expr.kind !== "readPre")
+      return undefined;
+    // A local binding already carries its own snapshot decision (a functional
+    // updater parameter is bound as `read` = accumulator; a snapshotted const as
+    // `readPre`). Preserve it instead of re-deriving from `snapshotReads`, whose
+    // default leaks `true` through nested recursion and would wrongly snapshot a
+    // field read of the updater parameter (e.g. setX(p => ({ ...p, n: p.n }))).
     return {
       expr: {
-        kind: "read",
+        kind: local.expr.kind,
         var: local.expr.var,
         path: [...(local.expr.path ?? []), ...segments],
       },
@@ -353,6 +379,12 @@ export function modeledReadExpr(
   const setter = setterForName(base, setters);
   const stateVar = setter?.varId;
   if (!stateVar) return undefined;
+  if (snapshottedReads?.has(stateVar)) {
+    return {
+      expr: { kind: "readOpArg", key: `snap:${stateVar}` },
+      reads: [],
+    };
+  }
   if (
     setter.domain.kind === "tagged" &&
     segments.length > 0 &&
@@ -373,7 +405,7 @@ export function modeledReadExpr(
   }
   return {
     expr: {
-      kind: "read",
+      kind: snapshotReads ? "readPre" : "read",
       var: stateVar,
       ...(segments.length > 0 ? { path: segments } : {}),
     },

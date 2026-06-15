@@ -782,6 +782,12 @@ function inferExprDomain(
       const decl = varsById.get(expr.var);
       return decl ? domainAtPath(decl.domain, expr.path ?? []) : undefined;
     }
+    case "readPre": {
+      const decl = varsById.get(expr.var);
+      return decl ? domainAtPath(decl.domain, expr.path ?? []) : undefined;
+    }
+    case "readOpArg":
+      return { kind: "tokens", count: 1 };
     case "freshToken": {
       const decl = varsById.get(expr.domainOf);
       return decl?.domain.kind === "tokens" ? decl.domain : undefined;

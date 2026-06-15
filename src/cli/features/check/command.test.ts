@@ -482,20 +482,28 @@ describe("runCheckCommand", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
     const globalTaint = {
+      kind: "global-taint" as const,
       id: "local:App.status",
       reason: "Global taint local:App.status",
+      severity: "unsound-risk" as const,
     };
     const staleRead = {
+      kind: "stale-read" as const,
       id: "App.onClick.api.save:local:App.status",
       reason: "Stale-read risk App.onClick.api.save:local:App.status",
+      severity: "info" as const,
     };
     const unhandledRejection = {
+      kind: "unhandled-rejection" as const,
       id: "App.onClick.api.save",
       reason: "Unhandled rejection App.onClick.api.save",
+      severity: "over-approx" as const,
     };
     const unextractableHandler = {
+      kind: "unextractable" as const,
       id: "App.onClick",
       reason: "Unextractable handler App.onClick",
+      severity: "over-approx" as const,
     };
     await writeFile(
       modelPath,
@@ -503,10 +511,12 @@ describe("runCheckCommand", () => {
         ...model(),
         metadata: {
           extractionCaveats: {
-            globalTaints: [globalTaint],
-            staleReads: [staleRead],
-            unhandledRejections: [unhandledRejection],
-            unextractableHandlers: [unextractableHandler],
+            entries: [
+              globalTaint,
+              staleRead,
+              unhandledRejection,
+              unextractableHandler,
+            ],
           },
         },
       }),

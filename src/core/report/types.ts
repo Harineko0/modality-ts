@@ -1,5 +1,8 @@
-import type { Bounds } from "../ir/types.js";
-import type { PluginProvenance } from "../ir/types.js";
+import type {
+  Bounds,
+  ExtractionCaveat,
+  PluginProvenance,
+} from "../ir/types.js";
 import type { Trace } from "../trace/types.js";
 
 export interface ReportTrustLedger {
@@ -29,11 +32,7 @@ export interface DomainReportEntry {
     | "system";
 }
 
-export interface ExtractionCaveat {
-  id: string;
-  reason: string;
-  source?: string;
-}
+export type { ExtractionCaveat };
 
 export type ReportVerdictStatus =
   | "verified-within-bounds"

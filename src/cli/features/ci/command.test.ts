@@ -402,15 +402,14 @@ describe("runCiCommand", () => {
         ...model(),
         metadata: {
           extractionCaveats: {
-            globalTaints: [],
-            staleReads: [],
-            unhandledRejections: [
+            entries: [
               {
+                kind: "unhandled-rejection",
                 id: "App.onClick.api.save",
                 reason: "Unhandled rejection App.onClick.api.save",
+                severity: "over-approx",
               },
             ],
-            unextractableHandlers: [],
           },
         },
       }),

@@ -1,8 +1,11 @@
 import * as ts from "typescript";
-import { lineAndColumn } from "../ast.js";
+import { lineAndColumn, type ReactEffectHookName } from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
 import type { EffectSummary, SetterBinding } from "../types.js";
+import type { TransitionBinding } from "./concurrent.js";
+import type { TimerRegistration } from "./timers.js";
+import type { StatementSummaryOptions } from "./statement-summary.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { labelForEvent } from "./ui.js";
@@ -47,13 +50,29 @@ export function havocSetterTransition(
   };
 }
 
+export interface EffectExtractionContext {
+  timerRegistrations?: TimerRegistration[];
+  envTransitions?: Transition[];
+  timerIndex?: { value: number };
+  transitionBindings?: Map<string, TransitionBinding>;
+}
+
 export function transitionsFromUseEffect(
   source: ts.SourceFile,
   fileName: string,
   node: ts.CallExpression,
   setters: Map<string, SetterBinding>,
   component: string,
+  hookName: ReactEffectHookName = "useEffect",
+  effectContext: EffectExtractionContext = {},
 ): Transition[] {
+  const summaryOptions = effectSummaryOptions(
+    source,
+    fileName,
+    component,
+    hookName,
+    effectContext,
+  );
   const callback = node.arguments[0];
   if (
     !callback ||
@@ -61,11 +80,19 @@ export function transitionsFromUseEffect(
     !ts.isBlock(callback.body)
   )
     return [];
-  const cleanup = cleanupSummaries(callback.body.statements, setters);
+  const cleanup = cleanupSummaries(
+    callback.body.statements,
+    setters,
+    summaryOptions,
+  );
   const bodyStatements = callback.body.statements.filter(
     (statement) => !isCleanupReturn(statement),
   );
-  const summaries = summarizeEffectStatements(bodyStatements, setters);
+  const summaries = summarizeEffectStatements(
+    bodyStatements,
+    setters,
+    summaryOptions,
+  );
   if (!summaries || !cleanup) return [];
   const transitions: Transition[] = [];
   const effectReads = uniqueStrings(
@@ -100,12 +127,12 @@ export function transitionsFromUseEffect(
           )
         : { kind: "lit" as const, value: true };
     transitions.push({
-      id: `${component}.useEffect.${effects
+      id: `${component}.${hookName}.${effects
         .flatMap(effectWriteVars)
         .map((varId) => varId.split(".").at(-1) ?? varId)
         .join("_")}`,
       cls: "internal",
-      label: { kind: "internal", text: `${component}.useEffect` },
+      label: { kind: "internal", text: `${component}.${hookName}` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard,
       effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
@@ -119,6 +146,7 @@ export function transitionsFromUseEffect(
         ? "over-approx"
         : "exact",
       triggeredBy: deps,
+      phase: reactEffectPhase(hookName),
     });
   }
   if (cleanup.length > 0) {
@@ -127,12 +155,12 @@ export function transitionsFromUseEffect(
       cleanup.flatMap((summary) => summary.reads),
     );
     transitions.push({
-      id: `${component}.useEffect.cleanup.${cleanupEffects
+      id: `${component}.${hookName}.cleanup.${cleanupEffects
         .flatMap(effectWriteVars)
         .map((varId) => varId.split(".").at(-1) ?? varId)
         .join("_")}`,
       cls: "internal",
-      label: { kind: "internal", text: `${component}.useEffect.cleanup` },
+      label: { kind: "internal", text: `${component}.${hookName}.cleanup` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit", value: true },
       effect:
@@ -143,6 +171,7 @@ export function transitionsFromUseEffect(
       writes: uniqueStrings(cleanupEffects.flatMap(effectWriteVars)),
       confidence: "over-approx",
       triggeredBy: deps,
+      phase: reactEffectPhase(hookName),
     });
   }
   return transitions;
@@ -151,13 +180,15 @@ export function transitionsFromUseEffect(
 export function summarizeEffectStatements(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
+  options: StatementSummaryOptions = {},
 ): EffectSummary[] | undefined {
-  return summarizeStatements(statements, setters);
+  return summarizeStatements(statements, setters, options);
 }
 
 export function cleanupSummaries(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
+  options: StatementSummaryOptions = {},
 ): EffectSummary[] | undefined {
   const returns = statements.filter(isCleanupReturn);
   if (returns.length === 0) return [];
@@ -169,7 +200,31 @@ export function cleanupSummaries(
     !ts.isBlock(expression.body)
   )
     return undefined;
-  return summarizeEffectStatements(expression.body.statements, setters);
+  return summarizeEffectStatements(
+    expression.body.statements,
+    setters,
+    options,
+  );
+}
+
+function effectSummaryOptions(
+  source: ts.SourceFile,
+  fileName: string,
+  component: string,
+  hookName: ReactEffectHookName,
+  effectContext: EffectExtractionContext,
+): StatementSummaryOptions {
+  return {
+    component,
+    timerContext: `${component}.${hookName}`,
+    timerIndex: effectContext.timerIndex,
+    timerBindings: new Map<string, string>(),
+    timerRegistrations: effectContext.timerRegistrations,
+    transitionBindings: effectContext.transitionBindings,
+    envTransitions: effectContext.envTransitions,
+    fileName,
+    source,
+  };
 }
 
 export function isCleanupReturn(
@@ -203,7 +258,18 @@ export function dependencyReads(
   ];
 }
 
+export function reactEffectPhase(hookName: ReactEffectHookName): number {
+  return hookName === "useEffect" ? 1 : 0;
+}
+
 export function useEffectWritesModeledState(
+  node: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+): boolean {
+  return reactEffectWritesModeledState(node, setters);
+}
+
+export function reactEffectWritesModeledState(
   node: ts.CallExpression,
   setters: Map<string, SetterBinding>,
 ): boolean {

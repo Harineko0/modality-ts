@@ -77,6 +77,8 @@ pub struct Transition {
     pub writes: Vec<String>,
     pub confidence: String,
     pub triggered_by: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -635,6 +637,7 @@ mod tests {
                 writes: vec![],
                 confidence: "exact".into(),
                 triggered_by: None,
+                phase: None,
             }],
             bounds: Bounds {
                 max_depth: 1,

@@ -98,6 +98,8 @@ export interface Transition {
   writes: readonly string[];
   confidence: "exact" | "over-approx" | "manual";
   triggeredBy?: readonly string[];
+  /** Commit tier ordinal; stabilization runs lower tiers before higher. */
+  phase?: number;
 }
 
 export interface Bounds {
@@ -113,19 +115,23 @@ export interface PluginProvenance {
   packageNames: readonly string[];
 }
 
+export type CaveatKind =
+  | "global-taint"
+  | "stale-read"
+  | "unhandled-rejection"
+  | "unextractable"
+  | "model-slack";
+
+export interface ExtractionCaveat {
+  kind: CaveatKind;
+  id: string;
+  reason: string;
+  source?: SourceAnchor;
+  severity: "info" | "over-approx" | "unsound-risk";
+}
+
 export interface ExtractionCaveats {
-  globalTaints: readonly { id: string; reason: string; source?: string }[];
-  staleReads: readonly { id: string; reason: string; source?: string }[];
-  unhandledRejections: readonly {
-    id: string;
-    reason: string;
-    source?: string;
-  }[];
-  unextractableHandlers: readonly {
-    id: string;
-    reason: string;
-    source?: string;
-  }[];
+  entries: readonly ExtractionCaveat[];
 }
 
 export interface Model {

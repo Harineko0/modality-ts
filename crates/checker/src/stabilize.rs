@@ -94,7 +94,14 @@ pub(crate) fn stabilizing_sequences(compiled: &CompiledModel, internal: &[usize]
     if !has_write_conflict(compiled, internal) {
         return vec![internal.to_vec()];
     }
-    permutations(internal)
+    let sequences = permutations(internal);
+    if !spans_multiple_phase_tiers(compiled, internal) {
+        return sequences;
+    }
+    sequences
+        .into_iter()
+        .filter(|sequence| is_non_decreasing_phase(compiled, sequence))
+        .collect()
 }
 
 fn apply_internal_sequence(
@@ -123,11 +130,17 @@ fn apply_internal_sequence(
                 next_states.push(candidate);
                 continue;
             }
+            let mut eval_options = crate::expr::EvalOptions {
+                on_bound_hit: None,
+                step_ctx: None,
+                pre_state: Some(state.clone()),
+                resolving_op_args: None,
+            };
             let posts = apply_effect(
                 compiled,
                 &candidate.state,
                 &transition.effect,
-                &mut crate::expr::EvalOptions::default(),
+                &mut eval_options,
             )
             .unwrap_or_default();
             for post in posts {
@@ -180,6 +193,43 @@ fn has_write_conflict(compiled: &CompiledModel, transitions: &[usize]) -> bool {
 fn intersects(left: &[usize], right: &[usize]) -> bool {
     let set: HashSet<_> = left.iter().copied().collect();
     right.iter().any(|item| set.contains(item))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PhaseTier {
+    Ordinal(u32),
+    Default,
+}
+
+fn transition_phase_tier(compiled: &CompiledModel, transition_idx: usize) -> PhaseTier {
+    match compiled.sorted_transitions[transition_idx].phase {
+        Some(phase) => PhaseTier::Ordinal(phase),
+        None => PhaseTier::Default,
+    }
+}
+
+fn spans_multiple_phase_tiers(compiled: &CompiledModel, transitions: &[usize]) -> bool {
+    let mut tiers = transitions
+        .iter()
+        .map(|&idx| transition_phase_tier(compiled, idx))
+        .collect::<Vec<_>>();
+    tiers.sort();
+    tiers.dedup();
+    tiers.len() > 1
+}
+
+fn is_non_decreasing_phase(compiled: &CompiledModel, sequence: &[usize]) -> bool {
+    let mut last = None;
+    for &idx in sequence {
+        let tier = transition_phase_tier(compiled, idx);
+        if let Some(prev) = last {
+            if tier < prev {
+                return false;
+            }
+        }
+        last = Some(tier);
+    }
+    true
 }
 
 fn permutations(values: &[usize]) -> Vec<Vec<usize>> {
@@ -309,6 +359,7 @@ mod tests {
                         writes: vec!["x".into()],
                         confidence: "exact".into(),
                         triggered_by: Some(vec!["x".into()]),
+                        phase: None,
                     },
                     Transition {
                         id: "b".into(),
@@ -328,6 +379,7 @@ mod tests {
                         writes: vec!["x".into()],
                         confidence: "exact".into(),
                         triggered_by: Some(vec!["x".into()]),
+                        phase: None,
                     },
                 ],
                 bounds: Bounds {
@@ -349,5 +401,21 @@ mod tests {
         let sequences = stabilizing_sequences(&compiled, &internal);
         assert_eq!(sequences.len(), 2);
         assert_ne!(sequences[0], sequences[1]);
+    }
+
+    fn phase_conflict_model() -> CompiledModel {
+        let mut model = conflict_model().model;
+        model.transitions[0].phase = Some(0);
+        model.transitions[1].phase = Some(1);
+        CompiledModel::compile(model, false).unwrap()
+    }
+
+    #[test]
+    fn cross_tier_internal_ordering_is_phase_monotonic() {
+        let compiled = phase_conflict_model();
+        let internal: Vec<usize> = compiled.internal.clone();
+        let sequences = stabilizing_sequences(&compiled, &internal);
+        assert_eq!(sequences.len(), 1);
+        assert_eq!(sequences[0], vec![0, 1]);
     }
 }

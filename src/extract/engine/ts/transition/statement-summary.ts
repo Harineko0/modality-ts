@@ -1,6 +1,11 @@
-import type { EffectIR, ExprIR } from "modality-ts/core";
+import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
 import * as ts from "typescript";
-import { callName, literalValue } from "../ast.js";
+import {
+  callName,
+  isFlushSyncCall,
+  isStartTransitionCall,
+  literalValue,
+} from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import type {
   BoundExpr,
@@ -9,20 +14,53 @@ import type {
   SetterBinding,
   SetterCall,
 } from "../types.js";
+import { isExtractableHandler } from "../ast.js";
 import { setterArgumentExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
 import { bindConstStatement } from "./locals.js";
+import type { TransitionBinding } from "./concurrent.js";
+import type { TimerRegistration } from "./timers.js";
+import {
+  bindTimerHandle,
+  isTimerClearCall,
+  isTimerScheduleCall,
+  registerTimerFromScheduleCall,
+  timerClearSummaryFromCall,
+} from "./timers.js";
+import { startTransitionScheduleFromCall } from "./concurrent.js";
 
 export interface StatementSummaryOptions {
   handlers?: Map<string, ExtractableHandler>;
   initialLocals?: Map<string, BoundExpr>;
   resetSymbols?: ReadonlySet<string>;
+  snapshotReads?: boolean;
+  snapshottedReads?: ReadonlySet<string>;
+  component?: string;
+  timerContext?: string;
+  timerIndex?: { value: number };
+  timerBindings?: Map<string, string>;
+  timerRegistrations?: TimerRegistration[];
+  transitionBindings?: Map<string, TransitionBinding>;
+  envTransitions?: Transition[];
+  fileName?: string;
+  source?: ts.SourceFile;
 }
 
 interface StatementSummaryState {
   locals: Map<string, BoundExpr>;
   handlers?: Map<string, ExtractableHandler>;
   resetSymbols?: ReadonlySet<string>;
+  snapshotReads: boolean;
+  snapshottedReads?: ReadonlySet<string>;
+  component?: string;
+  timerContext?: string;
+  timerIndex?: { value: number };
+  timerBindings?: Map<string, string>;
+  timerRegistrations?: TimerRegistration[];
+  transitionBindings?: Map<string, TransitionBinding>;
+  envTransitions?: Transition[];
+  fileName?: string;
+  source?: ts.SourceFile;
 }
 
 interface StatementSummaryResult {
@@ -46,6 +84,23 @@ export function summarizeHandlerStatements(
   options: StatementSummaryOptions = {},
 ): EffectSummary[] | undefined {
   if (ts.isCallExpression(handler.body)) {
+    const state = handlerSummaryState(options);
+    if (isStartTransitionCall(handler.body)) {
+      const scheduled = summarizeStartTransitionCall(
+        handler.body,
+        setters,
+        state,
+      );
+      if (scheduled) return [scheduled];
+    }
+    if (isTimerScheduleCall(handler.body)) {
+      const timerSummary = summarizeTimerScheduleCall(
+        handler.body,
+        setters,
+        state,
+      );
+      if (timerSummary) return [timerSummary.scheduleSummary];
+    }
     const summary = summarizeSetterCall(handler.body, setters, new Map(), {
       resetSymbols: options.resetSymbols,
     });
@@ -64,6 +119,17 @@ export function summarizeStatements(
     locals: new Map(options.initialLocals),
     handlers: options.handlers,
     resetSymbols: options.resetSymbols,
+    snapshotReads: options.snapshotReads ?? true,
+    snapshottedReads: options.snapshottedReads,
+    component: options.component,
+    timerContext: options.timerContext,
+    timerIndex: options.timerIndex,
+    timerBindings: options.timerBindings,
+    timerRegistrations: options.timerRegistrations,
+    transitionBindings: options.transitionBindings,
+    envTransitions: options.envTransitions,
+    fileName: options.fileName,
+    source: options.source,
   });
   return result?.summaries;
 }
@@ -71,9 +137,10 @@ export function summarizeStatements(
 export function summarizeAsyncSegment(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
+  snapshottedReads?: ReadonlySet<string>,
 ): EffectSummary[] {
   return uniqueSummariesByEffect(
-    summarizeStatements(statements, setters) ??
+    summarizeStatements(statements, setters, { snapshottedReads }) ??
       fallbackSummaries(statements, setters),
   );
 }
@@ -104,6 +171,8 @@ export function summarizeSetterCall(
 
 export interface StatementSummaryResetOptions {
   resetSymbols?: ReadonlySet<string>;
+  snapshotReads?: boolean;
+  snapshottedReads?: ReadonlySet<string>;
 }
 
 export function summarizeSetterWrite(
@@ -141,6 +210,8 @@ export function summarizeSetterWrite(
     setters,
     locals,
     resetOptions.resetSymbols,
+    resetOptions.snapshotReads ?? true,
+    resetOptions.snapshottedReads,
   );
   if (!assignment) {
     return {
@@ -355,6 +426,7 @@ function summarizeGuardedRest(
     statement.expression,
     setters,
     state.locals,
+    state.snapshotReads,
   );
   const restResult = summarizeStatementList(rest, setters, {
     ...state,
@@ -412,6 +484,32 @@ function summarizeStatement(
     return child ?? fallbackResult(statement, setters);
   }
   if (ts.isVariableStatement(statement)) {
+    for (const decl of statement.declarationList.declarations) {
+      if (
+        decl.initializer &&
+        ts.isCallExpression(decl.initializer) &&
+        isTimerScheduleCall(decl.initializer)
+      ) {
+        const timerSummary = summarizeTimerScheduleCall(
+          decl.initializer,
+          setters,
+          state,
+        );
+        if (timerSummary) {
+          if (ts.isIdentifier(decl.name) && state.timerBindings) {
+            bindTimerHandle(
+              decl,
+              timerSummary.registration.varId,
+              state.timerBindings,
+            );
+          }
+          return {
+            summaries: [timerSummary.scheduleSummary],
+            terminated: false,
+          };
+        }
+      }
+    }
     if (bindConstStatement(statement, setters, state.locals))
       return emptyResult();
     return fallbackResult(statement, setters);
@@ -419,10 +517,50 @@ function summarizeStatement(
   if (ts.isExpressionStatement(statement)) {
     const call = expressionCall(statement.expression);
     if (call) {
+      if (isFlushSyncCall(call)) {
+        const callback = call.arguments[0];
+        if (
+          callback &&
+          isExtractableHandler(callback) &&
+          ts.isBlock(callback.body)
+        ) {
+          return summarizeStatementList(callback.body.statements, setters, {
+            ...state,
+            locals: new Map(state.locals),
+            snapshotReads: false,
+          });
+        }
+      }
+      if (isStartTransitionCall(call)) {
+        const scheduled = summarizeStartTransitionCall(call, setters, state);
+        if (scheduled) {
+          return { summaries: [scheduled], terminated: false };
+        }
+      }
+      if (isTimerScheduleCall(call)) {
+        const timerSummary = summarizeTimerScheduleCall(call, setters, state);
+        if (timerSummary) {
+          return {
+            summaries: [timerSummary.scheduleSummary],
+            terminated: false,
+          };
+        }
+      }
+      if (isTimerClearCall(call)) {
+        const clearSummary = timerClearSummaryFromCall(
+          call,
+          state.timerBindings ?? new Map(),
+        );
+        if (clearSummary) {
+          return { summaries: [clearSummary], terminated: false };
+        }
+      }
       const helper = helperSummariesFromCall(call, state.handlers, setters);
       if (helper) return { summaries: helper, terminated: false };
       const summary = summarizeSetterCall(call, setters, state.locals, {
         resetSymbols: state.resetSymbols,
+        snapshotReads: state.snapshotReads,
+        snapshottedReads: state.snapshottedReads,
       });
       if (summary) return { summaries: [summary], terminated: false };
     }
@@ -467,6 +605,7 @@ function summarizeIfStatement(
     statement.expression,
     setters,
     state.locals,
+    state.snapshotReads,
   );
   if (!condition || !thenResult || !elseResult) {
     return {
@@ -510,6 +649,7 @@ function summarizeSwitchStatement(
     statement.expression,
     setters,
     state.locals,
+    state.snapshotReads,
   );
   if (!discriminant) {
     return {
@@ -547,7 +687,12 @@ function summarizeSwitchStatement(
     const value =
       literal !== undefined
         ? { expr: { kind: "lit" as const, value: literal }, reads: [] }
-        : parseGuardExpression(clause.expression, setters, state.locals);
+        : parseGuardExpression(
+            clause.expression,
+            setters,
+            state.locals,
+            state.snapshotReads,
+          );
     if (!value)
       return {
         summaries: fallbackSummaries([statement], setters),
@@ -709,6 +854,80 @@ function expressionCall(
   )
     return expression.expression;
   return undefined;
+}
+
+function handlerSummaryState(
+  options: StatementSummaryOptions,
+): StatementSummaryState {
+  return {
+    locals: new Map(options.initialLocals),
+    handlers: options.handlers,
+    resetSymbols: options.resetSymbols,
+    snapshotReads: options.snapshotReads ?? true,
+    snapshottedReads: options.snapshottedReads,
+    component: options.component,
+    timerContext: options.timerContext,
+    timerIndex: options.timerIndex,
+    timerBindings: options.timerBindings,
+    timerRegistrations: options.timerRegistrations,
+    transitionBindings: options.transitionBindings,
+    envTransitions: options.envTransitions,
+    fileName: options.fileName,
+    source: options.source,
+  };
+}
+
+function summarizeTimerScheduleCall(
+  call: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+  state: StatementSummaryState,
+): ReturnType<typeof registerTimerFromScheduleCall> | undefined {
+  if (!state.component || !state.source || !state.fileName) return undefined;
+  const timerIndex = state.timerIndex?.value ?? 0;
+  const registered = registerTimerFromScheduleCall(
+    state.source,
+    state.fileName,
+    call,
+    setters,
+    state.component,
+    state.timerContext ?? "handler",
+    timerIndex,
+    state.timerBindings ?? new Map(),
+  );
+  if (!registered) return undefined;
+  state.timerRegistrations?.push(registered.registration);
+  if (state.timerIndex) state.timerIndex.value += 1;
+  state.envTransitions?.push(registered.fireTransition);
+  return registered;
+}
+
+function summarizeStartTransitionCall(
+  call: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+  state: StatementSummaryState,
+): EffectSummary | undefined {
+  if (
+    !state.component ||
+    !state.source ||
+    !state.fileName ||
+    !state.transitionBindings ||
+    !ts.isIdentifier(call.expression)
+  ) {
+    return undefined;
+  }
+  const binding = state.transitionBindings.get(call.expression.text);
+  if (!binding) return undefined;
+  const scheduled = startTransitionScheduleFromCall(
+    state.source,
+    state.fileName,
+    call,
+    setters,
+    state.component,
+    binding,
+  );
+  if (!scheduled) return undefined;
+  state.envTransitions?.push(scheduled.resolveTransition);
+  return scheduled.scheduleSummary;
 }
 
 function containsAwait(node: ts.Node): boolean {

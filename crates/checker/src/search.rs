@@ -479,6 +479,8 @@ fn expand_chunk(
                 &mut crate::expr::EvalOptions {
                     on_bound_hit: Some(&mut bound_callback),
                     step_ctx: None,
+                    pre_state: None,
+                    resolving_op_args: None,
                 },
             )?;
             if posts.is_empty() && effect_contains_enqueue(&transition.effect) {
@@ -779,6 +781,7 @@ mod tests {
                     writes: vec!["x".into()],
                     confidence: "exact".into(),
                     triggered_by: None,
+                    phase: None,
                 }],
                 bounds: Bounds {
                     max_depth: 3,
@@ -985,6 +988,7 @@ mod tests {
                     writes: vec!["out".into(), "a".into()],
                     confidence: "exact".into(),
                     triggered_by: None,
+                    phase: None,
                 }],
                 bounds: Bounds {
                     max_depth: 2,
