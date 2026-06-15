@@ -132,6 +132,8 @@
     "clean": "rm -rf dist native tsconfig.tsbuildinfo && cargo clean --manifest-path crates/checker/Cargo.toml",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run test/modality/demo-acceptance.test.ts",
+    "docs:build": "pnpm --dir docs build",
+    "docs:start": "pnpm --dir docs start",
     "fix": "biome lint --write . && biome format --write .",
     "phase7": "tsx tools/phase7-differential.ts",
     "publish:npm": "npm publish --access public",

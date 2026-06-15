@@ -3,6 +3,8 @@
 .kiri/
 node_modules/
 dist/
+docs/.docusaurus/
+docs/build/
 native/
 target/
 *.tsbuildinfo

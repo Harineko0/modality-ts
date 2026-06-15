@@ -1,0 +1,28 @@
+{
+  "name": "modality-ts-docs",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "docusaurus build",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "start": "docusaurus start"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.1",
+    "@docusaurus/preset-classic": "3.10.1",
+    "@mdx-js/react": "^3.1.1",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "webpack": "5.101.3"
+    }
+  }
+}
