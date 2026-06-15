@@ -7,6 +7,13 @@
     "type": "git",
     "url": "git+https://github.com/Harineko0/modality-ts.git"
   },
+  "homepage": "https://modality-ts.yuni.cat",
+  "keywords": [
+    "model-checking",
+    "modal-logic",
+    "test",
+    "modality"
+  ],
   "type": "module",
   "types": "./dist/cli/cli.d.ts",
   "files": [
@@ -122,6 +129,14 @@
     "./extract/sources/use-state/harness": {
       "types": "./dist/extract/sources/use-state/harness.d.ts",
       "default": "./dist/extract/sources/use-state/harness.js"
+    },
+    "./extract/sources/zustand": {
+      "types": "./dist/extract/sources/zustand/index.d.ts",
+      "default": "./dist/extract/sources/zustand/index.js"
+    },
+    "./extract/sources/zustand/harness": {
+      "types": "./dist/extract/sources/zustand/harness.d.ts",
+      "default": "./dist/extract/sources/zustand/harness.js"
     }
   },
   "packageManager": "pnpm@10.12.4",

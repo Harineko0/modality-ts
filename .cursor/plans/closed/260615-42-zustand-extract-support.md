@@ -86,10 +86,15 @@ library at runtime:
     JSX-handler calls.
 - **`SetterBinding`** (`src/extract/engine/ts/types.ts:11-18`) carries optional
   `fixedEffect?: EffectIR`.
-- **Domain/initial inference helpers** are re-exported from the SPI:
+- **Domain/initial inference helpers** are partly re-exported from the SPI:
   `firstValue`, `inferDomainFromTypeNode`, `typeAliasDeclarations`
-  (`spi/index.ts:13-17`, originally `src/extract/engine/ts/domains.ts`). Jotai uses these in
-  `src/extract/sources/jotai/domains.ts`.
+  (`spi/index.ts:13-17`, originally `src/extract/engine/ts/domains.ts`). Jotai uses the
+  compatibility helpers in `src/extract/sources/jotai/domains.ts`. The numeric-domain work
+  added `inferDomainFromTypeNodeDetailed` in `src/extract/engine/ts/domains.ts`; the Zustand
+  plugin should prefer that detailed helper where direct engine imports are already allowed
+  by architecture rules, so numeric caveats/reductions are not lost. Do **not** change the
+  plugin SPI just to expose it unless architecture forces that as the smallest compatible
+  move.
 - **Harness pattern**: `src/extract/sources/jotai/harness.ts` — `setup` stashes handles,
   `observe(varId, handles)` reads via `store.get(atom)` or falls back to
   `initialState[varId]`.
@@ -113,8 +118,13 @@ New folder `src/extract/sources/zustand/` (mirror jotai), with:
   `storeCreatorName`, `moduleSpecifierText`.
 - `ids.ts` — `storeVarId(storeName, field)`, `fieldFromVarId`, `storeNameFromVarId`
   (varId scheme `zustand:<storeName>.<field>`), `safeId` reuse.
-- `domains.ts` — `inferFieldDomain(initializer, typeNode?)` → `{ domain, initial }` using
-  `inferDomainFromTypeNode` / `firstValue` / `literalValue`.
+- `domains.ts` — `inferFieldDomain(initializer, typeNode?)` → `{ domain, initial,
+  caveats?, reductions? }` using `inferDomainFromTypeNodeDetailed` where a `typeNode` is
+  available, and `firstValue` / `literalValue` for compatibility fallbacks. Preserve the
+  numeric-domain work from plans 260615-38 through 260615-40: numeric literal unions become
+  exact `intSet` domains, bounded aliases/schema-backed integer ranges become
+  `boundedInt`, and numeric caveats/reductions stay visible in metadata rather than being
+  dropped.
 - `discover.ts` — `discoverZustandStoresDetailed(sourceText, fileName)` →
   `{ decls, warnings, storeNames, storeFields, storeActions, middlewareUsed }`;
   `discoverZustandStores(...)` thin wrapper returning `decls`.
@@ -207,7 +217,9 @@ Tests:
     (record in `storeActions: Map<storeName, Map<actionName, fn>>`). Otherwise → **state
     field**: emit a `SourceDecl` with `var: StateVarDecl` (`id: storeVarId(storeName, field)`,
     `domain` + `initial` from `domains.inferFieldDomain`, `scope: { kind: "global" }`,
-    `origin: anchor`).
+    `origin: anchor`). If `inferFieldDomain` returns numeric caveats or reductions, carry
+    them through the same metadata/trust-ledger path used by the current extraction pipeline;
+    do not collapse them into a plain `AbstractDomain` result.
   - Record `storeFields: Map<storeName, Set<field>>`.
   - Spread members (`...slice`) and computed keys → push warning
     `"Zustand dynamic store field unsupported"`, skip.
@@ -234,14 +246,18 @@ Tests:
 - Implement `effects.ts`. `ctx` carries `{ storeName, fieldVarIds, fieldInitials, immer:
   boolean }`; when `immer` is true, `set` callbacks are lowered as draft mutations (Step 5b)
   instead of returned partials.
-  - **IR constraints (verified against `src/core/ir/types.ts`):** the `assign` effect is
+  - **IR constraints (verified against `src/core/ir/types.ts` after the numeric work in
+    plans 260615-38 through 260615-40):** the `assign` effect is
     `{ kind: "assign"; var: string; expr: ExprIR }` — it has an **`expr`** field (not
     `value`) and **no `path`**. `ExprIR` supports `lit`, `read` (`{ var, path? }`),
-    `eq`/`neq`/`and`/`or`/`not`, `cond`, and `updateField`
-    (`{ target, path, value }`) — **but no arithmetic** (`+`/`-`/`*`). Reuse the engine's
-    existing value lowering (`valueExpr` in
-    `src/extract/engine/ts/transition/expressions.ts`) wherever possible instead of
-    reimplementing, mirroring how jotai's `summarizeDerivedWriteBody` builds effects.
+    `eq`/`neq`/`and`/`or`/`not`, `cond`, `updateField` (`{ target, path, value }`),
+    ordered numeric comparisons (`lt`/`lte`/`gt`/`gte`), and integer arithmetic
+    (`add`/`sub`/`mod`). It still does **not** support multiplication, division,
+    floating-point arithmetic, or general nonlinear arithmetic. Reuse the engine's existing
+    value lowering (`valueExpr` in `src/extract/engine/ts/transition/expressions.ts`)
+    wherever possible, but add a Zustand-local `lowerExpr` wrapper for numeric `+`, `-`,
+    `%`, and ordered comparisons because the shared `valueExpr` currently does not lower
+    those binary operators.
   - `lowerSetCall(call, ctx)` (non-immer / default merge semantics):
     - `set({ f: expr, ... })` → `seq` of `{ kind: "assign", var: storeVarId(store,f),
       expr: lowerExpr(expr) }` for each property (shallow partial merge).
@@ -252,11 +268,16 @@ Tests:
       `"Zustand set(replace=true) partial fields not fully modeled"` and mark the action
       `confidence`/effect best-effort.
     - `get()` / `get().f` → `read` of the field var.
-    - **Arithmetic / non-representable RHS** (e.g. `count + 1`, `n * 2`, string concat) →
-      `lowerExpr` returns no expr; lower that property to `"unsupported"` or, when the action
-      otherwise has modelable effects, drop the property and warn
-      `"Zustand non-representable update for <field>"`. Do **not** invent an arithmetic
-      `ExprIR`.
+    - **Numeric RHS lowering**:
+      - `count + 1`, `state.count - 1`, and `n % 2` → `add`/`sub`/`mod` when both operands
+        lower to numeric-compatible `ExprIR`.
+      - Numeric guards/conditionals such as `state.count < 3 ? "done" : "idle"` → lower
+        the comparison to `lt`/`lte`/`gt`/`gte` inside `cond`.
+      - Non-representable numeric/string expressions (`n * 2`, `n / 2`, string concat,
+        dynamic calls) → lower that property to `"unsupported"` or, when the action otherwise
+        has modelable effects, drop the property and warn
+        `"Zustand non-representable update for <field>"`. Do **not** invent unsupported
+        `ExprIR` kinds.
     - unsupported expression → return `"unsupported"` (do not emit a fixed effect).
   - `lowerActionBody(actionFn, ctx)` → walk body statements, collect `set` calls in order →
     `seq`. Conditionals/loops around `set` → warning + best-effort or `"unsupported"`.
@@ -301,18 +322,21 @@ Tests:
   `set` argument is a callback `(state) => { ...mutations... }` (block body, no return value,
   or `(state) => void expr`). Walk its statements and lower each draft mutation against
   `state` (the draft param identifier). Honor the same IR constraints as Step 4 (`assign`
-  uses `expr`; no arithmetic `ExprIR`):
+  uses `expr`; nested writes use `updateField`; linear integer arithmetic uses numeric
+  `ExprIR`):
   - `state.f = expr` → `{ kind: "assign", var: storeVarId(store, f), expr: lowerExpr(expr) }`
-    when `expr` is representable (lit/read/cond/boolean/object-spread); otherwise
+    when `expr` is representable (lit/read/cond/boolean/object-spread/numeric); otherwise
     `"unsupported"` + warning.
   - `state.a.b = expr` → `{ kind: "assign", var: storeVarId(store, "a"), expr: { kind:
     "updateField", target: { kind: "read", var: storeVarId(store, "a") }, path: ["b"],
     value: lowerExpr(expr) } }` (use the `updateField` ExprIR; **not** an `assign.path`,
     which does not exist). Deeper paths extend the `path` array.
-  - `state.f += expr` / `-=` / `*=`, `state.f++` / `++state.f` / `--` → arithmetic is **not
-    representable** in `ExprIR`. Lower to `"unsupported"` for that mutation and warn
-    `"Zustand non-representable update for <field>"` (or mark the action over-approx — see
-    stop conditions). Do **not** emit a fabricated `read(f)+1`.
+  - `state.f += expr` / `-=` → assign `f` to `add(read(f), expr)` or `sub(read(f), expr)`
+    when `expr` lowers to a numeric-compatible `ExprIR`; `state.f++` / `++state.f` /
+    `state.f--` / `--state.f` lower to `add(read(f), lit(1))` or `sub(read(f), lit(1))`.
+    `state.f *= expr`, `/=`, exponentiation, or non-integer/nonlinear updates remain
+    `"unsupported"` with warning `"Zustand non-representable update for <field>"`. Do **not**
+    invent unsupported `ExprIR` kinds.
   - `lowerExpr` resolves `state.f` reads to `{ kind: "read", var: storeVarId(store, f) }`,
     matching `lowerSetCall`'s updater-function form.
   - Multiple mutations → `seq` in source order.
@@ -334,6 +358,11 @@ Tests:
   warnings (mirror `discoverJotaiSafetyWarnings`).
 - Populate `ZustandStoreMetadata` (`storeName`, `field`, `middleware`, `storageKind`) via
   `metadataToRecord`.
+- Preserve numeric-domain caveats and reductions produced by `inferFieldDomain` in the
+  extraction metadata path (`metadata.extractionCaveats` / `metadata.numericReductions` where
+  applicable). If the current plugin SPI cannot surface those without a broader pipeline
+  change, keep the exact `domain`/`initial` behavior and document the metadata gap as a
+  follow-up rather than silently dropping the caveat in code.
 - Confirm `conformance.testedVersions = "zustand>=4"`.
 - Files: `plugin.ts`, `types.ts`, `writes.ts`.
 
@@ -364,9 +393,12 @@ Tests:
     `user` transition whose effect is `assign open = lit(true)`.
 - Selector `const open = useGate(s => s.open)` yields a read channel for
   `zustand:useGate.open`.
-- A non-representable update (`set(s => ({ count: s.count + 1 }))`) does **not** fabricate
-  arithmetic: the property is dropped/`unsupported` with the documented warning (arithmetic is
-  not expressible in `ExprIR`).
+- A representable numeric update (`set(s => ({ count: s.count + 1 }))`) lowers to
+  `assign count = add(read(count), lit(1))`, and checker overflow/membership behavior is
+  governed by the target numeric domain's policy (`forbid`/`wrap`/`saturate`).
+- A non-representable numeric update (`set(s => ({ count: s.count * 2 }))`) does **not**
+  fabricate unsupported arithmetic: the property is dropped/`unsupported` with the documented
+  warning (`*`/`/`/nonlinear arithmetic are not expressible in `ExprIR`).
 - `createStore` (vanilla) is discovered identically to `create`.
 - `persist`, `combine`, `redux`, `subscribeWithSelector`, `devtools` wrappers are unwrapped:
   state fields + actions are still discovered; `persist` adds an SSR-safety warning when
@@ -377,8 +409,9 @@ Tests:
   `create(immer<{open:boolean; profile:{name:string}; openIt:()=>void; rename:()=>void}>((set)=>({open:false, profile:{name:'a'}, openIt:()=>set(s=>{s.open=true}), rename:()=>set(s=>{s.profile.name='b'})})))`
   discovers `zustand:useStore.open`/`zustand:useStore.profile` and lowers `openIt` to
   `assign open = lit(true)` and `rename` to `assign profile = updateField(read(profile),
-  ["name"], lit('b'))`; `s.count += 1` lowers to `unsupported`/warning (no fabricated
-  arithmetic); container mutations emit the documented warning without crashing.
+  ["name"], lit('b'))`; `s.count += 1` lowers to
+  `assign count = add(read(count), lit(1))`; `s.count *= 2` remains
+  `unsupported`/warning; container mutations emit the documented warning without crashing.
 - No existing test regresses: `pnpm test`, `pnpm architecture`, `pnpm phase7` stay green.
 
 ## 9. Tests to add or update
@@ -391,20 +424,25 @@ New `test/sources/zustand/zustand-source.test.ts` (mirror
 - harness `observe` via `store.getState()` handle and `initialState` fallback /
   `"unobservable"`.
 - discovery of primitive state fields (number/string/boolean/union) with correct `varId`,
-  `initial`, and inferred domain; actions excluded from vars.
+  `initial`, and inferred domain; include numeric literal unions (`0 | 2` → `intSet`) and
+  bounded aliases/schema-backed integer ranges (`Bounded<0,3>`/`Uint8` → `boundedInt`) where
+  the type context is available; actions excluded from vars.
 - curried `create<T>()(...)` and direct `create(...)` and `createStore(...)` forms.
 - `extractZustandSkeleton`: a gate store + `onClick={openIt}` handler yields a transition
   whose effect `assign open = lit(true)`; assert `reads`/`writes` arrays.
 - selector read channels; `useStore.getState()` read.
 - `set({field: value})` vs `set(s => ({field: ...}))` vs `set(x, true)` lowering; a
-  `set(s => ({count: s.count + 1}))` arithmetic case → property dropped/`unsupported` + warning
-  (assert no fabricated expr).
+  `set(s => ({count: s.count + 1}))` arithmetic case → `add(read(count), lit(1))`; a
+  `set(s => ({count: s.count * 2}))` nonlinear arithmetic case → property
+  dropped/`unsupported` + warning (assert no unsupported fabricated expr).
 - middleware unwrapping: `persist`, `combine`, `redux`, `subscribeWithSelector`, `devtools`
   each still discover fields/actions; `persist` SSR warning; nested
   `devtools(persist(...))`.
 - `immer` lowering: `s.f = v` → `assign f = lit(v)`; `s.a.b = v` → `assign a =
-  updateField(read(a), ["b"], lit(v))`; `s.count += 1`/`s.count++` → warning +
-  unsupported/over-approx (no fabricated arithmetic, no throw); `s.list.push(x)` → warning +
+  updateField(read(a), ["b"], lit(v))`; `s.count += 1`/`s.count++` →
+  `add(read(count), lit(1))`; `s.count -= 1`/`s.count--` →
+  `sub(read(count), lit(1))`; `s.count *= 2` → warning + unsupported/over-approx
+  (no unsupported fabricated expr, no throw); `s.list.push(x)` → warning +
   over-approx/unsupported; nested `devtools(immer(...))` keeps draft semantics; immer callback
   that returns an object uses the return-form path.
 
@@ -466,15 +504,18 @@ rtk pnpm vitest run test/sources/zustand/zustand-source.test.ts
   whether to mark over-approx or treat the mutation as `"unsupported"`.
 - **IR shape is fixed (already verified):** `assign` is
   `{ kind: "assign"; var; expr }` (no `path`); nested writes use the `updateField` ExprIR
-  (`{ target, path, value }`); there is **no arithmetic `ExprIR`**. The plan reflects this —
-  do not add an `assign.path` or invent a `+`/`-` expr kind. If a future core change adds an
-  arithmetic expr, increments could be modeled precisely; until then they are
-  `unsupported`/over-approx.
-- **Arithmetic-heavy stores degrade:** numeric counters that increment via `+`/`++` are the
-  common Zustand example yet are not precisely modelable here (matching the engine's existing
-  `valueExpr`, which also omits arithmetic). Confidence: such transitions are dropped or
-  over-approx. If the maintainer expects precise counter modeling, **stop and confirm** scope
-  before attempting to extend the core IR (out of scope for this plan).
+  (`{ target, path, value }`); numeric expressions use the already implemented
+  `lt`/`lte`/`gt`/`gte` and `add`/`sub`/`mod` variants. The plan reflects this — do not add an
+  `assign.path`, invent `+`/`-` stringly expr kinds, or extend the core IR from the Zustand
+  plugin task. If multiplication/division/nonlinear arithmetic becomes necessary, stop and
+  open a separate numeric-IR design follow-up.
+- **Arithmetic-heavy stores are now partially precise:** bounded counters that increment or
+  decrement via `+`, `-`, `%`, `+=`, `-=`, `++`, or `--` should lower to numeric `ExprIR` and
+  rely on checker overflow policy for `boundedInt`/`intSet` targets. Stores that depend on
+  `*`, `/`, exponentiation, floats, or opaque numeric helpers still degrade to warnings plus
+  unsupported/over-approx effects. If the maintainer expects those nonlinear cases to be
+  precise, **stop and confirm** scope before extending the core IR (out of scope for this
+  plan).
 - **varId scheme collision:** `zustand:<storeName>.<field>` uses the binding variable name as
   store identity. Two stores with the same field names in different files share a route-scoped
   model; if the existing models assume globally unique var ids across files, confirm the

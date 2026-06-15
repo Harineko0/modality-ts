@@ -55,6 +55,14 @@ export default defineConfig({
         "./src/extract/sources/use-state/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/zustand/harness": new URL(
+        "./src/extract/sources/zustand/harness.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/sources/zustand": new URL(
+        "./src/extract/sources/zustand/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/engine/pipeline": new URL(
         "./src/extract/engine/pipeline/index.ts",
         import.meta.url,

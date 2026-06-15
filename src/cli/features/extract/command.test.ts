@@ -76,6 +76,7 @@ describe("runExtractCommand", () => {
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "swr", "0.1.0"],
       ["state-source", "use-state", "0.1.0"],
+      ["state-source", "zustand", "0.1.0"],
     ]);
     expect(report).toMatchObject({
       schemaVersion: 1,

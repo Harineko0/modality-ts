@@ -4,6 +4,7 @@ import type {
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { zustandSource } from "modality-ts/extract/sources/zustand";
 import { routerSource } from "modality-ts/extract/sources/router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
@@ -33,7 +34,7 @@ export function createBuiltinModalityRegistry(
 ): RegistrySummary {
   const dependencies = options.dependencies;
   const disabled = new Set(options.disabledPlugins ?? []);
-  const builtins = [useStateSource(), jotaiSource(), swrSource()];
+  const builtins = [useStateSource(), jotaiSource(), swrSource(), zustandSource()];
   const sourcePlugins = [
     ...builtins.filter(
       (plugin) =>
