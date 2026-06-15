@@ -219,12 +219,12 @@ Extraction caveats matter. An `Unextractable handler` means the flow is not repr
 ## Command Reference
 
 ```bash
-npm install -g modality-ts
-modality init
-modality extract [source.tsx ...]
-modality check [model.json] [props.mjs ...]
-modality replay <trace.json>
-modality conform --count 8 --depth 4
-modality export
-modality ci <model.json> [props.mjs] --artifacts .modality
+npm i -D modality-ts
+npx modality init
+npx modality extract [source.tsx ...]
+npx modality check [model.json] [props.mjs ...]
+npx modality replay <trace.json>
+npx modality conform --count 8 --depth 4
+npx modality export
+npx modality ci <model.json> [props.mjs] --artifacts .modality
 ```
