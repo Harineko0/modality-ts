@@ -1,24 +1,24 @@
-import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import {
   always,
   andExpr,
   eq,
   lit,
+  type Model,
   neq,
   reachable,
   readVar,
-  type Model,
 } from "modality-ts/core";
-import {
-  extractUseStateSkeleton,
-  extractUseStateVars,
-} from "../../src/extract/sources/use-state/transitions.js";
 import type {
   RouterPlugin,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
+import {
+  extractUseStateSkeleton,
+  extractUseStateVars,
+} from "../../src/extract/sources/use-state/transitions.js";
 
 const routerExtraction = { routerPlugin: reactRouterAdapter() };
 const analyticsInventory = {
@@ -1871,6 +1871,41 @@ describe("useState inventory", () => {
         ],
       },
       reads: ["sys:pending"],
+    });
+  });
+
+  it("resolves disabled guards to same-component state when state names repeat", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function Review() {
+        const [submitting, setSubmitting] = useState(false);
+        return <button disabled={submitting} onClick={() => setSubmitting(true)}>Review</button>;
+      }
+      export function Clarification() {
+        const [submitting, setSubmitting] = useState(false);
+        async function submit() {
+          setSubmitting(true);
+          await api.clarify();
+          setSubmitting(false);
+        }
+        return <button disabled={submitting} onClick={submit}>Clarify</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", effectApis: ["api.clarify"] },
+    );
+
+    expect(
+      result.transitions.find(
+        (transition) =>
+          transition.id === "Clarification.onClick.api.clarify.start",
+      ),
+    ).toMatchObject({
+      guard: {
+        kind: "not",
+        args: [{ kind: "read", var: "local:Clarification.submitting" }],
+      },
+      reads: ["local:Clarification.submitting"],
     });
   });
 

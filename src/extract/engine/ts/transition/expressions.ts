@@ -1,7 +1,7 @@
+import type { AbstractDomain, ExprIR, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import { isPropertyAccessLike, literalValue, propertyName } from "../ast.js";
 import { firstValue } from "../domains.js";
-import type { AbstractDomain, ExprIR, Value } from "modality-ts/core";
 import type { BoundExpr, SetterBinding } from "../types.js";
 
 export function setterArgumentExpr(
@@ -428,10 +428,13 @@ export function setterForName(
   name: string,
   setters: Map<string, SetterBinding>,
 ): SetterBinding | undefined {
-  return (
-    setters.get(name) ??
-    [...setters.values()].find((setter) => setter.stateName === name)
+  const direct = setters.get(name);
+  if (direct) return direct;
+  const matches = [...setters.values()].filter(
+    (setter) => setter.stateName === name,
   );
+  const varIds = new Set(matches.map((setter) => setter.varId));
+  return varIds.size === 1 ? matches[0] : undefined;
 }
 
 export function taggedPathDomain(

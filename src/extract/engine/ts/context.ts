@@ -1,5 +1,5 @@
-import * as ts from "typescript";
 import type { StateVarDecl, Value } from "modality-ts/core";
+import * as ts from "typescript";
 import {
   componentNameFor,
   isExtractableHandler,
@@ -57,7 +57,13 @@ export function settersForComponent(
   component: string | undefined,
 ): Map<string, SetterBinding> {
   if (!component) return new Map(setters);
-  const scoped = new Map(setters);
+  const scoped = new Map(
+    [...setters].filter(
+      ([key, setter]) =>
+        !setter.varId.startsWith("local:") ||
+        !key.startsWith(`${setter.component}:`),
+    ),
+  );
   for (const [key, setter] of setters) {
     if (!key.startsWith(`${component}:`)) continue;
     scoped.set(key.slice(component.length + 1), setter);
