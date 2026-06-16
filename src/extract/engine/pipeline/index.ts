@@ -12,6 +12,7 @@ import type {
   WriteChannel,
   RouteInventory,
   LocationLowering,
+  SemanticTypeContext,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
 import { globalTaintCaveat } from "../ts/caveats.js";
@@ -19,6 +20,7 @@ import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
+import type { SemanticProject } from "../ts/semantic-project.js";
 import * as ts from "typescript";
 
 export interface HandlerExtractionResult {
@@ -50,6 +52,7 @@ export interface ExtractionPipelineOptions {
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
   bounds?: Pick<Bounds, "maxDepth">;
+  semanticProject?: SemanticProject;
 }
 
 export interface ExtractionPipelineResult {
@@ -113,16 +116,21 @@ export function runExtractionPipeline(
     discoveryFragments.length > 1
       ? [mergedDiscoveryFragment]
       : discoveryFragments;
-  const discoveries = discoveryInputs.flatMap((fragment) =>
-    sourcePlugins.map((plugin) => ({
+  const discoveries = discoveryInputs.flatMap((fragment) => {
+    const types = semanticTypeContextForFile(
+      options.semanticProject,
+      fragment.fileName,
+    );
+    return sourcePlugins.map((plugin) => ({
       plugin,
       decls: plugin.discover({
         sourceText: fragment.sourceText,
         fileName: fragment.fileName,
         route: options.route,
+        ...(types ? { types } : {}),
       }),
-    })),
-  );
+    }));
+  });
   const stateVars = discoveries
     .flatMap((discovery) => discovery.decls)
     .map((decl) => decl.var)
@@ -132,31 +140,45 @@ export function runExtractionPipeline(
         all.findIndex((candidate) => candidate.id === decl.id) === index,
     );
   const writeChannels = discoveryInputs
-    .flatMap((fragment) =>
-      sourcePlugins.flatMap((plugin) =>
+    .flatMap((fragment) => {
+      const types = semanticTypeContextForFile(
+        options.semanticProject,
+        fragment.fileName,
+      );
+      return sourcePlugins.flatMap((plugin) =>
         plugin.writeChannels({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
+          ...(types ? { types } : {}),
         }),
-      ),
-    )
+      );
+    })
     .filter(
       (channel, index, all) =>
         all.findIndex((candidate) => candidate.id === channel.id) === index,
     );
-  const pluginWarnings = discoveryInputs.flatMap((fragment) =>
-    sourcePlugins.flatMap(
+  const pluginWarnings = discoveryInputs.flatMap((fragment) => {
+    const types = semanticTypeContextForFile(
+      options.semanticProject,
+      fragment.fileName,
+    );
+    return sourcePlugins.flatMap(
       (plugin) =>
         plugin.safetyWarnings?.({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
+          ...(types ? { types } : {}),
         }) ?? [],
-    ),
-  );
+    );
+  });
   const templateFragments = discoveries.flatMap(({ plugin, decls }) =>
     decls.flatMap((decl) =>
       plugin.template ? [plugin.template(decl, { route: options.route })] : [],
     ),
+  );
+  const fragmentTypes = semanticTypeContextForFile(
+    options.semanticProject,
+    options.fileName,
   );
   const extractionCtx = {
     sourceText: options.sourceText,
@@ -172,6 +194,7 @@ export function runExtractionPipeline(
     sourcePlugins,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
+    ...(fragmentTypes ? { types: fragmentTypes } : {}),
   };
   const supplementalTypeText = discoveryInputs
     .map((fragment) => fragment.sourceText)
@@ -200,6 +223,7 @@ export function runExtractionPipeline(
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
+    ...(fragmentTypes ? { types: fragmentTypes } : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
@@ -257,6 +281,20 @@ export function runExtractionPipeline(
     routeVars,
     writeChannels,
     plugins,
+  };
+}
+
+function semanticTypeContextForFile(
+  semanticProject: SemanticProject | undefined,
+  fileName: string,
+): SemanticTypeContext | undefined {
+  if (!semanticProject) return undefined;
+  const sourceFile = semanticProject.getSourceFile(fileName);
+  return {
+    program: semanticProject.program,
+    checker: semanticProject.checker,
+    ...(sourceFile ? { sourceFile } : {}),
+    getSourceFile: (name) => semanticProject.getSourceFile(name),
   };
 }
 

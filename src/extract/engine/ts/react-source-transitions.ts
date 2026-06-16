@@ -73,6 +73,7 @@ import type {
   RouterPlugin,
   StateSourcePlugin,
   WriteChannel,
+  SemanticTypeContext,
 } from "../spi/index.js";
 import {
   timerSetterTaints,
@@ -149,6 +150,7 @@ export interface ReactSourceTransitionOptions {
   resettableVarIds?: ReadonlySet<string>;
   additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
   additionalComponentSources?: readonly string[];
+  types?: SemanticTypeContext;
 }
 
 export interface ReactSourceTransitionResult {

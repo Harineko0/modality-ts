@@ -9,6 +9,14 @@ import type {
   TemplateFragment,
   Value,
 } from "modality-ts/core";
+import type * as ts from "typescript";
+
+export interface SemanticTypeContext {
+  program: ts.Program;
+  checker: ts.TypeChecker;
+  sourceFile?: ts.SourceFile;
+  getSourceFile(fileName: string): ts.SourceFile | undefined;
+}
 
 export {
   firstValue,
@@ -49,16 +57,19 @@ export interface DiscoverCtx {
   sourceText: string;
   fileName: string;
   route: string;
+  types?: SemanticTypeContext;
 }
 
 export interface TypeCtx {
   sourceText: string;
   fileName: string;
+  types?: SemanticTypeContext;
 }
 
 export interface ChannelCtx {
   sourceText: string;
   fileName: string;
+  types?: SemanticTypeContext;
 }
 
 export interface ExtractCtx {
@@ -71,6 +82,7 @@ export interface ExtractCtx {
   writeChannels: readonly WriteChannel[];
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
+  types?: SemanticTypeContext;
 }
 
 export interface SourceExtractionResult {

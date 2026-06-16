@@ -79,6 +79,10 @@ import {
   type TsConfigResolution,
   sourceWithReachableImports,
 } from "./project.js";
+import {
+  createSemanticProject,
+  type SemanticProject,
+} from "../../../extract/engine/ts/semantic-project.js";
 
 export interface ModalityConfig {
   navigation?: {
@@ -431,6 +435,7 @@ interface ExtractionProject {
   configStartDir: string;
   rawEntries: Array<{ path: string; text: string }>;
   tsconfig: TsConfigResolution;
+  semanticProject?: SemanticProject;
 }
 
 function normalizedSourcePaths(options: ExtractCommandOptions): string[] {
@@ -543,8 +548,13 @@ async function buildClientProjectSurface(
       interactionSourcePaths.has(entry.path) ||
       entry.path.endsWith("routes.ts"),
   );
+  const semanticProject = createSemanticProject(
+    includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
+    project.tsconfig,
+  );
   return {
     ...project,
+    semanticProject,
     sourceText: interactionSources.map((entry) => entry.text).join("\n"),
     interactionSources,
     sourceFiles: reportSources
@@ -583,6 +593,7 @@ function runProjectExtractionPipeline(
     return runExtractionPipeline({
       sourceText: "",
       fileName: project.entryFile,
+      semanticProject: project.semanticProject,
       ...options,
     });
   }
@@ -596,6 +607,7 @@ function runProjectExtractionPipeline(
       sourceText: fragment.text,
       fileName: fragment.path,
       discoverFragments,
+      semanticProject: project.semanticProject,
       ...options,
     });
   }
@@ -605,12 +617,14 @@ function runProjectExtractionPipeline(
         sourceText: fragment.text,
         fileName: fragment.path,
         discoverFragments,
+        semanticProject: project.semanticProject,
         ...options,
       }),
     ),
     runExtractionPipeline({
       sourceText: "",
       fileName: project.entryFile,
+      semanticProject: project.semanticProject,
       ...options,
     }),
   );
