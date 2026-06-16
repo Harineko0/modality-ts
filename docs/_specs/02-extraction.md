@@ -53,6 +53,8 @@ Default extraction models **client UI transitions** only; server/full-route exec
 - dynamically computed keys beyond the expression subset ⇒ `unextractable` (a havoc'd cache is useless).
 Options objects are evaluated if literal; non-literal options force conservative template settings (all revalidation events enabled — over-approximation).
 
+**Zustand stores.** Find `create`/`createStore` (`zustand`, `zustand/react`, `zustand/vanilla`), both curried `create<T>()(creator)` and direct `create(creator)`. The state creator `(set, get, store) => ({ ...state, ...actions })` yields var ids `store:<name>.<field>` for non-function fields; function fields become actions whose `set(partial)` / `set(partial, true)` bodies lower to `EffectIR` writes (P4), with `get()` reads supported. Read surfaces: `useStore(s => s.field)` selectors, `useStore.getState()`/`store.getState()`, and direct `setState`. Middlewares are unwrapped to the inner creator (`combine`, `persist`, `devtools`, `subscribeWithSelector`, static-`switch` `redux`); `immer` switches `set` to draft-mutation semantics, lowered for statically analyzable scalar/object mutations and marked over-approx (never silently dropped) for non-determinable container mutations. Persisted storage backends/migrations/rehydration are not modeled (storage-provenance note + SSR warning).
+
 **Custom hooks.** Inlined transparently: a custom hook is just a function whose body is analyzed in the calling component's context, recursively, with a depth cap (default 3). Hook state identity follows the *call site path*, matching React's rules-of-hooks semantics. Hooks that escape analysis (conditional hook calls are illegal in React anyway; dynamic hook selection) ⇒ `unextractable`.
 
 ## 3. P2 — Domain inference (TS types → AbstractDomain)
@@ -62,13 +64,18 @@ Algorithm `D(τ)` on the checker-resolved type, structural and recursive:
 | TS type τ | D(τ) |
 |---|---|
 | `boolean` | `bool` |
-| union of literals (string/number/boolean) | `enum` of the literals |
+| union of string/boolean literals | `enum` of the literals |
+| union of numeric literals | `intSet` of the literals (`0 \| 2` ⇒ `intSet{0,2}`, **not** `0..2`); a dense `0..n` union may normalize to `boundedInt{0,n}` since no value is added |
+| `Bounded<Min,Max>` / `Wrapping<Min,Max>` / `Uint8` / `Byte` / `Uint16` / `Short` | `boundedInt{min,max,overflow}` from the branded alias |
+| `number` constrained by a static `zod`/`arktype` integer schema (`z.number().int().min(a).max(b)`, `"a <= number.integer <= b"`) | `boundedInt{a,b}` via the initializer/schema-aware resolver |
 | `T \| null \| undefined` | `option(D(T))` (null and undefined collapse — documented) |
 | discriminated union of object types (common literal-typed field) | `tagged`, recursing into non-discriminant fields |
 | object type | `record` of `D(field)` — but see *field pruning* below |
-| `string`, non-literal `number`, unrecognized | `tokens(1)` ("some value"), refinable in overlay |
+| `string`, bare/non-literal `number`, float, unprovable numeric constraint, unrecognized | `tokens(1)` ("some value") + extraction caveat — never a guessed range (a wrong bound would be unsound); refinable in overlay |
 | `Array<T>`, `ReadonlyArray<T>` | `lengthCat` by default; `boundedList` only via overlay |
 | function-typed, `unknown`, `any` | `tokens(1)` + warning (`any` hides structure) |
+
+Numeric inference flows through a `NumericDomainResolver` (native-alias, zod, and arktype adapters) that returns a domain **plus caveats/reductions**, so abstentions and wide-domain warnings reach the trust ledger (`metadata.extractionCaveats`, `metadata.numericReductions`) rather than being silently widened.
 
 **Field pruning (cone-of-relevance for data).** Recursing `D` into a server-payload record would bloat the state with fields nothing reads. Rule: record fields are kept only if (transitively) *read* by some extracted guard/effect/derived atom or by a property predicate; all other fields collapse into the record's token identity. This runs as a fixpoint with P4 (which discovers reads) and re-runs when properties change. Pruning is sound: unread fields cannot influence modeled transitions; it is recomputed, never cached across property edits.
 

@@ -22,9 +22,9 @@ Two worked examples apply the specs end-to-end and drive their refinement: [`exa
 | Question | Decision |
 |---|---|
 | Is the idea sound? | Yes, with one architectural correction: **fully automatic model extraction is infeasible**. Design for *extraction-assisted modeling* plus *conformance testing* of the model against the real app. |
-| Backend | **Custom explicit-state checker in TypeScript**, over a transition-system IR that can later export to TLA+/TLC or nuXmv. Alloy is viable (Alloy 6 has LTL) but not the best fit. |
+| Backend | **Custom explicit-state checker**, over a transition-system IR that can also export to TLA+/TLC or nuXmv. Alloy is viable (Alloy 6 has LTL) but not the best fit. *(Update: the checker, originally prototyped in TypeScript, is now implemented in **Rust** as a Node-API native addon loaded in-process — see §2. The IR and its escape-hatch rationale are unchanged.)* |
 | Formal model | Finite labeled transition system: abstracted state vector (route, atoms, useState, SWR cache, pending requests) + atomic event-level transitions; async modeled as split request/response transitions with environment nondeterminism. |
-| Property language | TypeScript-embedded DSL: plain TS predicates over the typed state vector + a small temporal combinator set (`always`, `never`, `leadsToWithin`, `reachable`). Not raw LTL/CTL, not Alloy assertions. |
+| Property language | TypeScript-embedded DSL: structured-IR predicates built from expression combinators over the typed state vector + a small temporal combinator set (`always`, `alwaysStep`, `reachable`, `reachableFrom`, `leadsToWithin`). Not raw LTL/CTL, not Alloy assertions. |
 | State-space control | Sound: type-driven + predicate abstraction, per-property cone-of-influence slicing, explicit bounds reported honestly. Heuristic: guided/random exploration, clearly labeled "testing, not verification." AI: allowed to *suggest and explain*, never to *prune or vouch*. |
 | Counterexamples | User-meaningful event traces with state diffs and source locations; auto-generated React Testing Library + MSW replay test (which doubles as the conformance check). |
 | Positioning | A third layer between unit and E2E tests: exhaustive (within bounds) exploration of event interleavings. It does not verify rendering, value computation, or anything outside the model. |
@@ -68,7 +68,9 @@ Two worked examples apply the specs end-to-end and drive their refinement: [`exa
 | **SMT-based BMC (Z3)** | Maximum flexibility; good for unbounded data later. | You build the entire checking methodology yourself; bounded only; liveness requires extra machinery. Wrong place to spend MVP effort. |
 | **Custom explicit-state checker in TypeScript** | See below. | Forgoes 25 years of checker engineering (partial-order reduction, symmetry, symbolic states); risk of checker bugs. |
 
-### Recommendation: custom explicit-state checker in TypeScript, with an IR escape hatch
+### Recommendation: custom explicit-state checker, with an IR escape hatch
+
+> **Update (current implementation).** This section argued for a checker *in TypeScript* whose decisive DX win was executing developer predicates as **ordinary TS closures**. The IR-centric conclusion held, but two specifics evolved: (1) the checker is now implemented in **Rust** (`crates/checker`, a Node-API addon loaded in-process — no sidecar, no engine selector, no TS fallback), because once the IR was the real contract, the host language stopped mattering and Rust bought throughput and a clean parallel-BFS path "for free"; and (2) property predicates are now a **serializable structured property IR** built from combinators (`always`, `readVar`, `eq`, …), interpreted by the Rust evaluator and by a shared TS evaluator for dev-mode assertions — *not* executed JS closures. The DX intent (predicates written in TS, type-checked, reusable as runtime assertions) survives; what changed is that predicates compile to IR data rather than running as functions, which is also what makes them cross-checkable against TLA+ export. Read the rest of this section as the rationale that produced the IR; substitute "structured property IR evaluated by the Rust checker" for "TS functions executed by the checker" wherever it appears.
 
 The decisive observation: **the binding constraint for this tool is not checker throughput — it is model fidelity and developer experience.** After abstraction, realistic frontend models have 10³–10⁷ states, comfortably within a naive BFS in a JS runtime. Meanwhile, every external backend imposes a *translation layer in both directions*: developer-written TS predicates must be compiled into the spec language, and counterexamples must be parsed back and mapped to app concepts. That layer is a permanent source of bugs and friction, and it forbids the single best DX feature available: **letting transition effects and property predicates be ordinary TypeScript functions over the app's own types** — executed directly by the checker, type-checked by `tsc`, autocompleted in the editor, and reusable as runtime dev-mode assertions.
 
@@ -110,11 +112,15 @@ The server is pure nondeterminism by default, optionally constrained by develope
 
 ### Known, documented exclusions
 
-Render-level effects (stale closures, batching artifacts, effect ordering relative to paint), refs/imperative DOM, third-party component internal state, `useReducer`/Redux/Zustand/TanStack Query (later), value computation inside handlers (abstracted or havoc'd), components rendered multiple times under one route (lists of stateful children) in v1.
+Render *internals* (reconciliation, fiber bailouts, StrictMode double-invoke — invisible at event granularity), refs/imperative DOM, third-party component internal state, `useReducer`/Redux/TanStack Query (later), value computation inside handlers (abstracted or havoc'd), and components rendered multiple times under one route (lists of stateful children).
+
+*(Update: several items originally listed here are now **modeled**, not excluded — React-18 batching (via `readPre`), stale closures across `await` (via `readOpArg` snapshots into pending-op args), effect ordering (both-orders exploration + commit-`phase` tiers), timers, concurrent rendering, and Suspense; see Spec 02 §11. **Zustand** is now a built-in state source. The remaining exclusions above are still excluded by design.)*
 
 ## 4. Property specification
 
-**Decision: a TypeScript-embedded DSL.** Predicates are plain TS functions over the typed, named state vector that extraction produces; the temporal layer is a deliberately small combinator vocabulary:
+**Decision: a TypeScript-embedded DSL.** The temporal layer is a deliberately small combinator vocabulary over predicates.
+
+> **Update (current surface).** Predicates are **not** raw TS arrow functions like `s => s.route === '/admin'` (as the illustrative snippets below show); they are built from serializable **expression combinators** (`readVar`, `eq`, `lit`, `andExpr`/`orExpr`/`notExpr`, the numeric comparisons, `enabled(model, id)`) that produce a structured `ExprIR` tree, with step facts (`stepEnqueued`, `stepResolved`) for `alwaysStep`. So `always(M, s => s.route === '/admin' ? s.session.kind === 'authenticated' : true)` is written as `always(model, orExpr(notExpr(eq(readVar('sys:route'), lit('/admin'))), eq(readVar('atom:sessionAtom'), lit('authenticated'))))`. This keeps the predicate cross-checkable against TLA+ export and evaluable by both the Rust checker and the dev-mode assertion evaluator. Read the snippets below as statements of *intent*; the implemented forms are in Spec 03 §5 and the docs' Property API reference. The combinator set, its closedness, and the normative-semantics table are all unchanged.
 
 ```ts
 // app.props.ts — type-checked against the extracted state type
@@ -184,7 +190,8 @@ Explosion sources, in order of severity: data domains ≫ pending-request interl
 2. **Declared predicate abstraction** — for non-finite domains, developer (or extraction default) declares the distinctions that matter (`user: null | present`; `items.length: 0 | 1 | many`). Writes the abstraction can't track precisely become havoc (any abstract value) — over-approximation, sound for safety, may yield spurious counterexamples that the conformance replay will expose as model artifacts.
 3. **Per-property cone-of-influence slicing** — check each property against only the state variables that transitively influence its predicates (read/write sets from the IR). Sound given a conservative dependency graph; typically the single biggest win.
 4. **Explicit bounds, honestly reported** — ≤K pending requests, ≤H history depth, ≤N trace length. This is bounded verification in the Alloy small-scope tradition; the report must say "verified for up to 2 concurrent requests," never "verified."
-5. (Later) **Partial-order reduction** over provably commuting async completions; **symmetry** over interchangeable keys.
+5. **Type-driven finite numeric domains** (added since the original draft). Numbers are concrete finite state when their domain is statically provable — literal unions (`intSet`), branded aliases (`Bounded`/`Uint8`/…), and static `zod`/`arktype` integer schemas (`boundedInt`) — in the SPIN spirit. Bare/unprovable `number` stays abstract (`tokens`) with a caveat rather than a guessed range. Wide finite numeric domains are tamed with explicit, **claim-tagged reductions** (`exact` / `property-preserving` / `heuristic`) recorded in the trust ledger, so a heuristic reduction visibly downgrades the claim while an exact one does not.
+6. (Later) **Partial-order reduction** over provably commuting async completions; **symmetry** over interchangeable keys.
 
 ### Heuristic reductions (result reads "tested, not verified")
 
@@ -246,6 +253,8 @@ In scope:
 - Demo app with three seeded bugs: (a) double-submit race creating two orders, (b) back-button reaches an authed route after logout, (c) SWR cache shows stale user data after account switch.
 
 Out of scope for MVP: liveness/fairness, POR/symmetry, Playwright replay, TLA+/SMV export (stub the IR serialization only), AI assistance, any state library beyond the three.
+
+*(Update: since the MVP, **TLA+ export is implemented** (`modality export --format tla`) and drives the checker's differential validation against TLC; a **fourth state source (Zustand)** shipped; and finite numeric domains plus the React-effect semantics of Spec 02 §11 were added. Unbounded liveness/fairness and POR/symmetry remain deferred.)*
 
 **PoC success criteria (and failure criteria — equally important):**
 1. All three seeded bugs found, each with a shortest trace, total check time under ~1 minute.

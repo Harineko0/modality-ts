@@ -6,7 +6,7 @@ Status: draft for review. Companion to `docs/design.md` and Specs 01–04.
 
 Three forces dominate, and the structure below is derived from them:
 
-1. **Two volatile axes, one stable core.** What changes over the tool's life: (a) supported state libraries (`useState`, Jotai, SWR today; Zustand, TanStack Query, `useReducer` tomorrow) and (b) user-facing capabilities (`extract`, `check`, `replay`, `conform` today; Playwright tier, AI suggestions tomorrow). What must *not* change casually: the IR, abstract domains, trace format, and report schemas — every subsystem communicates through them. Therefore: **vertical slices along both volatile axes; a small, schema-versioned kernel as the only coupling point.**
+1. **Two volatile axes, one stable core.** What changes over the tool's life: (a) supported state libraries (`useState`, Jotai, SWR, Zustand today; TanStack Query, `useReducer` tomorrow) and (b) user-facing capabilities (`extract`, `check`, `replay`, `conform` today; Playwright tier, AI suggestions tomorrow). What must *not* change casually: the IR, abstract domains, trace format, and report schemas — every subsystem communicates through them. Therefore: **vertical slices along both volatile axes; a small, schema-versioned kernel as the only coupling point.**
 2. **Three runtime contexts.** Extraction and checking run in Node; the replay harness runs inside the app's test environment (jsdom/Vitest); runtime assertions ship in the app's dev bundle. These have incompatible dependency budgets (TypeScript extraction must never reach the browser; optional app libraries such as `jotai` must never be a dependency of the core). Internal module boundaries follow runtime contexts, not team convenience.
 3. **The plugin contract must be real, not decorative.** "Flexible enough for future state libraries" fails in practice when built-in integrations use private hooks that external plugins can't. Hard rule: **the four built-in sources use exactly the public `StateSourcePlugin` contract** — they are the contract's permanent conformance suite.
 
@@ -30,12 +30,11 @@ modality-ts/
 │   │   ├── report/              #   report + trust-ledger schemas (versioned)
 │   │   └── artifacts/           #   .modality/ artifact IO, schema versioning, model hashing
 │   │
-│   ├── check/                   # modality-ts/check — Spec 03; Node-only
-│   │   ├── encode/              #   canonical encoders, token renaming
-│   │   ├── search/              #   BFS core, stabilization, enabledness
-│   │   ├── monitors/            #   invariant, bounded-response, vacuity
-│   │   ├── slicing/             #   cone-of-influence, recording proxy
-│   │   └── traces/              #   parent map, reconstruction, hint passes
+│   ├── check/                   # modality-ts/check — Spec 03 adapter (Node-only, thin)
+│   │   ├── native.ts            #   in-process native-addon binding (request/response marshal)
+│   │   ├── types.ts             #   CheckResult/option types exposed to callers
+│   │   └── slicing/             #   model slicing preprocessing (cone-of-influence)
+│   │                            #   (BFS core, encoders, monitors, traces live in the Rust crate)
 │   │
 │   ├── extract/                 # TS/TSX → IR/model extraction boundary
 │   │   ├── engine/              # modality-ts/extract — Spec 02 engine; Node-only
@@ -48,6 +47,7 @@ modality-ts/
 │   │       ├── use-state/       # modality-ts/extract/sources/use-state
 │   │       ├── jotai/           # modality-ts/extract/sources/jotai      (peerDep: jotai)
 │   │       ├── swr/             # modality-ts/extract/sources/swr        (peerDep: swr)
+│   │       ├── zustand/         # modality-ts/extract/sources/zustand    (peerDep: zustand)
 │   │       └── router/          # modality-ts/extract/sources/router     (peerDep: react-router)
 │   │
 │   ├── cli/                     # `modality` product shell and generated-test runtimes (§6)
@@ -59,10 +59,20 @@ modality-ts/
 │   │   ├── types/               #   ambient declaration shims only; not semantic model types
 │   │   └── cli.ts               #   thin commander shell (arg parsing only)
 │
+├── crates/checker/              # ★ the Rust explicit-state checker (Spec 03); built via napi
+├── native/                      # generated Node-API addon (modality-checker.<platform>.node) + loader
 ├── examples/demo-app/           # MVP demo with the three seeded bugs (design §8)
 ├── tools/                       # dependency-cruiser config (§7), differential-test runner vs TLC
 └── docs/
 ```
+
+> **Implementation note.** Earlier drafts placed the entire checker in `src/check/` as a
+> single-threaded TypeScript module. The semantic core now lives in the Rust crate
+> `crates/checker` (compiled to the `native/` addon and loaded in-process); `src/check/`
+> is a thin TypeScript adapter. The package build compiles Rust before `tsc` (`pnpm
+> build:rust` then `tsc -b`), and the platform-specific `.node` artifact ships in the
+> published package. This is an implementation move, not a boundary change: `check` still
+> depends only on `core` (plus the native addon) and is reached only via `checkModel`.
 
 What is deliberately **not** here: a `utils/` package (utilities live in the slice that needs them until two slices prove the need — then they move to the *narrowest* shared home), and a semantic `types/` package (types live with the code that owns their semantics; cross-cutting types are kernel by definition). The existing `src/cli/types/` directory is limited to ambient declarations for external packages missing local typings; it must not grow domain, IR, report, or plugin types.
 
@@ -142,11 +152,11 @@ src/extract/sources/jotai/
 └── index.ts                 # assembles and exports the plugin object
 ```
 
-The litmus test the architecture must keep passing: **supporting Zustand = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Projected mapping for likely future sources, as a design check that the contract is sufficient:
+The litmus test the architecture must keep passing: **supporting a new library = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Zustand has since been added exactly this way — a new `src/extract/sources/zustand/` slice with no changes to the SPI, pipeline, shared React extractor, or other plugins — which is the contract's first out-of-the-gate confirmation. Projected mapping for the remaining likely sources, as a design check that the contract is sufficient:
 
-| Future source | discover | writeChannels / summarize | template | harness.observe | Verdict |
+| Source | discover | writeChannels / summarize | template | harness.observe | Verdict |
 |---|---|---|---|---|---|
-| Zustand | `create()` stores | actions = store methods; `setState` | none | store handle, direct | fits cleanly |
+| Zustand | `create()`/`createStore` stores | actions = store methods; `set`/`setState` (incl. immer drafts) | none | store handle, direct | **implemented (built-in)** |
 | `useReducer` | hook calls | `dispatch` symbol; reducer body is *good* M0 material (pure, switch-shaped) | none | DOM projection / probe (like `useState`) | fits cleanly |
 | TanStack Query | `useQuery/useMutation` | `mutate`, cache APIs | yes — heavier than SWR (mutation lifecycle, retries) | queryClient handle | fits; template effort is the cost |
 | XState | explicit machines | n/a — machines *are* transition systems | direct machine→IR import (bypasses M0 entirely — the design.md §8 pivot target drops out of this contract for free) | actor snapshot | fits, easiest of all |
@@ -177,7 +187,7 @@ Rules that keep these vertical rather than layered:
 
 ```
 core                 → (nothing)
-check                → core
+check                → core (+ the native Rust checker addon in native/)
 extract/engine       → core
 extract/sources/*    → core, extract/engine(spi only); never each other; never cli features
 cli/harness          → core

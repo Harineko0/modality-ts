@@ -1,0 +1,122 @@
+---
+id: schemas
+title: Artifact schemas
+sidebar_label: Schemas
+---
+
+The three artifacts that flow between [feature slices](../architecture/index.md). All
+carry `schemaVersion: 1`; a reader rejects a newer major version with a "re-run extract"
+message. Types live in `src/core/`.
+
+## `model.json` — the model
+
+```ts
+interface Model {
+  schemaVersion: 1;
+  id: string;
+  vars: StateVarDecl[];          // id, domain, origin, scope, initial
+  transitions: Transition[];     // id, cls, label, guard, effect, reads, writes, confidence, …
+  bounds: { maxDepth; maxPending; maxInternalSteps };
+  metadata?: {
+    sourceHashes?: Record<string, string>;       // staleness detection
+    plugins?: PluginProvenance[];                 // id + version + kind + packageNames
+    domainProvenance?: Record<string, "overlay-refined">;
+    extractionCaveats?: { entries: ExtractionCaveat[] };
+    numericReductions?: { entries: NumericReduction[] };
+  };
+}
+```
+
+A `Transition` is `{ id, cls, label, source, guard, effect, reads, writes, confidence,
+triggeredBy?, phase? }`. See the [IR](../architecture/ir.md) and
+[Transitions](../concepts/transitions.md). Serialization is canonically ordered so the
+diff is reviewable in a pull request.
+
+## `trace.json` — a counterexample
+
+```ts
+interface TraceArtifact {
+  schemaVersion: 1;
+  kind: "trace";
+  steps: TraceStep[];
+}
+
+interface TraceStep {
+  transitionId: string;
+  label: EventLabel;
+  pre: ModelState;
+  post: ModelState;
+  diff: Record<string, { before: Value | undefined; after: Value | undefined }>;
+}
+```
+
+Each step carries the [event label](../architecture/ir.md#event-labels-the-replay-contract)
+needed to drive the real app during [replay](../guides/debugging-counterexamples.md).
+
+## `report.json` — a check report
+
+```ts
+interface CheckReport {
+  schemaVersion: 1;
+  kind: "check-report";
+  modelId: string;
+  generatedAt: string;
+  verdicts: ReportPropertyVerdict[];
+  stats: { states: number; edges: number; depth: number };
+  vacuityWarnings: string[];
+  diagnostics?: CheckReportDiagnostics;   // slicing, search, limits, dominantVars
+  trustLedger: ReportTrustLedger;
+}
+
+type ReportVerdictStatus =
+  | "verified-within-bounds" | "violated" | "reachable" | "vacuous-warning" | "error";
+
+interface ReportPropertyVerdict {
+  property: string;
+  status: ReportVerdictStatus;
+  message?: string;
+  trace?: Trace;
+  replayable?: boolean;
+  replayBlockedReason?: string;
+}
+```
+
+### The trust ledger field
+
+```ts
+interface ReportTrustLedger {
+  bounds; plugins; assumptions; abstractions;
+  globalTaints; staleReads; unhandledRejections; unextractableHandlers; // typed caveats
+  domains;                       // per-var kind + provenance
+  manualTransitions; overApproxTransitions;
+  boundHits;                     // which bounds actually bit
+  ignoredVars;
+  numericReductions;             // each with a soundness claim
+}
+```
+
+See [The trust ledger](../soundness/trust-ledger.md). The `diagnostics` block
+(`slicing` / `search` / `limits` / `dominantVars`) is documented in
+[Diagnostics & search limits](../guides/diagnostics-and-search-limits.md).
+
+## Replay report
+
+`modality replay` emits a `ReplayReport` with a verdict status of
+`reproduced` / `not-reproduced` / `inconclusive`, the number of steps run, and the
+diverging step index when applicable. See
+[Conformance & replay](../architecture/conformance-and-replay.md).
+
+## Extraction caveats
+
+```ts
+interface ExtractionCaveat {
+  kind: "global-taint" | "stale-read" | "unhandled-rejection" | "unextractable" | "model-slack";
+  id: string;
+  reason: string;
+  source?: SourceAnchor;
+  severity: "info" | "over-approx" | "unsound-risk";
+}
+```
+
+Typed and severity-tagged so CI can gate on *changes* — see
+[the E1 invariant](../soundness/e1-invariant.md#caveats-are-typed).

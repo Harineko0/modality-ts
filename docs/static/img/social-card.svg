@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="#101828"/>
-  <path d="M120 340c0-117 94-212 210-212h190v106H330c-58 0-104 47-104 106v190H120V340Z" fill="#7dd3fc"/>
-  <path d="M300 310h220v106H300z" fill="#fbbf24"/>
-  <text x="610" y="280" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="72" font-weight="700">modality-ts</text>
-  <text x="610" y="370" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="34">Model-check React state transitions.</text>
-</svg>

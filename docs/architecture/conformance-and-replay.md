@@ -1,0 +1,117 @@
+---
+id: conformance-and-replay
+title: Conformance & replay
+sidebar_label: Conformance & replay
+---
+
+The checker verifies the **model**. This subsystem ties the model to the **app**: it
+compiles abstract traces into executable tests, runs them, and classifies the outcome.
+It is the safety net for every over-approximation and heuristic — spurious
+counterexamples die here instead of in front of a developer's debugger, and model
+divergence is detected here instead of silently corroding trust.
+
+## The three replay verdicts
+
+Given a counterexample trace `T` for property `P`:
+
+| Verdict | Meaning | Action |
+| --- | --- | --- |
+| **reproduced** | the test drives the app along `T` and observes `¬P` | a real app bug; the test file is the regression test |
+| **not-reproduced** | the app never violates `P` along `T` (or a step's precondition fails) | model divergence; the report names the diverging step + its extraction provenance |
+| **inconclusive** | harness failure (missing locator, provider error, timeout) | infrastructure TODO; counted as neither |
+
+A `not-reproduced` is **not** automatically a model bug to silence — it may be an
+over-approximation doing its job (a `havoc`'d transition took a branch the code cannot).
+The report distinguishes divergence at an `exact` transition (an extraction defect, high
+priority) from divergence at `over-approx`/`manual` transitions (expected slack).
+
+## How a trace becomes a test
+
+```mermaid
+sequenceDiagram
+  participant T as Trace
+  participant R as Generated test (RTL + MSW)
+  participant App as App under test
+  T->>R: initialRoute, steps
+  R->>App: render with harness wrapper<br/>(fresh store, SWRConfig, MemoryRouter, fake timers)
+  loop each step
+    R->>App: click / submit / input / navigate
+    R->>App: resolve(op, outcome): release the gated MSW handler
+    R->>App: stabilization barrier (flush microtasks + timers + act)
+    R->>App: step assertions (observe state, check enabledness)
+  end
+  R->>App: assert observable ¬P
+```
+
+The heart of replay fidelity is **ordering control**: every effect-API route is mocked
+by a *gated* handler — the request is captured and parked on a deferred promise, and only
+the trace's `resolve` step releases it with the chosen outcome. Because
+[all model nondeterminism is confined to environment events](../concepts/transitions.md#async-split-transitions),
+response *reordering* and *interleaving with user events* are exactly reproducible by
+construction. An unexpected extra fetch is parked and reported as a divergence signal.
+
+Before each click/submit, the test asserts the target exists and is **not disabled** —
+the model claimed the transition was enabled, so an absent/disabled control is a
+divergence at that step, closing the loop with
+[guard extraction](./extraction-pipeline.md#p3--handler-discovery).
+
+## The observation problem
+
+The violated predicate is over *model* state; the test must read its concrete
+counterpart. Observability differs by source:
+
+| Source | Observation mechanism | Fidelity |
+| --- | --- | --- |
+| Jotai / Zustand | the harness owns the store: `store.get(...)` / `store.getState()` | direct, full |
+| SWR cache | harness-provided cache `Map`, inspectable per key | direct, full |
+| route | router test API / `MemoryRouter` | direct, full |
+| `sys:pending` | parked-MSW bookkeeping | direct, full |
+| `useState` | **not externally observable** | indirect |
+
+`useState` has two mechanisms, in preference order: (1) a **DOM projection** declared per
+var (`observe(...)` reading rendered output — honest but assumes that var's rendering is
+correct, which is another layer's job); (2) an opt-in **probe transform** that mirrors
+modeled `useState` values into a test-visible registry (full fidelity, zero production
+cost, but build machinery — hence opt-in). Properties reading only directly-observable
+vars (route guards, cache consistency, pending counts) need no observation declarations,
+and the extract-time check tells you which declarations are missing *before* replay.
+
+## Concretization: abstract values → witnesses
+
+Every abstract domain must produce concrete values to drive the app and mock responses.
+`enum`/`bool`/`option`/`tagged` tags are trivial literals; `tokens` use a deterministic
+**witness factory** per variable (distinct payloads enforced on the pruned-relevant
+fields); refined-predicate enums carry a *required* witness obligation per class (an
+unconcretizable refinement is rejected at extract time, not replay time); `lengthCat`
+uses `[]` / `[w]` / `[w₁,w₂,w₃]`. Concretization need not be faithful to the abstraction
+(many concrete values map to one abstract value) — which is why a **reproduced** verdict
+is always genuine but a **not-reproduced** may be witness-specific, one more reason it is
+advisory.
+
+## Proactive conformance (`modality conform`)
+
+Counterexample replay only exercises traces the checker found violating. `modality
+conform` additionally samples N seeded, depth-bounded **random walks** from the state
+graph (biased toward `exact` transitions and rarely-covered ones), compiles each into a
+test asserting **stepwise agreement** (after every step, all observable vars match the
+model), and aggregates mismatches per transition ID. A transition that diverges across
+many walks is mis-extracted, and the report ranks these. This is the standing answer to
+"how do you know the model still matches the app", and it runs in CI on a budget. The
+same machinery doubles as the **SWR template validator**, run against pinned library
+versions in the tool's own CI.
+
+## Runtime assertion mode
+
+Because property predicates are evaluable over `ModelState`, a thin dev-build hook can
+subscribe to the observable sources (atoms, stores, SWR cache, route) and evaluate the
+observable-only invariants on every change during ordinary development and E2E runs — at
+near-zero cost. It observes only directly-observable vars and only invariants, but it is
+the gentlest adoption on-ramp: teams can run assertions for months before ever running
+the checker.
+
+## CI failure policy
+
+One explicit rule: a **violated property whose replay is `not-reproduced`** fails CI
+*softly* (annotation, not red) by default — it is a model-maintenance task, and making it
+red trains teams to delete properties. A **reproduced** violation is red. Teams harden
+this once their model stabilizes. See [CI integration](../guides/ci-integration.md).

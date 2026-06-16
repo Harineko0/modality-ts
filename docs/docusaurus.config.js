@@ -4,7 +4,7 @@ const { themes: prismThemes } = require("prism-react-renderer");
 const config = {
   title: "modality-ts",
   tagline: "Model-check React state-transition behavior before users find it.",
-  favicon: "img/favicon.svg",
+  favicon: "img/favicon.png",
 
   url: "https://modality-ts.yuni.cat",
   baseUrl: "/",
@@ -13,10 +13,12 @@ const config = {
 
   onBrokenLinks: "throw",
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: "warn",
     },
   },
+  themes: ["@docusaurus/theme-mermaid"],
   trailingSlash: false,
 
   presets: [
@@ -47,12 +49,12 @@ const config = {
   ],
 
   themeConfig: {
-    image: "img/social-card.svg",
+    image: "img/social-card.png",
     navbar: {
       title: "modality-ts",
       logo: {
         alt: "modality-ts logo",
-        src: "img/logo.svg",
+        src: "img/logo.png",
       },
       items: [
         {
@@ -79,10 +81,11 @@ const config = {
         {
           title: "Docs",
           items: [
-            { label: "Getting Started", to: "/" },
+            { label: "Introduction", to: "/" },
             { label: "Concepts", to: "/concepts" },
+            { label: "Architecture", to: "/architecture" },
+            { label: "Soundness", to: "/soundness" },
             { label: "Guides", to: "/guides" },
-            { label: "Examples", to: "/examples" },
             { label: "Reference", to: "/reference" },
           ],
         },

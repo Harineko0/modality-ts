@@ -87,7 +87,7 @@ This is the standing answer to "how do you know the model still matches the app"
 
 ## 6. Runtime assertion mode (cheap, continuous)
 
-The property predicates are plain TS over `ModelState`; a thin dev-build hook (`useModalityAssertions(store)`) subscribes to the observable sources (atoms, SWR cache, route) and evaluates the observable-only invariants on every change, logging/throwing on violation. This catches divergence and bugs during *ordinary* development and E2E runs at near-zero cost, and is the gentlest adoption on-ramp (teams can run assertions for months before ever running the checker). Limitations stated: observes only directly-observable vars, only invariants (no `leadsToWithin`), only states the session happens to visit.
+The property predicates are the same **structured property IR** used by the checker, evaluable over `ModelState` by the shared evaluator (`evalStatePredicate`, exported from `modality-ts/core`); a thin dev-build hook (`useModalityAssertions(store)`) subscribes to the observable sources (atoms, stores, SWR cache, route) and evaluates the observable-only invariants on every change, logging/throwing on violation. (The same evaluator runs in the checker host and the dev bundle, so an invariant means the same thing in both.) This catches divergence and bugs during *ordinary* development and E2E runs at near-zero cost, and is the gentlest adoption on-ramp (teams can run assertions for months before ever running the checker). Limitations stated: observes only directly-observable vars, only invariants (no `leadsToWithin`), only states the session happens to visit.
 
 ## 7. Workflow summary
 
