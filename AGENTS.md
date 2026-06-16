@@ -7,7 +7,7 @@ Never consider backward compatibility as this tool is experimental.
 
 ## Project Structure & Module Organization
 
-`modality-ts` is a TypeScript ESM package for model-checking React state-transition behavior. Core library code lives in `src/`, organized into four top-level areas: `core/` for the public `modality-ts/kernel` API, `extract/` for TS/TSX extraction and source plugins, `check/` for the model checker, and `cli/` for CLI commands, codegen, replay harness, runtime assertions, and ambient shims. Tests mirror those areas under `test/`, with Vitest files named `*.test.ts`. Example React apps and their `app.props.mjs` models live in `examples/`. Architecture and feature specs are in `docs/specs/`; keep these aligned with behavior changes.
+`modality-ts` is a TypeScript ESM package for model-checking React state-transition behavior. Core library code lives in `src/`, organized into four top-level areas: `core/` for the public `modality-ts/kernel` API, `extract/` for TS/TSX extraction and source plugins, `check/` for the model checker, and `cli/` for CLI commands, codegen, replay harness, runtime assertions, and ambient shims. Tests mirror those areas under `test/`, with Vitest files named `*.test.ts`. Example React apps and their `app.props.mjs` models live in `examples/`. Architecture and feature specs are in `docs/` and `docs/_specs/`; keep these aligned with behavior changes. `docs/` is the user-facing documentation, while `docs/_specs/` is the internal specification documentation.
 
 ## Build, Test, and Development Commands
 
