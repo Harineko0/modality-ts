@@ -33,8 +33,7 @@ export function inferDomainFromTypeDetailed(
   ctx: TypeDomainInferenceContext,
   visited: Set<number> = new Set(),
 ): DomainInferenceResult {
-  const target = ctx.checker.getApparentType(type);
-  const typeId = (target as ts.Type & { id?: number }).id;
+  const typeId = (type as ts.Type & { id?: number }).id;
   if (typeId !== undefined) {
     if (visited.has(typeId)) {
       return { domain: { kind: "tokens", count: 1 }, caveats: [] };
@@ -42,67 +41,72 @@ export function inferDomainFromTypeDetailed(
     visited.add(typeId);
   }
 
-  if (target.flags & ts.TypeFlags.Undefined) {
+  if (type.flags & ts.TypeFlags.Undefined) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
-  if (target.flags & ts.TypeFlags.Null) {
+  if (type.flags & ts.TypeFlags.Null) {
     return {
       domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
       caveats: [],
     };
   }
-  if (target.flags & ts.TypeFlags.Never) {
+  if (type.flags & ts.TypeFlags.Never) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
   if (
-    target.flags &
+    type.flags &
     (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TemplateLiteral)
   ) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
-  if (target.flags & ts.TypeFlags.ESSymbol) {
+  if (type.flags & ts.TypeFlags.ESSymbol) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
 
-  if (target.isStringLiteral()) {
+  if (type.isStringLiteral()) {
     return {
-      domain: { kind: "enum", values: [target.value] },
+      domain: { kind: "enum", values: [type.value] },
       caveats: [],
     };
   }
   const literalString = stringLiteralFromTypeString(
-    ctx.checker.typeToString(target),
+    ctx.checker.typeToString(type),
   );
   if (literalString !== undefined) {
     return { domain: { kind: "enum", values: [literalString] }, caveats: [] };
   }
-  if (target.isNumberLiteral()) {
-    const value = target.value;
+  if (type.isNumberLiteral()) {
+    const value = type.value;
     return {
       domain: { kind: "boundedInt", min: value, max: value },
       caveats: [],
     };
   }
-  if (isBooleanLike(ctx.checker, target)) {
+  if (isBooleanLike(ctx.checker, type)) {
     return { domain: { kind: "bool" }, caveats: [] };
   }
-  if (isBroadString(target, ctx.checker)) {
+  if (isBroadString(type, ctx.checker)) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
-  if (isBroadNumber(target)) {
+  if (isBroadNumber(type)) {
     return broadNumberResult(ctx);
   }
 
-  if (target.isUnion()) {
-    return domainFromUnionType(target, ctx, visited);
+  if (type.isUnion()) {
+    return domainFromUnionType(type, ctx, visited);
   }
 
-  if (ctx.checker.isArrayType(target) || ctx.checker.isTupleType(target)) {
+  if (ctx.checker.isArrayType(type) || ctx.checker.isTupleType(type)) {
     return { domain: { kind: "lengthCat" }, caveats: [] };
   }
 
-  if (target.flags & ts.TypeFlags.Object) {
-    return domainFromObjectType(target, ctx, visited);
+  if (isBoxedPrimitive(type, ctx.checker)) {
+    return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  }
+
+  if (type.flags & ts.TypeFlags.Object) {
+    const objectType = ctx.checker.getApparentType(type);
+    return domainFromObjectType(objectType, ctx, visited);
   }
 
   return { domain: { kind: "tokens", count: 1 }, caveats: [] };
@@ -280,6 +284,19 @@ function isBroadString(type: ts.Type, checker?: ts.TypeChecker): boolean {
 
 function isBroadNumber(type: ts.Type): boolean {
   return (type.flags & ts.TypeFlags.Number) !== 0 && !type.isNumberLiteral();
+}
+
+function isBoxedPrimitive(type: ts.Type, checker: ts.TypeChecker): boolean {
+  if (!(type.flags & ts.TypeFlags.Object)) return false;
+  const symbol = type.getSymbol();
+  if (!symbol) return false;
+  const name = symbol.getName();
+  return (
+    name === "String" ||
+    name === "Number" ||
+    name === "Boolean" ||
+    name === "BigInt"
+  );
 }
 
 function broadNumberResult(

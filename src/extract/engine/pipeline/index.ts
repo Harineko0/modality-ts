@@ -6,6 +6,7 @@ import type {
   Transition,
   Bounds,
 } from "modality-ts/core";
+import { resolve } from "node:path";
 import type {
   StateSourcePlugin,
   RouterPlugin,
@@ -123,8 +124,12 @@ export function runExtractionPipeline(
   const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
+  const relatedFragments = discoveryRelatedFragments(
+    options,
+    allDiscoveryFragments,
+  );
   const discoveryInputs = allDiscoveryFragments.filter(
-    (fragment) => fragment.fileName === options.fileName,
+    (fragment) => resolve(fragment.fileName) === resolve(options.fileName),
   );
   const discoveryFragments =
     discoveryInputs.length > 0
@@ -141,7 +146,7 @@ export function runExtractionPipeline(
         sourceText: fragment.sourceText,
         fileName: fragment.fileName,
         route: options.route,
-        relatedFragments: allDiscoveryFragments,
+        relatedFragments,
         ...(types ? { types } : {}),
         ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
       }),
@@ -302,6 +307,27 @@ export function runExtractionPipeline(
     writeChannels,
     plugins,
   };
+}
+
+function discoveryRelatedFragments(
+  options: ExtractionPipelineOptions,
+  discoveryFragments: readonly { sourceText: string; fileName: string }[],
+): readonly { sourceText: string; fileName: string }[] {
+  const byPath = new Map(
+    discoveryFragments.map((fragment) => [
+      resolve(fragment.fileName),
+      fragment,
+    ]),
+  );
+  if (options.semanticProject) {
+    for (const [fileName, sourceFile] of options.semanticProject.sourceFiles) {
+      const key = resolve(fileName);
+      if (!byPath.has(key)) {
+        byPath.set(key, { sourceText: sourceFile.text, fileName });
+      }
+    }
+  }
+  return [...byPath.values()];
 }
 
 function semanticTypeContextForFile(

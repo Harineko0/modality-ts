@@ -627,8 +627,8 @@ describe("Jotai source plugin", () => {
         { sourceText: appText, fileName: appFile },
       ],
     });
-    expect(decls.some((decl) => decl.id === "atom:countAtom@store:myStore")).toBe(
-      true,
-    );
+    expect(
+      decls.some((decl) => decl.id === "atom:countAtom@store:myStore"),
+    ).toBe(true);
   });
 });

@@ -69,7 +69,12 @@ export function discoverJotaiAtomsDetailed(
 ): DiscoverJotaiResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveJotaiImports(source);
-  if (imports.atomCreators.size === 0) return emptyDiscoverResult();
+  const componentStoreScopes = discoverComponentStoreScopes(source, imports);
+  const hasStoreScopeWork =
+    componentStoreScopes.size > 0 && relatedFragments !== undefined;
+  if (imports.atomCreators.size === 0 && !hasStoreScopeWork) {
+    return emptyDiscoverResult();
+  }
 
   const typeAliases = typeAliasDeclarations(source);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
@@ -212,7 +217,6 @@ export function discoverJotaiAtomsDetailed(
   for (const warning of hydration.warnings) warnings.push(warning);
   const hydratedDecls = applyHydrationOverrides(decls, hydration.overrides);
 
-  const componentStoreScopes = discoverComponentStoreScopes(source, imports);
   const storeScopedDecls: SourceDecl[] = [];
   if (!options?.skipStoreDuplication) {
     let atomsForStoreDuplication = hydratedDecls;
