@@ -31,9 +31,19 @@ export function locatorForEventAttribute(
 ): Locator | undefined {
   const attrs = attribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
+  const element = attrs.parent;
+  if (ts.isJsxOpeningElement(element) || ts.isJsxSelfClosingElement(element))
+    return locatorForJsxElement(element);
+  return undefined;
+}
+
+export function locatorForJsxElement(
+  element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  source?: ts.SourceFile,
+): Locator | undefined {
+  const attrs = element.attributes;
   const testId = stringAttribute(attrs, "data-testid");
   if (testId) return { kind: "testId", value: testId };
-  const element = attrs.parent;
   const role = stringAttribute(attrs, "role") ?? inferredRole(element);
   if (!role) return undefined;
   const name =

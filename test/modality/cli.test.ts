@@ -237,55 +237,61 @@ describe("modality CLI", () => {
     );
   });
 
-  it("checks, exports, and conforms using default artifacts", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
-    await writeFixtureApp(dir);
-    await execFileAsync(
-      tsxBin,
-      [
-        cliPath,
-        "extract",
-        "--out",
-        ".modality/model.json",
-        "--app-model",
-        ".modality/app.model.ts",
-      ],
-      { cwd: dir },
-    );
+  it(
+    "checks, exports, and conforms using default artifacts",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+      await writeFixtureApp(dir);
+      await execFileAsync(
+        tsxBin,
+        [
+          cliPath,
+          "extract",
+          "--out",
+          ".modality/model.json",
+          "--app-model",
+          ".modality/app.model.ts",
+        ],
+        { cwd: dir },
+      );
 
-    const check = await execFileAsync(tsxBin, [cliPath, "check"], {
-      cwd: dir,
-    });
-    expect(check.stdout).not.toContain("Properties\n");
-    expect(check.stdout).not.toContain("Stats\n");
-    expect(check.stdout).not.toContain("Target ");
-    expect(check.stdout).toMatch(/^ [✓×⚠] /m);
-    expect(check.stdout).toContain("Test Files");
-    expect(check.stdout).toContain("Duration");
-    expect(
-      JSON.parse(await readFile(join(dir, ".modality", "report.json"), "utf8")),
-    ).toMatchObject({ kind: "check-report" });
+      const check = await execFileAsync(tsxBin, [cliPath, "check"], {
+        cwd: dir,
+      });
+      expect(check.stdout).not.toContain("Properties\n");
+      expect(check.stdout).not.toContain("Stats\n");
+      expect(check.stdout).not.toContain("Target ");
+      expect(check.stdout).toMatch(/^ [✓×⚠] /m);
+      expect(check.stdout).toContain("Test Files");
+      expect(check.stdout).toContain("Duration");
+      expect(
+        JSON.parse(
+          await readFile(join(dir, ".modality", "report.json"), "utf8"),
+        ),
+      ).toMatchObject({ kind: "check-report" });
 
-    const exported = await execFileAsync(tsxBin, [cliPath, "export"], {
-      cwd: dir,
-    });
-    expect(exported.stdout).toContain(".modality/model.tla");
-    expect(exported.stdout).toContain("format tla");
-    expect(
-      await readFile(join(dir, ".modality", "model.tla"), "utf8"),
-    ).toContain("---- MODULE extracted_model_Model ----");
+      const exported = await execFileAsync(tsxBin, [cliPath, "export"], {
+        cwd: dir,
+      });
+      expect(exported.stdout).toContain(".modality/model.tla");
+      expect(exported.stdout).toContain("format tla");
+      expect(
+        await readFile(join(dir, ".modality", "model.tla"), "utf8"),
+      ).toContain("---- MODULE extracted_model_Model ----");
 
-    const conform = await execFileAsync(tsxBin, [cliPath, "conform"], {
-      cwd: dir,
-    });
-    expect(conform.stdout).toContain("conformance");
-    expect(conform.stdout).toContain("passRate");
-    expect(
-      JSON.parse(
-        await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
-      ),
-    ).toMatchObject({ kind: "conform-report" });
-  }, CLI_E2E_TIMEOUT_MS);
+      const conform = await execFileAsync(tsxBin, [cliPath, "conform"], {
+        cwd: dir,
+      });
+      expect(conform.stdout).toContain("conformance");
+      expect(conform.stdout).toContain("passRate");
+      expect(
+        JSON.parse(
+          await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
+        ),
+      ).toMatchObject({ kind: "conform-report" });
+    },
+    CLI_E2E_TIMEOUT_MS,
+  );
 
   it("emits colored structured check output when FORCE_COLOR is set", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));

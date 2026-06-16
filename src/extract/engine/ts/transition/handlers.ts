@@ -27,6 +27,10 @@ import {
   transitionsFromAsyncHandler,
 } from "./async.js";
 import {
+  transitionsFromUseSubmitHandler,
+  type ReactRouterSubmitContext,
+} from "./router-submit.js";
+import {
   componentPropTrigger,
   transparentComponentPropTrigger,
 } from "./component-props.js";
@@ -151,6 +155,7 @@ export interface HandlerExtractionContext {
   timerRegistrations?: TimerRegistration[];
   envTransitions?: Transition[];
   timerIndex?: { value: number };
+  routerSubmitContext?: ReactRouterSubmitContext;
 }
 
 export function transitionsFromJsxAttribute(
@@ -485,6 +490,23 @@ export function transitionsFromResolvedHandler(
       ),
     });
     return [];
+  }
+  const routerCtx = handlerContext.routerSubmitContext;
+  if (routerCtx && routerCtx.submitBindings.size > 0) {
+    const submitTransitions = transitionsFromUseSubmitHandler(
+      source,
+      fileName,
+      node,
+      attr,
+      handler,
+      setters,
+      component,
+      warnings,
+      routerCtx,
+      disabledGuard,
+      effectApis,
+    );
+    if (submitTransitions.length > 0) return submitTransitions;
   }
   const asyncTransitions = transitionsFromAsyncHandler(
     source,

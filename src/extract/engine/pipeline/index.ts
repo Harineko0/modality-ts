@@ -214,6 +214,11 @@ export function runExtractionPipeline(
       ? synthesizeRedirectTransitions(options.inventory)
       : []),
   ];
+  const pluginVarIds = new Set(stateVars.map((decl) => decl.id));
+  const additionalVars = genericExtraction.vars.filter(
+    (decl) =>
+      decl.id.startsWith("router:actionData:") && !pluginVarIds.has(decl.id),
+  );
   const routeVars =
     options.routerPlugin && options.inventory && options.lowering
       ? options.routerPlugin.locationVars(
@@ -229,7 +234,7 @@ export function runExtractionPipeline(
       ...genericExtraction.warnings,
       ...pluginWarnings.map((warning) => pluginSafetyWarning(warning)),
     ],
-    stateVars,
+    stateVars: [...stateVars, ...additionalVars],
     templateFragments,
     routeVars,
     writeChannels,

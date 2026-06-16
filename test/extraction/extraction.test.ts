@@ -15,6 +15,7 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
+import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import {
   extractUseStateSkeleton,
   extractUseStateVars,
@@ -3782,6 +3783,300 @@ describe("useState inventory", () => {
       reads: [],
       writes: ["local:App.saved", "local:App.status"],
       confidence: "over-approx",
+    });
+  });
+});
+
+describe("React Router form action submits", () => {
+  const routerPlugin = reactRouterAdapter();
+
+  it("models Form method post with hidden intent as ACTION route op", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { Form } from 'react-router';
+      export default function Home() {
+        return (
+          <Form method="post">
+            <input type="hidden" name="intent" value="brew-start" />
+            <button type="submit">Start</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/",
+        fileName: "home.tsx",
+        effectApis: ["ACTION /"],
+        routerPlugin,
+      },
+    );
+    const ids = result.transitions.map((transition) => transition.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "Home.onSubmit.ACTION /.start",
+        "Home.onSubmit.ACTION /.success",
+        "Home.onSubmit.ACTION /.error",
+      ]),
+    );
+    const start = result.transitions.find(
+      (transition) => transition.id === "Home.onSubmit.ACTION /.start",
+    );
+    expect(start?.label).toEqual({ kind: "submit" });
+    expect(start?.cls).toBe("user");
+  });
+
+  it("adds disabled submit button guard to Form start transition", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useState } from 'react';
+      import { Form } from 'react-router';
+      export default function Home() {
+        const [busy, setBusy] = useState(false);
+        return (
+          <Form method="post">
+            <button type="submit" disabled={busy}>Start</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/",
+        fileName: "home.tsx",
+        effectApis: ["ACTION /"],
+        routerPlugin,
+      },
+    );
+    const start = result.transitions.find(
+      (transition) => transition.id === "Home.onSubmit.ACTION /.start",
+    );
+    expect(start?.guard).toEqual({
+      kind: "not",
+      args: [{ kind: "read", var: "local:Home.busy" }],
+    });
+  });
+
+  it("models useActionData and useEffect continuation after action resolution", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { Form, useActionData } from 'react-router';
+      import { useEffect, useState } from 'react';
+      export default function CustomerHome() {
+        const actionData = useActionData();
+        const [phase, setPhase] = useState<'confirm' | 'complete'>('confirm');
+        useEffect(() => {
+          if (actionData) setPhase('complete');
+        }, [actionData]);
+        return (
+          <Form method="post">
+            <input type="hidden" name="intent" value="confirm" />
+            <button type="submit">Confirm</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/customer",
+        fileName: "customer.tsx",
+        effectApis: ["ACTION /customer"],
+        routerPlugin,
+      },
+    );
+    expect(
+      result.vars.some(
+        (decl) =>
+          decl.id === "router:actionData:_customer:CustomerHome" &&
+          decl.initial === "none",
+      ),
+    ).toBe(true);
+    const success = result.transitions.find((transition) =>
+      transition.id.includes("ACTION /customer.success"),
+    );
+    expect(success?.effect).toEqual(
+      expect.objectContaining({
+        kind: "seq",
+        effects: expect.arrayContaining([
+          { kind: "dequeue", index: 0 },
+          {
+            kind: "assign",
+            var: "router:actionData:_customer:CustomerHome",
+            expr: { kind: "lit", value: "success" },
+          },
+        ]),
+      }),
+    );
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.cls === "internal" &&
+          (transition.triggeredBy?.includes(
+            "router:actionData:_customer:CustomerHome",
+          ) ??
+            transition.reads.includes(
+              "router:actionData:_customer:CustomerHome",
+            )),
+      ),
+    ).toBe(true);
+  });
+
+  it("models useSubmit in onSubmit without unextractable warning", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useSubmit } from 'react-router';
+      export default function CustomerHome() {
+        const submit = useSubmit();
+        const handlePrintSubmit = (e) => {
+          e.preventDefault();
+          submit(e.currentTarget);
+        };
+        return <form onSubmit={handlePrintSubmit} />;
+      }
+      `,
+      {
+        route: "/customer",
+        fileName: "customer.tsx",
+        effectApis: ["ACTION /customer"],
+        routerPlugin,
+      },
+    );
+    expect(result.transitions.map((transition) => transition.id)).toEqual(
+      expect.arrayContaining(["CustomerHome.onSubmit.ACTION /customer.start"]),
+    );
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Unextractable handler"),
+      ),
+    ).toBe(false);
+  });
+
+  const multiRouteInventory = {
+    routes: [
+      { pattern: "/", kind: "index" as const, file: "routes/home.tsx" },
+      {
+        pattern: "/customer",
+        kind: "page" as const,
+        file: "routes/customer.tsx",
+      },
+    ],
+  };
+
+  it("useSubmit uses component route rather than global extraction route", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useSubmit } from 'react-router';
+      export default function Customer() {
+        const submit = useSubmit();
+        const onSubmit = (e) => {
+          e.preventDefault();
+          submit(e.currentTarget);
+        };
+        return <form onSubmit={onSubmit} />;
+      }
+      `,
+      {
+        route: "/",
+        routePatterns: ["/", "/customer"],
+        fileName: "routes/customer.tsx",
+        effectApis: ["ACTION /", "ACTION /customer"],
+        routerPlugin,
+        inventory: multiRouteInventory,
+      },
+    );
+    const actionIds = result.transitions
+      .map((transition) => transition.id)
+      .filter((id) => id.includes("ACTION"));
+    expect(actionIds).toEqual(
+      expect.arrayContaining([
+        "Customer.onSubmit.ACTION /customer.start",
+        "Customer.onSubmit.ACTION /customer.success",
+        "Customer.onSubmit.ACTION /customer.error",
+      ]),
+    );
+    expect(actionIds.some((id) => id.includes("ACTION /."))).toBe(false);
+  });
+
+  it("skips React Router Form without explicit method", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { Form } from 'react-router';
+      export default function Home() {
+        return (
+          <Form>
+            <button type="submit">Search</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/",
+        fileName: "home.tsx",
+        effectApis: ["ACTION /"],
+        routerPlugin,
+      },
+    );
+    expect(
+      result.transitions.some((transition) => transition.id.includes("ACTION")),
+    ).toBe(false);
+  });
+
+  it("skips React Router Form method get", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { Form } from 'react-router';
+      export default function Home() {
+        return (
+          <Form method="get">
+            <button type="submit">Search</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/",
+        fileName: "home.tsx",
+        effectApis: ["ACTION /"],
+        routerPlugin,
+      },
+    );
+    expect(
+      result.transitions.some((transition) => transition.id.includes("ACTION")),
+    ).toBe(false);
+  });
+
+  it("extracts hidden input wrapper values for action args", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { Form } from 'react-router';
+      export default function Home() {
+        return (
+          <Form method="post">
+            <input type="hidden" name="intent" value={JSON.stringify("brew-start")} />
+            <input type="hidden" name="label" value={String("brew-start")} />
+            <input type="hidden" name="count" value={Number(2)} />
+            <button type="submit">Start</button>
+          </Form>
+        );
+      }
+      `,
+      {
+        route: "/",
+        fileName: "home.tsx",
+        effectApis: ["ACTION /"],
+        routerPlugin,
+      },
+    );
+    const start = result.transitions.find(
+      (transition) => transition.id === "Home.onSubmit.ACTION /.start",
+    );
+    const enqueue = (
+      start?.effect as {
+        kind: "seq";
+        effects: Array<{ kind: string; args?: Record<string, unknown> }>;
+      }
+    )?.effects.find((effect) => effect.kind === "enqueue");
+    expect(enqueue?.args).toEqual({
+      intent: { kind: "lit", value: "brew-start" },
+      label: { kind: "lit", value: "brew-start" },
+      count: { kind: "lit", value: 2 },
     });
   });
 });

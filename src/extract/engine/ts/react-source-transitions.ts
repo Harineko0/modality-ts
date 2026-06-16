@@ -114,6 +114,15 @@ import {
   transitionsFromUseEffect,
   reactEffectWritesModeledState,
 } from "./transition/effects.js";
+import {
+  bindReactRouterActionDataRead,
+  discoverUseSubmitBindings,
+  isReactRouterFormElement,
+  isUseActionDataCall,
+  reactRouterActionDataVarDecl,
+  transitionsFromReactRouterForm,
+  type ReactRouterSubmitContext,
+} from "./transition/router-submit.js";
 
 export interface ReactSourceTransitionOptions {
   route?: string;
@@ -176,6 +185,19 @@ export function extractReactSourceTransitions(
   let transitionBindingCounter = 0;
   let suspenseBoundaryCounter = 0;
   const transitionBindings = new Map<string, TransitionBinding>();
+  const submitBindings = new Map<string, boolean>();
+  const modeledSubmitHandlers = new Set<string>();
+  const actionDataVarByComponent = new Map<string, string>();
+  const routerSubmitContext = (
+    component: string,
+  ): ReactRouterSubmitContext => ({
+    route:
+      resolveComponentRoutePattern(routerPlugin, inventory, component) ?? route,
+    component,
+    actionDataVarId: actionDataVarByComponent.get(component),
+    submitBindings,
+    modeledSubmitHandlers,
+  });
   const components = componentDeclarations(source);
   for (const fragment of options.additionalComponentSources ?? []) {
     const supplemental = ts.createSourceFile(
@@ -422,6 +444,24 @@ export function extractReactSourceTransitions(
     );
     if (link) transitions.push(link);
     const scopedSetters = settersForComponent(setters, nextComponent);
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      isReactRouterFormElement(node, source)
+    ) {
+      const formRoute = routePattern ?? route;
+      const extracted = transitionsFromReactRouterForm(
+        source,
+        fileName,
+        node,
+        activeComponent,
+        formRoute,
+        scopedSetters,
+        warnings,
+        routerSubmitContext(activeComponent),
+      );
+      if (extracted.length > 0)
+        transitions.push(...tagStableIdKey(extracted, node));
+    }
     const refTaint = refSetterTaint(node, scopedSetters);
     if (refTaint) {
       const anchor = lineAndColumn(source, refTaint.node);
@@ -632,6 +672,9 @@ export function extractReactSourceTransitions(
           timerRegistrations,
           envTransitions,
           timerIndex: { value: timerCounter },
+          routerSubmitContext: routerSubmitContext(
+            nextComponent ?? "Anonymous",
+          ),
         },
       );
       registerTimerVars(timerRegistrations);
@@ -646,6 +689,7 @@ export function extractReactSourceTransitions(
           components.get(nextComponent ?? ""),
         ) &&
         !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
+        !modeledSubmitHandlers.has(handlerId) &&
         !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
         const anchor = lineAndColumn(source, node);
@@ -705,6 +749,37 @@ export function extractReactSourceTransitions(
             ),
           );
         }
+      }
+    }
+    if (ts.isVariableDeclaration(node) && nextComponent) {
+      const submitName = discoverUseSubmitBindings(node);
+      if (submitName) submitBindings.set(submitName, true);
+      if (
+        node.initializer &&
+        ts.isCallExpression(node.initializer) &&
+        isUseActionDataCall(node.initializer) &&
+        ts.isIdentifier(node.name)
+      ) {
+        const component = nextComponent;
+        const formRoute = resolveComponentRoutePattern(
+          routerPlugin,
+          inventory,
+          component,
+        );
+        const actionRoute = formRoute ?? route;
+        const decl = reactRouterActionDataVarDecl(component, actionRoute, {
+          file: fileName,
+          ...lineAndColumn(source, node),
+        });
+        if (!vars.some((candidate) => candidate.id === decl.id))
+          vars.push(decl);
+        actionDataVarByComponent.set(component, decl.id);
+        bindReactRouterActionDataRead(
+          setters,
+          node.name.text,
+          decl.id,
+          component,
+        );
       }
     }
     if (ts.isVariableDeclaration(node) && nextComponent) {

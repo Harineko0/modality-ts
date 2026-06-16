@@ -950,7 +950,10 @@ export async function sourceWithReachableImports(
         record.classification.serverOnly === true ||
         record.classification.defaultContext === "server" ||
         (adapter.id === "next" &&
-          record.classification.defaultContext === "shared");
+          record.classification.defaultContext === "shared") ||
+        (adapter.id === "router" &&
+          record.classification.defaultContext === "shared" &&
+          record.entryExports.some((entry) => entry.context === "server"));
       if (serverSurface && !record.isManifest) {
         for (const entry of adapter.discoverEffectApis({
           fileName: record.path,

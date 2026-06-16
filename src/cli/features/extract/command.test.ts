@@ -2938,6 +2938,344 @@ describe("runExtractCommand", () => {
       }),
     ).rejects.toThrow(/navigation\.initialRoute/);
   });
+
+  it("models React Router route action Form submits with intent args", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-router-form-action-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    await mkdir(join(dir, "app", "components"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "report.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", "react-router": "^7.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "~/*": ["./app/*"] } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `import { route } from '@react-router/dev/routes';
+export default [route('/drip', 'routes/drip.tsx')];`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "drip.tsx"),
+      `
+      import { Form } from 'react-router';
+      export async function action() {
+        return { ok: true };
+      }
+      export default function DripRoute() {
+        return (
+          <Form method="post">
+            <input type="hidden" name="intent" value="brew-start" />
+            <button type="submit">Start</button>
+          </Form>
+        );
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePath: join(dir, "app", "routes", "drip.tsx"),
+      modelPath,
+      reportPath,
+    });
+    const pendingOps =
+      result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+        .kind === "boundedList"
+        ? (
+            result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+              .inner as {
+              fields: {
+                opId: { values: string[] };
+                args: { fields: Record<string, unknown> };
+              };
+            }
+          ).fields
+        : undefined;
+    expect(result.report.effectOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ opId: "ACTION /drip", origin: "source" }),
+      ]),
+    );
+    expect(pendingOps?.opId.values).toContain("ACTION /drip");
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    const argsFields =
+      pendingVar?.domain.kind === "boundedList"
+        ? (
+            pendingVar.domain.inner as {
+              fields: {
+                args: { fields: Record<string, { values?: string[] }> };
+              };
+            }
+          ).fields.args.fields
+        : {};
+    expect(argsFields.intent?.values).toContain("brew-start");
+  });
+
+  it("models customer-like useSubmit and useActionData flows", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-router-customer-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", "react-router": "^7.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { baseUrl: "." } }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `import { route } from '@react-router/dev/routes';
+export default [route('/customer', 'routes/customer.tsx')];`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "customer.tsx"),
+      `
+      import { useActionData, useSubmit } from 'react-router';
+      import { useEffect, useState } from 'react';
+      export async function action() {
+        return { ok: true, orderNumber: '42' };
+      }
+      export default function CustomerHome() {
+        const submit = useSubmit();
+        const actionData = useActionData();
+        const [phase, setPhase] = useState<'confirm' | 'complete'>('confirm');
+        useEffect(() => {
+          if (actionData) setPhase('complete');
+        }, [actionData]);
+        const handlePrintSubmit = (e) => {
+          e.preventDefault();
+          submit(e.currentTarget);
+        };
+        return <form method="post" onSubmit={handlePrintSubmit} />;
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePath: join(dir, "app", "routes", "customer.tsx"),
+      modelPath,
+    });
+    const ids = result.model.transitions.map((transition) => transition.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /CustomerHome\.onSubmit\.ACTION \/customer\.start/,
+        ),
+        expect.stringMatching(
+          /CustomerHome\.onSubmit\.ACTION \/customer\.success/,
+        ),
+        expect.stringMatching(
+          /CustomerHome\.onSubmit\.ACTION \/customer\.error/,
+        ),
+      ]),
+    );
+    const actionDataVar = result.model.vars.find((decl) =>
+      decl.id.startsWith("router:actionData:"),
+    );
+    expect(actionDataVar?.initial).toBe("none");
+    const success = result.model.transitions.find((transition) =>
+      transition.id.includes("ACTION /customer.success"),
+    );
+    expect(success?.writes).toContain(actionDataVar?.id);
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.cls === "internal" &&
+          transition.writes.includes("local:CustomerHome.phase"),
+      ),
+    ).toBe(true);
+  });
+
+  it("models useSubmit route action on the matched route in multi-route apps", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-router-multi-customer-"),
+    );
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    const configPath = join(dir, "modality.config.ts");
+    const homePath = join(dir, "app", "routes", "home.tsx");
+    const customerPath = join(dir, "app", "routes", "customer.tsx");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", "react-router": "^7.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { baseUrl: "." } }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `import { index, route } from '@react-router/dev/routes';
+export default [
+  index('routes/home.tsx'),
+  route('/customer', 'routes/customer.tsx'),
+];`,
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      `export default { navigation: { initialRoute: "/" } };`,
+      "utf8",
+    );
+    await writeFile(
+      homePath,
+      `
+      export default function Home() {
+        return <div>Home</div>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      customerPath,
+      `
+      import { useSubmit } from 'react-router';
+      export async function action() {
+        return { ok: true };
+      }
+      export default function Customer() {
+        const submit = useSubmit();
+        const onSubmit = (e) => {
+          e.preventDefault();
+          submit(e.currentTarget);
+        };
+        return <form onSubmit={onSubmit} />;
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePaths: [homePath, customerPath],
+      modelPath,
+      configPath,
+    });
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    const pendingOps =
+      pendingVar?.domain.kind === "boundedList"
+        ? (
+            pendingVar.domain.inner as {
+              fields: { opId: { values: string[] } };
+            }
+          ).fields.opId.values
+        : [];
+    expect(pendingOps).toContain("ACTION /customer");
+    const customerActionIds = result.model.transitions
+      .map((transition) => transition.id)
+      .filter(
+        (id) =>
+          id.startsWith("Customer.onSubmit.ACTION") && id.includes("/customer"),
+      );
+    expect(customerActionIds).toEqual(
+      expect.arrayContaining([
+        "Customer.onSubmit.ACTION /customer.start",
+        "Customer.onSubmit.ACTION /customer.success",
+        "Customer.onSubmit.ACTION /customer.error",
+      ]),
+    );
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.id.startsWith("Customer.onSubmit.ACTION /.") ||
+          transition.id === "Customer.onSubmit.ACTION /.start" ||
+          transition.id === "Customer.onSubmit.ACTION /.success" ||
+          transition.id === "Customer.onSubmit.ACTION /.error",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps server helper fetches out of client pending ops for route actions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-router-action-helper-"));
+    await mkdir(join(dir, "app", "routes"), { recursive: true });
+    await mkdir(join(dir, "app", "lib"), { recursive: true });
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", "react-router": "^7.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "~/*": ["./app/*"] } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes.ts"),
+      `import { route } from '@react-router/dev/routes';
+export default [route('/items', 'routes/items.tsx')];`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "lib", "server-action.ts"),
+      `
+      export async function serverHelper() {
+        await fetch('https://example.com/server');
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "app", "routes", "items.tsx"),
+      `
+      import { Form } from 'react-router';
+      import { serverHelper } from '~/lib/server-action';
+      export async function action() {
+        await serverHelper();
+        return { ok: true };
+      }
+      export default function ItemsRoute() {
+        return (
+          <Form method="post">
+            <button type="submit">Save</button>
+          </Form>
+        );
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePath: join(dir, "app", "routes", "items.tsx"),
+      modelPath,
+    });
+    const pendingOps =
+      result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+        .kind === "boundedList"
+        ? (
+            result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+              .inner as { fields: { opId: { values: string[] } } }
+          ).fields.opId.values
+        : [];
+    expect(pendingOps).toContain("ACTION /items");
+    expect(pendingOps).not.toContain("GET https://example.com/server");
+    expect(pendingOps).not.toContain("POST https://example.com/server");
+  });
 });
 
 describe("renderHumanExtractTargets", () => {

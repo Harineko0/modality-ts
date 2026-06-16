@@ -11,6 +11,7 @@ import {
   reactRouterModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
+import { discoverReactRouterActionEffectApis } from "./server-effects.js";
 import { locationVars } from "./routes.js";
 
 export interface RouterSourceOptions {
@@ -45,6 +46,7 @@ export function reactRouterAdapter(
     moduleEntryExports: reactRouterModuleEntryExports,
     classifyImportEdge: classifyReactRouterImportEdge,
     isServerOnlyModule: isServerOnlyModulePath,
+    discoverEffectApis: discoverReactRouterActionEffectApis,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
     harness,
