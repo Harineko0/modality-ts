@@ -1,10 +1,11 @@
 import * as ts from "typescript";
-import type { AbstractDomain, StateVarDecl } from "modality-ts/core";
+import type { AbstractDomain, StateVarDecl, Value } from "modality-ts/core";
 import {
   componentNameFor,
   isExtractableHandler,
   isUseStateCall,
   lineAndColumn,
+  literalValue,
   startsUppercase,
 } from "./ast.js";
 import { inferUseStateDomain, initialValueForUseState } from "./domains.js";
@@ -190,6 +191,60 @@ export function listRenderedHandlerInfo(
     current = parent;
   }
   return undefined;
+}
+
+export function literalListRenderedHandlerInfo(
+  attribute: ts.JsxAttribute,
+): { itemName: string; values: Value[] } | undefined {
+  let current: ts.Node = attribute;
+  while (current.parent) {
+    const parent = current.parent;
+    if (
+      ts.isCallExpression(parent) &&
+      ts.isPropertyAccessExpression(parent.expression) &&
+      parent.expression.name.text === "map"
+    ) {
+      const callback = parent.arguments[0];
+      if (
+        callback &&
+        current.pos >= callback.pos &&
+        current.end <= callback.end
+      ) {
+        const itemName = mapItemName(callback);
+        const values = literalArrayValues(parent.expression.expression);
+        return itemName && values.length > 0
+          ? { itemName, values }
+          : undefined;
+      }
+    }
+    current = parent;
+  }
+  return undefined;
+}
+
+function literalArrayValues(expression: ts.Expression): Value[] {
+  const unwrapped = unwrapArrayExpression(expression);
+  if (!ts.isArrayLiteralExpression(unwrapped)) return [];
+  const values: Value[] = [];
+  for (const element of unwrapped.elements) {
+    const value = literalValue(unwrapArrayExpression(element));
+    if (value === undefined) return [];
+    values.push(value);
+  }
+  return values;
+}
+
+function unwrapArrayExpression(expression: ts.Expression): ts.Expression {
+  let current = expression;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
 }
 
 export function isForwardablePropName(name: string): boolean {

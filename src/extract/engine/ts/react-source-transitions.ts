@@ -37,6 +37,7 @@ import {
   isCustomHookDeclaration,
   isForwardablePropName,
   isIntrinsicJsxAttribute,
+  literalListRenderedHandlerInfo,
   listRenderedHandlerInfo,
 } from "./components.js";
 import {
@@ -97,6 +98,7 @@ import {
   transitionsFromJsxAttribute,
   transitionsFromComponentPropAttribute,
   transitionsFromBoundedListAttribute,
+  transitionsFromLiteralListAttribute,
 } from "./transition/handlers.js";
 import {
   combineParsedGuards,
@@ -477,6 +479,64 @@ export function extractReactSourceTransitions(
       isEventAttribute(node.name.text) &&
       isIntrinsicJsxAttribute(node)
     ) {
+      const literalListInfo = literalListRenderedHandlerInfo(node);
+      if (literalListInfo) {
+        const guardLocals = componentGuardLocalsFor(node, scopedSetters);
+        const guard = combineParsedGuards([
+          renderGuardFor(
+            node,
+            scopedSetters,
+            warnings,
+            source,
+            nextComponent ?? "Anonymous",
+            guardLocals,
+          ),
+          disabledGuardFor(
+            node,
+            scopedSetters,
+            warnings,
+            source,
+            nextComponent ?? "Anonymous",
+            guardLocals,
+          ),
+        ]);
+        const timerRegistrations: TimerRegistration[] = [];
+        const envTransitions: Transition[] = [];
+        const extracted = transitionsFromLiteralListAttribute(
+          source,
+          fileName,
+          node,
+          scopedSetters,
+          handlers,
+          nextComponent ?? "Anonymous",
+          literalListInfo,
+          effectApis,
+          options.asyncOutcomes ?? {},
+          sourcePlugins,
+          routerPlugin,
+          guard,
+          routePatterns,
+          contextBindings,
+          warnings,
+          resetSymbols,
+          {
+            activeBoundary: effectiveBoundary,
+            transitionBindings,
+            timerRegistrations,
+            envTransitions,
+            timerIndex: { value: timerCounter },
+          },
+        );
+        registerTimerVars(timerRegistrations);
+        timerCounter += timerRegistrations.length;
+        if (extracted.length > 0) {
+          transitions.push(...tagStableIdKey(extracted, node), ...envTransitions);
+          ts.forEachChild(node, (child) =>
+            visit(child, nextComponent, effectiveBoundary),
+          );
+          return;
+        }
+      }
       const listInfo = listRenderedHandlerInfo(
         node,
         vars,

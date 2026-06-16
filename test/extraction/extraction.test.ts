@@ -413,6 +413,87 @@ describe("useState inventory", () => {
     ).toBe(true);
   });
 
+  it("normalizes template Link targets to matching dynamic routes", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { Link } from 'react-router';
+      export function PageEditor({ page }: { page: { slug: string } }) {
+        return <Link to={\`/wiki/\${page.slug}\`}>Back</Link>;
+      }
+      `,
+      {
+        route: "/wiki/:slug/edit",
+        fileName: "PageEditor.tsx",
+        routePatterns: ["/", "/wiki/new", "/wiki/:slug", "/wiki/:slug/edit"],
+        ...routerExtraction,
+      },
+    );
+    expect(
+      result.transitions.find(
+        (transition) =>
+          transition.id === "PageEditor.Link.navigate._wiki_slug",
+      ),
+    ).toMatchObject({
+      cls: "nav",
+      effect: {
+        kind: "navigate",
+        mode: "push",
+        to: { kind: "lit", value: "/wiki/:slug" },
+      },
+    });
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id === "PageEditor.Link.navigate._wiki_new",
+      ),
+    ).toBe(false);
+  });
+
+  it("extracts literal-list handlers that call parameterized helper callbacks", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useCallback, useState } from 'react';
+      export function PageEditor() {
+        const [activeLang, setActiveLangLocal] = useState<"ja" | "en">("ja");
+        const setActiveLang = useCallback((lang: "ja" | "en") => {
+          setActiveLangLocal(lang);
+          console.log(lang);
+        }, []);
+        return (
+          <div>
+            {(["ja", "en"] as const).map((lang) => (
+              <button key={lang} type="button" onClick={() => setActiveLang(lang)}>
+                {lang}
+              </button>
+            ))}
+          </div>
+        );
+      }
+      `,
+      {
+        route: "/wiki/:slug/edit",
+        fileName: "PageEditor.tsx",
+      },
+    );
+    const transitions = result.transitions.filter((transition) =>
+      transition.id.startsWith("PageEditor.onClick.activeLang.seq."),
+    );
+    expect(transitions.map((transition) => transition.effect)).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "assign",
+          var: "local:PageEditor.activeLang",
+          expr: { kind: "lit", value: "ja" },
+        },
+        {
+          kind: "assign",
+          var: "local:PageEditor.activeLang",
+          expr: { kind: "lit", value: "en" },
+        },
+      ]),
+    );
+  });
+
   it("over-approximates unmodeled Link targets across known route patterns", () => {
     const result = extractUseStateSkeleton(
       `

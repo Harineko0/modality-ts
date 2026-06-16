@@ -15,7 +15,7 @@ import type {
   SetterCall,
 } from "../types.js";
 import { isExtractableHandler } from "../ast.js";
-import { setterArgumentExpr } from "./expressions.js";
+import { setterArgumentExpr, valueExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
 import { bindConstStatement } from "./locals.js";
 import type { TransitionBinding } from "./concurrent.js";
@@ -101,6 +101,8 @@ export function summarizeHandlerStatements(
       );
       if (timerSummary) return [timerSummary.scheduleSummary];
     }
+    const helper = helperSummariesFromCall(handler.body, state, setters);
+    if (helper) return helper;
     const summary = summarizeSetterCall(handler.body, setters, new Map(), {
       resetSymbols: options.resetSymbols,
     });
@@ -555,7 +557,7 @@ function summarizeStatement(
           return { summaries: [clearSummary], terminated: false };
         }
       }
-      const helper = helperSummariesFromCall(call, state.handlers, setters);
+      const helper = helperSummariesFromCall(call, state, setters);
       if (helper) return { summaries: helper, terminated: false };
       const summary = summarizeSetterCall(call, setters, state.locals, {
         resetSymbols: state.resetSymbols,
@@ -793,19 +795,46 @@ function summarizeLoopStatement(
 
 function helperSummariesFromCall(
   call: ts.CallExpression,
-  handlers: Map<string, ExtractableHandler> | undefined,
+  state: StatementSummaryState,
   setters: Map<string, SetterBinding>,
 ): EffectSummary[] | undefined {
-  if (
-    !handlers ||
-    !ts.isIdentifier(call.expression) ||
-    call.arguments.length !== 0
-  )
+  if (!state.handlers || !ts.isIdentifier(call.expression))
     return undefined;
-  const helper = handlers.get(call.expression.text);
-  return helper
-    ? summarizeHandlerStatements(helper, setters, { handlers })
-    : undefined;
+  const helper = state.handlers.get(call.expression.text);
+  if (!helper || call.arguments.length > helper.parameters.length)
+    return undefined;
+  const locals = new Map(state.locals);
+  for (let index = 0; index < call.arguments.length; index += 1) {
+    const parameter = helper.parameters[index];
+    const argument = call.arguments[index];
+    if (!parameter || !argument || !ts.isIdentifier(parameter.name))
+      return undefined;
+    const binding = valueExpr(
+      argument,
+      setters,
+      state.locals,
+      state.snapshotReads,
+      state.snapshottedReads,
+    );
+    if (!binding) return undefined;
+    locals.set(parameter.name.text, binding);
+  }
+  return summarizeHandlerStatements(helper, setters, {
+    handlers: state.handlers,
+    initialLocals: locals,
+    resetSymbols: state.resetSymbols,
+    snapshotReads: state.snapshotReads,
+    snapshottedReads: state.snapshottedReads,
+    component: state.component,
+    timerContext: state.timerContext,
+    timerIndex: state.timerIndex,
+    timerBindings: state.timerBindings,
+    timerRegistrations: state.timerRegistrations,
+    transitionBindings: state.transitionBindings,
+    envTransitions: state.envTransitions,
+    fileName: state.fileName,
+    source: state.source,
+  });
 }
 
 function fallbackResult(

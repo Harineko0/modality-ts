@@ -145,6 +145,8 @@ function directSetterBooleanCallbackTransitions(
 
 export interface HandlerExtractionContext {
   activeBoundary?: string;
+  initialLocals?: Map<string, BoundExpr>;
+  valueSuffix?: string;
   transitionBindings?: Map<string, TransitionBinding>;
   timerRegistrations?: TimerRegistration[];
   envTransitions?: Transition[];
@@ -358,6 +360,70 @@ export function transitionsFromBoundedListAttribute(
   return transitions;
 }
 
+export function transitionsFromLiteralListAttribute(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  component: string,
+  listInfo: {
+    itemName: string;
+    values: readonly Value[];
+  },
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
+  disabledGuard: ParsedGuard | undefined,
+  routePatterns: readonly string[],
+  contextBindings: ContextBindings,
+  warnings: ExtractionWarning[],
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  handlerContext: HandlerExtractionContext = {},
+): Transition[] {
+  if (!node.initializer || !ts.isIdentifier(node.name)) return [];
+  const expression = ts.isJsxExpression(node.initializer)
+    ? node.initializer.expression
+    : undefined;
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
+  const attr = node.name.text;
+  const baseLocator = locatorForEventAttribute(node);
+  return listInfo.values.flatMap((value, index) => {
+    const locator = baseLocator
+      ? { kind: "positional" as const, base: baseLocator, index }
+      : undefined;
+    return transitionsFromResolvedHandler(
+      source,
+      fileName,
+      node,
+      attr,
+      handler,
+      setters,
+      handlers,
+      component,
+      effectApis,
+      asyncOutcomes,
+      sourcePlugins,
+      routerPlugin,
+      disabledGuard,
+      locator,
+      routePatterns,
+      contextBindings,
+      warnings,
+      resetSymbols,
+      {
+        ...handlerContext,
+        initialLocals: mergeLocals(handlerContext.initialLocals, new Map([
+          [listInfo.itemName, { expr: { kind: "lit", value }, reads: [] }],
+        ])),
+        valueSuffix: safeId(String(value)),
+      },
+    );
+  });
+}
+
 export function readListItemBinding(varId: string, index: number): BoundExpr {
   return {
     expr: { kind: "read", var: varId, path: [String(index)] },
@@ -465,7 +531,7 @@ export function transitionsFromResolvedHandler(
           component,
           locator,
           resetSymbols,
-          initialLocals,
+          mergeLocals(handlerContext.initialLocals, initialLocals),
           valueSuffix,
           summaryOptions,
         ) ??
@@ -478,7 +544,7 @@ export function transitionsFromResolvedHandler(
           setters,
           component,
           locator,
-          initialLocals,
+          mergeLocals(handlerContext.initialLocals, initialLocals),
           valueSuffix,
         ) ??
         singleSetterTransitionFromHandler(
@@ -490,7 +556,8 @@ export function transitionsFromResolvedHandler(
           setters,
           component,
           locator,
-          initialLocals,
+          mergeLocals(handlerContext.initialLocals, initialLocals) ??
+            new Map(),
           resetSymbols,
           valueSuffix,
         );
@@ -509,6 +576,7 @@ export function transitionsFromResolvedHandler(
     setters,
     component,
     locator,
+    handlerContext.initialLocals,
   );
   if (conditionalTransition)
     return applyParsedGuard([conditionalTransition], disabledGuard);
@@ -523,8 +591,8 @@ export function transitionsFromResolvedHandler(
     component,
     locator,
     resetSymbols,
-    undefined,
-    undefined,
+    handlerContext.initialLocals,
+    handlerContext.valueSuffix,
     summaryOptions,
   );
   if (sequentialTransition)
@@ -544,7 +612,10 @@ export function transitionsFromResolvedHandler(
   const summary = callSummaryFromHandler(
     handler,
     setters,
-    componentScopeLocalsFor(node, setters, contextBindings),
+    mergeLocals(
+      componentScopeLocalsFor(node, setters, contextBindings),
+      handlerContext.initialLocals,
+    ),
   );
   if (!summary) return [];
   const inlined = inlinedHelperCall(summary.call, handlers, setters);
@@ -742,7 +813,8 @@ export function sequentialTransitionFromHandler(
     summaries.length === 1 &&
     onlySummary &&
     onlySummary.effect.kind !== "if" &&
-    !isSequentialSingleSummary(onlySummary)
+    !isSequentialSingleSummary(onlySummary) &&
+    valueSuffix === undefined
   ) {
     return undefined;
   }
@@ -912,6 +984,15 @@ function handlerSummaryOptions(
     fileName,
     source,
   };
+}
+
+function mergeLocals(
+  base: Map<string, BoundExpr> | undefined,
+  overrides: Map<string, BoundExpr> | undefined,
+): Map<string, BoundExpr> | undefined {
+  if (!base) return overrides;
+  if (!overrides) return base;
+  return new Map([...base, ...overrides]);
 }
 
 function isSequentialSingleSummary(summary: {
