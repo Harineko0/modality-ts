@@ -585,4 +585,50 @@ describe("Jotai source plugin", () => {
       initial: 0,
     });
   });
+
+  it("duplicates imported atoms for provider store scopes via related fragments", () => {
+    const stateFile = "/project/state.ts";
+    const appFile = "/project/App.tsx";
+    const stateText = `
+      import { atom } from 'jotai';
+      export const countAtom = atom(0);
+    `;
+    const appText = `
+      import { Provider, createStore, useAtom } from 'jotai';
+      import { countAtom } from './state';
+      const myStore = createStore();
+      function Button() {
+        const [, setCount] = useAtom(countAtom);
+        return <button onClick={() => setCount(1)}>Inc</button>;
+      }
+      export function App() {
+        return <Provider store={myStore}><Button /></Provider>;
+      }
+    `;
+    const semanticProject = createSemanticProjectForTest([
+      { path: stateFile, text: stateText },
+      { path: appFile, text: appText },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appFile);
+    expect(sourceFile).toBeDefined();
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile,
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+    };
+    const decls = jotaiSource().discover({
+      sourceText: appText,
+      fileName: appFile,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: stateText, fileName: stateFile },
+        { sourceText: appText, fileName: appFile },
+      ],
+    });
+    expect(decls.some((decl) => decl.id === "atom:countAtom@store:myStore")).toBe(
+      true,
+    );
+  });
 });
