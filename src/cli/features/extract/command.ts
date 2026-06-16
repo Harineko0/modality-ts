@@ -19,6 +19,7 @@ import {
   canonicalJson,
   collectTokenDomainPaths,
   domainCardinality,
+  exceedsWideCardinalityThreshold,
   exceedsWideNumericThreshold,
   initialValues,
   parseModelArtifact,
@@ -305,6 +306,7 @@ export async function runExtractCommand(
     ...nextCacheFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,
     ...wideNumericReachabilityWarnings(overlay.model),
+    ...wideProductDomainReachabilityWarnings(overlay.model),
     ...overlay.warnings.map((message) => ({ message })),
     ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
       (message) => ({ message }),
@@ -1658,6 +1660,30 @@ function havocWrites(effect: EffectIR): string[] {
   if (effect.kind === "if")
     return [...havocWrites(effect.then), ...havocWrites(effect.else)];
   return [];
+}
+
+function wideProductDomainReachabilityWarnings(
+  model: Model,
+): ExtractionWarning[] {
+  const warnings: ExtractionWarning[] = [];
+  for (const decl of model.vars) {
+    if (!isProductDomain(decl.domain)) continue;
+    if (!exceedsWideCardinalityThreshold(decl.domain)) continue;
+    const caveat = modelSlackCaveat(
+      decl.id,
+      `Wide product domain (${domainCardinality(decl.domain)} values) may enlarge search`,
+    );
+    warnings.push({ message: caveat.reason, caveat });
+  }
+  return warnings;
+}
+
+function isProductDomain(domain: StateVarDecl["domain"]): boolean {
+  return (
+    domain.kind === "record" ||
+    domain.kind === "tagged" ||
+    domain.kind === "option"
+  );
 }
 
 function wideNumericReachabilityWarnings(model: Model): ExtractionWarning[] {

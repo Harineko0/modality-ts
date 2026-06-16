@@ -129,9 +129,11 @@ export function inferDomainFromTypeNodeSemanticDetailed(
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
 
+  // Inference order for typed nodes: (1) schema/native numeric refinement adapters
+  // for erased bounds, (2) TypeScript semantic structural mapping, (3) AST fallback.
   // Schema adapters (Zod, ArkType, native Bounded/Wrapping/Uint8) are refinement
-  // providers for bounds erased from TypeScript types; run them before semantic
-  // broad-number fallback so erased `number` is not mistaken for recoverable info.
+  // providers only — non-numerical schema shapes flow through semantic mapping when
+  // `z.infer` / `typeof schema.infer` preserves finite structure in the checker.
   const numeric = resolveNumericDomain({
     typeNode,
     initializer: astContext.initializer ?? ctx.initializer,

@@ -1,7 +1,7 @@
 export * from "./pipeline/index.js";
 export * from "./spi/index.js";
-export { inferDomainFromTypeNode } from "./ts/domains.js";
 export {
+  inferDomainFromTypeNode,
   inferDomainFromTypeNodeDetailed,
   inferUseStateDomainDetailed,
   inferUseStateDomainSemanticDetailed,
@@ -10,11 +10,5 @@ export {
   type DomainInferenceResult,
   type InitialValueResult,
 } from "./ts/domains.js";
-export {
-  inferDomainFromType,
-  inferDomainFromTypeDetailed,
-  inferDomainFromTypeNodeSemanticDetailed,
-  inferDomainFromExpressionSemanticDetailed,
-  type TypeDomainInferenceContext,
-} from "./ts/type-domains.js";
+export { inferDomainFromType, inferDomainFromTypeDetailed, inferDomainFromTypeNodeSemanticDetailed, inferDomainFromExpressionSemanticDetailed, type TypeDomainInferenceContext } from "./ts/type-domains.js";
 export * from "./numeric.js";

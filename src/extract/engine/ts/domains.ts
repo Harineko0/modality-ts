@@ -168,6 +168,13 @@ export interface UseStateSemanticTypeContext {
   sourceFile?: ts.SourceFile;
 }
 
+/**
+ * Semantic useState domain inference order when a `TypeChecker` is available:
+ * 1. schema/native numeric refinement adapters when they prove finite numeric bounds
+ * 2. TypeScript semantic type mapper (`inferDomainFromTypeNodeSemanticDetailed`) for
+ *    structural finite domains (records, enums, bool, tagged unions, …)
+ * 3. conservative AST initializer / token fallback
+ */
 export function inferUseStateDomainSemanticDetailed(
   call: ts.CallExpression,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),

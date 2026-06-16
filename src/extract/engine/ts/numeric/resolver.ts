@@ -31,6 +31,11 @@ export type NumericDomainResolver = (
   ctx: NumericDomainResolverContext,
 ) => NumericDomainResolution | undefined;
 
+/**
+ * Schema/native numeric refinement adapters. These run before TypeScript semantic
+ * structural mapping and only recover bounds erased from inferred types (Zod/ArkType
+ * chains, `Bounded<>`, etc.). Non-numerical schema shapes are not interpreted here.
+ */
 const resolvers: readonly NumericDomainResolver[] = [
   resolveNativeNumericAlias,
   resolveZodNumericSchema,

@@ -63,8 +63,15 @@ flowchart TD
 - **Branded aliases** from `modality-ts/core` carry static ranges: `Bounded<Min,Max>`,
   `Wrapping<Min,Max>`, `Uint8`/`Byte` (`0..255`, wrap), `Uint16` (`0..65535`),
   `Short` (`-32768..32767`).
-- **Schema adapters** read static integer bounds from `zod`
-  (`z.number().int().min(a).max(b)`) and `arktype` (`"a <= number.integer <= b"`).
+- **TypeScript semantic inference is primary** for structural domains (`record`, `enum`,
+  `bool`, `tagged`, …). When a Zod or ArkType schema exports an inferred type
+  (`z.infer<typeof S>`, `typeof S.infer`) that preserves finite literals, extraction
+  maps those shapes without interpreting the schema runtime.
+- **Schema adapters** recover **refinements erased from TypeScript**, currently static
+  integer bounds from `zod` (`z.number().int().min(a).max(b)`) and `arktype`
+  (`"a <= number.integer <= b"` initializer chains). Runtime-only predicates
+  (`z.refine`, custom validators) are not interpreted unless represented in the
+  inferred type or an adapter.
 - **Overflow policy** (`forbid | wrap | saturate`) is part of the domain. Reachable
   overflow is a *model-checking behaviour*, not something erased by static validation —
   the checker evaluates it. See [Transitions](./transitions.md#numeric-effects).
@@ -78,8 +85,11 @@ them, with each reduction recorded with a soundness claim
 
 ## Domain inference and field pruning
 
-Extraction computes a domain `D(τ)` from the TypeScript type `τ` structurally
-(`src/extract/engine/ts/domains.ts`). Two rules keep it sound and small:
+Extraction computes a domain `D(τ)` from the TypeScript type `τ` via `ts.TypeChecker`
+semantic mapping (`src/extract/engine/ts/type-domains.ts`), with AST fallback when the
+checker is unavailable. Schema libraries contribute numeric refinements only where
+TypeScript erases bounds; structural shapes come from inferred types. Two rules keep it
+sound and small:
 
 - **No `string` / unbounded `number` domain by accident.** Such types map to `tokens`
   (or an overlay-declared refinement), never to an enumerated set.

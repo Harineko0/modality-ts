@@ -39,13 +39,14 @@ re-runs when properties change.
 ### P0 — project load and the client-reachable surface
 
 The loader builds a **client-reachable module surface** rather than concatenating every
-import of a route file. It distinguishes a **render surface** (modules walked for JSX
-child components and client islands) from an **interaction surface** (modules that may
-contribute event handlers, effects, and discovered effect APIs). Router adapters
-classify framework-specific module roles (server entry exports, `.server` paths,
-type-only edges), so server-only code does not inflate the client model. Ambiguous
-client-reachable imports are **included with warnings** (E1-safe); imports used only from
-server roots are excluded.
+import of a route file. It constructs a `ts.Program` over reachable sources and exposes
+`ts.TypeChecker` for semantic domain inference in later phases. It distinguishes a
+**render surface** (modules walked for JSX child components and client islands) from an
+**interaction surface** (modules that may contribute event handlers, effects, and
+discovered effect APIs). Router adapters classify framework-specific module roles (server
+entry exports, `.server` paths, type-only edges), so server-only code does not inflate
+the client model. Ambiguous client-reachable imports are **included with warnings**
+(E1-safe); imports used only from server roots are excluded.
 
 ### P1 — state inventory
 
@@ -58,9 +59,13 @@ downgraded to `unextractable`.
 
 ### P2 — domain inference
 
-`D(τ)` maps TypeScript types to [domains](../concepts/state-and-domains.md)
-structurally, including the [finite numeric resolvers](../sources/react-features.md)
-(native aliases, zod, arktype). Record fields are pruned to those actually read.
+`D(τ)` maps TypeScript types to [domains](../concepts/state-and-domains.md) using
+`ts.TypeChecker` semantic inference as the primary structural source: records, enums,
+booleans, tagged unions, and other finite shapes flow from inferred types (including
+`z.infer` / `typeof schema.infer` when the checker preserves literals). **Schema
+adapters** (native aliases, Zod, ArkType) are **refinement providers** for constraints
+erased from TypeScript — currently static integer bounds on initializer chains. Record
+fields are pruned to those actually read.
 
 ### P3 — handler discovery
 

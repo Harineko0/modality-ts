@@ -252,4 +252,41 @@ describe("numeric domain resolver", () => {
       max: 0,
     });
   });
+
+  it("still resolves Zod bounded int via numeric schema adapter", () => {
+    const { call, sourceFile } = useStateCall(
+      `const [n] = useState(z.number().int().min(0).max(3));`,
+    );
+    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
+    expect(result.domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(result.caveats).toEqual([]);
+  });
+
+  it("still resolves ArkType bounded int via numeric schema adapter", () => {
+    const { call, sourceFile } = useStateCall(
+      `const [n] = useState(type("0 <= number.integer <= 3"));`,
+    );
+    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
+    expect(result.domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(result.caveats).toEqual([]);
+  });
+
+  it("falls back to tokens for z.string() schema initializer without finite literals", () => {
+    const { call, sourceFile } = useStateCall(
+      `const [label] = useState(z.string());`,
+    );
+    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
+    expect(result.domain).toEqual({ kind: "tokens", count: 1 });
+    expect(result.caveats).toEqual([]);
+  });
 });
