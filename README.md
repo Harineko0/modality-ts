@@ -6,9 +6,6 @@
   <a href="https://modality-ts.yuni.cat" target="_blank" rel="noopener noreferrer">
     <img width="261" height="261" alt="icon-removebg-preview" src="https://github.com/user-attachments/assets/e698e5fd-3d41-4edf-9d32-ab72760cc4c9" />
   </a>
-  <br>
-  <br>
-  <br>
 </p>
 
 <h1 align="center">
