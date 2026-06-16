@@ -708,6 +708,96 @@ describe("checker", () => {
     ).toEqual(["fire"]);
   });
 
+  it("treats route-local transitionId leadsToWithin triggers as fired", () => {
+    const customerRoute = { kind: "enum", values: ["/customer"] } as const;
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-transitionid-leads-to",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: customerRoute,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/customer",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: customerRoute, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "local:CustomerHome.isPrinterSettingsOpen",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "route-local", route: "/customer" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "CustomerHome.onClick.isPrinterSettingsOpen",
+          cls: "user",
+          label: { kind: "click", text: "Printer settings" },
+          source: [],
+          guard: {
+            kind: "not",
+            args: [read("local:CustomerHome.isPrinterSettingsOpen")],
+          },
+          effect: {
+            kind: "assign",
+            var: "local:CustomerHome.isPrinterSettingsOpen",
+            expr: lit(true),
+          },
+          reads: ["local:CustomerHome.isPrinterSettingsOpen"],
+          writes: ["local:CustomerHome.isPrinterSettingsOpen"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      reachable(
+        m,
+        eq(readVar("local:CustomerHome.isPrinterSettingsOpen"), lit(true)),
+        { name: "printerSettingsOpenReachable" },
+      ),
+      leadsToWithin(
+        m,
+        stepTransitionId("CustomerHome.onClick.isPrinterSettingsOpen"),
+        eq(readVar("local:CustomerHome.isPrinterSettingsOpen"), lit(true)),
+        {
+          name: "printerSettingsOpenClickImmediatelyOpensDialog",
+          budget: { steps: 0, environment: 0 },
+          enabledTransitions: ["CustomerHome.onClick.isPrinterSettingsOpen"],
+        },
+      ),
+    ]);
+    const reachableVerdict = result.verdicts.find(
+      (v) => v.property === "printerSettingsOpenReachable",
+    );
+    expect(reachableVerdict?.status).toBe("reachable");
+    expect(
+      reachableVerdict?.status === "reachable"
+        ? reachableVerdict.trace.steps.map((step) => step.transitionId)
+        : [],
+    ).toEqual(["CustomerHome.onClick.isPrinterSettingsOpen"]);
+    const leadsToVerdict = result.verdicts.find(
+      (v) => v.property === "printerSettingsOpenClickImmediatelyOpensDialog",
+    );
+    expect(leadsToVerdict?.status).toBe("verified-within-bounds");
+    expect(leadsToVerdict?.status).not.toBe("vacuous-warning");
+  });
+
   it("excludes user interference from bounded response unless explicitly allowed", () => {
     const m: Model = {
       schemaVersion: 1,
