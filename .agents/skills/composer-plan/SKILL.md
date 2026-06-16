@@ -30,5 +30,8 @@ Optimize for an implementation agent:
 - Prefer minimal diffs.
 - State what must not be changed.
 - Include “stop and ask/report” conditions if the repo differs from assumptions.
+- Avoid stopgap fixes and aim for fundamental solutions and future-proof improvements.
+- Rather than overfitting to a specific library or framework, abstract it so that it can accommodate different ones.
+- Never consider backward compatibility.
 
 Output only the plan.
