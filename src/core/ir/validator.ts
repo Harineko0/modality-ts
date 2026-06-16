@@ -42,7 +42,7 @@ export function validateModel(
     "transition",
     model.transitions.map((t) => t.id),
   );
-  for (const decl of model.vars) validateDecl(errors, decl);
+  for (const decl of model.vars) validateDecl(errors, decl, varsById);
   if (options.sliced) {
     validatePresentSystemVars(errors, varsById, model);
   } else {
@@ -216,7 +216,11 @@ function validatePendingOpDomain(
     errors.push("sys:pending args must use a record domain");
 }
 
-function validateDecl(errors: string[], decl: StateVarDecl): void {
+function validateDecl(
+  errors: string[],
+  decl: StateVarDecl,
+  varsById: Map<string, StateVarDecl>,
+): void {
   const beforeDomainValidation = errors.length;
   validateDomainShape(errors, decl.id, decl.domain);
   if (errors.length > beforeDomainValidation) return;
@@ -233,6 +237,29 @@ function validateDecl(errors: string[], decl: StateVarDecl): void {
   } catch (error) {
     errors.push(
       `${decl.id}: domain cannot enumerate: ${(error as Error).message}`,
+    );
+  }
+  validateScope(errors, decl, varsById);
+}
+
+function validateScope(
+  errors: string[],
+  decl: StateVarDecl,
+  varsById: Map<string, StateVarDecl>,
+): void {
+  if (decl.scope.kind !== "mount-local") return;
+  validateExprShape(errors, decl.id, decl.scope.when);
+  validateExprReferences(errors, decl.id, decl.scope.when, varsById);
+  validateExprType(
+    errors,
+    decl.id,
+    decl.scope.when,
+    varsById,
+    "mount-local when",
+  );
+  if (exprReads(decl.scope.when).has(decl.id)) {
+    errors.push(
+      `${decl.id}: mount-local when must not read the scoped var itself`,
     );
   }
 }

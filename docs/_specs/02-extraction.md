@@ -196,3 +196,21 @@ Emitted on every extract; embedded in check reports:
 | `<Suspense>` / `React.lazy` / `use()` | modeled: `sys:suspense:*` gating + resolve transitions; fallback interactions enabled while `suspended` |
 | ErrorBoundary | v1: not modeled; unhandled paths remain reported |
 | SWR under Suspense | suspending keys route through boundary resolve instead of focus-revalidate env model |
+
+## 12. Next.js extraction
+
+When the project depends on `next`, the built-in **Next adapter** (`nextAdapter()`) replaces the React Router adapter. It discovers routes from `app/`, `src/app/`, `pages/`, and `src/pages/` filesystem conventions — no `.next` build output and no executed `next.config` required.
+
+**Route inventory.** App Router layouts, templates, loading/error boundaries, parallel slots (`@modal`), intercepting routes, dynamic segments, catch-alls, Route Handlers, and Pages Router API routes are classified into `RouteNode` entries with `metadata.nextRouteTree` describing the route tree. Only `page` and `index` routes enter `sys:route`; layouts, templates, and resources are reported in route coverage.
+
+**Flat + tree location state.** `sys:route` / `sys:history` stay the checker-facing leaf-route contract. Optional `sys:next:slot:*` and `sys:next:phase:*` vars model layout persistence, template remounting, parallel slots, and finite loading/error phases. Navigation lowering may emit `seq` effects that update both flat route state and slot assignments.
+
+**Mount scopes.** `useState` in a layout, template, parallel slot, or page module can receive `mount-local` scope via `mountScopeForComponent`. Layout state survives sibling page navigations; template and page state reset on remount. Ambiguous component-to-tree mapping falls back to `route-local` with a warning — layout scope is never guessed from component name alone.
+
+**Server execution (nondeterministic async).** Server Actions, Route Handlers, Pages API routes, `getServerSideProps` / `getStaticProps` / `getInitialProps`, and server-side `fetch` become **effect APIs** with bounded outcome domains. Extraction does not symbolically execute server code; continuations model success/error (and auth-guard caveats where statically visible).
+
+**Streaming / cache timing.** RSC streaming, Suspense, `loading.tsx`, PPR, and cache refresh are approximated as finite `sys:next:phase:*` and `sys:next:cache:*` states when statically discoverable (`revalidatePath`, `revalidateTag`, `updateTag`). Exact Flight/byte timing is out of scope.
+
+**Platform no-ops.** `next/image`, `next/font`, metadata files, CSS modules, and static asset imports do not expand the client interaction surface unless a user callback, navigation, or cache/revalidation hook is present.
+
+**Module boundaries.** `"use client"` islands, default server components, `"use server"` action modules, and asset-only imports are classified through adapter `classifyModule` / `moduleEntryExports` / `classifyImportEdge` so server-only code does not inflate the client model (same P0 safety rule as React Router loaders).

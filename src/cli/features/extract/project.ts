@@ -829,6 +829,10 @@ export async function sourceWithReachableImports(
           continue;
         }
 
+        if (edgeContext === "asset") {
+          continue;
+        }
+
         const importedPath = await resolveImportPath(
           dirname(record.path),
           binding.specifier,
@@ -941,13 +945,36 @@ export async function sourceWithReachableImports(
       }
     }
 
+    if (adapter?.discoverEffectApis) {
+      const serverSurface =
+        record.classification.serverOnly === true ||
+        record.classification.defaultContext === "server" ||
+        (adapter.id === "next" &&
+          record.classification.defaultContext === "shared");
+      if (serverSurface && !record.isManifest) {
+        for (const entry of adapter.discoverEffectApis({
+          fileName: record.path,
+          sourceText: record.text,
+          route: record.route,
+          inventory,
+        })) {
+          effectApiProvenance.push({
+            opId: entry.opId,
+            source: entry.source,
+          });
+          if (entry.warning) warnings.push(entry.warning);
+        }
+      }
+    }
+
     sources.push({
       path: record.path,
       text: record.text,
       renderText,
       interactionText,
       included,
-      ...(record.classification.serverOnly && interactionText.length === 0
+      ...(record.classification.serverOnly &&
+      interactionText.trim().length === 0
         ? { excludedReason: "server-only module" }
         : {}),
     });

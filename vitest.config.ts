@@ -31,6 +31,14 @@ export default defineConfig({
         "./src/extract/sources/jotai/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/next/harness": new URL(
+        "./src/extract/sources/next/harness.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/sources/next": new URL(
+        "./src/extract/sources/next/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/sources/router/harness": new URL(
         "./src/extract/sources/router/harness.ts",
         import.meta.url,

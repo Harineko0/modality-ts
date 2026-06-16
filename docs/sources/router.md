@@ -43,12 +43,17 @@ Routes that are **not** modeled — `layout` and `resource` (API / `.ts`) routes
 listed with a reason in the route-coverage report, so you can see exactly which parts of
 the manifest entered `sys:route` and which did not.
 
-## Supported framework
+## Supported frameworks
 
-React Router is the built-in adapter (`reactRouterAdapter()`; the older alias
-`routerSource()` still works). The engine itself contains **no** react-router-specific
-identifiers — it only calls the adapter — so other frameworks can be supported by writing
-a new adapter, with no engine changes. See
+**Next.js** (`nextAdapter()`) activates when `next` is in your dependencies. It
+discovers App and Pages Router routes from the filesystem and models optional
+route-tree state for layouts, parallel slots, and intercepting routes. See
+[Next.js source](./next.md).
+
+**React Router** (`reactRouterAdapter()`; the older alias `routerSource()` still
+works) is used when Next is absent. The engine itself contains **no**
+framework-specific identifiers — it only calls the adapter — so other frameworks can
+be supported by writing a new adapter, with no engine changes. See
 [Navigation](../architecture/navigation.md).
 
 ## Default scope

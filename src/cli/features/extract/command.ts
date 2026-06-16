@@ -41,11 +41,21 @@ import type {
   RouteInventory,
   LocationLowering,
   NavigationAdapter,
+  NavIntent,
 } from "modality-ts/extract/engine/spi";
 import {
   parseReactRouterRoutes,
   routerSource,
 } from "modality-ts/extract/sources/router";
+import { discoverNextServerEffectApis } from "../../../extract/sources/next/server-effects.js";
+import { discoverNextCacheFromSources } from "../../../extract/sources/next/cache.js";
+import {
+  configSecurityWarnings,
+  expandInventoryForI18n,
+  nextConfigCandidates,
+  parseNextConfig,
+  synthesizeConfigRedirectTransitions,
+} from "../../../extract/sources/next/config.js";
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
@@ -147,8 +157,27 @@ export async function runExtractCommand(
     projectBase,
     routerAdapter,
   );
+  const nextConfig =
+    routerAdapter.id === "next"
+      ? await loadNextParsedConfig(projectWithInventory.configStartDir)
+      : undefined;
+  const inventory = nextConfig
+    ? expandInventoryForI18n(projectWithInventory.inventory, nextConfig)
+    : projectWithInventory.inventory;
+  const projectWithNextConfig = {
+    ...projectWithInventory,
+    inventory,
+    ...(nextConfig
+      ? {
+          surfaceWarnings: [
+            ...projectWithInventory.surfaceWarnings,
+            ...configSecurityWarnings(nextConfig),
+          ],
+        }
+      : {}),
+  };
   const project = await buildClientProjectSurface(
-    projectWithInventory,
+    projectWithNextConfig,
     routerAdapter,
   );
   const route = resolveExtractionRoute(project, config, options, sourcePaths);
@@ -170,25 +199,57 @@ export async function runExtractCommand(
     routePatterns,
     effectApis,
     sourcePlugins: registry.sourcePlugins,
-    routerPlugin: registry.routerPlugin,
+    routerPlugin: routerAdapter,
     inventory: project.inventory,
   });
-  const transitions = [...pipeline.transitions];
+  const nextCacheFragments =
+    routerAdapter.id === "next"
+      ? discoverNextCacheFromSources(
+          project.rawEntries.map((entry) => ({
+            fileName: entry.path,
+            sourceText: entry.text,
+          })),
+          project.inventory,
+        )
+      : { vars: [], transitions: [], warnings: [] };
+  const configTransitions =
+    nextConfig && routerAdapter.id === "next"
+      ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
+      : [];
+  const transitions = [
+    ...pipeline.transitions,
+    ...nextCacheFragments.transitions,
+    ...configTransitions,
+  ];
   const lowering = buildLocationLowering(
     transitions,
     routerAdapter,
     project.inventory,
   );
-  const routeVars = routerAdapter.locationVars(
-    project.inventory,
-    { route, bounds: { maxHistory: 4 } },
-    lowering,
-  );
-  const templateVars = pipeline.templateFragments.flatMap(
-    (fragment) => fragment.vars,
-  );
+  const routeVars = [
+    ...routerAdapter.locationVars(
+      project.inventory,
+      { route, bounds: { maxHistory: 4 } },
+      lowering,
+    ),
+    ...(routerAdapter.routeTreeVars?.(project.inventory, {
+      route,
+      bounds: { maxHistory: 4 },
+    }) ?? []),
+  ];
+  const templateVars = [
+    ...pipeline.templateFragments.flatMap((fragment) => fragment.vars),
+    ...nextCacheFragments.vars,
+  ];
   const stateVars = refineAssignedLiteralDomains(
-    [...pipeline.stateVars, ...templateVars],
+    [
+      ...applyMountScopesFromRouter(
+        pipeline.stateVars,
+        routerAdapter,
+        project.inventory,
+      ),
+      ...templateVars,
+    ],
     transitions,
   );
   const extractedModel: Model = {
@@ -232,6 +293,7 @@ export async function runExtractCommand(
   }
   const structuredWarnings: ExtractionWarning[] = [
     ...project.surfaceWarnings.map((message) => ({ message })),
+    ...nextCacheFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,
     ...wideNumericReachabilityWarnings(overlay.model),
     ...overlay.warnings.map((message) => ({ message })),
@@ -303,7 +365,8 @@ export async function runExtractCommand(
   })();
   const varCount =
     pipeline.stateVars.length +
-    pipeline.templateFragments.flatMap((fragment) => fragment.vars).length;
+    pipeline.templateFragments.flatMap((fragment) => fragment.vars).length +
+    nextCacheFragments.vars.length;
   const pluginLabels = registry.plugins.map(
     (plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`,
   );
@@ -444,14 +507,22 @@ function emptySurfaceProject(input: {
   };
 }
 
+function withServerEffectDiscovery(
+  adapter: NavigationAdapter,
+): NavigationAdapter {
+  if (adapter.discoverEffectApis || adapter.id !== "next") return adapter;
+  return { ...adapter, discoverEffectApis: discoverNextServerEffectApis };
+}
+
 async function buildClientProjectSurface(
   project: ExtractionProject,
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
+  const resolvedAdapter = withServerEffectDiscovery(adapter);
   const reachable = await sourceWithReachableImports(
     project.rawEntries,
     project.tsconfig,
-    adapter,
+    resolvedAdapter,
     project.inventory,
   );
   const includedSources = reachable.sources.filter((entry) => entry.included);
@@ -528,7 +599,6 @@ function runProjectExtractionPipeline(
         fileName: fragment.path,
         discoverFragments,
         ...options,
-        inventory: { routes: [] },
       }),
     ),
     runExtractionPipeline({
@@ -634,11 +704,24 @@ async function attachRouteInventory(
     });
   }
   const inventory = await adapter.discoverRoutes({
-    rootDir: project.configStartDir,
+    rootDir: resolveRouterDiscoveryRoot(project) ?? project.configStartDir,
     files,
     readFile: (path) => readFile(path, "utf8"),
   });
   return { ...project, rawEntries: files, inventory };
+}
+
+function resolveRouterDiscoveryRoot(
+  project: ExtractionProject,
+): string | undefined {
+  for (const entry of project.rawEntries) {
+    const normalized = entry.path.replace(/\\/g, "/");
+    const match =
+      normalized.match(/^(.*)\/(?:src\/)?app(?:\/|$)/) ??
+      normalized.match(/^(.*)\/(?:src\/)?pages(?:\/|$)/);
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
 }
 
 function findManifestPath(project: ExtractionProject): string | undefined {
@@ -902,6 +985,27 @@ async function importConfigModule(configPath: string): Promise<unknown> {
   return import(`${pathToFileURL(configPath).href}?t=${Date.now()}`);
 }
 
+async function loadNextParsedConfig(
+  startDir: string,
+): Promise<
+  import("../../../extract/sources/next/config.js").NextParsedConfig | undefined
+> {
+  let dir = startDir;
+  while (true) {
+    for (const candidate of nextConfigCandidates(dir)) {
+      try {
+        const text = await readFile(candidate, "utf8");
+        return parseNextConfig(text, candidate);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir || dir === parse(dir).root) return undefined;
+    dir = parent;
+  }
+}
+
 async function findNearestConfig(
   startDir: string,
 ): Promise<string | undefined> {
@@ -1019,7 +1123,12 @@ function buildStateContributors(
   const contributors = model.vars.map((decl) => {
     const cardinality = domainCardinality(decl.domain);
     const bits = cardinality < 1 ? 0 : round2(Math.log2(cardinality));
-    const scope = decl.scope.kind === "global" ? "global" : decl.scope.route;
+    const scope =
+      decl.scope.kind === "global"
+        ? "global"
+        : decl.scope.kind === "route-local"
+          ? decl.scope.route
+          : `mount:${decl.scope.id}`;
     const origin =
       typeof decl.origin === "string" ? decl.origin : decl.origin.file;
     return {
@@ -1231,6 +1340,7 @@ function buildLocationLowering(
   const pushTargets = new Set<string>();
   const pushOrigins = new Set<string>();
   let hasUnboundPush = false;
+  const routePatterns = inventory.routes.map((node) => node.pattern);
 
   for (const transition of transitions) {
     if (transition.id.startsWith("route:")) continue;
@@ -1244,6 +1354,18 @@ function buildLocationLowering(
       if (navigation.to) pushTargets.add(navigation.to);
       if (!origin) hasUnboundPush = true;
       else pushOrigins.add(origin);
+
+      if (adapter.lowerNavigation) {
+        const intent: NavIntent = {
+          mode: navigation.mode,
+          ...(navigation.to !== undefined ? { to: navigation.to } : {}),
+        };
+        for (const loweredNavigation of collectPushReplaceNavigations(
+          adapter.lowerNavigation(intent, { inventory, routePatterns }).effect,
+        )) {
+          if (loweredNavigation.to) pushTargets.add(loweredNavigation.to);
+        }
+      }
     }
   }
 
@@ -1674,6 +1796,21 @@ function pendingArgDomain(
   const domain = varsById.get(expr.var)?.domain;
   if (!domain) return { kind: "tokens", count: 1 };
   return expr.path?.length ? { kind: "tokens", count: 1 } : domain;
+}
+
+function applyMountScopesFromRouter(
+  vars: readonly StateVarDecl[],
+  adapter: NavigationAdapter,
+  inventory: RouteInventory,
+): StateVarDecl[] {
+  if (!adapter.mountScopeForComponent) return [...vars];
+  return vars.map((decl) => {
+    if (!decl.id.startsWith("local:")) return decl;
+    const component = decl.id.slice("local:".length).split(".")[0];
+    if (!component) return decl;
+    const scope = adapter.mountScopeForComponent?.(component, inventory);
+    return scope ? { ...decl, scope } : decl;
+  });
 }
 
 function refineAssignedLiteralDomains(

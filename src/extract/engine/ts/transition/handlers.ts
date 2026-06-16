@@ -415,9 +415,12 @@ export function transitionsFromLiteralListAttribute(
       resetSymbols,
       {
         ...handlerContext,
-        initialLocals: mergeLocals(handlerContext.initialLocals, new Map([
-          [listInfo.itemName, { expr: { kind: "lit", value }, reads: [] }],
-        ])),
+        initialLocals: mergeLocals(
+          handlerContext.initialLocals,
+          new Map([
+            [listInfo.itemName, { expr: { kind: "lit", value }, reads: [] }],
+          ]),
+        ),
         valueSuffix: safeId(String(value)),
       },
     );
@@ -556,8 +559,7 @@ export function transitionsFromResolvedHandler(
           setters,
           component,
           locator,
-          mergeLocals(handlerContext.initialLocals, initialLocals) ??
-            new Map(),
+          mergeLocals(handlerContext.initialLocals, initialLocals) ?? new Map(),
           resetSymbols,
           valueSuffix,
         );

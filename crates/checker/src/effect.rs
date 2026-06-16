@@ -17,6 +17,11 @@ pub fn apply_effect(
     options: &mut EvalOptions,
 ) -> Result<Vec<ModelState>, String> {
     let had_pre = options.pre_state.is_some();
+    let pre_state_for_reset = if !had_pre {
+        Some(state.clone())
+    } else {
+        None
+    };
     if !had_pre {
         options.pre_state = Some(state.clone());
     }
@@ -32,7 +37,18 @@ pub fn apply_effect(
     if !had_pre {
         options.pre_state = None;
     }
-    result
+    result.map(|states| {
+        if let Some(ref pre_state) = pre_state_for_reset {
+            states
+                .into_iter()
+                .flat_map(|successor| {
+                    navigation::reset_local_scopes(compiled, Some(pre_state), successor, false)
+                })
+                .collect()
+        } else {
+            states
+        }
+    })
 }
 
 fn apply_effect_inner(
@@ -632,5 +648,201 @@ mod tests {
         )
         .unwrap();
         assert!(posts.is_empty());
+    }
+
+    fn next_mount_local_compiled() -> (CompiledModel, ModelState) {
+        let compiled = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "next-mount".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into(), "/dashboard".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into(), "/dashboard".into()],
+                            }),
+                            max_len: 4,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                    },
+                    StateVarDecl {
+                        id: "sys:next:slot:children".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec![
+                                "__none".into(),
+                                "app/page".into(),
+                                "app/dashboard/page".into(),
+                            ],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("__none")),
+                    },
+                    StateVarDecl {
+                        id: "local:Dashboard.count".into(),
+                        domain: AbstractDomain::BoundedInt {
+                            min: 0,
+                            max: 10,
+                            overflow: None,
+                        },
+                        origin: json!("test"),
+                        scope: Scope::MountLocal {
+                            id: "next:page:app:dashboard".into(),
+                            when: ExprIR::And {
+                                args: vec![
+                                    ExprIR::Eq {
+                                        args: vec![
+                                            ExprIR::Read {
+                                                var: "sys:route".into(),
+                                                path: None,
+                                            },
+                                            ExprIR::Lit {
+                                                value: json!("/dashboard"),
+                                            },
+                                        ],
+                                    },
+                                    ExprIR::Eq {
+                                        args: vec![
+                                            ExprIR::Read {
+                                                var: "sys:next:slot:children".into(),
+                                                path: None,
+                                            },
+                                            ExprIR::Lit {
+                                                value: json!("app/dashboard/page"),
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        },
+                        initial: InitialValue::Single(json!(0)),
+                    },
+                ],
+                transitions: vec![],
+                bounds: Bounds {
+                    max_depth: 4,
+                    max_pending: 0,
+                    max_internal_steps: 4,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap();
+        let mut state = blank_state(&compiled);
+        let count_idx = compiled.var_idx("local:Dashboard.count").unwrap();
+        state.values[count_idx] = json!(crate::model::UNMOUNTED);
+        (compiled, state)
+    }
+
+    #[test]
+    fn seq_navigate_then_slot_assign_activates_mount_local() {
+        let (compiled, state) = next_mount_local_compiled();
+        let route_idx = compiled.sys_route_index.unwrap();
+        let slot_idx = compiled.var_idx("sys:next:slot:children").unwrap();
+        let count_idx = compiled.var_idx("local:Dashboard.count").unwrap();
+
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Seq {
+                effects: vec![
+                    EffectIR::Navigate {
+                        mode: "push".into(),
+                        to: Some(ExprIR::Lit {
+                            value: json!("/dashboard"),
+                        }),
+                    },
+                    EffectIR::Assign {
+                        var: "sys:next:slot:children".into(),
+                        expr: ExprIR::Lit {
+                            value: json!("app/dashboard/page"),
+                        },
+                    },
+                ],
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(posts.len(), 1);
+        assert_eq!(posts[0].get(route_idx), &json!("/dashboard"));
+        assert_eq!(posts[0].get(slot_idx), &json!("app/dashboard/page"));
+        assert_eq!(posts[0].get(count_idx), &json!(0));
+    }
+
+    #[test]
+    fn choose_slot_assign_normalizes_mount_local_successors() {
+        let (compiled, state) = next_mount_local_compiled();
+        let count_idx = compiled.var_idx("local:Dashboard.count").unwrap();
+
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Seq {
+                effects: vec![
+                    EffectIR::Navigate {
+                        mode: "push".into(),
+                        to: Some(ExprIR::Lit {
+                            value: json!("/dashboard"),
+                        }),
+                    },
+                    EffectIR::Choose {
+                        var: "sys:next:slot:children".into(),
+                        among: vec![
+                            ExprIR::Lit {
+                                value: json!("app/dashboard/page"),
+                            },
+                            ExprIR::Lit {
+                                value: json!("app/page"),
+                            },
+                        ],
+                    },
+                ],
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(posts.len(), 2);
+        let slot_idx = compiled.var_idx("sys:next:slot:children").unwrap();
+        for post in &posts {
+            let slot = post.get(slot_idx).as_str().unwrap();
+            if slot == "app/dashboard/page" {
+                assert_eq!(post.get(count_idx), &json!(0));
+            } else {
+                assert_eq!(post.get(count_idx), &json!(crate::model::UNMOUNTED));
+            }
+        }
+        let route_idx = compiled.sys_route_index.unwrap();
+        let active = posts
+            .iter()
+            .find(|post| post.get(count_idx) == &json!(0))
+            .expect("dashboard mount-local should initialize when slot matches");
+        assert_eq!(active.get(route_idx), &json!("/dashboard"));
     }
 }

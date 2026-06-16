@@ -1,5 +1,5 @@
 use crate::domain::domain_at_path;
-use crate::model::{route_local_mounted, AbstractDomain, CompiledModel, ExprIR};
+use crate::model::{transition_locals_mounted, AbstractDomain, CompiledModel, ExprIR};
 use crate::state::{read_path, values_equal, write_path, ModelState};
 use crate::step::StepFacts;
 use serde_json::{json, Value};
@@ -141,7 +141,7 @@ pub fn eval_expr(
             };
             let transition = compiled.transition(idx);
             Value::Bool(
-                route_local_mounted(compiled, idx, state)
+                transition_locals_mounted(compiled, idx, state)
                     && guard_holds(compiled, transition, state),
             )
         }
@@ -201,6 +201,21 @@ pub fn eval_expr(
             }
         }
     }
+}
+
+pub fn mount_guard_holds(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    guard: &ExprIR,
+) -> bool {
+    eval_expr(
+        compiled,
+        state,
+        guard,
+        &mut EvalOptions::default(),
+    )
+    .as_bool()
+    .unwrap_or(false)
 }
 
 pub fn guard_holds(
@@ -747,7 +762,7 @@ fn eval_expr_checked(
                 }
             }
             Ok(Value::Bool(
-                route_local_mounted(compiled, idx, state)
+                transition_locals_mounted(compiled, idx, state)
                     && guard_holds(compiled, transition, state),
             ))
         }

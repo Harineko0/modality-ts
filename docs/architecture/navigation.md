@@ -29,6 +29,12 @@ flowchart LR
 - **`sys:route` / `sys:history`** remain the fixed lowering target — the checker's
   location state. A single navigation-lowering step produces them; they are not
   hand-wired across the codebase.
+- **Optional route-tree vars** (`sys:next:slot:*`, `sys:next:phase:*`, …) extend
+  mountedness for frameworks with layout trees, parallel routes, and intercepting
+  routes. Adapters expose them through `routeTreeVars` and may lower navigation
+  with `lowerNavigation` into `seq` effects that update both flat route state and
+  slots. `sys:route` stays the compatibility leaf-route enum for `route-local` scopes
+  and properties that only care about the active URL pattern.
 
 ## The engine is framework-blind
 
@@ -42,10 +48,22 @@ asks the adapter:
 | `classifyNavigationJsx` | is this JSX element a navigation (e.g. `<Link>`)? |
 | `routeForFile` | which route does this module belong to? |
 | `locationVars` | the location state variables |
+| `routeTreeVars` | optional layout/slot/phase system vars (Next.js) |
+| `lowerNavigation` | optional adapter-specific navigation lowering |
+| `mountScopeForComponent` | optional mount boundary for local state |
 | `classifyModule` / `moduleEntryExports` / `classifyImportEdge` / `isServerOnlyModule` | optional server/client module-boundary hints (used by P0) |
 
 The same engine has been driven by a second, fake Next.js-style adapter in tests —
-proving the abstraction is real and not react-router in disguise.
+proving the abstraction is real and not react-router in disguise. Production Next.js
+projects use the built-in `nextAdapter()` when `next` appears in `package.json`
+dependencies (React Router remains the default otherwise).
+
+## Built-in adapters
+
+| Adapter | Activates when | Route model |
+| --- | --- | --- |
+| `reactRouterAdapter()` | `react-router` / `react-router-dom` in deps (or no deps in dev) | flat manifest (`app/routes.ts`) |
+| `nextAdapter()` | `next` in deps (takes priority over React Router) | App/Pages filesystem + optional route-tree vars |
 
 ## Route classification
 

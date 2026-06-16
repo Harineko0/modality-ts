@@ -11,6 +11,7 @@ import {
 } from "modality-ts/extract";
 import type { RouterPlugin } from "modality-ts/extract/engine/spi";
 import { locationVars } from "../../src/extract/sources/router/routes.js";
+import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(testDir, "../../src");
@@ -228,11 +229,130 @@ describe("extraction architecture surface", () => {
     });
   });
 
+  it("uses optional route-tree hooks when a navigation adapter provides them", () => {
+    const inventory = {
+      routes: [
+        { pattern: "/", kind: "index" as const },
+        { pattern: "/next", kind: "page" as const },
+      ],
+    };
+    const routerPlugin: RouterPlugin = {
+      id: "route-tree",
+      packageNames: ["next"],
+      discoverRoutes: async () => inventory,
+      classifyNavigationCall: () => "unsupported",
+      classifyNavigationJsx(_tag, attrs) {
+        const href = attrs.get("href");
+        return typeof href === "string"
+          ? { mode: "push", to: href }
+          : "unsupported";
+      },
+      locationVars: (routeInventory, options, lowering) =>
+        locationVars(routeInventory, options, lowering),
+      routeTreeVars: () => [
+        {
+          id: "sys:next:slot:children",
+          domain: { kind: "enum", values: ["__none", "/next"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "__none",
+        },
+      ],
+      lowerNavigation(intent) {
+        return {
+          effect: {
+            kind: "seq",
+            effects: [
+              {
+                kind: "navigate",
+                mode: intent.mode,
+                ...(intent.to ? { to: { kind: "lit", value: intent.to } } : {}),
+              },
+              {
+                kind: "assign",
+                var: "sys:next:slot:children",
+                expr: {
+                  kind: "lit",
+                  value: intent.to ?? "__none",
+                },
+              },
+            ],
+          },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history", "sys:next:slot:children"],
+          confidence: "exact",
+        };
+      },
+      harness: {
+        setup: () => ({}),
+        observe: () => "unobservable",
+        navigate: () => {},
+      },
+    };
+
+    const extracted = extractReactSourceTransitions(
+      `
+      import Link from 'next/link';
+      export function App() {
+        return <Link href="/next">Next</Link>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        routePatterns: ["/", "/next"],
+        routerPlugin,
+        inventory,
+      },
+    );
+
+    expect(
+      extracted.transitions.find((transition) => transition.cls === "nav"),
+    ).toEqual(
+      expect.objectContaining({
+        effect: {
+          kind: "seq",
+          effects: [
+            {
+              kind: "navigate",
+              mode: "push",
+              to: { kind: "lit", value: "/next" },
+            },
+            {
+              kind: "assign",
+              var: "sys:next:slot:children",
+              expr: { kind: "lit", value: "/next" },
+            },
+          ],
+        },
+        writes: ["sys:route", "sys:history", "sys:next:slot:children"],
+      }),
+    );
+
+    const pipeline = runExtractionPipeline({
+      sourceText: "",
+      fileName: "App.tsx",
+      route: "/",
+      routerPlugin,
+      inventory,
+      lowering: {
+        pushTargets: ["/next"],
+        pushOrigins: [],
+        hasUnboundPush: true,
+      },
+    });
+
+    expect(pipeline.routeVars.map((decl) => decl.id)).toEqual([
+      "sys:route",
+      "sys:history",
+    ]);
+  });
+
   it("root package exports source harness entry points", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(testDir, "../../package.json"), "utf8"),
     );
-    for (const source of ["use-state", "jotai", "swr", "router"]) {
+    for (const source of ["use-state", "jotai", "swr", "router", "next"]) {
       expect(packageJson.exports[`./extract/sources/${source}`]).toBeTruthy();
       expect(
         packageJson.exports[`./extract/sources/${source}/harness`],

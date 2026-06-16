@@ -4,10 +4,11 @@ import type {
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
-import { zustandSource } from "modality-ts/extract/sources/zustand";
-import { routerSource } from "modality-ts/extract/sources/router";
+import { nextAdapter } from "modality-ts/extract/sources/next";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { zustandSource } from "modality-ts/extract/sources/zustand";
 
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
@@ -34,7 +35,12 @@ export function createBuiltinModalityRegistry(
 ): RegistrySummary {
   const dependencies = options.dependencies;
   const disabled = new Set(options.disabledPlugins ?? []);
-  const builtins = [useStateSource(), jotaiSource(), swrSource(), zustandSource()];
+  const builtins = [
+    useStateSource(),
+    jotaiSource(),
+    swrSource(),
+    zustandSource(),
+  ];
   const sourcePlugins = [
     ...builtins.filter(
       (plugin) =>
@@ -42,15 +48,39 @@ export function createBuiltinModalityRegistry(
     ),
     ...(options.extraSourcePlugins ?? []),
   ];
-  const defaultRouter = routerSource();
-  const routerPlugin =
-    options.routerPlugin === false || disabled.has(defaultRouter.id)
-      ? undefined
-      : (options.routerPlugin ??
-        (shouldEnableBuiltin(defaultRouter, dependencies)
-          ? defaultRouter
-          : undefined));
+  const routerPlugin = resolveBuiltinRouter(options, disabled);
   return createModalityRegistry({ sourcePlugins, routerPlugin });
+}
+
+function resolveBuiltinRouter(
+  options: BuiltinRegistryOptions,
+  disabled: Set<string>,
+): NavigationAdapter | undefined {
+  if (options.routerPlugin === false) return undefined;
+  if (options.routerPlugin) return options.routerPlugin;
+
+  const dependencies = options.dependencies;
+  if (!disabled.has("next") && hasDependency(dependencies, "next")) {
+    return nextAdapter();
+  }
+  if (
+    !disabled.has("router") &&
+    (hasDependency(dependencies, "react-router") ||
+      hasDependency(dependencies, "react-router-dom"))
+  ) {
+    return reactRouterAdapter();
+  }
+  if (!dependencies && !disabled.has("router")) {
+    return reactRouterAdapter();
+  }
+  return undefined;
+}
+
+function hasDependency(
+  dependencies: Readonly<Record<string, string>> | undefined,
+  packageName: string,
+): boolean {
+  return dependencies?.[packageName] !== undefined;
 }
 
 export function createModalityRegistry(

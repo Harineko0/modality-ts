@@ -89,11 +89,9 @@ function routePatternMatches(pattern: string, target: string): boolean {
   const left = pattern.replace(/^\/+/, "").split("/");
   const right = target.replace(/^\/+/, "").split("/");
   if (left.length !== right.length) return false;
-  return left.every(
-    (part, index) => {
-      const targetPart = right[index];
-      if (targetPart === ":param") return part.startsWith(":") || part === "*";
-      return part.startsWith(":") || part === "*" || part === targetPart;
-    },
-  );
+  return left.every((part, index) => {
+    const targetPart = right[index];
+    if (targetPart === ":param") return part.startsWith(":") || part === "*";
+    return part.startsWith(":") || part === "*" || part === targetPart;
+  });
 }

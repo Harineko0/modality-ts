@@ -8,7 +8,11 @@ import {
   routeTargetValue,
 } from "../routes.js";
 import type { EffectIR, Locator, Transition } from "modality-ts/core";
-import type { NavigationAdapter } from "../../spi/index.js";
+import type {
+  NavigationAdapter,
+  NavIntent,
+  RouteInventory,
+} from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { effectWriteVars } from "./effects.js";
 import { callArgumentValue } from "./plugin-calls.js";
@@ -23,10 +27,30 @@ export function navigationTransition(
   _locator: Locator | undefined,
   adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[] = [],
+  inventory?: RouteInventory,
 ): Transition | undefined {
   const navigation = navigationCall(call, adapter, routePatterns);
   if (!navigation) return undefined;
   const routeId = navigation.to ? safeId(navigation.to) : "back";
+  const intent: NavIntent = {
+    mode: navigation.mode,
+    ...(navigation.to !== undefined ? { to: navigation.to } : {}),
+  };
+  const lowered = applyLowerNavigation(
+    adapter,
+    intent,
+    inventory,
+    routePatterns,
+    {
+      effect: navigationEffect(navigation),
+      reads:
+        navigation.mode === "push" || navigation.mode === "back"
+          ? ["sys:route", "sys:history"]
+          : ["sys:history"],
+      writes: ["sys:route", "sys:history"],
+      confidence: "exact",
+    },
+  );
   return {
     id: `${component}.${attr}.navigate.${routeId}`,
     cls: "nav",
@@ -37,17 +61,10 @@ export function navigationTransition(
     },
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: { kind: "lit", value: true },
-    effect: {
-      kind: "navigate",
-      mode: navigation.mode,
-      ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {}),
-    },
-    reads:
-      navigation.mode === "push" || navigation.mode === "back"
-        ? ["sys:route", "sys:history"]
-        : ["sys:history"],
-    writes: ["sys:route", "sys:history"],
-    confidence: "exact",
+    effect: lowered.effect,
+    reads: lowered.reads,
+    writes: lowered.writes,
+    confidence: lowered.confidence,
   };
 }
 
@@ -78,6 +95,7 @@ export function navigationJsxTransition(
   routePatterns: readonly string[],
   adapter: NavigationAdapter | undefined,
   routePattern: string | undefined,
+  inventory?: RouteInventory,
 ): Transition | undefined {
   if (
     !adapter?.classifyNavigationJsx ||
@@ -94,6 +112,26 @@ export function navigationJsxTransition(
       : undefined;
   if (classified.mode !== "back" && !to) return undefined;
   const routeId = to ? safeId(to) : "back";
+  const intent: NavIntent = {
+    mode: classified.mode,
+    ...(to !== undefined ? { to } : {}),
+  };
+  const lowered = applyLowerNavigation(
+    adapter,
+    intent,
+    inventory,
+    routePatterns,
+    {
+      effect: {
+        kind: "navigate",
+        mode: classified.mode,
+        ...(to ? { to: { kind: "lit", value: to } } : {}),
+      },
+      reads: routeMountReads(routePattern),
+      writes: ["sys:route", "sys:history"],
+      confidence: "exact",
+    },
+  );
   return {
     id: `${component}.${tag}.navigate.${routeId}`,
     cls: "nav",
@@ -104,14 +142,10 @@ export function navigationJsxTransition(
     },
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: routeMountGuard(routePattern),
-    effect: {
-      kind: "navigate",
-      mode: classified.mode,
-      ...(to ? { to: { kind: "lit", value: to } } : {}),
-    },
-    reads: routeMountReads(routePattern),
-    writes: ["sys:route", "sys:history"],
-    confidence: "exact",
+    effect: lowered.effect,
+    reads: lowered.reads,
+    writes: lowered.writes,
+    confidence: lowered.confidence,
   };
 }
 
@@ -217,6 +251,33 @@ export function navigationEffect(navigation: {
     kind: "navigate",
     mode: navigation.mode,
     ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {}),
+  };
+}
+
+export function applyLowerNavigation(
+  adapter: NavigationAdapter | undefined,
+  intent: NavIntent,
+  inventory: RouteInventory | undefined,
+  routePatterns: readonly string[],
+  fallback: {
+    effect: EffectIR;
+    reads: readonly string[];
+    writes: readonly string[];
+    confidence: "exact" | "over-approx";
+  },
+): {
+  effect: EffectIR;
+  reads: readonly string[];
+  writes: readonly string[];
+  confidence: "exact" | "over-approx";
+} {
+  if (!adapter?.lowerNavigation || !inventory) return fallback;
+  const lowered = adapter.lowerNavigation(intent, { inventory, routePatterns });
+  return {
+    effect: lowered.effect,
+    reads: lowered.reads,
+    writes: lowered.writes,
+    confidence: lowered.confidence ?? fallback.confidence,
   };
 }
 

@@ -100,6 +100,26 @@ describe("modality plugin registry", () => {
     });
   });
 
+  it("selects the Next adapter when next is a dependency", () => {
+    expect(
+      createBuiltinModalityRegistry({
+        dependencies: {
+          react: "^19.0.0",
+          next: "^15.0.0",
+        },
+      }),
+    ).toMatchObject({
+      routerPluginId: "next",
+      plugins: expect.arrayContaining([
+        expect.objectContaining({
+          id: "next",
+          kind: "router",
+          packageNames: ["next"],
+        }),
+      ]),
+    });
+  });
+
   it("can disable built-in plugins by id", () => {
     expect(
       createBuiltinModalityRegistry({

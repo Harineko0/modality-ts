@@ -88,6 +88,7 @@ export function inlineCustomHookState(
   setters: Map<string, SetterBinding>,
   component: string,
   route: string,
+  scope?: StateVarDecl["scope"],
 ): boolean {
   if (
     !ts.isArrayBindingPattern(node.name) ||
@@ -114,7 +115,7 @@ export function inlineCustomHookState(
     id: varId,
     domain: summary.domain,
     origin: { file: fileName, ...lineAndColumn(source, node) },
-    scope: { kind: "route-local", route },
+    scope: scope ?? { kind: "route-local", route },
     initial: summary.initial,
   };
   vars.push(decl);
@@ -212,9 +213,7 @@ export function literalListRenderedHandlerInfo(
       ) {
         const itemName = mapItemName(callback);
         const values = literalArrayValues(parent.expression.expression);
-        return itemName && values.length > 0
-          ? { itemName, values }
-          : undefined;
+        return itemName && values.length > 0 ? { itemName, values } : undefined;
       }
     }
     current = parent;

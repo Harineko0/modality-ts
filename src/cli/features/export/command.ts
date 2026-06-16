@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import {
   enumerateDomain,
   initialValues,
+  mountGuardForScope,
   parseModelArtifact,
   validateModel,
 } from "modality-ts/core";
@@ -329,11 +330,12 @@ function navigateBranches(
     );
   }
   for (const decl of model.vars) {
-    if (decl.scope.kind !== "route-local") continue;
+    const mountGuard = mountGuardForScope(decl.scope);
+    if (!mountGuard) continue;
     next = withValue(
       next,
       decl.id,
-      `IF ${envValue(next, "sys:route")} = ${tlaValue(decl.scope.route)} THEN ${tlaValue(decl.initial as Value)} ELSE ${tlaValue("__modality_unmounted__")}`,
+      `IF ${tlaExpr(mountGuard, next)} THEN ${tlaValue(decl.initial as Value)} ELSE ${tlaValue("__modality_unmounted__")}`,
     );
   }
   return [next];

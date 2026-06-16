@@ -5,11 +5,7 @@ const sidebars = {
       type: "category",
       label: "Introduction",
       link: { type: "doc", id: "intro/index" },
-      items: [
-        "intro/installation",
-        "intro/quickstart",
-        "intro/how-it-works",
-      ],
+      items: ["intro/installation", "intro/quickstart", "intro/how-it-works"],
     },
     {
       type: "category",
@@ -72,6 +68,7 @@ const sidebars = {
         "sources/swr",
         "sources/zustand",
         "sources/router",
+        "sources/next",
         "sources/react-features",
       ],
     },

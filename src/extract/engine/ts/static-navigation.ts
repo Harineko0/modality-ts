@@ -17,6 +17,7 @@ import {
 import {
   isNavigationJsxTag,
   navigationRouteJsxAttribute,
+  applyLowerNavigation,
 } from "./transition/navigation.js";
 import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
 import type {
@@ -60,6 +61,7 @@ export function staticNavigationTransitions(
           routePatterns,
           adapter,
           routePattern,
+          inventory,
         );
         transitions.push(...extracted);
       } else if (startsUppercase(tag)) {
@@ -186,6 +188,7 @@ function staticNavigationJsxTransitions(
   routePatterns: readonly string[],
   adapter: NavigationAdapter | undefined,
   routePattern: string | undefined,
+  inventory?: RouteInventory,
 ): InternalTransition[] {
   if (!adapter) return [];
   const toAttr = navigationRouteJsxAttribute(
@@ -202,26 +205,40 @@ function staticNavigationJsxTransitions(
   );
   return targets
     .filter((target) => target.to !== legacyTarget)
-    .map((target) => ({
-      id: `${component}.${tag}.navigate.${safeId(target.to)}`,
-      cls: "nav" as const,
-      label: {
-        kind: "navigate" as const,
-        mode: "push" as const,
-        to: target.to,
-      },
-      source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
-      guard: routeMountGuard(routePattern),
-      effect: {
-        kind: "navigate" as const,
-        mode: "push" as const,
-        to: { kind: "lit" as const, value: target.to },
-      },
-      reads: routeMountReads(routePattern),
-      writes: ["sys:route", "sys:history"],
-      confidence: target.confidence,
-      __stableIdKey: `${component}:${toAttr.getText(source)}:${target.to}`,
-    }));
+    .map((target) => {
+      const lowered = applyLowerNavigation(
+        adapter,
+        { mode: "push", to: target.to },
+        inventory,
+        routePatterns,
+        {
+          effect: {
+            kind: "navigate" as const,
+            mode: "push" as const,
+            to: { kind: "lit" as const, value: target.to },
+          },
+          reads: routeMountReads(routePattern),
+          writes: ["sys:route", "sys:history"],
+          confidence: target.confidence,
+        },
+      );
+      return {
+        id: `${component}.${tag}.navigate.${safeId(target.to)}`,
+        cls: "nav" as const,
+        label: {
+          kind: "navigate" as const,
+          mode: "push" as const,
+          to: target.to,
+        },
+        source: [{ file: fileName, ...lineAndColumn(source, toAttr) }],
+        guard: routeMountGuard(routePattern),
+        effect: lowered.effect,
+        reads: lowered.reads,
+        writes: lowered.writes,
+        confidence: lowered.confidence,
+        __stableIdKey: `${component}:${toAttr.getText(source)}:${target.to}`,
+      };
+    });
 }
 
 function staticRouteTargetsFromJsxAttribute(

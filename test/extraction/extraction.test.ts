@@ -430,8 +430,7 @@ describe("useState inventory", () => {
     );
     expect(
       result.transitions.find(
-        (transition) =>
-          transition.id === "PageEditor.Link.navigate._wiki_slug",
+        (transition) => transition.id === "PageEditor.Link.navigate._wiki_slug",
       ),
     ).toMatchObject({
       cls: "nav",
@@ -443,8 +442,7 @@ describe("useState inventory", () => {
     });
     expect(
       result.transitions.some(
-        (transition) =>
-          transition.id === "PageEditor.Link.navigate._wiki_new",
+        (transition) => transition.id === "PageEditor.Link.navigate._wiki_new",
       ),
     ).toBe(false);
   });

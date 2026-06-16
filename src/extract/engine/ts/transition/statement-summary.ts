@@ -798,8 +798,7 @@ function helperSummariesFromCall(
   state: StatementSummaryState,
   setters: Map<string, SetterBinding>,
 ): EffectSummary[] | undefined {
-  if (!state.handlers || !ts.isIdentifier(call.expression))
-    return undefined;
+  if (!state.handlers || !ts.isIdentifier(call.expression)) return undefined;
   const helper = state.handlers.get(call.expression.text);
   if (!helper || call.arguments.length > helper.parameters.length)
     return undefined;

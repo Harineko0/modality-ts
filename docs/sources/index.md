@@ -20,6 +20,7 @@ disable-able with `--disable-plugin <id>`).
 | [SWR](./swr.md) | per-key cache lifecycle, revalidation, dedup, stale-on-error | cache `Map` (direct) | **yes** (hand-written) |
 | [Zustand](./zustand.md) | store fields, actions, `set`/`get`, middleware, immer drafts | store handle (direct) | none |
 | [Router](./router.md) | routes, navigation intents, history | router test API | location semantics |
+| [Next.js](./next.md) | App/Pages routes, route-tree slots, server effect APIs | router harness + slot vars | location + tree semantics |
 | [React features](./react-features.md) | timers, effects, batching, stale closures, concurrent, Suspense | — | — |
 
 ## How a source becomes active

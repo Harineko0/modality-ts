@@ -38,7 +38,7 @@ export function extractUseTransitionBinding(
   route: string,
   fileName: string,
   source: ts.SourceFile,
-  providerGlobal: boolean,
+  scope: StateVarDecl["scope"],
 ): { varDecl: StateVarDecl; binding: TransitionBinding } | undefined {
   if (!node.initializer || !isUseTransitionCall(node.initializer))
     return undefined;
@@ -61,9 +61,7 @@ export function extractUseTransitionBinding(
       id: varId,
       domain: { kind: "bool" },
       origin: { file: fileName, ...lineAndColumn(source, node) },
-      scope: providerGlobal
-        ? { kind: "global" }
-        : { kind: "route-local", route },
+      scope,
       initial: false,
     },
     binding: {
@@ -84,7 +82,7 @@ export function extractUseDeferredValueBinding(
   route: string,
   fileName: string,
   source: ts.SourceFile,
-  providerGlobal: boolean,
+  scope: StateVarDecl["scope"],
 ): StateVarDecl | undefined {
   if (!node.initializer || !isUseDeferredValueCall(node.initializer))
     return undefined;
@@ -93,7 +91,7 @@ export function extractUseDeferredValueBinding(
     id: deferredVarId(component, srcVarId),
     domain: srcDomain,
     origin: { file: fileName, ...lineAndColumn(source, node) },
-    scope: providerGlobal ? { kind: "global" } : { kind: "route-local", route },
+    scope,
     // The deferred value mirrors its source, so it must start at the source's
     // initial value (sharing its domain). `false` would be invalid for any
     // non-bool source domain and fail model well-formedness validation.

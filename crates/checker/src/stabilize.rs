@@ -1,6 +1,6 @@
 use crate::effect::apply_effect;
 use crate::expr::guard_holds;
-use crate::model::{route_local_mounted, CompiledModel, Transition};
+use crate::model::{transition_locals_mounted, CompiledModel, Transition};
 use crate::state::{changed_var_indexes, ModelState};
 use std::collections::HashSet;
 
@@ -25,7 +25,7 @@ pub fn stabilize(
             let internal = indexed_internal_candidates(compiled, &candidate.changed)
                 .into_iter()
                 .filter(|&idx| {
-                    route_local_mounted(compiled, idx, &candidate.state)
+                    transition_locals_mounted(compiled, idx, &candidate.state)
                         && internal_triggered(compiled, idx, &candidate.changed)
                         && guard_holds(compiled, compiled.transition(idx), &candidate.state)
                 })
@@ -124,7 +124,7 @@ fn apply_internal_sequence(
         let transition = compiled.transition(transition_idx);
         let mut next_states = Vec::new();
         for candidate in states {
-            if !route_local_mounted(compiled, transition_idx, &candidate.state)
+            if !transition_locals_mounted(compiled, transition_idx, &candidate.state)
                 || !guard_holds(compiled, transition, &candidate.state)
             {
                 next_states.push(candidate);
@@ -263,7 +263,7 @@ pub fn enabled_transitions<'a>(
         .map(|&idx| &compiled.sorted_transitions[idx])
         .filter(|t| {
             let idx = compiled.transition_index[&t.id];
-            route_local_mounted(compiled, idx, state) && guard_holds(compiled, t, state)
+            transition_locals_mounted(compiled, idx, state) && guard_holds(compiled, t, state)
         })
         .collect()
 }

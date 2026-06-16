@@ -1,7 +1,7 @@
 use crate::canon::canonical_key;
-use crate::expr::{allowed_reads, eval_state_predicate};
+use crate::expr::{allowed_reads, eval_state_predicate, mount_guard_holds};
 use crate::graph::GraphRecording;
-use crate::model::{CompiledModel, PropertyIR, Scope, UNMOUNTED};
+use crate::model::{CompiledModel, PropertyIR, UNMOUNTED};
 use crate::state::ModelState;
 use crate::step::{matches_step_spec, StepFacts};
 use crate::trace::{
@@ -550,7 +550,7 @@ fn property_mounted(
         return true;
     }
     property_mounted_for_property(compiled, include_unmounted, state)
-        && route_local_reads_ok(compiled, property, state)
+        && local_scoped_reads_ok(compiled, property, state)
 }
 
 fn property_mounted_edge(
@@ -576,7 +576,7 @@ fn property_mounted_for_property(
     true
 }
 
-fn route_local_reads_ok(
+fn local_scoped_reads_ok(
     compiled: &CompiledModel,
     property: &PropertyIR,
     state: &ModelState,
@@ -585,21 +585,18 @@ fn route_local_reads_ok(
     if reads.is_empty() {
         return true;
     }
-    let route = compiled
-        .sys_route_index
-        .and_then(|idx| state.get(idx).as_str());
     for id in reads {
-        if let Some(decl) = compiled.var_decl(id) {
-            if let Scope::RouteLocal { route: r, .. } = &decl.scope {
-                if route != Some(r.as_str()) {
-                    return false;
-                }
-                if let Some(var_idx) = compiled.var_idx(id) {
-                    if state.get(var_idx) == &Value::String(UNMOUNTED.into()) {
-                        return false;
-                    }
-                }
-            }
+        let Some(var_idx) = compiled.var_idx(id) else {
+            continue;
+        };
+        let Some(guard) = compiled.vars[var_idx].mount_guard.as_ref() else {
+            continue;
+        };
+        if !mount_guard_holds(compiled, state, guard) {
+            return false;
+        }
+        if state.get(var_idx) == &Value::String(UNMOUNTED.into()) {
+            return false;
         }
     }
     true

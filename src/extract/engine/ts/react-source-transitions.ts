@@ -291,6 +291,13 @@ export function extractReactSourceTransitions(
         setters,
         nextComponent,
         route,
+        scopeForLocalState(
+          nextComponent,
+          route,
+          routerPlugin,
+          inventory,
+          providerComponents.has(nextComponent),
+        ),
       )
     ) {
       return;
@@ -347,9 +354,13 @@ export function extractReactSourceTransitions(
             id: varId,
             domain,
             origin: { file: fileName, ...lineAndColumn(source, node) },
-            scope: providerComponents.has(component)
-              ? { kind: "global" }
-              : { kind: "route-local", route },
+            scope: scopeForLocalState(
+              component,
+              route,
+              routerPlugin,
+              inventory,
+              providerComponents.has(component),
+            ),
             initial: initialValueForUseState(node.initializer, domain),
           });
         }
@@ -407,6 +418,7 @@ export function extractReactSourceTransitions(
       routePatterns,
       routerPlugin,
       routePattern,
+      inventory,
     );
     if (link) transitions.push(link);
     const scopedSetters = settersForComponent(setters, nextComponent);
@@ -530,7 +542,10 @@ export function extractReactSourceTransitions(
         registerTimerVars(timerRegistrations);
         timerCounter += timerRegistrations.length;
         if (extracted.length > 0) {
-          transitions.push(...tagStableIdKey(extracted, node), ...envTransitions);
+          transitions.push(
+            ...tagStableIdKey(extracted, node),
+            ...envTransitions,
+          );
           ts.forEachChild(node, (child) =>
             visit(child, nextComponent, effectiveBoundary),
           );
@@ -669,7 +684,13 @@ export function extractReactSourceTransitions(
           route,
           fileName,
           source,
-          providerComponents.has(nextComponent),
+          scopeForLocalState(
+            nextComponent,
+            route,
+            routerPlugin,
+            inventory,
+            providerComponents.has(nextComponent),
+          ),
         );
         if (deferred && !vars.some((decl) => decl.id === deferred.id)) {
           vars.push(deferred);
@@ -694,7 +715,13 @@ export function extractReactSourceTransitions(
         route,
         fileName,
         source,
-        providerComponents.has(nextComponent),
+        scopeForLocalState(
+          nextComponent,
+          route,
+          routerPlugin,
+          inventory,
+          providerComponents.has(nextComponent),
+        ),
       );
       if (transitionBinding) {
         transitionBindingCounter += 1;
@@ -787,4 +814,20 @@ function resolveComponentRoutePattern(
 ): string | undefined {
   if (!adapter?.routeForComponent || !inventory) return undefined;
   return adapter.routeForComponent(componentName, inventory);
+}
+
+function scopeForLocalState(
+  component: string,
+  route: string,
+  routerPlugin: NavigationAdapter | undefined,
+  inventory: RouteInventory | undefined,
+  providerGlobal: boolean,
+): StateVarDecl["scope"] {
+  if (providerGlobal) return { kind: "global" };
+  const mountScope = routerPlugin?.mountScopeForComponent?.(
+    component,
+    inventory ?? { routes: [] },
+  );
+  if (mountScope) return mountScope;
+  return { kind: "route-local", route };
 }

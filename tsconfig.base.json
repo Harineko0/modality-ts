@@ -27,6 +27,10 @@
       "modality-ts/extract/sources/jotai/harness": [
         "src/extract/sources/jotai/harness.ts"
       ],
+      "modality-ts/extract/sources/next": ["src/extract/sources/next/index.ts"],
+      "modality-ts/extract/sources/next/harness": [
+        "src/extract/sources/next/harness.ts"
+      ],
       "modality-ts/extract/sources/router": [
         "src/extract/sources/router/index.ts"
       ],

@@ -1,6 +1,27 @@
-import type { AbstractDomain, Value } from "./types.js";
+import type { AbstractDomain, ExprIR, StateVarScope, Value } from "./types.js";
 
 export const UNMOUNTED = "__modality_unmounted__";
+
+export function isLocalScopedScope(scope: StateVarScope): boolean {
+  return scope.kind === "route-local" || scope.kind === "mount-local";
+}
+
+export function mountGuardForScope(scope: StateVarScope): ExprIR | undefined {
+  switch (scope.kind) {
+    case "global":
+      return undefined;
+    case "route-local":
+      return {
+        kind: "eq",
+        args: [
+          { kind: "read", var: "sys:route" },
+          { kind: "lit", value: scope.route },
+        ],
+      };
+    case "mount-local":
+      return scope.when;
+  }
+}
 
 const CARDINALITY_CAP = Number.MAX_SAFE_INTEGER;
 

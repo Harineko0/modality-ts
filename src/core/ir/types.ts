@@ -34,11 +34,16 @@ export interface SourceAnchor {
   column?: number;
 }
 
+export type StateVarScope =
+  | { kind: "global" }
+  | { kind: "route-local"; route: string }
+  | { kind: "mount-local"; id: string; when: ExprIR };
+
 export interface StateVarDecl {
   id: string;
   domain: AbstractDomain;
   origin: SourceAnchor | "system" | "library-template";
-  scope: { kind: "global" } | { kind: "route-local"; route: string };
+  scope: StateVarScope;
   initial: Value | readonly Value[];
 }
 

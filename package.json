@@ -106,6 +106,14 @@
       "types": "./dist/extract/sources/jotai/harness.d.ts",
       "default": "./dist/extract/sources/jotai/harness.js"
     },
+    "./extract/sources/next": {
+      "types": "./dist/extract/sources/next/index.d.ts",
+      "default": "./dist/extract/sources/next/index.js"
+    },
+    "./extract/sources/next/harness": {
+      "types": "./dist/extract/sources/next/harness.d.ts",
+      "default": "./dist/extract/sources/next/harness.js"
+    },
     "./extract/sources/router": {
       "types": "./dist/extract/sources/router/index.d.ts",
       "default": "./dist/extract/sources/router/index.js"

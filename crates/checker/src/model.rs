@@ -76,6 +76,11 @@ pub enum Scope {
     RouteLocal {
         route: String,
     },
+    #[serde(rename = "mount-local")]
+    MountLocal {
+        id: String,
+        when: ExprIR,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -398,7 +403,7 @@ pub struct CheckRequest {
 
 #[derive(Debug, Clone)]
 pub struct CompiledVar {
-    pub route_pattern: Option<String>,
+    pub mount_guard: Option<ExprIR>,
 }
 
 #[derive(Debug, Clone)]
@@ -442,10 +447,7 @@ impl CompiledModel {
             .vars
             .iter()
             .map(|decl| CompiledVar {
-                route_pattern: match &decl.scope {
-                    Scope::RouteLocal { route, .. } => Some(route.clone()),
-                    Scope::Global => None,
-                },
+                mount_guard: mount_guard_for_scope(&decl.scope),
             })
             .collect();
 
@@ -476,7 +478,7 @@ impl CompiledModel {
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, compiled_var)| {
-                    if compiled_var.route_pattern.is_some() && touched.contains(&idx) {
+                    if compiled_var.mount_guard.is_some() && touched.contains(&idx) {
                         Some(idx)
                     } else {
                         None
@@ -588,17 +590,32 @@ fn validate_no_opaque(effect: &EffectIR, transition_id: &str) -> Result<(), Stri
     }
 }
 
-pub fn route_local_mounted(
+pub fn mount_guard_for_scope(scope: &Scope) -> Option<ExprIR> {
+    match scope {
+        Scope::Global => None,
+        Scope::RouteLocal { route, .. } => Some(ExprIR::Eq {
+            args: vec![
+                ExprIR::Read {
+                    var: "sys:route".into(),
+                    path: None,
+                },
+                ExprIR::Lit {
+                    value: serde_json::Value::String(route.clone()),
+                },
+            ],
+        }),
+        Scope::MountLocal { when, .. } => Some(when.clone()),
+    }
+}
+
+pub fn transition_locals_mounted(
     compiled: &CompiledModel,
     transition_idx: usize,
     state: &crate::state::ModelState,
 ) -> bool {
-    let current_route = compiled
-        .sys_route_index
-        .and_then(|idx| state.get(idx).as_str());
     for &var_idx in &compiled.transitions[transition_idx].route_local_var_indexes {
-        if let Some(route) = &compiled.vars[var_idx].route_pattern {
-            if current_route != Some(route.as_str()) {
+        if let Some(guard) = &compiled.vars[var_idx].mount_guard {
+            if !crate::expr::mount_guard_holds(compiled, state, guard) {
                 return false;
             }
         }
@@ -606,10 +623,116 @@ pub fn route_local_mounted(
     true
 }
 
+#[allow(dead_code)]
+pub fn route_local_mounted(
+    compiled: &CompiledModel,
+    transition_idx: usize,
+    state: &crate::state::ModelState,
+) -> bool {
+    transition_locals_mounted(compiled, transition_idx, state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use crate::state::ModelState;
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+
+    #[test]
+    fn transition_locals_mounted_uses_mount_guard() {
+        let model = Model {
+            schema_version: 1,
+            id: "m".into(),
+            vars: vec![
+                StateVarDecl {
+                    id: "sys:route".into(),
+                    domain: AbstractDomain::Enum {
+                        values: vec!["/a".into(), "/b".into()],
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!("/a")),
+                },
+                StateVarDecl {
+                    id: "sys:history".into(),
+                    domain: AbstractDomain::BoundedList {
+                        inner: Box::new(AbstractDomain::Enum {
+                            values: vec!["/a".into(), "/b".into()],
+                        }),
+                        max_len: 2,
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!([])),
+                },
+                StateVarDecl {
+                    id: "sys:pending".into(),
+                    domain: AbstractDomain::BoundedList {
+                        inner: Box::new(AbstractDomain::Record {
+                            fields: HashMap::new(),
+                        }),
+                        max_len: 0,
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!([])),
+                },
+                StateVarDecl {
+                    id: "local:panel".into(),
+                    domain: AbstractDomain::Bool,
+                    origin: json!("test"),
+                    scope: Scope::MountLocal {
+                        id: "slot".into(),
+                        when: ExprIR::Eq {
+                            args: vec![
+                                ExprIR::Read {
+                                    var: "sys:route".into(),
+                                    path: None,
+                                },
+                                ExprIR::Lit {
+                                    value: json!("/a"),
+                                },
+                            ],
+                        },
+                    },
+                    initial: InitialValue::Single(json!(true)),
+                },
+            ],
+            transitions: vec![Transition {
+                id: "touch".into(),
+                cls: "user".into(),
+                label: json!({"kind": "click"}),
+                source: vec![],
+                guard: ExprIR::Lit { value: json!(true) },
+                effect: EffectIR::Assign {
+                    var: "local:panel".into(),
+                    expr: ExprIR::Lit { value: json!(false) },
+                },
+                reads: vec!["local:panel".into()],
+                writes: vec!["local:panel".into()],
+                confidence: "exact".into(),
+                triggered_by: None,
+                phase: None,
+            }],
+            bounds: Bounds {
+                max_depth: 1,
+                max_pending: 0,
+                max_internal_steps: 1,
+            },
+            metadata: None,
+        };
+        let compiled = CompiledModel::compile(model, false).unwrap();
+        let route_idx = compiled.sys_route_index.unwrap();
+        let panel_idx = compiled.var_idx("local:panel").unwrap();
+        let mut on_a = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
+        on_a.values[route_idx] = json!("/a");
+        on_a.values[panel_idx] = json!(true);
+        let mut on_b = on_a.clone();
+        on_b.values[route_idx] = json!("/b");
+        assert!(transition_locals_mounted(&compiled, 0, &on_a));
+        assert!(!transition_locals_mounted(&compiled, 0, &on_b));
+    }
 
     fn minimal_model(effect: EffectIR) -> Model {
         Model {

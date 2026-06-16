@@ -102,6 +102,7 @@ export interface RouteNode {
   kind: RouteKind;
   file?: string;
   redirectTo?: string;
+  metadata?: Record<string, Value>;
 }
 
 export interface RouteInventory {
@@ -208,6 +209,19 @@ export interface ImportEdgeCtx {
   surface: ModuleExtractionSurface;
 }
 
+export interface EffectApiDiscoveryCtx {
+  fileName: string;
+  sourceText: string;
+  route?: RouteNode;
+  inventory?: RouteInventory;
+}
+
+export interface DiscoveredEffectApi {
+  opId: string;
+  source: { file: string; line: number; column: number };
+  warning?: string;
+}
+
 export interface NavigationAdapter {
   id: string;
   version?: string;
@@ -229,11 +243,34 @@ export interface NavigationAdapter {
   moduleEntryExports?(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
   classifyImportEdge?(ctx: ImportEdgeCtx): ImportEdgeContext;
   isServerOnlyModule?(fileName: string): boolean;
+  discoverEffectApis?(
+    ctx: EffectApiDiscoveryCtx,
+  ): readonly DiscoveredEffectApi[];
   locationVars(
     inventory: RouteInventory,
     options: ResolvedOptions,
     lowering: LocationLowering,
   ): readonly StateVarDecl[];
+  routeTreeVars?(
+    inventory: RouteInventory,
+    options: ResolvedOptions,
+  ): readonly StateVarDecl[];
+  lowerNavigation?(
+    intent: NavIntent,
+    ctx: {
+      inventory: RouteInventory;
+      routePatterns: readonly string[];
+    },
+  ): {
+    effect: EffectIR;
+    reads: readonly string[];
+    writes: readonly string[];
+    confidence?: "exact" | "over-approx";
+  };
+  mountScopeForComponent?(
+    componentName: string,
+    inventory: RouteInventory,
+  ): StateVarDecl["scope"] | undefined;
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
     observe(handles: HarnessHooks): ObservedRead | "unobservable";
