@@ -4,9 +4,17 @@ export { inferDomainFromTypeNode } from "./ts/domains.js";
 export {
   inferDomainFromTypeNodeDetailed,
   inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   domainInferenceWarnings,
   type DomainInferenceResult,
   type InitialValueResult,
 } from "./ts/domains.js";
+export {
+  inferDomainFromType,
+  inferDomainFromTypeDetailed,
+  inferDomainFromTypeNodeSemanticDetailed,
+  inferDomainFromExpressionSemanticDetailed,
+  type TypeDomainInferenceContext,
+} from "./ts/type-domains.js";
 export * from "./numeric.js";

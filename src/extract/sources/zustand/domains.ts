@@ -1,9 +1,14 @@
 import * as ts from "typescript";
 import type { AbstractDomain, Value } from "modality-ts/core";
+import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
 import {
   firstValue,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
+import {
+  inferDomainFromExpressionSemanticDetailed,
+  inferDomainFromTypeNodeSemanticDetailed,
+} from "../../engine/ts/type-domains.js";
 import {
   inferDomainFromTypeNodeDetailed,
   type DomainInferenceResult,
@@ -23,8 +28,28 @@ export function inferFieldDomain(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   varId?: string,
   sourceFile?: ts.SourceFile,
+  types?: SemanticTypeContext,
 ): FieldDomainResult {
   const unwrappedInitializer = unwrapExpression(initializer);
+  const semanticSource = types?.sourceFile ?? sourceFile;
+  if (typeNode && types?.checker) {
+    const inferred = inferDomainFromTypeNodeSemanticDetailed(
+      typeNode,
+      {
+        checker: types.checker,
+        sourceFile: semanticSource,
+        typeAliases,
+        varId,
+        initializer: unwrappedInitializer,
+      },
+      new Set(),
+      { initializer: unwrappedInitializer, sourceFile: semanticSource, varId },
+    );
+    const initial = unwrappedInitializer
+      ? valueFromExpression(unwrappedInitializer, inferred.domain)
+      : firstValue(inferred.domain);
+    return { ...inferred, initial };
+  }
   if (typeNode) {
     const inferred = inferDomainFromTypeNodeDetailed(
       typeNode,
@@ -38,6 +63,24 @@ export function inferFieldDomain(
     return { ...inferred, initial };
   }
   if (unwrappedInitializer) {
+    if (types?.checker && semanticSource) {
+      const inferred = inferDomainFromExpressionSemanticDetailed(
+        unwrappedInitializer,
+        {
+          checker: types.checker,
+          sourceFile: semanticSource,
+          typeAliases,
+          varId,
+          initializer: unwrappedInitializer,
+        },
+        typeAliases,
+        typeNode,
+      );
+      return {
+        ...inferred,
+        initial: valueFromExpression(unwrappedInitializer, inferred.domain),
+      };
+    }
     const domain = domainFromExpression(unwrappedInitializer, typeAliases);
     return {
       domain,

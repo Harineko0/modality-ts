@@ -1,5 +1,8 @@
 import * as ts from "typescript";
-import type { SourceDecl } from "modality-ts/extract/engine/spi";
+import type {
+  SourceDecl,
+  SemanticTypeContext,
+} from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
   isMiddlewareCall,
@@ -49,17 +52,33 @@ export function discoverZustandStores(
   return discoverZustandStoresDetailed(sourceText, fileName).decls;
 }
 
-export function discoverZustandStoresDetailed(
+function sourceFileForDiscovery(
   sourceText: string,
-  fileName = "state.ts",
-): DiscoverZustandResult {
-  const source = ts.createSourceFile(
+  fileName: string,
+  types?: SemanticTypeContext,
+): ts.SourceFile {
+  if (
+    types?.sourceFile &&
+    types.sourceFile.fileName === fileName &&
+    types.sourceFile.text === sourceText
+  ) {
+    return types.sourceFile;
+  }
+  return ts.createSourceFile(
     fileName,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
+}
+
+export function discoverZustandStoresDetailed(
+  sourceText: string,
+  fileName = "state.ts",
+  types?: SemanticTypeContext,
+): DiscoverZustandResult {
+  const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveZustandImports(source);
   if (imports.storeCreators.size === 0) return emptyDiscoverResult();
 
@@ -116,6 +135,7 @@ export function discoverZustandStoresDetailed(
           storeActions,
           storeFieldInitials,
           warnings,
+          types,
         );
       } else {
         const objectLiteral = returnObjectLiteral(creatorCall.creatorFn);
@@ -132,6 +152,7 @@ export function discoverZustandStoresDetailed(
             storeActions,
             storeFieldInitials,
             warnings,
+            types,
           );
         }
       }
@@ -171,6 +192,7 @@ function processCombineStore(
     Map<string, import("modality-ts/core").Value>
   >,
   warnings: { message: string; source?: SourceAnchor }[],
+  types?: SemanticTypeContext,
 ): void {
   emitStateFieldsFromObject(
     initialLiteral,
@@ -183,6 +205,7 @@ function processCombineStore(
     storeFields,
     storeFieldInitials,
     warnings,
+    types,
   );
   const creatorObject = returnObjectLiteral(creatorFn);
   if (creatorObject) {
@@ -219,6 +242,7 @@ function processStoreObject(
     Map<string, import("modality-ts/core").Value>
   >,
   warnings: { message: string; source?: SourceAnchor }[],
+  types?: SemanticTypeContext,
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const actions =
@@ -239,6 +263,7 @@ function processStoreObject(
     storeFields,
     storeFieldInitials,
     warnings,
+    types,
   );
   collectActionsFromObject(objectLiteral, storeName, storeActions, storeFields);
 
@@ -264,6 +289,7 @@ function emitStateFieldsFromObject(
     Map<string, import("modality-ts/core").Value>
   >,
   warnings: { message: string; source?: SourceAnchor }[],
+  types?: SemanticTypeContext,
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const initials =
@@ -305,6 +331,7 @@ function emitStateFieldsFromObject(
       typeAliases,
       varId,
       source,
+      types,
     );
     fields.add(name);
     initials.set(name, fieldDomain.initial);

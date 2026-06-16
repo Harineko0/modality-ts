@@ -13,6 +13,11 @@ import {
   exactFirstReduction,
   mergeNumericReductions,
 } from "./numeric/abstraction.js";
+import { componentNameFor } from "./ast.js";
+import {
+  inferDomainFromExpressionSemanticDetailed,
+  inferDomainFromTypeNodeSemanticDetailed,
+} from "./type-domains.js";
 
 export interface DomainInferenceResult {
   domain: AbstractDomain;
@@ -156,6 +161,155 @@ export function inferUseStateDomainDetailed(
       return { domain: { kind: "lengthCat" }, caveats: [] };
   }
   return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+}
+
+export interface UseStateSemanticTypeContext {
+  checker: ts.TypeChecker;
+  sourceFile?: ts.SourceFile;
+}
+
+export function inferUseStateDomainSemanticDetailed(
+  call: ts.CallExpression,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  sourceFile?: ts.SourceFile,
+  varId?: string,
+  types?: UseStateSemanticTypeContext,
+): DomainInferenceResult {
+  const semanticSource = types?.sourceFile;
+  const callForSemantic =
+    semanticSource && sourceFile && semanticSource !== sourceFile
+      ? findMatchingUseStateCall(semanticSource, call, varId)
+      : call;
+  const aliasesForSemantic =
+    semanticSource && sourceFile && semanticSource !== sourceFile
+      ? typeAliasDeclarations(semanticSource)
+      : typeAliases;
+  const typeArg = callForSemantic.typeArguments?.[0];
+  const initializer = callForSemantic.arguments[0];
+  if (typeArg && types?.checker) {
+    const inferenceCtx = {
+      checker: types.checker,
+      sourceFile: semanticSource ?? sourceFile,
+      varId,
+      typeAliases: aliasesForSemantic,
+      initializer,
+    };
+    const semantic = inferDomainFromTypeNodeSemanticDetailed(
+      typeArg,
+      inferenceCtx,
+      new Set(),
+      { initializer, sourceFile: inferenceCtx.sourceFile, varId },
+    );
+    if (semantic.domain.kind !== "tokens" || semantic.caveats.length > 0) {
+      return semantic;
+    }
+    const ast = inferUseStateDomainDetailed(
+      call,
+      typeAliases,
+      sourceFile,
+      varId,
+    );
+    if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
+      return ast;
+    }
+    return semantic;
+  }
+  if (initializer && types?.checker) {
+    const semanticFile = semanticSource ?? sourceFile;
+    const inferenceCtx = {
+      checker: types.checker,
+      sourceFile: semanticFile,
+      varId,
+      typeAliases: aliasesForSemantic,
+      initializer,
+    };
+    const schemaResolved = resolveNumericDomain({
+      initializer,
+      sourceFile: semanticFile,
+      typeAliases: aliasesForSemantic,
+      visited: new Set(),
+      varId,
+    });
+    if (schemaResolved.domain) {
+      return {
+        domain: schemaResolved.domain,
+        caveats: schemaResolved.caveats,
+        reductions: schemaResolved.reductions,
+      };
+    }
+    if (schemaResolved.caveats.length > 0) {
+      return {
+        domain: { kind: "tokens", count: 1 },
+        caveats: schemaResolved.caveats,
+      };
+    }
+    if (!typeArg) {
+      const ast = inferUseStateDomainDetailed(
+        call,
+        typeAliases,
+        sourceFile,
+        varId,
+      );
+      if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
+        return ast;
+      }
+    }
+    return inferDomainFromExpressionSemanticDetailed(
+      initializer,
+      inferenceCtx,
+      aliasesForSemantic,
+      typeArg,
+    );
+  }
+  return inferUseStateDomainDetailed(call, typeAliases, sourceFile, varId);
+}
+
+function parseLocalStateVarId(
+  varId?: string,
+): { component: string; stateName: string } | undefined {
+  if (!varId?.startsWith("local:")) return undefined;
+  const rest = varId.slice("local:".length);
+  const dot = rest.lastIndexOf(".");
+  if (dot <= 0) return undefined;
+  return { component: rest.slice(0, dot), stateName: rest.slice(dot + 1) };
+}
+
+function findMatchingUseStateCall(
+  semanticSource: ts.SourceFile,
+  fragmentCall: ts.CallExpression,
+  varId?: string,
+): ts.CallExpression {
+  const parsed = parseLocalStateVarId(varId);
+  if (!parsed) return fragmentCall;
+  let found: ts.CallExpression | undefined;
+  const visit = (node: ts.Node, currentComponent: string | undefined): void => {
+    if (found) return;
+    const comp = componentNameFor(node) ?? currentComponent;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isArrayBindingPattern(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === "useState"
+    ) {
+      const el = node.name.elements[0];
+      if (
+        ts.isBindingElement(el) &&
+        ts.isIdentifier(el.name) &&
+        el.name.text === parsed.stateName
+      ) {
+        const compId = comp ?? "Anonymous";
+        if (compId === parsed.component) {
+          found = node.initializer;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(node, (child) => visit(child, comp));
+  };
+  visit(semanticSource, undefined);
+  return found ?? fragmentCall;
 }
 
 export function domainInferenceWarnings(

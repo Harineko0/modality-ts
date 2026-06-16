@@ -13,7 +13,8 @@ export function zustandSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["zustand"],
     discover: (ctx) =>
-      discoverZustandStoresDetailed(ctx.sourceText, ctx.fileName).decls,
+      discoverZustandStoresDetailed(ctx.sourceText, ctx.fileName, ctx.types)
+        .decls,
     writeChannels: (ctx) =>
       discoverZustandWriteChannels(ctx.sourceText, ctx.fileName),
     safetyWarnings: (ctx) =>

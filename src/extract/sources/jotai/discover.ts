@@ -1,5 +1,8 @@
 import * as ts from "typescript";
-import type { SourceDecl } from "modality-ts/extract/engine/spi";
+import type {
+  SourceDecl,
+  SemanticTypeContext,
+} from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
   atomCreatorName,
@@ -34,17 +37,33 @@ export function discoverJotaiAtoms(
   return discoverJotaiAtomsDetailed(sourceText, fileName).decls;
 }
 
-export function discoverJotaiAtomsDetailed(
+function sourceFileForDiscovery(
   sourceText: string,
-  fileName = "state.ts",
-): DiscoverJotaiResult {
-  const source = ts.createSourceFile(
+  fileName: string,
+  types?: SemanticTypeContext,
+): ts.SourceFile {
+  if (
+    types?.sourceFile &&
+    types.sourceFile.fileName === fileName &&
+    types.sourceFile.text === sourceText
+  ) {
+    return types.sourceFile;
+  }
+  return ts.createSourceFile(
     fileName,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
+}
+
+export function discoverJotaiAtomsDetailed(
+  sourceText: string,
+  fileName = "state.ts",
+  types?: SemanticTypeContext,
+): DiscoverJotaiResult {
+  const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveJotaiImports(source);
   if (imports.atomCreators.size === 0) return emptyDiscoverResult();
 
@@ -74,6 +93,8 @@ export function discoverJotaiAtomsDetailed(
           atomName,
           imports,
           typeAliases,
+          types,
+          source,
         );
         atomMetadata.set(atomName, classification.metadata);
         if (classification.warning) {
@@ -88,6 +109,8 @@ export function discoverJotaiAtomsDetailed(
           atomName,
           imports,
           typeAliases,
+          types,
+          source,
         );
         atomNames.add(atomName);
         atomMetadata.set(atomName, classification.metadata);
@@ -153,6 +176,8 @@ export function discoverJotaiAtomsDetailed(
             staticParam,
             innerCall,
             typeAliases,
+            types,
+            source,
           );
           const varId = familyVarId(familyName, staticParam);
           atomNames.add(varId);

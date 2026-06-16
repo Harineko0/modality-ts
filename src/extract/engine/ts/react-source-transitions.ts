@@ -52,7 +52,7 @@ import { staticNavigationTransitions } from "./static-navigation.js";
 import {
   firstValue,
   domainInferenceWarnings,
-  inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "./domains.js";
@@ -351,6 +351,7 @@ export function extractReactSourceTransitions(
           inventory,
           providerComponents.has(nextComponent),
         ),
+        options.types,
       )
     ) {
       return;
@@ -394,11 +395,12 @@ export function extractReactSourceTransitions(
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
         const anchor = lineAndColumn(source, node);
-        const inferred = inferUseStateDomainDetailed(
+        const inferred = inferUseStateDomainSemanticDetailed(
           node.initializer,
           typeAliases,
           source,
           varId,
+          options.types,
         );
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));

@@ -10,9 +10,10 @@ import {
 } from "./ast.js";
 import {
   domainInferenceWarnings,
-  inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
 } from "./domains.js";
+import type { SemanticTypeContext } from "../spi/index.js";
 import type {
   ComponentDecl,
   CustomHookDecl,
@@ -96,6 +97,7 @@ export function inlineCustomHookState(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   warnings: ExtractionWarning[],
   scope?: StateVarDecl["scope"],
+  types?: SemanticTypeContext,
 ): boolean {
   if (
     !ts.isArrayBindingPattern(node.name) ||
@@ -117,7 +119,14 @@ export function inlineCustomHookState(
     return false;
   const varId = `local:${component}.${stateName.name.text}`;
   const anchor = lineAndColumn(source, node);
-  const summary = hookStateReturn(hook, source, varId, typeAliases, anchor);
+  const summary = hookStateReturn(
+    hook,
+    source,
+    varId,
+    typeAliases,
+    anchor,
+    types,
+  );
   if (!summary) return false;
   if (summary.warnings) warnings.push(...summary.warnings);
   const decl: StateVarDecl = {
@@ -290,6 +299,7 @@ function hookStateReturn(
   varId: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   anchor: { line?: number; column?: number },
+  types?: SemanticTypeContext,
 ): HookStateReturn | undefined {
   const body = hookBody(hook);
   if (!body) return undefined;
@@ -332,11 +342,12 @@ function hookStateReturn(
     elements[1].text !== setterName
   )
     return undefined;
-  const inferred = inferUseStateDomainDetailed(
+  const inferred = inferUseStateDomainSemanticDetailed(
     stateCall,
     typeAliases,
     source,
     varId,
+    types,
   );
   const domain = inferred.domain;
   const hookWarnings = [...domainInferenceWarnings(inferred, anchor)];

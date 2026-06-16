@@ -790,11 +790,11 @@ describe("runExtractCommand", () => {
       (decl) => decl.id === "local:App.color",
     );
     expect(color).toMatchObject({
-      domain: { kind: "tokens", count: 1 },
-      initial: "tok1",
+      domain: { kind: "enum", values: ["red", "gray"] },
+      initial: "gray",
     });
     const check = checkModel(result.model, [
-      reachable(result.model, eq(readVar("local:App.color"), lit("tok1")), {
+      reachable(result.model, eq(readVar("local:App.color"), lit("gray")), {
         name: "tokenInitialReachable",
         reads: ["local:App.color"],
       }),
@@ -3445,6 +3445,243 @@ export default [route('/items', 'routes/items.tsx')];`,
     expect(pendingOps).toContain("ACTION /items");
     expect(pendingOps).not.toContain("GET https://example.com/server");
     expect(pendingOps).not.toContain("POST https://example.com/server");
+  });
+
+  it("extracts enum domains from imported useState type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: {
+          react: "^18.0.0",
+          jotai: "^2.0.0",
+          zustand: "^4.0.0",
+          swr: "^2.0.0",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "posting" | "failed";
+export type User = { id: string; role: "admin" | "user" };
+export type LoadState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "done"; user: User };
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { Status, LoadState } from "./types.js";
+export function App() {
+  const [saveStatus, setSaveStatus] = useState<Status>("idle");
+  const [loadState] = useState<LoadState>({ kind: "idle" });
+  return (
+    <button onClick={() => setSaveStatus("posting")}>Save</button>
+  );
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.saveStatus")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["failed", "idle", "posting"],
+    });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.loadState")?.domain,
+    ).toMatchObject({
+      kind: "tagged",
+      tag: "kind",
+    });
+  });
+
+  it("keeps broad imported string and number as token domains", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Label = string;
+export type Count = number;
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { Label, Count } from "./types.js";
+export function App() {
+  const [label] = useState<Label>("idle");
+  const [count] = useState<Count>(0);
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.count")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+  });
+
+  it("extracts Jotai atom domains from imported type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", jotai: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "posting" | "failed";`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { atom, useAtom } from "jotai";
+import type { Status } from "./types.js";
+export const statusAtom = atom<Status>("idle");
+export function App() {
+  const [status, setStatus] = useAtom(statusAtom);
+  return <button onClick={() => setStatus("posting")}>Save</button>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "atom:statusAtom")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["failed", "idle", "posting"],
+    });
+  });
+
+  it("extracts Zustand store field domains from imported interfaces", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zustand: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export interface User {
+  role: "admin" | "user";
+  active: boolean;
+}`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { create } from "zustand";
+import type { User } from "./types.js";
+type StoreState = { user: User };
+export const useStore = create<{ user: User }>(() => ({
+  user: { role: "admin", active: true },
+}));
+export function App() {
+  const user = useStore((state) => state.user);
+  return <span>{user.role}</span>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "zustand:useStore.user")?.domain,
+    ).toEqual({
+      kind: "record",
+      fields: {
+        role: { kind: "enum", values: ["admin", "user"] },
+        active: { kind: "bool" },
+      },
+    });
+  });
+
+  it("extracts SWR payload domains from imported type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", swr: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type User = { id: string; role: "admin" | "user" };`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import useSWR from "swr";
+import type { User } from "./types.js";
+export function App() {
+  const { data } = useSWR<User>("/api/user");
+  return <span>{data?.role}</span>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "swr:api_user:data")?.domain,
+    ).toMatchObject({
+      inner: {
+        kind: "record",
+        fields: {
+          id: { kind: "tokens", count: 1 },
+          role: { kind: "enum", values: ["admin", "user"] },
+        },
+      },
+    });
   });
 });
 

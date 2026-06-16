@@ -23,6 +23,7 @@ export {
   inferDomainFromTypeNode,
   inferUseStateDomain,
   inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
 } from "../ts/domains.js";
