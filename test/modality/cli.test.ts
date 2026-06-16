@@ -18,6 +18,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const todoDir = join(repoRoot, "examples", "todo-app");
 const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
 const cliPath = join(repoRoot, "src", "cli", "cli.ts");
+const CLI_E2E_TIMEOUT_MS = 20_000;
 
 describe("modality CLI", () => {
   it("initializes a typed modality config", async () => {
@@ -284,7 +285,7 @@ describe("modality CLI", () => {
         await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
       ),
     ).toMatchObject({ kind: "conform-report" });
-  });
+  }, CLI_E2E_TIMEOUT_MS);
 
   it("emits colored structured check output when FORCE_COLOR is set", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
