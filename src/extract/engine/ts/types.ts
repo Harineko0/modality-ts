@@ -42,6 +42,7 @@ export interface BoundExpr {
 export interface HookStateReturn {
   domain: AbstractDomain;
   initial: Value;
+  warnings?: ExtractionWarning[];
 }
 
 export interface ContextBindings {

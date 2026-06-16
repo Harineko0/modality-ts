@@ -6,7 +6,7 @@ import {
   type NumericReduction,
   type Value,
 } from "modality-ts/core";
-import { unprovableNumericDomainCaveat } from "./caveats.js";
+import { modelSlackCaveat, unprovableNumericDomainCaveat } from "./caveats.js";
 import type { ExtractionWarning } from "./types.js";
 import { resolveNumericDomain } from "./numeric/resolver.js";
 import {
@@ -150,7 +150,7 @@ export function inferUseStateDomainDetailed(
 }
 
 export function domainInferenceWarnings(
-  result: DomainInferenceResult,
+  result: { caveats: readonly ExtractionCaveat[] },
   anchor?: { line?: number; column?: number },
 ): ExtractionWarning[] {
   return result.caveats.map((caveat) => ({
@@ -160,34 +160,41 @@ export function domainInferenceWarnings(
   }));
 }
 
+export interface InitialValueResult {
+  value: Value;
+  caveats: ExtractionCaveat[];
+}
+
 export function initialValueForUseState(
   call: ts.CallExpression,
   domain: AbstractDomain,
+  sourceFile?: ts.SourceFile,
+  varId?: string,
 ): Value {
+  return initialValueForUseStateDetailed(call, domain, sourceFile, varId).value;
+}
+
+export function initialValueForUseStateDetailed(
+  call: ts.CallExpression,
+  domain: AbstractDomain,
+  sourceFile?: ts.SourceFile,
+  varId?: string,
+): InitialValueResult {
   const initial = call.arguments[0];
-  if (!initial) return firstValue(domain);
-  const parsed = initialValueFromExpression(initial, domain);
-  if (parsed !== undefined) return parsed;
-  if (initial.kind === ts.SyntaxKind.TrueKeyword)
-    return validInitialOrFirst(domain, true);
-  if (initial.kind === ts.SyntaxKind.FalseKeyword)
-    return validInitialOrFirst(domain, false);
-  if (ts.isStringLiteral(initial))
-    return validInitialOrFirst(domain, initial.text);
-  if (ts.isNumericLiteral(initial))
-    return validInitialOrFirst(domain, Number(initial.text));
-  if (initial.kind === ts.SyntaxKind.NullKeyword)
-    return validInitialOrFirst(domain, null);
-  if (ts.isArrayLiteralExpression(initial))
-    return validInitialOrFirst(
-      domain,
-      initial.elements.length === 0
-        ? "0"
-        : initial.elements.length === 1
-          ? "1"
-          : "many",
-    );
-  return firstValue(domain);
+  if (!initial) return { value: firstValue(domain), caveats: [] };
+  const context: DomainInferenceContext = {
+    initializer: initial,
+    sourceFile,
+    varId,
+  };
+  const direct = evaluateInitialExpression(initial, domain, context);
+  if (direct) return direct;
+  const unwrapped = unwrapLazyInitializer(initial);
+  if (unwrapped) {
+    const lazy = evaluateInitialExpression(unwrapped, domain, context);
+    if (lazy) return lazy;
+  }
+  return { value: firstValue(domain), caveats: [] };
 }
 
 export function firstValue(domain: AbstractDomain): Value {
@@ -336,6 +343,285 @@ function abstractNumeric(
         source,
       ),
     ],
+  };
+}
+
+type StaticInitialResult = InitialValueResult;
+
+function evaluateInitialExpression(
+  expression: ts.Expression,
+  domain: AbstractDomain,
+  context: DomainInferenceContext,
+): StaticInitialResult | undefined {
+  const parsed = initialValueFromExpression(expression, domain);
+  if (parsed !== undefined) return { value: parsed, caveats: [] };
+  if (expression.kind === ts.SyntaxKind.TrueKeyword)
+    return { value: validInitialOrFirst(domain, true), caveats: [] };
+  if (expression.kind === ts.SyntaxKind.FalseKeyword)
+    return { value: validInitialOrFirst(domain, false), caveats: [] };
+  if (ts.isStringLiteral(expression))
+    return { value: validInitialOrFirst(domain, expression.text), caveats: [] };
+  if (ts.isNumericLiteral(expression))
+    return {
+      value: validInitialOrFirst(domain, Number(expression.text)),
+      caveats: [],
+    };
+  if (expression.kind === ts.SyntaxKind.NullKeyword)
+    return { value: validInitialOrFirst(domain, null), caveats: [] };
+  if (ts.isArrayLiteralExpression(expression))
+    return {
+      value: validInitialOrFirst(
+        domain,
+        lengthCatFromCount(expression.elements.length),
+      ),
+      caveats: [],
+    };
+  if (domain.kind === "lengthCat") {
+    const arrayLength = staticArrayLength(expression, context);
+    if (arrayLength) return arrayLength;
+  }
+  return undefined;
+}
+
+function unwrapLazyInitializer(
+  expression: ts.Expression,
+): ts.Expression | undefined {
+  if (ts.isArrowFunction(expression)) {
+    if (ts.isBlock(expression.body)) {
+      const returns = expression.body.statements.filter(ts.isReturnStatement);
+      if (returns.length !== 1) return undefined;
+      return returns[0]?.expression;
+    }
+    return expression.body;
+  }
+  if (ts.isFunctionExpression(expression) && ts.isBlock(expression.body)) {
+    const returns = expression.body.statements.filter(ts.isReturnStatement);
+    if (returns.length !== 1) return undefined;
+    return returns[0]?.expression;
+  }
+  return undefined;
+}
+
+function staticArrayLength(
+  expression: ts.Expression,
+  context: DomainInferenceContext,
+): StaticInitialResult | undefined {
+  const lengthResult = resolveArrayConstructorLength(expression, context);
+  if (!lengthResult) return undefined;
+  if (lengthResult.kind === "finite") {
+    return {
+      value: lengthCatFromCount(lengthResult.length),
+      caveats: [],
+    };
+  }
+  const source = sourceAnchorFromExpression(expression, context);
+  const id = context.varId ?? "array-initializer";
+  return {
+    value: firstValue({ kind: "lengthCat" }),
+    caveats: [
+      modelSlackCaveat(
+        id,
+        `Unprovable array initializer length for ${id}`,
+        source,
+      ),
+    ],
+  };
+}
+
+type ArrayLengthResolution =
+  | { kind: "finite"; length: number }
+  | { kind: "unprovable" };
+
+function resolveArrayConstructorLength(
+  expression: ts.Expression,
+  context: DomainInferenceContext,
+): ArrayLengthResolution | undefined {
+  if (ts.isCallExpression(expression) && isArrayFromCall(expression)) {
+    const firstArg = expression.arguments[0];
+    if (!firstArg || !ts.isObjectLiteralExpression(firstArg)) return undefined;
+    const lengthProperty = firstArg.properties.find(
+      (property): property is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(property) &&
+        propertyName(property.name) === "length",
+    );
+    if (!lengthProperty) return undefined;
+    return (
+      resolveStaticNumeric(lengthProperty.initializer, context) ?? {
+        kind: "unprovable",
+      }
+    );
+  }
+  if (ts.isNewExpression(expression) && isNewArrayCall(expression)) {
+    const lengthArgs = expression.arguments;
+    if (!lengthArgs || lengthArgs.length !== 1) return undefined;
+    return (
+      resolveStaticNumeric(lengthArgs[0], context) ?? { kind: "unprovable" }
+    );
+  }
+  return undefined;
+}
+
+function isArrayFromCall(expression: ts.CallExpression): boolean {
+  return (
+    ts.isPropertyAccessExpression(expression.expression) &&
+    ts.isIdentifier(expression.expression.expression) &&
+    expression.expression.expression.text === "Array" &&
+    expression.expression.name.text === "from"
+  );
+}
+
+function isNewArrayCall(expression: ts.NewExpression): boolean {
+  return (
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === "Array"
+  );
+}
+
+function resolveStaticNumeric(
+  expression: ts.Expression,
+  context: DomainInferenceContext,
+): ArrayLengthResolution | undefined {
+  if (ts.isNumericLiteral(expression)) {
+    const value = Number(expression.text);
+    return isSafeFiniteNonNegativeInteger(value)
+      ? { kind: "finite", length: value }
+      : { kind: "unprovable" };
+  }
+  if (ts.isIdentifier(expression) && context.sourceFile) {
+    const resolved = resolveConstNumericIdentifier(
+      expression,
+      context.sourceFile,
+    );
+    if (resolved === undefined) return { kind: "unprovable" };
+    return resolved;
+  }
+  return undefined;
+}
+
+function resolveConstNumericIdentifier(
+  identifier: ts.Identifier,
+  sourceFile: ts.SourceFile,
+): ArrayLengthResolution | undefined {
+  const name = identifier.text;
+  const usePos = identifier.getStart(sourceFile);
+  const scopes: ts.Node[] = [];
+  let current: ts.Node | undefined = identifier;
+  while (current) {
+    if (
+      ts.isSourceFile(current) ||
+      ts.isBlock(current) ||
+      ts.isFunctionDeclaration(current) ||
+      ts.isFunctionExpression(current) ||
+      ts.isArrowFunction(current) ||
+      ts.isMethodDeclaration(current)
+    ) {
+      scopes.push(current);
+    }
+    current = current.parent;
+  }
+  for (const scope of scopes) {
+    const binding = findConstNumericBindingInScope(
+      scope,
+      name,
+      usePos,
+      sourceFile,
+    );
+    if (binding !== undefined) return binding;
+  }
+  return undefined;
+}
+
+function findConstNumericBindingInScope(
+  scope: ts.Node,
+  name: string,
+  usePos: number,
+  sourceFile: ts.SourceFile,
+): ArrayLengthResolution | undefined {
+  const bindings: { pos: number; value: ArrayLengthResolution }[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      node !== scope &&
+      (ts.isBlock(node) ||
+        ts.isSourceFile(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node))
+    ) {
+      return;
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      if (node.name.text !== name) {
+        ts.forEachChild(node, visit);
+        return;
+      }
+      const statement = node.parent?.parent;
+      if (!ts.isVariableStatement(statement)) return;
+      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) return;
+      const pos = node.getStart(sourceFile);
+      if (pos >= usePos) return;
+      const initializer = node.initializer;
+      if (!initializer || !ts.isNumericLiteral(initializer)) return;
+      const value = Number(initializer.text);
+      bindings.push({
+        pos,
+        value: isSafeFiniteNonNegativeInteger(value)
+          ? { kind: "finite", length: value }
+          : { kind: "unprovable" },
+      });
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  if (ts.isSourceFile(scope)) {
+    for (const statement of scope.statements) visit(statement);
+  } else if (ts.isBlock(scope)) {
+    for (const statement of scope.statements) visit(statement);
+  } else if (
+    (ts.isFunctionDeclaration(scope) ||
+      ts.isFunctionExpression(scope) ||
+      ts.isArrowFunction(scope) ||
+      ts.isMethodDeclaration(scope) ||
+      ts.isGetAccessorDeclaration(scope) ||
+      ts.isSetAccessorDeclaration(scope) ||
+      ts.isConstructorDeclaration(scope)) &&
+    scope.body &&
+    ts.isBlock(scope.body)
+  ) {
+    for (const statement of scope.body.statements) visit(statement);
+  }
+  if (bindings.length === 0) return undefined;
+  bindings.sort((left, right) => right.pos - left.pos);
+  return bindings[0]?.value;
+}
+
+function lengthCatFromCount(count: number): Value {
+  if (count === 0) return "0";
+  if (count === 1) return "1";
+  return "many";
+}
+
+function isSafeFiniteNonNegativeInteger(value: number): boolean {
+  return (
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= Number.MAX_SAFE_INTEGER
+  );
+}
+
+function sourceAnchorFromExpression(
+  expression: ts.Expression,
+  context: DomainInferenceContext,
+): { file: string; line: number; column: number } | undefined {
+  if (!context.sourceFile) return undefined;
+  const { line, character } = context.sourceFile.getLineAndCharacterOfPosition(
+    expression.getStart(context.sourceFile),
+  );
+  return {
+    file: context.sourceFile.fileName,
+    line: line + 1,
+    column: character + 1,
   };
 }
 

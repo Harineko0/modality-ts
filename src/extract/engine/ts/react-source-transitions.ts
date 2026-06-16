@@ -53,7 +53,7 @@ import {
   firstValue,
   domainInferenceWarnings,
   inferUseStateDomainDetailed,
-  initialValueForUseState,
+  initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "./domains.js";
 import type {
@@ -325,6 +325,8 @@ export function extractReactSourceTransitions(
         setters,
         nextComponent,
         route,
+        typeAliases,
+        warnings,
         scopeForLocalState(
           nextComponent,
           route,
@@ -383,6 +385,13 @@ export function extractReactSourceTransitions(
         );
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));
+        const initialResult = initialValueForUseStateDetailed(
+          node.initializer,
+          domain,
+          source,
+          varId,
+        );
+        warnings.push(...domainInferenceWarnings(initialResult, anchor));
         if (!options.stateVars) {
           vars.push({
             id: varId,
@@ -395,7 +404,7 @@ export function extractReactSourceTransitions(
               inventory,
               providerComponents.has(component),
             ),
-            initial: initialValueForUseState(node.initializer, domain),
+            initial: initialResult.value,
           });
         }
         if (

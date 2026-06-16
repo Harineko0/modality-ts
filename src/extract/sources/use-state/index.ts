@@ -5,17 +5,11 @@ import type {
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
 import {
-  firstValue,
-  inferDomainFromTypeNode,
+  inferUseStateDomain,
+  initialValueForUseState,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
-import {
-  validateValue,
-  type AbstractDomain,
-  type SourceAnchor,
-  type StateVarDecl,
-  type Value,
-} from "modality-ts/core";
+import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import * as harness from "./harness.js";
 
 export function useStateSource(): StateSourcePlugin {
@@ -73,7 +67,12 @@ function discoverUseState(
           scope: providerComponents.has(componentId)
             ? { kind: "global" }
             : { kind: "route-local", route },
-          initial: initialValueForUseState(node.initializer, domain),
+          initial: initialValueForUseState(
+            node.initializer,
+            domain,
+            source,
+            varId,
+          ),
         };
         decls.push({
           id: varId,
@@ -114,65 +113,6 @@ function discoverUseStateWriteChannels(
       },
     ];
   });
-}
-
-function inferUseStateDomain(
-  call: ts.CallExpression,
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
-): AbstractDomain {
-  const typeArg = call.typeArguments?.[0];
-  if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
-  const initial = call.arguments[0];
-  if (!initial) return { kind: "tokens", count: 1 };
-  if (
-    initial.kind === ts.SyntaxKind.TrueKeyword ||
-    initial.kind === ts.SyntaxKind.FalseKeyword
-  )
-    return { kind: "bool" };
-  if (ts.isStringLiteral(initial))
-    return { kind: "enum", values: [initial.text] };
-  if (ts.isNumericLiteral(initial))
-    return {
-      kind: "boundedInt",
-      min: Number(initial.text),
-      max: Number(initial.text),
-    };
-  if (initial.kind === ts.SyntaxKind.NullKeyword)
-    return { kind: "option", inner: { kind: "tokens", count: 1 } };
-  if (ts.isArrayLiteralExpression(initial)) return { kind: "lengthCat" };
-  return { kind: "tokens", count: 1 };
-}
-
-function initialValueForUseState(
-  call: ts.CallExpression,
-  domain: AbstractDomain,
-): Value {
-  const initial = call.arguments[0];
-  if (!initial) return firstValue(domain);
-  if (initial.kind === ts.SyntaxKind.TrueKeyword)
-    return validInitialOrFirst(domain, true);
-  if (initial.kind === ts.SyntaxKind.FalseKeyword)
-    return validInitialOrFirst(domain, false);
-  if (ts.isStringLiteral(initial))
-    return validInitialOrFirst(domain, initial.text);
-  if (ts.isNumericLiteral(initial))
-    return validInitialOrFirst(domain, Number(initial.text));
-  if (initial.kind === ts.SyntaxKind.NullKeyword)
-    return validInitialOrFirst(domain, null);
-  if (ts.isArrayLiteralExpression(initial))
-    return validInitialOrFirst(
-      domain,
-      initial.elements.length === 0
-        ? "0"
-        : initial.elements.length === 1
-          ? "1"
-          : "many",
-    );
-  return firstValue(domain);
-}
-
-function validInitialOrFirst(domain: AbstractDomain, value: Value): Value {
-  return validateValue(domain, value) ? value : firstValue(domain);
 }
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {

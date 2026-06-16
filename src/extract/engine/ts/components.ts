@@ -8,11 +8,16 @@ import {
   literalValue,
   startsUppercase,
 } from "./ast.js";
-import { inferUseStateDomain, initialValueForUseState } from "./domains.js";
+import {
+  domainInferenceWarnings,
+  inferUseStateDomainDetailed,
+  initialValueForUseStateDetailed,
+} from "./domains.js";
 import type {
   ComponentDecl,
   CustomHookDecl,
   ExtractableHandler,
+  ExtractionWarning,
   HookStateReturn,
   SetterBinding,
 } from "./types.js";
@@ -88,6 +93,8 @@ export function inlineCustomHookState(
   setters: Map<string, SetterBinding>,
   component: string,
   route: string,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  warnings: ExtractionWarning[],
   scope?: StateVarDecl["scope"],
 ): boolean {
   if (
@@ -108,9 +115,11 @@ export function inlineCustomHookState(
     !ts.isIdentifier(setterName.name)
   )
     return false;
-  const summary = hookStateReturn(hook);
-  if (!summary) return false;
   const varId = `local:${component}.${stateName.name.text}`;
+  const anchor = lineAndColumn(source, node);
+  const summary = hookStateReturn(hook, source, varId, typeAliases, anchor);
+  if (!summary) return false;
+  if (summary.warnings) warnings.push(...summary.warnings);
   const decl: StateVarDecl = {
     id: varId,
     domain: summary.domain,
@@ -275,7 +284,13 @@ export function componentName(component: ComponentDecl): string | undefined {
   return componentNameFor(component.parent);
 }
 
-function hookStateReturn(hook: CustomHookDecl): HookStateReturn | undefined {
+function hookStateReturn(
+  hook: CustomHookDecl,
+  source: ts.SourceFile,
+  varId: string,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  anchor: { line?: number; column?: number },
+): HookStateReturn | undefined {
   const body = hookBody(hook);
   if (!body) return undefined;
   let stateName: string | undefined;
@@ -317,8 +332,26 @@ function hookStateReturn(hook: CustomHookDecl): HookStateReturn | undefined {
     elements[1].text !== setterName
   )
     return undefined;
-  const domain = inferUseStateDomain(stateCall);
-  return { domain, initial: initialValueForUseState(stateCall, domain) };
+  const inferred = inferUseStateDomainDetailed(
+    stateCall,
+    typeAliases,
+    source,
+    varId,
+  );
+  const domain = inferred.domain;
+  const hookWarnings = [...domainInferenceWarnings(inferred, anchor)];
+  const initialResult = initialValueForUseStateDetailed(
+    stateCall,
+    domain,
+    source,
+    varId,
+  );
+  hookWarnings.push(...domainInferenceWarnings(initialResult, anchor));
+  return {
+    domain,
+    initial: initialResult.value,
+    warnings: hookWarnings.length > 0 ? hookWarnings : undefined,
+  };
 }
 
 function hookBody(hook: CustomHookDecl): ts.Block | undefined {
