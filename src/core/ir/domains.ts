@@ -274,6 +274,12 @@ function isRecord(value: Value): value is Record<string, Value> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function exceedsWideCardinalityThreshold(
+  domain: AbstractDomain,
+): boolean {
+  return domainCardinality(domain) > WIDE_NUMERIC_DOMAIN_THRESHOLD;
+}
+
 export function exceedsWideNumericThreshold(domain: AbstractDomain): boolean {
   switch (domain.kind) {
     case "boundedInt":

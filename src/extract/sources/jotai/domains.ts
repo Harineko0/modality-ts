@@ -5,6 +5,14 @@ import {
   inferDomainFromTypeNode,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
+import type {
+  SemanticTypeContext,
+  DomainRefinementProvider,
+} from "modality-ts/extract/engine/spi";
+import {
+  inferDomainFromExpressionSemanticDetailed,
+  inferDomainFromTypeNodeSemanticDetailed,
+} from "../../engine/ts/type-domains.js";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import {
   validateValue,
@@ -34,29 +42,63 @@ export function classifyAtomCall(
   atomName: string,
   imports: JotaiResolvedImports,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AtomClassification {
   const creator = atomCreatorName(call, imports.atomCreators) ?? "atom";
   switch (creator) {
     case "atomWithStorage":
-      return classifyStorageAtom(call, atomName, typeAliases);
+      return classifyStorageAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+      );
     case "atomWithLazy":
-      return classifyLazyAtom(call, atomName, typeAliases);
+      return classifyLazyAtom(call, atomName, typeAliases, types, sourceFile);
     case "atomWithReset":
-      return classifyResetAtom(call, atomName, typeAliases);
+      return classifyResetAtom(call, atomName, typeAliases, types, sourceFile);
     case "atomWithDefault":
-      return classifyDefaultAtom(call, atomName, typeAliases);
+      return classifyDefaultAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+      );
     case "atomWithRefresh":
-      return classifyRefreshAtom(call, atomName, typeAliases);
+      return classifyRefreshAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+      );
     case "loadable":
       return classifyLoadableAtom(call, atomName);
     case "unwrap":
       return classifyUnwrapAtom(call, atomName);
     case "atomWithObservable":
-      return classifyObservableAtom(call, atomName, typeAliases);
+      return classifyObservableAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+      );
     case "atomFamily":
       return classifyFamilyAtom(atomName);
     default:
-      return classifyCoreAtom(call, atomName, typeAliases);
+      return classifyCoreAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+        domainRefinements,
+      );
   }
 }
 
@@ -64,6 +106,9 @@ function classifyCoreAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AtomClassification {
   const args = call.arguments;
   const first = args[0];
@@ -89,8 +134,22 @@ function classifyCoreAtom(
     if (second && isReadFunction(second)) {
       return {
         configKind: "readWriteDerived",
-        domain: inferAtomDomain(call, typeAliases),
-        initial: firstValue(inferAtomDomain(call, typeAliases)),
+        domain: inferAtomDomain(
+          call,
+          typeAliases,
+          types,
+          sourceFile,
+          domainRefinements,
+        ),
+        initial: firstValue(
+          inferAtomDomain(
+            call,
+            typeAliases,
+            types,
+            sourceFile,
+            domainRefinements,
+          ),
+        ),
         emitVar: false,
         metadata: {
           atomName,
@@ -134,7 +193,13 @@ function classifyCoreAtom(
       },
     };
   }
-  const domain = inferAtomDomain(call, typeAliases);
+  const domain = inferAtomDomain(
+    call,
+    typeAliases,
+    types,
+    sourceFile,
+    domainRefinements,
+  );
   return {
     configKind: "primitive",
     domain,
@@ -148,6 +213,8 @@ function classifyStorageAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
   const keyArg = call.arguments[0];
   const initialArg = call.arguments[1];
@@ -155,7 +222,13 @@ function classifyStorageAtom(
   const storageKey =
     keyArg && ts.isStringLiteral(keyArg) ? keyArg.text : undefined;
   const domain: AbstractDomain = initialArg
-    ? domainFromExpression(initialArg, typeAliases, call.typeArguments?.[0])
+    ? domainFromExpression(
+        initialArg,
+        typeAliases,
+        call.typeArguments?.[0],
+        types,
+        sourceFile,
+      )
     : { kind: "tokens", count: 1 };
   const initial = initialArg
     ? valueFromExpression(initialArg, domain)
@@ -206,6 +279,8 @@ function classifyLazyAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
   const initArg = call.arguments[0];
   if (
@@ -213,7 +288,13 @@ function classifyLazyAtom(
     (ts.isArrowFunction(initArg) || ts.isFunctionExpression(initArg))
   ) {
     if (!ts.isBlock(initArg.body)) {
-      const domain = domainFromExpression(initArg.body, typeAliases);
+      const domain = domainFromExpression(
+        initArg.body,
+        typeAliases,
+        undefined,
+        types,
+        sourceFile,
+      );
       const initial = valueFromExpression(initArg.body, domain);
       return {
         configKind: "lazy",
@@ -244,8 +325,10 @@ function classifyResetAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
-  const domain = inferAtomDomain(call, typeAliases);
+  const domain = inferAtomDomain(call, typeAliases, types, sourceFile);
   const initial = initialValueForAtom(call, domain);
   return {
     configKind: "resettable",
@@ -265,6 +348,8 @@ function classifyDefaultAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
   const readArg = call.arguments[0];
   if (readArg && isReadFunction(readArg)) {
@@ -287,7 +372,7 @@ function classifyDefaultAtom(
       };
     }
   }
-  const domain = inferAtomDomain(call, typeAliases);
+  const domain = inferAtomDomain(call, typeAliases, types, sourceFile);
   return {
     configKind: "defaultResettable",
     domain,
@@ -305,13 +390,15 @@ function classifyRefreshAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
   const readArg = call.arguments[0];
   const warning =
     readArg && isReadFunction(readArg)
       ? `Jotai atomWithRefresh ${atomName} re-evaluation abstracted`
       : undefined;
-  const domain = inferAtomDomain(call, typeAliases);
+  const domain = inferAtomDomain(call, typeAliases, types, sourceFile);
   return {
     configKind: "refreshable",
     domain,
@@ -407,6 +494,8 @@ function classifyObservableAtom(
   call: ts.CallExpression,
   atomName: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
   const optionsArg = call.arguments[1];
   let initialArg: ts.Expression | undefined;
@@ -419,7 +508,13 @@ function classifyObservableAtom(
     }
   }
   if (initialArg) {
-    const domain = domainFromExpression(initialArg, typeAliases);
+    const domain = domainFromExpression(
+      initialArg,
+      typeAliases,
+      undefined,
+      types,
+      sourceFile,
+    );
     return {
       configKind: "asyncWrapper",
       domain,
@@ -467,8 +562,10 @@ export function classifyFamilyInstance(
   param: string,
   innerCall: ts.CallExpression,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
 ): AtomClassification {
-  const domain = inferAtomDomain(innerCall, typeAliases);
+  const domain = inferAtomDomain(innerCall, typeAliases, types, sourceFile);
   const initial = initialValueForAtom(innerCall, domain);
   return {
     configKind: "familyInstance",
@@ -488,12 +585,41 @@ export function classifyFamilyInstance(
 export function inferAtomDomain(
   call: ts.CallExpression,
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
+  const semanticSource = types?.sourceFile ?? sourceFile;
+  if (typeArg && types?.checker) {
+    return inferDomainFromTypeNodeSemanticDetailed(
+      typeArg,
+      {
+        checker: types.checker,
+        sourceFile: semanticSource,
+        typeAliases,
+        initializer: call.arguments[0],
+        domainRefinements,
+      },
+      new Set(),
+      {
+        initializer: call.arguments[0],
+        sourceFile: semanticSource,
+        domainRefinements,
+      },
+    ).domain;
+  }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
   if (!initial || isReadFunction(initial)) return { kind: "tokens", count: 1 };
-  return domainFromExpression(initial, typeAliases);
+  return domainFromExpression(
+    initial,
+    typeAliases,
+    undefined,
+    types,
+    semanticSource,
+    domainRefinements,
+  );
 }
 
 export function initialValueForAtom(
@@ -509,8 +635,38 @@ function domainFromExpression(
   expr: ts.Expression,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   typeArg?: ts.TypeNode,
+  types?: SemanticTypeContext,
+  sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
+  if (typeArg && types?.checker) {
+    return inferDomainFromTypeNodeSemanticDetailed(
+      typeArg,
+      {
+        checker: types.checker,
+        sourceFile: types.sourceFile ?? sourceFile,
+        typeAliases,
+        initializer: expr,
+        domainRefinements,
+      },
+      new Set(),
+      { initializer: expr, sourceFile, domainRefinements },
+    ).domain;
+  }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
+  if (types?.checker && (types.sourceFile ?? sourceFile)) {
+    return inferDomainFromExpressionSemanticDetailed(
+      expr,
+      {
+        checker: types.checker,
+        sourceFile: types.sourceFile ?? sourceFile,
+        typeAliases,
+        domainRefinements,
+      },
+      typeAliases,
+      typeArg,
+    ).domain;
+  }
   if (
     expr.kind === ts.SyntaxKind.TrueKeyword ||
     expr.kind === ts.SyntaxKind.FalseKeyword

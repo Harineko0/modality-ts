@@ -69,7 +69,7 @@ Algorithm `D(τ)` on the checker-resolved type, structural and recursive:
 | union of string/boolean literals | `enum` of the literals |
 | union of numeric literals | `intSet` of the literals (`0 \| 2` ⇒ `intSet{0,2}`, **not** `0..2`); a dense `0..n` union may normalize to `boundedInt{0,n}` since no value is added |
 | `Bounded<Min,Max>` / `Wrapping<Min,Max>` / `Uint8` / `Byte` / `Uint16` / `Short` | `boundedInt{min,max,overflow}` from the branded alias |
-| `number` constrained by a static `zod`/`arktype` integer schema (`z.number().int().min(a).max(b)`, `"a <= number.integer <= b"`) | `boundedInt{a,b}` via the initializer/schema-aware resolver |
+| `number` constrained by a static `zod`/`arktype` integer schema (`z.number().int()` with static two-sided bounds including `min`/`gte`/`max`/`lte`/`gt`/`lt` and sign aliases; finite `multipleOf`/`step` may yield `intSet`; `"a <= number.integer <= b"`) | `boundedInt` or `intSet` via the initializer/schema-aware resolver |
 | `T \| null \| undefined` | `option(D(T))` (null and undefined collapse — documented) |
 | discriminated union of object types (common literal-typed field) | `tagged`, recursing into non-discriminant fields |
 | object type | `record` of `D(field)` — but see *field pruning* below |

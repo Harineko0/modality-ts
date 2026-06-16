@@ -12,6 +12,8 @@ import type {
   WriteChannel,
   RouteInventory,
   LocationLowering,
+  SemanticTypeContext,
+  DomainRefinementProvider,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
 import { globalTaintCaveat } from "../ts/caveats.js";
@@ -19,6 +21,7 @@ import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
+import type { SemanticProject } from "../ts/semantic-project.js";
 import * as ts from "typescript";
 
 export interface HandlerExtractionResult {
@@ -46,10 +49,12 @@ export interface ExtractionPipelineOptions {
   environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
+  domainRefinements?: readonly DomainRefinementProvider[];
   inventory?: RouteInventory;
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
   bounds?: Pick<Bounds, "maxDepth">;
+  semanticProject?: SemanticProject;
 }
 
 export interface ExtractionPipelineResult {
@@ -63,6 +68,7 @@ export interface ExtractionPipelineResult {
   plugins: {
     sources: readonly PluginProvenance[];
     router?: PluginProvenance;
+    domainRefinements?: readonly PluginProvenance[];
   };
 }
 
@@ -85,13 +91,22 @@ export const extractionPipelinePhases: readonly PipelinePhase[] = [
 export function createPluginRegistry(
   sourcePlugins: readonly StateSourcePlugin[] = [],
   routerPlugin?: RouterPlugin,
+  domainRefinementProviders: readonly DomainRefinementProvider[] = [],
 ): ExtractionPipelineResult["plugins"] {
   validateUniquePlugins(sourcePlugins);
+  validateUniqueDomainRefinementProviders(domainRefinementProviders);
   return {
     sources: sourcePlugins
       .map((plugin) => provenanceForSource(plugin))
       .sort(comparePluginProvenance),
     ...(routerPlugin ? { router: provenanceForRouter(routerPlugin) } : {}),
+    ...(domainRefinementProviders.length > 0
+      ? {
+          domainRefinements: domainRefinementProviders
+            .map((provider) => provenanceForDomainRefinement(provider))
+            .sort(comparePluginProvenance),
+        }
+      : {}),
   };
 }
 
@@ -99,30 +114,39 @@ export function runExtractionPipeline(
   options: ExtractionPipelineOptions,
 ): ExtractionPipelineResult {
   const sourcePlugins = options.sourcePlugins ?? [];
-  const plugins = createPluginRegistry(sourcePlugins, options.routerPlugin);
-  const discoveryFragments = options.discoverFragments ?? [
+  const domainRefinements = options.domainRefinements ?? [];
+  const plugins = createPluginRegistry(
+    sourcePlugins,
+    options.routerPlugin,
+    domainRefinements,
+  );
+  const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
-  const mergedDiscoveryFragment = {
-    sourceText: discoveryFragments
-      .map((fragment) => fragment.sourceText)
-      .join("\n"),
-    fileName: options.fileName,
-  };
-  const discoveryInputs =
-    discoveryFragments.length > 1
-      ? [mergedDiscoveryFragment]
-      : discoveryFragments;
-  const discoveries = discoveryInputs.flatMap((fragment) =>
-    sourcePlugins.map((plugin) => ({
+  const discoveryInputs = allDiscoveryFragments.filter(
+    (fragment) => fragment.fileName === options.fileName,
+  );
+  const discoveryFragments =
+    discoveryInputs.length > 0
+      ? discoveryInputs
+      : [{ sourceText: options.sourceText, fileName: options.fileName }];
+  const discoveries = discoveryFragments.flatMap((fragment) => {
+    const types = semanticTypeContextForFile(
+      options.semanticProject,
+      fragment.fileName,
+    );
+    return sourcePlugins.map((plugin) => ({
       plugin,
       decls: plugin.discover({
         sourceText: fragment.sourceText,
         fileName: fragment.fileName,
         route: options.route,
+        relatedFragments: allDiscoveryFragments,
+        ...(types ? { types } : {}),
+        ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
       }),
-    })),
-  );
+    }));
+  });
   const stateVars = discoveries
     .flatMap((discovery) => discovery.decls)
     .map((decl) => decl.var)
@@ -131,32 +155,48 @@ export function runExtractionPipeline(
       (decl, index, all) =>
         all.findIndex((candidate) => candidate.id === decl.id) === index,
     );
-  const writeChannels = discoveryInputs
-    .flatMap((fragment) =>
-      sourcePlugins.flatMap((plugin) =>
+  const writeChannels = discoveryFragments
+    .flatMap((fragment) => {
+      const types = semanticTypeContextForFile(
+        options.semanticProject,
+        fragment.fileName,
+      );
+      return sourcePlugins.flatMap((plugin) =>
         plugin.writeChannels({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
+          ...(types ? { types } : {}),
+          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
         }),
-      ),
-    )
+      );
+    })
     .filter(
       (channel, index, all) =>
         all.findIndex((candidate) => candidate.id === channel.id) === index,
     );
-  const pluginWarnings = discoveryInputs.flatMap((fragment) =>
-    sourcePlugins.flatMap(
+  const pluginWarnings = discoveryFragments.flatMap((fragment) => {
+    const types = semanticTypeContextForFile(
+      options.semanticProject,
+      fragment.fileName,
+    );
+    return sourcePlugins.flatMap(
       (plugin) =>
         plugin.safetyWarnings?.({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
+          ...(types ? { types } : {}),
+          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
         }) ?? [],
-    ),
-  );
+    );
+  });
   const templateFragments = discoveries.flatMap(({ plugin, decls }) =>
     decls.flatMap((decl) =>
       plugin.template ? [plugin.template(decl, { route: options.route })] : [],
     ),
+  );
+  const fragmentTypes = semanticTypeContextForFile(
+    options.semanticProject,
+    options.fileName,
   );
   const extractionCtx = {
     sourceText: options.sourceText,
@@ -172,8 +212,10 @@ export function runExtractionPipeline(
     sourcePlugins,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
+    ...(fragmentTypes ? { types: fragmentTypes } : {}),
+    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const supplementalTypeText = discoveryInputs
+  const supplementalTypeText = allDiscoveryFragments
     .map((fragment) => fragment.sourceText)
     .join("\n");
   const supplementalTypes = typeAliasDeclarations(
@@ -194,12 +236,14 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     additionalTypeAliases: supplementalTypes,
-    additionalComponentSources: discoveryFragments
+    additionalComponentSources: allDiscoveryFragments
       .filter((fragment) => fragment.fileName !== options.fileName)
       .map((fragment) => fragment.sourceText),
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
+    ...(fragmentTypes ? { types: fragmentTypes } : {}),
+    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
@@ -260,12 +304,37 @@ export function runExtractionPipeline(
   };
 }
 
+function semanticTypeContextForFile(
+  semanticProject: SemanticProject | undefined,
+  fileName: string,
+): SemanticTypeContext | undefined {
+  if (!semanticProject) return undefined;
+  const sourceFile = semanticProject.getSourceFile(fileName);
+  return {
+    program: semanticProject.program,
+    checker: semanticProject.checker,
+    ...(sourceFile ? { sourceFile } : {}),
+    getSourceFile: (name) => semanticProject.getSourceFile(name),
+  };
+}
+
 function provenanceForSource(plugin: StateSourcePlugin): PluginProvenance {
   return {
     id: plugin.id,
     version: plugin.version ?? "unknown",
     kind: "state-source",
     packageNames: [...plugin.packageNames].sort(),
+  };
+}
+
+function provenanceForDomainRefinement(
+  provider: DomainRefinementProvider,
+): PluginProvenance {
+  return {
+    id: provider.id,
+    version: provider.version ?? "unknown",
+    kind: "domain-refinement",
+    packageNames: [...provider.packageNames].sort(),
   };
 }
 
@@ -313,6 +382,17 @@ function pluginSafetyWarning(warning: {
       ? { column: warning.source.column }
       : {}),
   };
+}
+
+function validateUniqueDomainRefinementProviders(
+  providers: readonly DomainRefinementProvider[],
+): void {
+  const seen = new Set<string>();
+  for (const provider of providers) {
+    if (seen.has(provider.id))
+      throw new Error(`Duplicate domain refinement provider ${provider.id}`);
+    seen.add(provider.id);
+  }
 }
 
 function validateUniquePlugins(

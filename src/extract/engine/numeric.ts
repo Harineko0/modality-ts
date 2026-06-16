@@ -19,4 +19,4 @@ export {
   type PredicateAbstractionConfig,
   type SaturationCounterConfig,
 } from "./ts/numeric/abstraction.js";
-export type { NumericReduction } from "./ts/numeric/resolver.js";
+export type { NumericReduction } from "modality-ts/core";

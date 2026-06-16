@@ -71,6 +71,14 @@ export default defineConfig({
         "./src/extract/sources/zustand/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/type-libraries/zod": new URL(
+        "./src/extract/type-libraries/zod/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/type-libraries/arktype": new URL(
+        "./src/extract/type-libraries/arktype/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/engine/pipeline": new URL(
         "./src/extract/engine/pipeline/index.ts",
         import.meta.url,

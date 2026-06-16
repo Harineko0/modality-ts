@@ -3,9 +3,11 @@ import type {
   StateSourcePlugin,
   SourceDecl,
   WriteChannel,
+  SemanticTypeContext,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import {
-  inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
@@ -18,9 +20,15 @@ export function useStateSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["react"],
     discover: (ctx) =>
-      discoverUseState(ctx.sourceText, ctx.fileName, ctx.route),
+      discoverUseState(
+        ctx.sourceText,
+        ctx.fileName,
+        ctx.route,
+        ctx.types,
+        ctx.domainRefinements,
+      ),
     writeChannels: (ctx) =>
-      discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName),
+      discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
     harness,
     conformance: {
       testedVersions: "react>=18",
@@ -30,18 +38,35 @@ export function useStateSource(): StateSourcePlugin {
 
 export default useStateSource;
 
-function discoverUseState(
+function sourceFileForDiscovery(
   sourceText: string,
-  fileName = "App.tsx",
-  route = "/",
-): SourceDecl[] {
-  const source = ts.createSourceFile(
+  fileName: string,
+  types?: SemanticTypeContext,
+): ts.SourceFile {
+  if (
+    types?.sourceFile &&
+    types.sourceFile.fileName === fileName &&
+    types.sourceFile.text === sourceText
+  ) {
+    return types.sourceFile;
+  }
+  return ts.createSourceFile(
     fileName,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
+}
+
+function discoverUseState(
+  sourceText: string,
+  fileName = "App.tsx",
+  route = "/",
+  types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
+): SourceDecl[] {
+  const source = sourceFileForDiscovery(sourceText, fileName, types);
   const typeAliases = typeAliasDeclarations(source);
   const providerComponents = providerComponentNames(source);
   const decls: SourceDecl[] = [];
@@ -58,11 +83,13 @@ function discoverUseState(
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const componentId = component ?? "Anonymous";
         const varId = `local:${componentId}.${stateName.name.text}`;
-        const domain = inferUseStateDomainDetailed(
+        const domain = inferUseStateDomainSemanticDetailed(
           node.initializer,
           typeAliases,
           source,
           varId,
+          types,
+          domainRefinements ?? [],
         ).domain;
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         const variable: StateVarDecl = {
@@ -108,8 +135,9 @@ function discoverUseState(
 function discoverUseStateWriteChannels(
   sourceText: string,
   fileName = "App.tsx",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverUseState(sourceText, fileName, "/").flatMap((decl) => {
+  return discoverUseState(sourceText, fileName, "/", types).flatMap((decl) => {
     const setterName = decl.metadata?.setterName;
     if (typeof setterName !== "string" || !decl.var) return [];
     return [

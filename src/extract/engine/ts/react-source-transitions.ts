@@ -52,7 +52,7 @@ import { staticNavigationTransitions } from "./static-navigation.js";
 import {
   firstValue,
   domainInferenceWarnings,
-  inferUseStateDomainDetailed,
+  inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "./domains.js";
@@ -73,6 +73,8 @@ import type {
   RouterPlugin,
   StateSourcePlugin,
   WriteChannel,
+  SemanticTypeContext,
+  DomainRefinementProvider,
 } from "../spi/index.js";
 import {
   timerSetterTaints,
@@ -149,6 +151,8 @@ export interface ReactSourceTransitionOptions {
   resettableVarIds?: ReadonlySet<string>;
   additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
   additionalComponentSources?: readonly string[];
+  types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface ReactSourceTransitionResult {
@@ -349,6 +353,8 @@ export function extractReactSourceTransitions(
           inventory,
           providerComponents.has(nextComponent),
         ),
+        options.types,
+        options.domainRefinements,
       )
     ) {
       return;
@@ -392,11 +398,13 @@ export function extractReactSourceTransitions(
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
         const anchor = lineAndColumn(source, node);
-        const inferred = inferUseStateDomainDetailed(
+        const inferred = inferUseStateDomainSemanticDetailed(
           node.initializer,
           typeAliases,
           source,
           varId,
+          options.types,
+          options.domainRefinements ?? [],
         );
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));

@@ -64,6 +64,22 @@ claim-tagged reductions recorded in the [trust ledger](../soundness/trust-ledger
 
 See [State & domains](../concepts/state-and-domains.md#finite-numeric-domains).
 
+## Schema types vs overlays
+
+Prefer **static TypeScript types** (including `z.infer` / `typeof schema.infer`) when
+the checker exposes finite structure — extraction maps them directly with no overlay.
+Use **schema initializer chains** when bounds are erased from the inferred type
+but provable on the schema AST (static `z.number().int().min/max`, ArkType string
+literal unions, integer ranges, and bounded `number.integer % n` intersections).
+Reach for an **overlay** when:
+
+- a property needs a distinction hidden by `tokens` (predicate abstraction);
+- runtime-only schema predicates are not reflected in TypeScript;
+- you need `boundedList`, manual transitions, or environment assumptions overlays
+  provide.
+
+Overlays are additive and reviewable; they do not replace sound type-driven defaults.
+
 ## Filling an unextractable handler
 
 When a handler is classified `unextractable`, supply its effect manually. The overlay API

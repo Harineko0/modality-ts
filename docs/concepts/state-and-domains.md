@@ -54,7 +54,7 @@ flowchart TD
   q -->|"literal union 0..3"| r1["intSet or boundedInt 0..3"]
   q -->|"Bounded&lt;0,3&gt;"| r2["boundedInt 0..3 (forbid)"]
   q -->|"Uint8 / Byte"| r3["boundedInt 0..255 (wrap)"]
-  q -->|"zod / arktype static schema"| r4["boundedInt 0..3"]
+  q -->|"zod / arktype static schema"| r4["boundedInt / enum / intSet"]
   q -->|"bare number / float / dynamic"| t["tokens(1) + caveat"]
 ```
 
@@ -63,8 +63,21 @@ flowchart TD
 - **Branded aliases** from `modality-ts/core` carry static ranges: `Bounded<Min,Max>`,
   `Wrapping<Min,Max>`, `Uint8`/`Byte` (`0..255`, wrap), `Uint16` (`0..65535`),
   `Short` (`-32768..32767`).
-- **Schema adapters** read static integer bounds from `zod`
-  (`z.number().int().min(a).max(b)`) and `arktype` (`"a <= number.integer <= b"`).
+- **TypeScript semantic inference is primary** for structural domains (`record`, `enum`,
+  `bool`, `tagged`, …). When a Zod or ArkType schema exports an inferred type
+  (`z.infer<typeof S>`, `typeof S.infer`) that preserves finite literals, extraction
+  maps those shapes without interpreting the schema runtime.
+- **Type-library refinement providers** recover **refinements erased from TypeScript**,
+  currently static integer bounds from `zod` (`.int()` with static two-sided bounds,
+  inclusive/exclusive aliases, sign aliases, and finite `multipleOf`/`step`) and
+  a narrow ArkType grammar on `type("…")` initializer strings: string literal unions
+  (`enum`), inclusive integer ranges (`boundedInt`), and bounded `number.integer % n`
+  intersections (`intSet` or `boundedInt`). String length, array length, and unbounded
+  divisors are recognized but caveated. Providers live under
+  `src/extract/type-libraries/` and are wired through the CLI registry — they are not
+  part of the extraction engine's numeric module. Runtime-only predicates
+  (`z.refine`, custom validators) are not interpreted unless represented in the
+  inferred type or an adapter.
 - **Overflow policy** (`forbid | wrap | saturate`) is part of the domain. Reachable
   overflow is a *model-checking behaviour*, not something erased by static validation —
   the checker evaluates it. See [Transitions](./transitions.md#numeric-effects).
@@ -78,8 +91,11 @@ them, with each reduction recorded with a soundness claim
 
 ## Domain inference and field pruning
 
-Extraction computes a domain `D(τ)` from the TypeScript type `τ` structurally
-(`src/extract/engine/ts/domains.ts`). Two rules keep it sound and small:
+Extraction computes a domain `D(τ)` from the TypeScript type `τ` via `ts.TypeChecker`
+semantic mapping (`src/extract/engine/ts/type-domains.ts`), with AST fallback when the
+checker is unavailable. Schema libraries contribute numeric refinements only where
+TypeScript erases bounds; structural shapes come from inferred types. Two rules keep it
+sound and small:
 
 - **No `string` / unbounded `number` domain by accident.** Such types map to `tokens`
   (or an overlay-declared refinement), never to an enumerated set.

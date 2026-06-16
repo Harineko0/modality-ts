@@ -93,7 +93,11 @@ Numbers can be finite *state* when their domain is statically provable
 - literal unions are **exact** (`0 | 2` → `intSet {0,2}`, never widened);
 - branded aliases (`Bounded<Min,Max>`, `Uint8`/`Byte`, `Uint16`, `Short`) carry static
   ranges;
-- static `zod` (`z.number().int().min().max()`) and `arktype` schemas are read;
+- static `zod` (`.int()` with static two-sided bounds, aliases, and finite
+  `multipleOf`/`step`) and `arktype` schema initializer chains
+  (string literal unions, integer ranges, bounded `number.integer % n`) are read when
+  the corresponding [type-library adapter](../architecture/type-library-adapters.md)
+  is enabled in the registry;
 - the checker evaluates numeric comparisons (`lt`/`lte`/`gt`/`gte`) and arithmetic
   (`add`/`sub`/`mod`) with an **overflow policy** (`forbid`/`wrap`/`saturate`) — reachable
   overflow is explored, not erased;

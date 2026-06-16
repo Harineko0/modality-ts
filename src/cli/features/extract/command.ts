@@ -19,6 +19,7 @@ import {
   canonicalJson,
   collectTokenDomainPaths,
   domainCardinality,
+  exceedsWideCardinalityThreshold,
   exceedsWideNumericThreshold,
   initialValues,
   parseModelArtifact,
@@ -42,6 +43,7 @@ import type {
   LocationLowering,
   NavigationAdapter,
   NavIntent,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import {
   parseReactRouterRoutes,
@@ -79,6 +81,10 @@ import {
   type TsConfigResolution,
   sourceWithReachableImports,
 } from "./project.js";
+import {
+  createSemanticProject,
+  type SemanticProject,
+} from "../../../extract/engine/ts/semantic-project.js";
 
 export interface ModalityConfig {
   navigation?: {
@@ -91,6 +97,7 @@ export interface ModalityConfig {
   packageJsonPath?: string;
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
+  domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: RouterPlugin | false;
 }
 
@@ -108,6 +115,7 @@ export interface ExtractCommandOptions {
   configPath?: string;
   disabledPlugins?: readonly string[];
   sourcePlugins?: readonly StateSourcePlugin[];
+  domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: RouterPlugin | false;
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
@@ -152,6 +160,10 @@ export async function runExtractCommand(
     extraSourcePlugins: [
       ...(config.plugins ?? []),
       ...(options.sourcePlugins ?? []),
+    ],
+    extraDomainRefinementProviders: [
+      ...(config.domainRefinements ?? []),
+      ...(options.domainRefinements ?? []),
     ],
     routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
@@ -204,6 +216,7 @@ export async function runExtractCommand(
     environment: config.environment,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: routerAdapter,
+    domainRefinements: registry.domainRefinementProviders,
     inventory: project.inventory,
     bounds: { maxDepth: bounds.maxDepth },
   });
@@ -301,6 +314,7 @@ export async function runExtractCommand(
     ...nextCacheFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,
     ...wideNumericReachabilityWarnings(overlay.model),
+    ...wideProductDomainReachabilityWarnings(overlay.model),
     ...overlay.warnings.map((message) => ({ message })),
     ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
       (message) => ({ message }),
@@ -431,6 +445,7 @@ interface ExtractionProject {
   configStartDir: string;
   rawEntries: Array<{ path: string; text: string }>;
   tsconfig: TsConfigResolution;
+  semanticProject?: SemanticProject;
 }
 
 function normalizedSourcePaths(options: ExtractCommandOptions): string[] {
@@ -543,8 +558,13 @@ async function buildClientProjectSurface(
       interactionSourcePaths.has(entry.path) ||
       entry.path.endsWith("routes.ts"),
   );
+  const semanticProject = createSemanticProject(
+    includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
+    project.tsconfig,
+  );
   return {
     ...project,
+    semanticProject,
     sourceText: interactionSources.map((entry) => entry.text).join("\n"),
     interactionSources,
     sourceFiles: reportSources
@@ -569,6 +589,7 @@ function runProjectExtractionPipeline(
     environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
     routerPlugin?: RouterPlugin;
+    domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;
   },
@@ -583,6 +604,7 @@ function runProjectExtractionPipeline(
     return runExtractionPipeline({
       sourceText: "",
       fileName: project.entryFile,
+      semanticProject: project.semanticProject,
       ...options,
     });
   }
@@ -596,6 +618,7 @@ function runProjectExtractionPipeline(
       sourceText: fragment.text,
       fileName: fragment.path,
       discoverFragments,
+      semanticProject: project.semanticProject,
       ...options,
     });
   }
@@ -605,12 +628,14 @@ function runProjectExtractionPipeline(
         sourceText: fragment.text,
         fileName: fragment.path,
         discoverFragments,
+        semanticProject: project.semanticProject,
         ...options,
       }),
     ),
     runExtractionPipeline({
       sourceText: "",
       fileName: project.entryFile,
+      semanticProject: project.semanticProject,
       ...options,
     }),
   );
@@ -1533,7 +1558,11 @@ function firstSemverMajor(range: string): number | undefined {
 function pluginProvenance(
   plugins: ReturnType<typeof runExtractionPipeline>["plugins"],
 ): NonNullable<Model["metadata"]>["plugins"] {
-  return [...plugins.sources, ...(plugins.router ? [plugins.router] : [])].sort(
+  return [
+    ...plugins.sources,
+    ...(plugins.router ? [plugins.router] : []),
+    ...(plugins.domainRefinements ?? []),
+  ].sort(
     (left, right) =>
       left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
   );
@@ -1644,6 +1673,30 @@ function havocWrites(effect: EffectIR): string[] {
   if (effect.kind === "if")
     return [...havocWrites(effect.then), ...havocWrites(effect.else)];
   return [];
+}
+
+function wideProductDomainReachabilityWarnings(
+  model: Model,
+): ExtractionWarning[] {
+  const warnings: ExtractionWarning[] = [];
+  for (const decl of model.vars) {
+    if (!isProductDomain(decl.domain)) continue;
+    if (!exceedsWideCardinalityThreshold(decl.domain)) continue;
+    const caveat = modelSlackCaveat(
+      decl.id,
+      `Wide product domain (${domainCardinality(decl.domain)} values) may enlarge search`,
+    );
+    warnings.push({ message: caveat.reason, caveat });
+  }
+  return warnings;
+}
+
+function isProductDomain(domain: StateVarDecl["domain"]): boolean {
+  return (
+    domain.kind === "record" ||
+    domain.kind === "tagged" ||
+    domain.kind === "option"
+  );
 }
 
 function wideNumericReachabilityWarnings(model: Model): ExtractionWarning[] {

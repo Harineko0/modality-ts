@@ -28,7 +28,17 @@ The `modality` CLI binary is the default product surface.
 | `modality-ts/extract` | extraction APIs |
 | `modality-ts/extract/engine` | extraction engine APIs |
 | `modality-ts/extract/engine/pipeline` | the P0–P7 pipeline |
-| `modality-ts/extract/engine/spi` | the [`StateSourcePlugin` / `NavigationAdapter`](../architecture/state-sources.md) interfaces |
+| `modality-ts/extract/engine/spi` | the [`StateSourcePlugin` / `NavigationAdapter`](../architecture/state-sources.md) and `DomainRefinementProvider` interfaces |
+
+## Type-library adapters
+
+Schema libraries register as **domain refinement providers** (not state sources).
+See [Type-library adapters](../architecture/type-library-adapters.md).
+
+| Entry point | Adapter |
+| --- | --- |
+| `modality-ts/extract/type-libraries/zod` | Zod numeric schema initializer refinement |
+| `modality-ts/extract/type-libraries/arktype` | ArkType static schema initializer refinement |
 
 ## State-source slices
 

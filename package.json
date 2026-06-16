@@ -145,6 +145,14 @@
     "./extract/sources/zustand/harness": {
       "types": "./dist/extract/sources/zustand/harness.d.ts",
       "default": "./dist/extract/sources/zustand/harness.js"
+    },
+    "./extract/type-libraries/zod": {
+      "types": "./dist/extract/type-libraries/zod/index.d.ts",
+      "default": "./dist/extract/type-libraries/zod/index.js"
+    },
+    "./extract/type-libraries/arktype": {
+      "types": "./dist/extract/type-libraries/arktype/index.d.ts",
+      "default": "./dist/extract/type-libraries/arktype/index.js"
     }
   },
   "packageManager": "pnpm@10.12.4",

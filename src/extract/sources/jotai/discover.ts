@@ -1,5 +1,9 @@
 import * as ts from "typescript";
-import type { SourceDecl } from "modality-ts/extract/engine/spi";
+import type {
+  SourceDecl,
+  SemanticTypeContext,
+  DomainRefinementProvider,
+} from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
   atomCreatorName,
@@ -34,17 +38,36 @@ export function discoverJotaiAtoms(
   return discoverJotaiAtomsDetailed(sourceText, fileName).decls;
 }
 
-export function discoverJotaiAtomsDetailed(
+function sourceFileForDiscovery(
   sourceText: string,
-  fileName = "state.ts",
-): DiscoverJotaiResult {
-  const source = ts.createSourceFile(
+  fileName: string,
+  types?: SemanticTypeContext,
+): ts.SourceFile {
+  if (
+    types?.sourceFile &&
+    types.sourceFile.fileName === fileName &&
+    types.sourceFile.text === sourceText
+  ) {
+    return types.sourceFile;
+  }
+  return ts.createSourceFile(
     fileName,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
+}
+
+export function discoverJotaiAtomsDetailed(
+  sourceText: string,
+  fileName = "state.ts",
+  types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
+  relatedFragments?: readonly { sourceText: string; fileName: string }[],
+  options?: { skipStoreDuplication?: boolean },
+): DiscoverJotaiResult {
+  const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveJotaiImports(source);
   if (imports.atomCreators.size === 0) return emptyDiscoverResult();
 
@@ -74,6 +97,9 @@ export function discoverJotaiAtomsDetailed(
           atomName,
           imports,
           typeAliases,
+          types,
+          source,
+          domainRefinements,
         );
         atomMetadata.set(atomName, classification.metadata);
         if (classification.warning) {
@@ -88,6 +114,9 @@ export function discoverJotaiAtomsDetailed(
           atomName,
           imports,
           typeAliases,
+          types,
+          source,
+          domainRefinements,
         );
         atomNames.add(atomName);
         atomMetadata.set(atomName, classification.metadata);
@@ -153,6 +182,8 @@ export function discoverJotaiAtomsDetailed(
             staticParam,
             innerCall,
             typeAliases,
+            types,
+            source,
           );
           const varId = familyVarId(familyName, staticParam);
           atomNames.add(varId);
@@ -183,8 +214,35 @@ export function discoverJotaiAtomsDetailed(
 
   const componentStoreScopes = discoverComponentStoreScopes(source, imports);
   const storeScopedDecls: SourceDecl[] = [];
-  for (const storeScope of new Set(componentStoreScopes.values())) {
-    storeScopedDecls.push(...duplicateAtomsForStore(hydratedDecls, storeScope));
+  if (!options?.skipStoreDuplication) {
+    let atomsForStoreDuplication = hydratedDecls;
+    if (componentStoreScopes.size > 0 && relatedFragments) {
+      const externalDecls = relatedFragments
+        .filter((fragment) => fragment.fileName !== fileName)
+        .flatMap((fragment) =>
+          discoverJotaiAtomsDetailed(
+            fragment.sourceText,
+            fragment.fileName,
+            types,
+            domainRefinements,
+            relatedFragments,
+            { skipStoreDuplication: true },
+          ).decls.filter((decl) => decl.var),
+        );
+      const seen = new Set<string>();
+      atomsForStoreDuplication = [...hydratedDecls, ...externalDecls].filter(
+        (decl) => {
+          if (!decl.var || seen.has(decl.var.id)) return false;
+          seen.add(decl.var.id);
+          return true;
+        },
+      );
+    }
+    for (const storeScope of new Set(componentStoreScopes.values())) {
+      storeScopedDecls.push(
+        ...duplicateAtomsForStore(atomsForStoreDuplication, storeScope),
+      );
+    }
   }
 
   return {

@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import {
@@ -14,6 +15,21 @@ import {
 } from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
 import { renderHumanExtractTargets } from "./output.js";
+
+const repoRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../..",
+);
+
+async function mkSchemaExtractTemp(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  await symlink(
+    join(repoRoot, "node_modules"),
+    join(dir, "node_modules"),
+    "dir",
+  );
+  return dir;
+}
 
 describe("runExtractCommand", () => {
   it("writes model and extraction report artifacts", async () => {
@@ -72,6 +88,8 @@ describe("runExtractCommand", () => {
         plugin.version,
       ]),
     ).toEqual([
+      ["domain-refinement", "arktype", "0.1.0"],
+      ["domain-refinement", "zod", "0.1.0"],
       ["router", "router", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "swr", "0.1.0"],
@@ -790,11 +808,11 @@ describe("runExtractCommand", () => {
       (decl) => decl.id === "local:App.color",
     );
     expect(color).toMatchObject({
-      domain: { kind: "tokens", count: 1 },
-      initial: "tok1",
+      domain: { kind: "enum", values: ["gray", "red"] },
+      initial: "gray",
     });
     const check = checkModel(result.model, [
-      reachable(result.model, eq(readVar("local:App.color"), lit("tok1")), {
+      reachable(result.model, eq(readVar("local:App.color"), lit("gray")), {
         name: "tokenInitialReachable",
         reads: ["local:App.color"],
       }),
@@ -2204,7 +2222,7 @@ describe("runExtractCommand", () => {
           args: {
             fields: {
               userId: { kind: "enum", values: ["none", "u1"] },
-              plan: { kind: "enum", values: ["none", "starter", "pro"] },
+              plan: { kind: "enum", values: ["none", "pro", "starter"] },
             },
           },
         },
@@ -3445,6 +3463,696 @@ export default [route('/items', 'routes/items.tsx')];`,
     expect(pendingOps).toContain("ACTION /items");
     expect(pendingOps).not.toContain("GET https://example.com/server");
     expect(pendingOps).not.toContain("POST https://example.com/server");
+  });
+
+  it("extracts enum domains from imported useState type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: {
+          react: "^18.0.0",
+          jotai: "^2.0.0",
+          zustand: "^4.0.0",
+          swr: "^2.0.0",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "posting" | "failed";
+export type User = { id: string; role: "admin" | "user" };
+export type LoadState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "done"; user: User };
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { Status, LoadState } from "./types.js";
+export function App() {
+  const [saveStatus, setSaveStatus] = useState<Status>("idle");
+  const [loadState] = useState<LoadState>({ kind: "idle" });
+  return (
+    <button onClick={() => setSaveStatus("posting")}>Save</button>
+  );
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.saveStatus")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["failed", "idle", "posting"],
+    });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.loadState")?.domain,
+    ).toMatchObject({
+      kind: "tagged",
+      tag: "kind",
+    });
+  });
+
+  it("keeps broad imported string and number as token domains", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Label = string;
+export type Count = number;
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { Label, Count } from "./types.js";
+export function App() {
+  const [label] = useState<Label>("idle");
+  const [count] = useState<Count>(0);
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.count")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+  });
+
+  it("preserves imported enum domains in multi-file extraction regardless of file order", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-multifile-"));
+    const typesPath = join(dir, "types.ts");
+    const alphaPath = join(dir, "Alpha.tsx");
+    const betaPath = join(dir, "Beta.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "done";\n`,
+      "utf8",
+    );
+    await writeFile(
+      alphaPath,
+      `import { useState } from "react";
+export function Alpha() {
+  const [flag] = useState(false);
+  return null;
+}
+`,
+      "utf8",
+    );
+    await writeFile(
+      betaPath,
+      `import { useState } from "react";
+import type { Status } from "./types.js";
+export function Beta() {
+  const [status] = useState<Status>("idle");
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePaths: [alphaPath, betaPath],
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:Beta.status")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["done", "idle"],
+    });
+    expect(
+      model.vars.find((decl) => decl.id === "local:Alpha.flag")?.domain,
+    ).toEqual({ kind: "bool" });
+  });
+
+  it("extracts Jotai atom domains from imported type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", jotai: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "posting" | "failed";`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { atom, useAtom } from "jotai";
+import type { Status } from "./types.js";
+export const statusAtom = atom<Status>("idle");
+export function App() {
+  const [status, setStatus] = useAtom(statusAtom);
+  return <button onClick={() => setStatus("posting")}>Save</button>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "atom:statusAtom")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["failed", "idle", "posting"],
+    });
+  });
+
+  it("extracts Zustand store field domains from imported interfaces", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zustand: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export interface User {
+  role: "admin" | "user";
+  active: boolean;
+}`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { create } from "zustand";
+import type { User } from "./types.js";
+type StoreState = { user: User };
+export const useStore = create<{ user: User }>(() => ({
+  user: { role: "admin", active: true },
+}));
+export function App() {
+  const user = useStore((state) => state.user);
+  return <span>{user.role}</span>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "zustand:useStore.user")?.domain,
+    ).toEqual({
+      kind: "record",
+      fields: {
+        role: { kind: "enum", values: ["admin", "user"] },
+        active: { kind: "bool" },
+      },
+    });
+  });
+
+  it("extracts SWR payload domains from imported type aliases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const typesPath = join(dir, "types.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", swr: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type User = { id: string; role: "admin" | "user" };`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import useSWR from "swr";
+import type { User } from "./types.js";
+export function App() {
+  const { data } = useSWR<User>("/api/user");
+  return <span>{data?.role}</span>;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "swr:api_user:data")?.domain,
+    ).toMatchObject({
+      inner: {
+        kind: "record",
+        fields: {
+          id: { kind: "tokens", count: 1 },
+          role: { kind: "enum", values: ["admin", "user"] },
+        },
+      },
+    });
+  });
+
+  it("extracts Zod inferred non-numerical domains from imported types", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-");
+    const schemaPath = join(dir, "schema.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      schemaPath,
+      `import { z } from "zod";
+export const StateSchema = z.object({
+  status: z.enum(["idle", "posting", "failed"]),
+  flag: z.boolean(),
+  label: z.string().optional(),
+});
+export type State = z.infer<typeof StateSchema>;
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { State } from "./schema.js";
+export function App() {
+  const [state, setState] = useState<State>({
+    status: "idle",
+    flag: false,
+  });
+  return (
+    <button onClick={() => setState({ status: "posting", flag: false })}>
+      Post
+    </button>
+  );
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.state")?.domain,
+    ).toEqual({
+      kind: "record",
+      fields: {
+        status: { kind: "enum", values: ["failed", "idle", "posting"] },
+        flag: { kind: "bool" },
+        label: { kind: "option", inner: { kind: "tokens", count: 1 } },
+      },
+    });
+  });
+
+  it("extracts ArkType inferred non-numerical domains from imported types", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-");
+    const schemaPath = join(dir, "schema.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      schemaPath,
+      `import { type } from "arktype";
+export const StateSchema = type({
+  status: "'idle'|'posting'|'failed'",
+  flag: "boolean",
+  "label?": "string",
+});
+export type State = typeof StateSchema.infer;
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { State } from "./schema.js";
+export function App() {
+  const [state, setState] = useState<State>({
+    status: "idle",
+    flag: false,
+  });
+  return (
+    <button onClick={() => setState({ status: "posting", flag: false })}>
+      Post
+    </button>
+  );
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.state")?.domain,
+    ).toEqual({
+      kind: "record",
+      fields: {
+        status: { kind: "enum", values: ["failed", "idle", "posting"] },
+        flag: { kind: "bool" },
+        label: { kind: "option", inner: { kind: "tokens", count: 1 } },
+      },
+    });
+  });
+
+  it("keeps Zod inferred broad string as token domains", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-broad-");
+    const schemaPath = join(dir, "schema.ts");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      schemaPath,
+      `import { z } from "zod";
+export const LabelSchema = z.string();
+export type Label = z.infer<typeof LabelSchema>;
+`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import type { Label } from "./schema.js";
+export function App() {
+  const [label] = useState<Label>("idle");
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+  });
+
+  it("refines Zod numeric schema initializers through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-numeric-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { z } from "zod";
+export function App() {
+  const [n] = useState(z.number().int().min(0).max(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(model.metadata?.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
+  });
+
+  it("refines Zod exclusive-bound alias chains through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-gt-lte-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { z } from "zod";
+export function App() {
+  const [n] = useState(z.number().int().gt(0).lte(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 1,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(model.metadata?.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
+  });
+
+  it("refines ArkType numeric schema initializers through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-numeric-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [n] = useState(type("0 <= number.integer <= 3"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+  });
+
+  it("refines ArkType string literal unions through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-literals-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [label] = useState(type("'idle' | 'posting'"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["idle", "posting"],
+    });
+  });
+
+  it("refines ArkType bounded divisor schemas through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-divisor-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [n] = useState(type("-5 <= (number.integer % 2) <= 5"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "intSet",
+      values: [-4, -2, 0, 2, 4],
+      overflow: "forbid",
+    });
+  });
+
+  it("disabling zod removes initializer-chain refinement while typed extraction still works", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-disabled-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    const configPath = join(dir, "modality.config.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      JSON.stringify({ disabledPlugins: ["zod"] }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+export function App() {
+  const [typed] = useState<0 | 1 | 2 | 3>(0);
+  const [untyped] = useState(z.number().int().min(0).max(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+      configPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.untyped")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.typed")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+    });
+    expect(model.metadata?.plugins).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
   });
 });
 
