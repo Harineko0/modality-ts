@@ -13,6 +13,7 @@ export type SharedReactTransitionCtx = Omit<
   stateVars?: readonly ExtractCtx["stateVars"][number][];
   writeChannels?: readonly WriteChannel[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, import("modality-ts/core").EffectIR>;
@@ -27,6 +28,7 @@ function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
     routePatterns: ctx.routePatterns,
     asyncOutcomes: ctx.asyncOutcomes,
     sourcePlugins: ctx.sourcePlugins,
+    ...(ctx.environment ? { environment: ctx.environment } : {}),
     ...(ctx.stateVars ? { stateVars: ctx.stateVars } : {}),
     ...(ctx.writeChannels ? { writeChannels: ctx.writeChannels } : {}),
     ...(ctx.routerPlugin ? { routerPlugin: ctx.routerPlugin } : {}),

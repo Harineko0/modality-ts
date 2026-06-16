@@ -1025,6 +1025,95 @@ describe("runExtractCommand", () => {
     );
   });
 
+  it("loads environment.webSockets from modality config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const configPath = join(dir, "modality.config.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      configPath,
+      `export default {
+        environment: {
+          webSockets: [
+            {
+              url: "/ws",
+              messages: [
+                { type: "snapshot", bind: { orders: "many" } },
+              ],
+            },
+          ],
+        },
+      };`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === "snapshot") setOrders(message.orders);
+          };
+        }, []);
+        return <span>{orders.length}</span>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      configPath,
+    });
+    expect(
+      result.report.warnings.map((warning) => warning.message),
+    ).not.toContain("Unextractable effect App.useEffect");
+    const socketVar = result.model.vars.find((decl) =>
+      decl.id.startsWith("sys:websocket:"),
+    )?.id;
+    expect(socketVar).toBeDefined();
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.cls === "env" &&
+          transition.label.kind === "env" &&
+          transition.label.key === "App.websocket.onopen" &&
+          transition.effect.kind === "assign" &&
+          transition.effect.var === socketVar &&
+          transition.effect.expr.kind === "lit" &&
+          transition.effect.expr.value === "open",
+      ),
+    ).toBe(true);
+    const snapshot = result.model.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onmessage" &&
+        transition.label.outcome === "snapshot",
+    );
+    expect(snapshot).toMatchObject({
+      guard: {
+        kind: "eq",
+        args: [
+          { kind: "read", var: socketVar },
+          { kind: "lit", value: "open" },
+        ],
+      },
+      effect: {
+        kind: "assign",
+        var: "local:App.orders",
+        expr: { kind: "lit", value: "many" },
+      },
+      confidence: "exact",
+    });
+    expect(snapshot?.effect.kind).not.toBe("havoc");
+  });
+
   it("extracts Jotai useSetAtom writes through source write channels", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");

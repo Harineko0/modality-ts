@@ -82,6 +82,10 @@ import {
   type TimerRegistration,
 } from "./transition/timers.js";
 import {
+  environmentStateVarDecl,
+  type WebSocketRegistration,
+} from "./transition/environment-callbacks.js";
+import {
   deferredSyncTransition,
   extractUseDeferredValueBinding,
   extractUseTransitionBinding,
@@ -134,6 +138,7 @@ export interface ReactSourceTransitionOptions {
   effectApis?: readonly string[];
   routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  environment?: import("./environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
@@ -186,6 +191,7 @@ export function extractReactSourceTransitions(
   );
   const globalTaints = new Set<string>();
   let timerCounter = 0;
+  let webSocketCounter = 0;
   let transitionBindingCounter = 0;
   let suspenseBoundaryCounter = 0;
   const transitionBindings = new Map<string, TransitionBinding>();
@@ -266,6 +272,15 @@ export function extractReactSourceTransitions(
     for (const registration of registrations) {
       if (!vars.some((decl) => decl.id === registration.varId)) {
         vars.push(timerStateVarDecl(registration.varId));
+      }
+    }
+  };
+  const registerWebSocketVars = (
+    registrations: readonly WebSocketRegistration[],
+  ): void => {
+    for (const registration of registrations) {
+      if (!vars.some((decl) => decl.id === registration.varId)) {
+        vars.push(environmentStateVarDecl(registration.varId));
       }
     }
   };
@@ -964,7 +979,9 @@ export function extractReactSourceTransitions(
       : undefined;
     if (effectHook && ts.isCallExpression(node)) {
       const timerRegistrations: TimerRegistration[] = [];
+      const webSocketRegistrations: WebSocketRegistration[] = [];
       const envTransitions: Transition[] = [];
+      const effectWarnings: ExtractionWarning[] = [];
       const extracted = transitionsFromUseEffect(
         source,
         fileName,
@@ -974,13 +991,20 @@ export function extractReactSourceTransitions(
         effectHook,
         {
           timerRegistrations,
+          webSocketRegistrations,
           envTransitions,
+          warnings: effectWarnings,
           timerIndex: { value: timerCounter },
+          webSocketIndex: { value: webSocketCounter },
+          environment: options.environment,
           transitionBindings,
         },
       );
       registerTimerVars(timerRegistrations);
+      registerWebSocketVars(webSocketRegistrations);
       timerCounter += timerRegistrations.length;
+      webSocketCounter += webSocketRegistrations.length;
+      warnings.push(...effectWarnings);
       transitions.push(...extracted, ...envTransitions);
       if (
         extracted.length === 0 &&

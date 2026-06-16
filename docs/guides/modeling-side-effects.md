@@ -81,3 +81,14 @@ arbiter. See [React features](../sources/react-features.md#stale-closures).
 whose firing is a guarded `env` transition; SWR focus/interval revalidation is a
 nondeterministically enabled `env` event. Both interleave with everything else, which is
 exactly how real-world "the timer fired mid-submit" surprises get caught.
+
+## WebSocket streams and message variants
+
+`new WebSocket(...)` inside a React effect becomes a [`sys:websocket:*` state
+machine](../sources/react-features.md#timers) whose lifecycle and configured message
+variants are guarded `env` transitions. Registration assigns `connecting`; `onopen` /
+`onclose` / `onerror` advance the socket state and summarize callback writes; cleanup
+`ws.close()` remains an `internal` transition. Message payloads are not inferred from
+`JSON.parse(event.data)` — declare variants in config (`environment.webSockets[].messages`)
+with abstract `bind` fields so `switch (message.type)` branches can be summarized per
+variant.

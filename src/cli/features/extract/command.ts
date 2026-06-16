@@ -65,6 +65,8 @@ import {
   partitionCaveats,
 } from "../../../extract/engine/ts/caveats.js";
 import { timerStateVarDecl } from "../../../extract/engine/ts/transition/timers.js";
+import { environmentStateVarDecl } from "../../../extract/engine/ts/transition/environment-callbacks.js";
+import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
 import { suspenseStateVarDecl } from "../../../extract/engine/ts/transition/suspense.js";
 import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
 import {
@@ -84,6 +86,7 @@ export interface ModalityConfig {
     routeBySource?: Record<string, string>;
   };
   effectApis?: readonly string[];
+  environment?: EnvironmentEventConfig;
   bounds?: Partial<Bounds>;
   packageJsonPath?: string;
   disabledPlugins?: readonly string[];
@@ -198,6 +201,7 @@ export async function runExtractCommand(
     route,
     routePatterns,
     effectApis,
+    environment: config.environment,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: routerAdapter,
     inventory: project.inventory,
@@ -562,6 +566,7 @@ function runProjectExtractionPipeline(
     route: string;
     routePatterns: readonly string[];
     effectApis: readonly string[];
+    environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
     routerPlugin?: RouterPlugin;
     inventory: RouteInventory;
@@ -1433,12 +1438,14 @@ function synthesizeSystemVars(
 ): StateVarDecl[] {
   const timerIds = collectSystemVarIds(transitions, "sys:timer:");
   const suspenseIds = collectSystemVarIds(transitions, "sys:suspense:");
+  const webSocketIds = collectSystemVarIds(transitions, "sys:websocket:");
   return [
     ...pendingVars(effectApis, transitions, vars, maxPending),
     ...timerIds.sort().map((id) => timerStateVarDecl(id)),
     ...suspenseIds
       .sort()
       .map((id) => suspenseStateVarDecl(id.replace(/^sys:suspense:/, ""))),
+    ...webSocketIds.sort().map((id) => environmentStateVarDecl(id)),
   ];
 }
 

@@ -548,6 +548,21 @@ export function modeledReadExpr(
   const local = locals.get(base);
   if (local) {
     if (segments.length === 0) return local;
+    if (local.expr.kind === "lit") {
+      let current: Value | undefined = local.expr.value;
+      for (const segment of segments) {
+        if (
+          typeof current !== "object" ||
+          current === null ||
+          Array.isArray(current)
+        ) {
+          return undefined;
+        }
+        current = (current as Record<string, Value>)[segment];
+        if (current === undefined) return undefined;
+      }
+      return { expr: { kind: "lit", value: current }, reads: local.reads };
+    }
     if (local.expr.kind !== "read" && local.expr.kind !== "readPre")
       return undefined;
     // A local binding already carries its own snapshot decision (a functional

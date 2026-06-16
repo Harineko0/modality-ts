@@ -104,6 +104,7 @@ export type EventLabel =
   | { kind: "navigate"; mode: "push" | "back"; to?: string }
   | { kind: "resolve"; op: string; outcome: string }
   | { kind: "focus-revalidate" | "timer"; key?: string }
+  | { kind: "env"; key: string; outcome?: string }
   | { kind: "internal"; text: string };
 
 export interface Transition {

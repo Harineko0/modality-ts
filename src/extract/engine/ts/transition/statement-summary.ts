@@ -1,4 +1,4 @@
-import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
+import type { EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import {
   callName,
@@ -11,6 +11,7 @@ import type {
   BoundExpr,
   EffectSummary,
   ExtractableHandler,
+  ExtractionWarning,
   SetterBinding,
   SetterCall,
 } from "../types.js";
@@ -27,6 +28,16 @@ import {
   registerTimerFromScheduleCall,
   timerClearSummaryFromCall,
 } from "./timers.js";
+import type { WebSocketRegistration } from "./environment-callbacks.js";
+import {
+  bindWebSocketHandle,
+  isWebSocketCallbackAssignment,
+  isWebSocketConstructor,
+  registerWebSocketCallbackAssignment,
+  registerWebSocketConstructor,
+  webSocketCleanupSummaryFromCall,
+} from "./environment-callbacks.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
 import { startTransitionScheduleFromCall } from "./concurrent.js";
 
 export interface StatementSummaryOptions {
@@ -40,8 +51,13 @@ export interface StatementSummaryOptions {
   timerIndex?: { value: number };
   timerBindings?: Map<string, string>;
   timerRegistrations?: TimerRegistration[];
+  webSocketRegistrations?: WebSocketRegistration[];
+  webSocketBindings?: Map<string, string>;
+  webSocketIndex?: { value: number };
+  environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
   envTransitions?: Transition[];
+  warnings?: ExtractionWarning[];
   fileName?: string;
   source?: ts.SourceFile;
 }
@@ -57,8 +73,13 @@ interface StatementSummaryState {
   timerIndex?: { value: number };
   timerBindings?: Map<string, string>;
   timerRegistrations?: TimerRegistration[];
+  webSocketRegistrations?: WebSocketRegistration[];
+  webSocketBindings?: Map<string, string>;
+  webSocketIndex?: { value: number };
+  environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
   envTransitions?: Transition[];
+  warnings?: ExtractionWarning[];
   fileName?: string;
   source?: ts.SourceFile;
 }
@@ -128,8 +149,13 @@ export function summarizeStatements(
     timerIndex: options.timerIndex,
     timerBindings: options.timerBindings,
     timerRegistrations: options.timerRegistrations,
+    webSocketRegistrations: options.webSocketRegistrations,
+    webSocketBindings: options.webSocketBindings,
+    webSocketIndex: options.webSocketIndex,
+    environment: options.environment,
     transitionBindings: options.transitionBindings,
     envTransitions: options.envTransitions,
+    warnings: options.warnings,
     fileName: options.fileName,
     source: options.source,
   });
@@ -350,6 +376,48 @@ export function identityEffect(): Extract<EffectIR, { kind: "seq" }> {
   return { kind: "seq", effects: [] };
 }
 
+function literalValueFromExpr(expr: ExprIR): Value | undefined {
+  return expr.kind === "lit" ? expr.value : undefined;
+}
+
+function simplifyBooleanExpr(expr: ExprIR): ExprIR {
+  if (expr.kind === "eq" || expr.kind === "neq") {
+    const left = literalValueFromExpr(expr.args[0]);
+    const right = literalValueFromExpr(expr.args[1]);
+    if (left !== undefined && right !== undefined) {
+      const result = expr.kind === "eq" ? left === right : left !== right;
+      return { kind: "lit", value: result };
+    }
+  }
+  return expr;
+}
+
+export function simplifyEffect(effect: EffectIR): EffectIR {
+  if (effect.kind === "if") {
+    const cond = simplifyBooleanExpr(effect.cond);
+    if (cond.kind === "lit" && typeof cond.value === "boolean") {
+      return simplifyEffect(cond.value ? effect.then : effect.else);
+    }
+    return {
+      kind: "if",
+      cond,
+      // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+      then: simplifyEffect(effect.then),
+      else: simplifyEffect(effect.else),
+    };
+  }
+  if (effect.kind === "seq") {
+    const effects = effect.effects
+      .map((child) => simplifyEffect(child))
+      .filter((child) => !(child.kind === "seq" && child.effects.length === 0));
+    if (effects.length === 0) return identityEffect();
+    const first = effects[0];
+    if (effects.length === 1 && first) return first;
+    return { kind: "seq", effects };
+  }
+  return effect;
+}
+
 export function effectFromSummaries(
   summaries: readonly EffectSummary[],
 ): EffectIR {
@@ -487,6 +555,20 @@ function summarizeStatement(
   }
   if (ts.isVariableStatement(statement)) {
     for (const decl of statement.declarationList.declarations) {
+      if (decl.initializer && isWebSocketConstructor(decl.initializer)) {
+        const webSocketSummary = summarizeWebSocketConstructor(
+          decl.initializer,
+          decl,
+          setters,
+          state,
+        );
+        if (webSocketSummary) {
+          return {
+            summaries: [webSocketSummary.connectSummary],
+            terminated: false,
+          };
+        }
+      }
       if (
         decl.initializer &&
         ts.isCallExpression(decl.initializer) &&
@@ -517,6 +599,50 @@ function summarizeStatement(
     return fallbackResult(statement, setters);
   }
   if (ts.isExpressionStatement(statement)) {
+    const webSocketAssignment = isWebSocketCallbackAssignment(
+      statement,
+      state.webSocketBindings ?? new Map(),
+      state.webSocketRegistrations ?? [],
+    );
+    if (
+      webSocketAssignment &&
+      state.component &&
+      state.source &&
+      state.fileName
+    ) {
+      const registered = registerWebSocketCallbackAssignment(
+        state.source,
+        state.fileName,
+        webSocketAssignment,
+        setters,
+        state.component,
+        {
+          handlers: state.handlers,
+          resetSymbols: state.resetSymbols,
+          snapshotReads: state.snapshotReads,
+          snapshottedReads: state.snapshottedReads,
+          component: state.component,
+          timerContext: state.timerContext,
+          timerIndex: state.timerIndex,
+          timerBindings: state.timerBindings,
+          timerRegistrations: state.timerRegistrations,
+          webSocketRegistrations: state.webSocketRegistrations,
+          webSocketBindings: state.webSocketBindings,
+          webSocketIndex: state.webSocketIndex,
+          environment: state.environment,
+          transitionBindings: state.transitionBindings,
+          envTransitions: state.envTransitions,
+          fileName: state.fileName,
+          source: state.source,
+        },
+        state.environment,
+      );
+      for (const transition of registered.transitions) {
+        state.envTransitions?.push(transition);
+      }
+      state.warnings?.push(...registered.warnings);
+      return { summaries: [], terminated: false };
+    }
     const call = expressionCall(statement.expression);
     if (call) {
       if (isFlushSyncCall(call)) {
@@ -556,6 +682,13 @@ function summarizeStatement(
         if (clearSummary) {
           return { summaries: [clearSummary], terminated: false };
         }
+      }
+      const webSocketCloseSummary = webSocketCleanupSummaryFromCall(
+        call,
+        state.webSocketBindings ?? new Map(),
+      );
+      if (webSocketCloseSummary) {
+        return { summaries: [webSocketCloseSummary], terminated: false };
       }
       const helper = helperSummariesFromCall(call, state, setters);
       if (helper) return { summaries: helper, terminated: false };
@@ -898,11 +1031,47 @@ function handlerSummaryState(
     timerIndex: options.timerIndex,
     timerBindings: options.timerBindings,
     timerRegistrations: options.timerRegistrations,
+    webSocketRegistrations: options.webSocketRegistrations,
+    webSocketBindings: options.webSocketBindings,
+    webSocketIndex: options.webSocketIndex,
+    environment: options.environment,
     transitionBindings: options.transitionBindings,
     envTransitions: options.envTransitions,
+    warnings: options.warnings,
     fileName: options.fileName,
     source: options.source,
   };
+}
+
+function summarizeWebSocketConstructor(
+  node: ts.NewExpression,
+  declaration: ts.VariableDeclaration,
+  _setters: Map<string, SetterBinding>,
+  state: StatementSummaryState,
+): ReturnType<typeof registerWebSocketConstructor> | undefined {
+  if (!state.component || !state.source || !state.fileName) return undefined;
+  const webSocketIndex = state.webSocketIndex?.value ?? 0;
+  const registered = registerWebSocketConstructor(
+    state.source,
+    state.fileName,
+    node,
+    state.component,
+    state.timerContext ?? "handler",
+    webSocketIndex,
+    state.webSocketBindings ?? new Map(),
+    state.environment,
+  );
+  if (!registered) return undefined;
+  state.webSocketRegistrations?.push(registered.registration);
+  if (state.webSocketIndex) state.webSocketIndex.value += 1;
+  if (ts.isIdentifier(declaration.name) && state.webSocketBindings) {
+    bindWebSocketHandle(
+      declaration,
+      registered.registration.varId,
+      state.webSocketBindings,
+    );
+  }
+  return registered;
 }
 
 function summarizeTimerScheduleCall(

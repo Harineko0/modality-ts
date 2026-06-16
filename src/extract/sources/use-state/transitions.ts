@@ -34,6 +34,7 @@ export function extractUseStateSkeleton(
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
   };
   const result = extractSharedReactTransitionInventory(ctx);
   const widenedVars = widenNumericDomainsFromTransitions({

@@ -5,7 +5,13 @@ import type { ExprIR, Locator, Transition } from "modality-ts/core";
 import type { EffectSummary, SetterBinding } from "../types.js";
 import type { TransitionBinding } from "./concurrent.js";
 import type { TimerRegistration } from "./timers.js";
+import type { WebSocketRegistration } from "./environment-callbacks.js";
+import { webSocketCleanupSummaryFromCall } from "./environment-callbacks.js";
+import { finalizeImplicitWebSocketOpens } from "./environment-callbacks.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
+import type { ExtractionWarning } from "../types.js";
 import type { StatementSummaryOptions } from "./statement-summary.js";
+import { timerClearSummaryFromCall } from "./timers.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { labelForEvent } from "./ui.js";
@@ -52,8 +58,12 @@ export function havocSetterTransition(
 
 export interface EffectExtractionContext {
   timerRegistrations?: TimerRegistration[];
+  webSocketRegistrations?: WebSocketRegistration[];
   envTransitions?: Transition[];
+  warnings?: ExtractionWarning[];
   timerIndex?: { value: number };
+  webSocketIndex?: { value: number };
+  environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
 }
 
@@ -80,16 +90,23 @@ export function transitionsFromUseEffect(
     !ts.isBlock(callback.body)
   )
     return [];
-  const cleanup = cleanupSummaries(
-    callback.body.statements,
-    setters,
-    summaryOptions,
-  );
   const bodyStatements = callback.body.statements.filter(
     (statement) => !isCleanupReturn(statement),
   );
   const summaries = summarizeEffectStatements(
     bodyStatements,
+    setters,
+    summaryOptions,
+  );
+  finalizeImplicitWebSocketOpens(
+    source,
+    fileName,
+    component,
+    effectContext.webSocketRegistrations ?? [],
+    effectContext.envTransitions ?? [],
+  );
+  const cleanup = cleanupSummaries(
+    callback.body.statements,
     setters,
     summaryOptions,
   );
@@ -196,15 +213,29 @@ export function cleanupSummaries(
   const expression = returns[0]?.expression;
   if (
     !expression ||
-    (!ts.isArrowFunction(expression) && !ts.isFunctionExpression(expression)) ||
-    !ts.isBlock(expression.body)
+    (!ts.isArrowFunction(expression) && !ts.isFunctionExpression(expression))
   )
     return undefined;
-  return summarizeEffectStatements(
-    expression.body.statements,
-    setters,
-    options,
-  );
+  if (ts.isBlock(expression.body)) {
+    return summarizeEffectStatements(
+      expression.body.statements,
+      setters,
+      options,
+    );
+  }
+  if (ts.isCallExpression(expression.body)) {
+    const summary =
+      webSocketCleanupSummaryFromCall(
+        expression.body,
+        options.webSocketBindings ?? new Map(),
+      ) ??
+      timerClearSummaryFromCall(
+        expression.body,
+        options.timerBindings ?? new Map(),
+      );
+    return summary ? [summary] : undefined;
+  }
+  return undefined;
 }
 
 function effectSummaryOptions(
@@ -220,8 +251,13 @@ function effectSummaryOptions(
     timerIndex: effectContext.timerIndex,
     timerBindings: new Map<string, string>(),
     timerRegistrations: effectContext.timerRegistrations,
+    webSocketRegistrations: effectContext.webSocketRegistrations,
+    webSocketBindings: new Map<string, string>(),
+    webSocketIndex: effectContext.webSocketIndex,
+    environment: effectContext.environment,
     transitionBindings: effectContext.transitionBindings,
     envTransitions: effectContext.envTransitions,
+    warnings: effectContext.warnings,
     fileName,
     source,
   };
