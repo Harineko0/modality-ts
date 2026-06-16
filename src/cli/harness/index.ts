@@ -602,6 +602,8 @@ export async function dispatchReplayStep(
     case "timer":
       await callActor("timer", actor.timer, label.key);
       break;
+    case "env":
+      break;
     case "internal":
       break;
   }

@@ -15,6 +15,7 @@ export interface UseStateExtractionOptions {
   effectApis?: readonly string[];
   routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly import("../../engine/spi/index.js").WriteChannel[];
   sourcePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];

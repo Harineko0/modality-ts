@@ -16,6 +16,7 @@ The config declares what to extract and the bounds to check under:
 | --- | --- |
 | Entry points / route table | route `pattern → RootComponent`, include globs |
 | Effect APIs | functions whose calls are network operations (also via `--effect-api`) |
+| Environment streams | `environment.webSockets[]` with optional `id` / `url` and `messages[]` variants (`type`, `bind`) for WebSocket `onmessage` handlers |
 | Plugins | `plugins: [jotai(), swr(), zustand(), reactRouterAdapter()]` (built-ins auto-register on dependency match; disable via `--disable-plugin`) |
 | Bounds | `maxDepth`, `maxPending` (the concurrency bound `K`), `maxInternalSteps`, `maxHistory` |
 | Locator conventions | `data-testid` / role+name conventions for replay |
@@ -43,14 +44,7 @@ export default overlay(M)
     witness: { zero: () => 0, positive: () => 42 },
   })
   // refine an async outcome payload field
-  .refinePayload("POST /api/quote", "total", {
-    nonpositive: (t) => t <= 0,
-    positive: (t) => t > 0,
-  })
-  // constrain the environment (part of the trust base)
-  .assume("POST /login", (o) => o.kind !== "success" || o.token !== null)
-  // refine an op's error outcomes
-  .outcomes("POST /todos", { unauthorized: {}, server: {} })
+  // (refinePayload / assume / outcomes are not implemented in the overlay builder yet)
   // supply a missing replay locator
   .locator("CheckoutPage.onRetry", byTestId("retry-btn"))
   // explicit, reported exclusion
@@ -63,9 +57,6 @@ export default overlay(M)
 | --- | --- |
 | `transition(id, { reads, writes, effect })` | fill an `unextractable` handler (an [opaque effect](../architecture/ir.md#the-opaque-escape-hatch)) |
 | `refineDomain(varId, domain, { witness })` | predicate abstraction with a required concretization witness |
-| `refinePayload(op, field, predicates)` | refine an async-outcome payload field |
-| `assume(op, constraint)` | constrain environment outcomes |
-| `outcomes(op, classes)` | refine an op's outcome domain (e.g. error classes) |
 | `locator(transitionId, locator)` | declare a replay locator |
 | `ignoreVar(varId)` | exclude a variable (reported) |
 

@@ -189,6 +189,7 @@ Emitted on every extract; embedded in check reports:
 | Stateful list items (`items.map(<Row/>)` with `useState` in Row) | detected, vars `unextractable` |
 | Refs (`useRef`) | not state-vector members; a ref holding a setter ⇒ global taint (§5) |
 | `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` | modeled: `sys:timer:*` state machine; fire transitions guarded on `scheduled`; clear disables fire |
+| `new WebSocket(...)` inside `useEffect` with `onopen` / `onclose` / `onerror` / `onmessage` (or `addEventListener`) | modeled: `sys:websocket:*` state machine; lifecycle/message callbacks become guarded `env` transitions; registration assigns `connecting`; cleanup `ws.close()` is `internal` |
 | `useLayoutEffect` / `useInsertionEffect` / `useEffect` | modeled as `internal` transitions with `triggeredBy` deps and `phase` ordinals (layout/insertion ⇒ 0, passive ⇒ 1) |
 | Direct setter batching (`setX(x); setX(x)`) | `readPre` in effect summaries; functional updaters keep `read` |
 | Async continuation stale reads | vars read after `await` are snapshotted into pending `op.args` and read via `readOpArg` in continuations |

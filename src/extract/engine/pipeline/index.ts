@@ -41,6 +41,7 @@ export interface ExtractionPipelineOptions {
   route: string;
   routePatterns?: readonly string[];
   effectApis?: readonly string[];
+  environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
   inventory?: RouteInventory;
@@ -193,6 +194,7 @@ export function runExtractionPipeline(
     additionalComponentSources: discoveryFragments
       .filter((fragment) => fragment.fileName !== options.fileName)
       .map((fragment) => fragment.sourceText),
+    ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
   });

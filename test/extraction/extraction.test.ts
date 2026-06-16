@@ -4,6 +4,7 @@ import {
   andExpr,
   eq,
   lit,
+  type EffectIR,
   type Model,
   neq,
   reachable,
@@ -4476,6 +4477,489 @@ describe("React Router form action submits", () => {
       intent: { kind: "lit", value: "brew-start" },
       label: { kind: "lit", value: "brew-start" },
       count: { kind: "lit", value: 2 },
+    });
+  });
+});
+
+describe("environment callbacks", () => {
+  function effectContainsHavoc(effect: EffectIR): boolean {
+    if (effect.kind === "havoc") return true;
+    if (effect.kind === "seq") return effect.effects.some(effectContainsHavoc);
+    if (effect.kind === "if")
+      return (
+        effectContainsHavoc(effect.then) || effectContainsHavoc(effect.else)
+      );
+    return false;
+  }
+
+  const webSocketMessageEnvironment = {
+    webSockets: [
+      {
+        url: "/ws",
+        messages: [
+          { type: "snapshot", bind: { orders: "many" } },
+          { type: "order-updated", bind: { order: "token" } },
+        ],
+      },
+    ],
+  };
+
+  const webSocketMessageSource = `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            switch (message.type) {
+              case "snapshot":
+                setOrders(message.orders);
+                break;
+              case "order-updated":
+                setOrders((current) => [...current, message.order]);
+                break;
+            }
+          };
+        }, []);
+        return <span>{orders.length}</span>;
+      }
+      `;
+
+  it("models WebSocket onopen as guarded environment transition", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [connected, setConnected] = useState(false);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onopen = () => setConnected(true);
+        }, []);
+        return <span>{connected ? 'on' : 'off'}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings.map((warning) => warning.message)).not.toContain(
+      "Unextractable effect App.useEffect",
+    );
+    expect(
+      result.vars.some((decl) => decl.id.startsWith("sys:websocket:")),
+    ).toBe(true);
+    const internal = result.transitions.find(
+      (transition) => transition.cls === "internal",
+    );
+    expect(internal?.effect).toMatchObject({
+      kind: "assign",
+      expr: { kind: "lit", value: "connecting" },
+    });
+    const onopen = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onopen",
+    );
+    expect(onopen).toMatchObject({
+      cls: "env",
+      writes: expect.arrayContaining(["local:App.connected"]),
+      effect: {
+        kind: "seq",
+        effects: [
+          {
+            kind: "assign",
+            expr: { kind: "lit", value: "open" },
+          },
+          {
+            kind: "assign",
+            var: "local:App.connected",
+            expr: { kind: "lit", value: true },
+          },
+        ],
+      },
+    });
+  });
+
+  it("models WebSocket onclose and cleanup close separately", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [connected, setConnected] = useState(true);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onclose = () => setConnected(false);
+          return () => ws.close();
+        }, []);
+        return <span>{connected ? 'on' : 'off'}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    const onclose = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onclose",
+    );
+    expect(onclose?.writes).toContain("local:App.connected");
+    const cleanup = result.transitions.find(
+      (transition) =>
+        transition.cls === "internal" &&
+        transition.label.kind === "internal" &&
+        transition.label.text === "App.useEffect.cleanup",
+    );
+    expect(cleanup?.effect).toMatchObject({
+      kind: "assign",
+      expr: { kind: "lit", value: "closed" },
+    });
+  });
+
+  it("models WebSocket onerror as environment transition", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [error, setError] = useState<string | null>(null);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onerror = () => setError("connection");
+        }, []);
+        return <span>{error ?? 'ok'}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    const onerror = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onerror",
+    );
+    expect(onerror?.writes).toContain("local:App.error");
+  });
+
+  it("models WebSocket addEventListener lifecycle callbacks", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [connected, setConnected] = useState(false);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.addEventListener("open", () => setConnected(true));
+        }, []);
+        return <span>{connected ? 'on' : 'off'}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.cls === "env" &&
+          transition.label.kind === "env" &&
+          transition.label.key === "App.websocket.onopen",
+      ),
+    ).toBe(true);
+  });
+
+  it("models configured WebSocket message variants from JSON.parse event.data", () => {
+    const result = extractReactSourceTransitions(webSocketMessageSource, {
+      route: "/",
+      fileName: "App.tsx",
+      environment: webSocketMessageEnvironment,
+    });
+    const socketVar = result.vars.find((decl) =>
+      decl.id.startsWith("sys:websocket:"),
+    )?.id;
+    expect(socketVar).toBeDefined();
+    const messageTransitions = result.transitions.filter(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onmessage",
+    );
+    expect(messageTransitions).toHaveLength(2);
+    const snapshot = messageTransitions.find(
+      (transition) =>
+        transition.label.kind === "env" &&
+        transition.label.outcome === "snapshot",
+    );
+    const orderUpdated = messageTransitions.find(
+      (transition) =>
+        transition.label.kind === "env" &&
+        transition.label.outcome === "order-updated",
+    );
+    expect(snapshot).toMatchObject({
+      confidence: "exact",
+      guard: {
+        kind: "eq",
+        args: [
+          { kind: "read", var: socketVar },
+          { kind: "lit", value: "open" },
+        ],
+      },
+      effect: {
+        kind: "assign",
+        var: "local:App.orders",
+        expr: { kind: "lit", value: "many" },
+      },
+    });
+    expect(snapshot && effectContainsHavoc(snapshot.effect)).toBe(false);
+    expect(orderUpdated).toBeDefined();
+    expect(orderUpdated?.confidence).not.toBe("over-approx");
+    expect(orderUpdated?.effect).not.toEqual(snapshot?.effect);
+  });
+
+  it("models onmessage-only WebSocket as reachable through implicit open", () => {
+    const result = extractReactSourceTransitions(webSocketMessageSource, {
+      route: "/",
+      fileName: "App.tsx",
+      environment: webSocketMessageEnvironment,
+    });
+    const socketVar = result.vars.find((decl) =>
+      decl.id.startsWith("sys:websocket:"),
+    )?.id;
+    expect(socketVar).toBeDefined();
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.cls === "internal" &&
+          transition.effect.kind === "assign" &&
+          transition.effect.var === socketVar &&
+          transition.effect.expr.kind === "lit" &&
+          transition.effect.expr.value === "connecting",
+      ),
+    ).toBe(true);
+    const openTransition = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onopen" &&
+        transition.effect.kind === "assign" &&
+        transition.effect.var === socketVar &&
+        transition.effect.expr.kind === "lit" &&
+        transition.effect.expr.value === "open",
+    );
+    expect(openTransition).toBeDefined();
+    const messageTransition = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onmessage",
+    );
+    expect(messageTransition?.guard).toMatchObject({
+      kind: "eq",
+      args: [
+        { kind: "read", var: socketVar },
+        { kind: "lit", value: "open" },
+      ],
+    });
+    expect(
+      messageTransition && !effectContainsHavoc(messageTransition.effect),
+    ).toBe(true);
+  });
+
+  it("does not duplicate implicit open when explicit onopen is registered", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [connected, setConnected] = useState(false);
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onopen = () => setConnected(true);
+          ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === "snapshot") setOrders(message.orders);
+          };
+        }, []);
+        return <span>{connected ? 'on' : 'off'}</span>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        environment: {
+          webSockets: [
+            {
+              url: "/ws",
+              messages: [{ type: "snapshot", bind: { orders: "many" } }],
+            },
+          ],
+        },
+      },
+    );
+    const openTransitions = result.transitions.filter(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onopen",
+    );
+    expect(openTransitions).toHaveLength(1);
+    expect(openTransitions[0]?.id).not.toContain("implicit");
+  });
+
+  it("binds JSON.parse(String(event.data)) for configured WebSocket variants", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onmessage = (event) => {
+            const message = JSON.parse(String(event.data));
+            if (message.type === "snapshot") setOrders(message.orders);
+          };
+        }, []);
+        return <span>{orders.length}</span>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        environment: {
+          webSockets: [
+            {
+              url: "/ws",
+              messages: [{ type: "snapshot", bind: { orders: "many" } }],
+            },
+          ],
+        },
+      },
+    );
+    const snapshot = result.transitions.find(
+      (transition) =>
+        transition.cls === "env" &&
+        transition.label.kind === "env" &&
+        transition.label.key === "App.websocket.onmessage" &&
+        transition.label.outcome === "snapshot",
+    );
+    expect(snapshot).toMatchObject({
+      confidence: "exact",
+      effect: {
+        kind: "assign",
+        var: "local:App.orders",
+        expr: { kind: "lit", value: "many" },
+      },
+    });
+    expect(snapshot && effectContainsHavoc(snapshot.effect)).toBe(false);
+  });
+
+  it("reports unsupported WebSocket message parse when parse source is not callback event data", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onmessage = (event) => {
+            const other = event;
+            const message = JSON.parse(other.data);
+            setOrders(message.orders);
+          };
+        }, []);
+        return <span>{orders.length}</span>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        environment: {
+          webSockets: [
+            {
+              url: "/ws",
+              messages: [{ type: "snapshot", bind: { orders: "many" } }],
+            },
+          ],
+        },
+      },
+    );
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "Unsupported WebSocket onmessage payload binding App",
+    );
+    expect(
+      result.transitions.filter(
+        (transition) =>
+          transition.cls === "env" &&
+          transition.label.kind === "env" &&
+          transition.label.key === "App.websocket.onmessage",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("does not treat registered WebSocket callback setters as immediate useEffect writes", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [connected, setConnected] = useState(false);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onopen = () => setConnected(true);
+        }, []);
+        return <span>{connected ? 'on' : 'off'}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    const internal = result.transitions.filter(
+      (transition) => transition.cls === "internal",
+    );
+    expect(
+      internal.every(
+        (transition) => !transition.writes.includes("local:App.connected"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reports missing WebSocket message variants for onmessage writes", () => {
+    const result = extractReactSourceTransitions(
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [orders, setOrders] = useState<readonly string[]>([]);
+        useEffect(() => {
+          const ws = new WebSocket("/ws");
+          ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            setOrders(message.orders);
+          };
+        }, []);
+        return <span>{orders.length}</span>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings.map((warning) => warning.message)).toContain(
+      "WebSocket onmessage handler App has no configured message variants",
+    );
+  });
+
+  it("preserves existing timer callback behavior", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <button onClick={() => {
+          setTimeout(() => setSaveStatus('posting'), 10);
+        }}>Save</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    const fire = result.transitions.find(
+      (transition) => transition.cls === "env",
+    );
+    expect(fire?.label).toEqual({
+      kind: "timer",
+      key: "App.setTimeout.saveStatus",
     });
   });
 });
