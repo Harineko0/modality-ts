@@ -11,12 +11,18 @@ interface NumericWideningInfo {
   literals: number[];
   positiveDeltas: number[];
   negativeDeltas: number[];
-  upperClamp?: number;
-  lowerClamp?: number;
+  upperClamps: number[];
+  lowerClamps: number[];
 }
 
 function emptyInfo(): NumericWideningInfo {
-  return { literals: [], positiveDeltas: [], negativeDeltas: [] };
+  return {
+    literals: [],
+    positiveDeltas: [],
+    negativeDeltas: [],
+    upperClamps: [],
+    lowerClamps: [],
+  };
 }
 
 function mergeInfo(
@@ -27,8 +33,8 @@ function mergeInfo(
     literals: [...left.literals, ...right.literals],
     positiveDeltas: [...left.positiveDeltas, ...right.positiveDeltas],
     negativeDeltas: [...left.negativeDeltas, ...right.negativeDeltas],
-    upperClamp: left.upperClamp ?? right.upperClamp,
-    lowerClamp: left.lowerClamp ?? right.lowerClamp,
+    upperClamps: [...left.upperClamps, ...right.upperClamps],
+    lowerClamps: [...left.lowerClamps, ...right.lowerClamps],
   };
 }
 
@@ -56,7 +62,7 @@ function clampBoundsFromCond(
       numericLiteral(cond.args[0] ?? cond.args[1]);
     const falseLit = numericLiteral(whenFalse);
     if (cap !== undefined && falseLit === cap) {
-      return { ...emptyInfo(), upperClamp: cap };
+      return { ...emptyInfo(), upperClamps: [cap] };
     }
   }
   if (cond.kind === "gte" && cond.args.length === 2) {
@@ -65,7 +71,7 @@ function clampBoundsFromCond(
       numericLiteral(cond.args[0] ?? cond.args[1]);
     const falseLit = numericLiteral(whenFalse);
     if (floor !== undefined && falseLit === floor) {
-      return { ...emptyInfo(), lowerClamp: floor };
+      return { ...emptyInfo(), lowerClamps: [floor] };
     }
   }
   return emptyInfo();
@@ -166,20 +172,35 @@ function widenDomain(
   if (domain.kind !== "boundedInt" || domain.min !== domain.max) return domain;
 
   const initial = typeof decl.initial === "number" ? decl.initial : domain.min;
-  const allLiterals = [initial, domain.min, domain.max, ...info.literals];
+  const literalMin = Math.min(
+    initial,
+    domain.min,
+    domain.max,
+    ...info.literals,
+  );
+  const literalMax = Math.max(
+    initial,
+    domain.min,
+    domain.max,
+    ...info.literals,
+  );
   const maxPositiveDelta =
     info.positiveDeltas.length > 0 ? Math.max(...info.positiveDeltas) : 0;
   const maxNegativeDelta =
     info.negativeDeltas.length > 0 ? Math.max(...info.negativeDeltas) : 0;
 
-  const min =
-    info.lowerClamp !== undefined
-      ? info.lowerClamp
-      : Math.min(...allLiterals) - maxNegativeDelta * maxDepth;
-  const max =
-    info.upperClamp !== undefined
-      ? info.upperClamp
-      : Math.max(...allLiterals) + maxPositiveDelta * maxDepth;
+  const deltaMin = literalMin - maxNegativeDelta * maxDepth;
+  const deltaMax = literalMax + maxPositiveDelta * maxDepth;
+
+  let min = deltaMin;
+  let max = deltaMax;
+  if (info.upperClamps.length > 0) {
+    max = Math.max(literalMax, Math.max(...info.upperClamps));
+  }
+  if (info.lowerClamps.length > 0) {
+    min = Math.min(deltaMin, Math.min(...info.lowerClamps));
+    min = Math.min(min, literalMin);
+  }
 
   return {
     kind: "boundedInt",
@@ -208,8 +229,8 @@ export function widenNumericDomainsFromTransitions(args: {
       info.literals.length > 0 ||
       info.positiveDeltas.length > 0 ||
       info.negativeDeltas.length > 0 ||
-      info.upperClamp !== undefined ||
-      info.lowerClamp !== undefined;
+      info.upperClamps.length > 0 ||
+      info.lowerClamps.length > 0;
     if (!hasEvidence) return decl;
     return {
       ...decl,

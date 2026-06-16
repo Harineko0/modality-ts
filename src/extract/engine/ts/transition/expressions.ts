@@ -4,6 +4,35 @@ import { isPropertyAccessLike, literalValue, propertyName } from "../ast.js";
 import { firstValue } from "../domains.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 
+function isNumericDomain(
+  domain: AbstractDomain,
+): domain is Extract<AbstractDomain, { kind: "boundedInt" | "intSet" }> {
+  return domain.kind === "boundedInt" || domain.kind === "intSet";
+}
+
+function setterForVarId(
+  varId: string,
+  setters: Map<string, SetterBinding>,
+): SetterBinding | undefined {
+  for (const setter of setters.values()) {
+    if (setter.varId === varId) return setter;
+  }
+  return undefined;
+}
+
+function isNumericExprIR(
+  expr: ExprIR,
+  setters: Map<string, SetterBinding>,
+): boolean {
+  if (expr.kind === "lit") return typeof expr.value === "number";
+  if (expr.kind === "read" || expr.kind === "readPre") {
+    if (expr.path && expr.path.length > 0) return false;
+    const setter = setterForVarId(expr.var, setters);
+    return setter ? isNumericDomain(setter.domain) : false;
+  }
+  return false;
+}
+
 export function setterArgumentExpr(
   argument: ts.Expression,
   setter: SetterBinding,
@@ -419,11 +448,18 @@ function numericBinaryValueExpr(
     snapshottedReads,
   );
   if (!left || !right) return undefined;
+  const leftNumeric = isNumericExprIR(left.expr, setters);
+  const rightNumeric = isNumericExprIR(right.expr, setters);
   if (op === ts.SyntaxKind.PlusToken) {
-    const hasNumericLiteral =
-      (left.expr.kind === "lit" && typeof left.expr.value === "number") ||
-      (right.expr.kind === "lit" && typeof right.expr.value === "number");
-    if (!hasNumericLiteral) return undefined;
+    const leftIsLit =
+      left.expr.kind === "lit" && typeof left.expr.value === "number";
+    const rightIsLit =
+      right.expr.kind === "lit" && typeof right.expr.value === "number";
+    if (!leftIsLit && !rightIsLit) return undefined;
+    if (leftIsLit && !rightIsLit && !rightNumeric) return undefined;
+    if (rightIsLit && !leftIsLit && !leftNumeric) return undefined;
+  } else if (!leftNumeric || !rightNumeric) {
+    return undefined;
   }
   const kind =
     op === ts.SyntaxKind.PlusToken

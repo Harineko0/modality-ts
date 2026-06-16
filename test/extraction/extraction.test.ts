@@ -4609,6 +4609,95 @@ describe("React Router form action submits", () => {
     expect(transition?.id).toContain(".unrepresentable");
   });
 
+  it("widens clamp domains without excluding direct literal assignments", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return (
+          <>
+            <button onClick={() => setCount((s) => Math.min(s + 10, 300))}>
+              Clamp
+            </button>
+            <button onClick={() => setCount(500)}>Set</button>
+          </>
+        );
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.count")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 500,
+      overflow: "forbid",
+    });
+    const countTransitions = result.transitions.filter((transition) =>
+      transition.id.includes("count"),
+    );
+    expect(
+      countTransitions.every((transition) => transition.confidence === "exact"),
+    ).toBe(true);
+    expect(
+      countTransitions.every(
+        (transition) =>
+          transition.effect.kind === "assign" &&
+          transition.effect.var === "local:App.count",
+      ),
+    ).toBe(true);
+  });
+
+  it("merges multiple clamp bounds independent of encounter order", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return (
+          <>
+            <button onClick={() => setCount((s) => Math.min(s + 1, 10))}>
+              Small
+            </button>
+            <button onClick={() => setCount((s) => Math.min(s + 1, 300))}>
+              Large
+            </button>
+          </>
+        );
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.count")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 300,
+      overflow: "forbid",
+    });
+  });
+
+  it("does not lower numeric-looking plus for string useState", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [label, setLabel] = useState('a');
+        return <button onClick={() => setLabel((s) => s + 1)}>Append</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    const transition = result.transitions.find((entry) =>
+      entry.id.includes("label"),
+    );
+    expect(transition?.effect.kind).toBe("havoc");
+    expect(transition?.id).toContain(".unrepresentable");
+  });
+
   it("widens LaneTimer-like draftSec domains through extractUseStateSkeleton", () => {
     const maxDepth = 12;
     const result = extractUseStateSkeleton(
