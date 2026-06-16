@@ -1,13 +1,38 @@
-# modality-ts
 
-[![npm version](https://img.shields.io/npm/v/modality-ts.svg)](https://www.npmjs.com/package/modality-ts)
-[![CI](https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 
-`modality-ts` is a model-checking-based testing tool for React state-transition bugs.
+<p align="center">
+  <br>
+  <br>
+  <a href="https://modality-ts.yuni.cat" target="_blank" rel="noopener noreferrer">
+    <img width="261" height="261" alt="icon-removebg-preview" src="https://github.com/user-attachments/assets/e698e5fd-3d41-4edf-9d32-ab72760cc4c9" />
+  </a>
+  <br>
+  <br>
+  <br>
+</p>
 
-It extracts a finite transition model from React + TypeScript code, checks developer-defined properties against every reachable state within stated bounds, and turns counterexamples into replayable tests.
+<h1 align="center">
+modality-ts
+</h1>
+<p align="center">
+Model-checking-based testing tool for React state-transition bugs.
+<p>
+<p align="center">
+  <a href="https://www.npmjs.com/package/modality-ts">
+  <img src="https://img.shields.io/npm/v/modality-ts.svg" alt="npm version">
+</a>
+<a href="https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml">
+  <img src="https://github.com/Harineko0/modality-ts/actions/workflows/ci.yml/badge.svg" alt="CI">
+</a>
+<a href="LICENSE">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+</a>
+<a href="https://www.typescriptlang.org/">
+  <img src="https://img.shields.io/badge/TypeScript-5.9-blue.svg" alt="TypeScript">
+</a>
+<p>
+
+`modality-ts` extracts a finite transition model from React + TypeScript code, checks developer-defined properties against every reachable state within stated bounds, and turns counterexamples into replayable tests.
 
 ## Install
 
