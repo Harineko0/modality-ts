@@ -19,7 +19,7 @@ rtk node /Users/hari/proj/modality-ts/dist/cli/cli.js extract 'app/routes/ingest
   --app-model .modality/ingest-session.model.ts \
   --report .modality/ingest-session.extraction-report.json
 rtk node /Users/hari/proj/modality-ts/dist/cli/cli.js check .modality/ingest-session.model.json \
-  'app/routes/ingest.$sessionId.props.mjs' \
+  'app/routes/ingest.$sessionId.props.ts' \
   --report .modality/ingest-session.report.json \
   --max-states 20000 \
   --max-edges 80000 \

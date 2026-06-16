@@ -10,8 +10,9 @@ import {
   stepAny,
   stepResolved,
 } from "modality-ts/core";
+import type { Property } from "modality-ts/core";
 
-export function properties() {
+export function properties(): Property[] {
   return [
     {
       kind: "always",

@@ -4,7 +4,7 @@ title: Writing properties
 sidebar_label: Writing properties
 ---
 
-Properties live in a file such as `app.props.mjs` that exports a `properties()`
+Properties live in a file such as `app.props.ts` that exports a `properties()`
 function returning an array of property objects. Predicates are built from
 [combinators](../concepts/properties.md) imported from `modality-ts/core` — they are
 serializable data, evaluated by the [Rust checker](../architecture/checker.md), not

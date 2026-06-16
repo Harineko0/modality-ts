@@ -23,6 +23,7 @@ export const defaultActionReplayTestsDir = join(
 );
 
 const ignoredDirs = new Set([".git", ".modality", "dist", "node_modules"]);
+const propsFileSuffix = ".props.ts";
 
 export async function discoverPropsFiles(
   root = process.cwd(),
@@ -42,7 +43,7 @@ export function artifactPathsForPropsFile(
   propsPath: string,
   root = process.cwd(),
 ): { modelPath: string; appModelPath: string } {
-  const base = relative(root, propsPath).replace(/\.props\.mjs$/, "");
+  const base = relative(root, propsPath).replace(/\.props\.ts$/, "");
   return {
     modelPath: join(defaultModelsDir, `${base}.model.json`),
     appModelPath: join(defaultModelsDir, `${base}.props.ts`),
@@ -54,10 +55,10 @@ export async function inferExtractTargetsFromProps(
 ): Promise<ExtractTargetFromProps[]> {
   const propsFiles = await discoverPropsFiles(root);
   if (propsFiles.length === 0) {
-    throw new Error(`No *.props.mjs files found under ${root}`);
+    throw new Error(`No *${propsFileSuffix} files found under ${root}`);
   }
   const sourceFiles = propsFiles.map((path) =>
-    path.replace(/\.props\.mjs$/, ".tsx"),
+    path.replace(/\.props\.ts$/, ".tsx"),
   );
   const missing: string[] = [];
   for (const sourceFile of sourceFiles) {
@@ -75,7 +76,7 @@ export async function inferExtractTargetsFromProps(
     );
   }
   return propsFiles.map((propsPath) => {
-    const sourcePath = propsPath.replace(/\.props\.mjs$/, ".tsx");
+    const sourcePath = propsPath.replace(/\.props\.ts$/, ".tsx");
     const { modelPath, appModelPath } = artifactPathsForPropsFile(
       propsPath,
       root,
@@ -102,7 +103,7 @@ export async function inferCheckTargetsFromProps(
 ): Promise<CheckTargetFromProps[]> {
   const propsFiles = await discoverPropsFiles(root);
   if (propsFiles.length === 0) {
-    throw new Error(`No *.props.mjs files found under ${root}`);
+    throw new Error(`No *${propsFileSuffix} files found under ${root}`);
   }
   const missing: string[] = [];
   const targets: CheckTargetFromProps[] = [];
@@ -168,7 +169,7 @@ async function discoverPropsFilesIn(dir: string): Promise<string[]> {
         if (ignoredDirs.has(entry.name)) return [];
         return discoverPropsFilesIn(path);
       }
-      if (entry.isFile() && entry.name.endsWith(".props.mjs")) return [path];
+      if (entry.isFile() && entry.name.endsWith(propsFileSuffix)) return [path];
       return [];
     }),
   );

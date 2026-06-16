@@ -29,7 +29,7 @@ describe("demo app acceptance fixture", () => {
     const startedAt = Date.now();
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-demo-"));
     const sourcePath = join(demoDir, "App.tsx");
-    const propsPath = join(demoDir, "app.props.mjs");
+    const propsPath = join(demoDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
     const handModelPath = join(artifactDir, "hand-model.json");
@@ -199,7 +199,7 @@ describe("demo app acceptance fixture", () => {
   it("keeps the concrete ToDo fixture equivalent to its hand model", async () => {
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-todo-"));
     const sourcePath = join(todoDir, "App.tsx");
-    const propsPath = join(todoDir, "app.props.mjs");
+    const propsPath = join(todoDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
     const handModelPath = join(artifactDir, "hand-model.json");
@@ -283,7 +283,7 @@ describe("demo app acceptance fixture", () => {
   it("reproduces the ToDo stale-completion counterexample through jsdom action replay", async () => {
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-todo-replay-"));
     const sourcePath = join(todoDir, "App.tsx");
-    const propsPath = join(todoDir, "app.props.mjs");
+    const propsPath = join(todoDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
 
@@ -342,7 +342,7 @@ describe("demo app acceptance fixture", () => {
   it("reproduces the demo double-submit counterexample through jsdom action replay", async () => {
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-demo-replay-"));
     const sourcePath = join(demoDir, "App.tsx");
-    const propsPath = join(demoDir, "app.props.mjs");
+    const propsPath = join(demoDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
 
@@ -393,7 +393,7 @@ describe("demo app acceptance fixture", () => {
   it("keeps the concrete checkout fixture equivalent to its hand model", async () => {
     const artifactDir = await mkdtemp(join(tmpdir(), "modality-checkout-"));
     const sourcePath = join(checkoutDir, "App.tsx");
-    const propsPath = join(checkoutDir, "app.props.mjs");
+    const propsPath = join(checkoutDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
     const handModelPath = join(artifactDir, "hand-model.json");
@@ -524,7 +524,7 @@ describe("demo app acceptance fixture", () => {
       join(tmpdir(), "modality-checkout-replay-"),
     );
     const sourcePath = join(checkoutDir, "App.tsx");
-    const propsPath = join(checkoutDir, "app.props.mjs");
+    const propsPath = join(checkoutDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
 

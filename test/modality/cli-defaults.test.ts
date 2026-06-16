@@ -17,29 +17,29 @@ describe("CLI default discovery", () => {
     await mkdir(join(dir, "src", "components"), { recursive: true });
     await mkdir(join(dir, ".modality"), { recursive: true });
     await mkdir(join(dir, "node_modules", "pkg"), { recursive: true });
-    await writeFile(join(dir, "src", "Home.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "src", "Home.props.ts"), "", "utf8");
     await writeFile(
-      join(dir, "src", "components", "Form.props.mjs"),
+      join(dir, "src", "components", "Form.props.ts"),
       "",
       "utf8",
     );
-    await writeFile(join(dir, ".modality", "Skip.props.mjs"), "", "utf8");
+    await writeFile(join(dir, ".modality", "Skip.props.ts"), "", "utf8");
     await writeFile(
-      join(dir, "node_modules", "pkg", "Skip.props.mjs"),
+      join(dir, "node_modules", "pkg", "Skip.props.ts"),
       "",
       "utf8",
     );
 
     expect(await discoverPropsFiles(dir)).toEqual([
-      join(dir, "src", "components", "Form.props.mjs"),
-      join(dir, "src", "Home.props.mjs"),
+      join(dir, "src", "components", "Form.props.ts"),
+      join(dir, "src", "Home.props.ts"),
     ]);
   });
 
   it("infers source files from props files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
     await mkdir(join(dir, "src"), { recursive: true });
-    await writeFile(join(dir, "src", "App.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "src", "App.props.ts"), "", "utf8");
     await writeFile(join(dir, "src", "App.tsx"), "", "utf8");
 
     expect(await inferSourceFilesFromProps(dir)).toEqual([
@@ -51,14 +51,14 @@ describe("CLI default discovery", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
 
     await expect(inferSourceFilesFromProps(dir)).rejects.toThrow(
-      `No *.props.mjs files found under ${dir}`,
+      `No *.props.ts files found under ${dir}`,
     );
   });
 
   it("fails clearly when an inferred source file is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
     await mkdir(join(dir, "src"), { recursive: true });
-    await writeFile(join(dir, "src", "App.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "src", "App.props.ts"), "", "utf8");
 
     await expect(inferSourceFilesFromProps(dir)).rejects.toThrow(
       `Missing inferred source files for props: ${join(dir, "src", "App.tsx")}`,
@@ -68,12 +68,12 @@ describe("CLI default discovery", () => {
   it("derives per-props artifact paths under .modality/models", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
     await mkdir(join(dir, "app", "routes"), { recursive: true });
-    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "root.props.ts"), "", "utf8");
     await writeFile(join(dir, "app", "root.tsx"), "", "utf8");
-    await writeFile(join(dir, "app", "routes", "$slug.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "routes", "$slug.props.ts"), "", "utf8");
     await writeFile(join(dir, "app", "routes", "$slug.tsx"), "", "utf8");
     await writeFile(
-      join(dir, "app", "routes", "analytics.props.mjs"),
+      join(dir, "app", "routes", "analytics.props.ts"),
       "",
       "utf8",
     );
@@ -81,13 +81,13 @@ describe("CLI default discovery", () => {
 
     expect(await inferExtractTargetsFromProps(dir)).toEqual([
       {
-        propsPath: join(dir, "app", "root.props.mjs"),
+        propsPath: join(dir, "app", "root.props.ts"),
         sourcePath: join(dir, "app", "root.tsx"),
         modelPath: join(".modality", "models", "app", "root.model.json"),
         appModelPath: join(".modality", "models", "app", "root.props.ts"),
       },
       {
-        propsPath: join(dir, "app", "routes", "$slug.props.mjs"),
+        propsPath: join(dir, "app", "routes", "$slug.props.ts"),
         sourcePath: join(dir, "app", "routes", "$slug.tsx"),
         modelPath: join(
           ".modality",
@@ -105,7 +105,7 @@ describe("CLI default discovery", () => {
         ),
       },
       {
-        propsPath: join(dir, "app", "routes", "analytics.props.mjs"),
+        propsPath: join(dir, "app", "routes", "analytics.props.ts"),
         sourcePath: join(dir, "app", "routes", "analytics.tsx"),
         modelPath: join(
           ".modality",
@@ -129,7 +129,7 @@ describe("CLI default discovery", () => {
     const root = "/project";
     expect(
       artifactPathsForPropsFile(
-        join(root, "app", "routes", "home.props.mjs"),
+        join(root, "app", "routes", "home.props.ts"),
         root,
       ),
     ).toEqual({
@@ -153,7 +153,7 @@ describe("CLI default discovery", () => {
   it("fails clearly when inferExtractTargetsFromProps finds a missing sibling tsx", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
     await mkdir(join(dir, "app"), { recursive: true });
-    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "root.props.ts"), "", "utf8");
 
     await expect(inferExtractTargetsFromProps(dir)).rejects.toThrow(
       `Missing inferred source files for props: ${join(dir, "app", "root.tsx")}`,
@@ -166,13 +166,13 @@ describe("CLI default discovery", () => {
     await mkdir(join(dir, ".modality", "models", "app", "routes"), {
       recursive: true,
     });
-    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "root.props.ts"), "", "utf8");
     await writeFile(
       join(dir, ".modality", "models", "app", "root.model.json"),
       "{}",
       "utf8",
     );
-    await writeFile(join(dir, "app", "routes", "home.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "routes", "home.props.ts"), "", "utf8");
     await writeFile(
       join(dir, ".modality", "models", "app", "routes", "home.model.json"),
       "{}",
@@ -181,12 +181,12 @@ describe("CLI default discovery", () => {
 
     expect(await inferCheckTargetsFromProps(dir)).toEqual([
       {
-        propsPath: join(dir, "app", "root.props.mjs"),
+        propsPath: join(dir, "app", "root.props.ts"),
         modelPath: join(".modality", "models", "app", "root.model.json"),
         appModelPath: join(".modality", "models", "app", "root.props.ts"),
       },
       {
-        propsPath: join(dir, "app", "routes", "home.props.mjs"),
+        propsPath: join(dir, "app", "routes", "home.props.ts"),
         modelPath: join(
           ".modality",
           "models",
@@ -208,7 +208,7 @@ describe("CLI default discovery", () => {
   it("fails clearly when a generated model is missing for check targets", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-defaults-"));
     await mkdir(join(dir, "app"), { recursive: true });
-    await writeFile(join(dir, "app", "root.props.mjs"), "", "utf8");
+    await writeFile(join(dir, "app", "root.props.ts"), "", "utf8");
 
     await expect(inferCheckTargetsFromProps(dir)).rejects.toThrow(
       `Missing inferred model files for props: ${join(".modality", "models", "app", "root.model.json")}`,

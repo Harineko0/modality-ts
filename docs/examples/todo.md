@@ -66,7 +66,7 @@ stateDiagram-v2
 
 ```bash
 npx modality extract examples/todo-app/App.tsx --effect-api api.createTodo
-npx modality check .modality/model.json examples/todo-app/app.props.mjs
+npx modality check .modality/model.json examples/todo-app/app.props.ts
 ```
 
 This example is where step invariants and the `enabled` accessor earn their keep — the

@@ -140,7 +140,7 @@ describe("runCheckCommand", () => {
     });
     expect(canonicalJson(second.report)).toBe(canonicalJson(first.report));
 
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(
       propsPath,
       `export const properties = [
@@ -363,7 +363,7 @@ describe("runCheckCommand", () => {
   it("does not emit replay tests for non-replayable reachableFrom counterexamples", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     const replayTestsDir = join(dir, "replay-tests");
     const actionReplayTestsDir = join(dir, "action-replay-tests");
@@ -400,7 +400,7 @@ describe("runCheckCommand", () => {
   it("does not emit replay tests for locatorless user-event counterexamples", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     const replayTestsDir = join(dir, "replay-tests");
     const actionReplayTestsDir = join(dir, "action-replay-tests");
@@ -541,7 +541,7 @@ describe("runCheckCommand", () => {
   it("renders numeric reduction metadata and downgrades heuristic claims", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(
       modelPath,
       JSON.stringify({
@@ -606,7 +606,7 @@ describe("runCheckCommand", () => {
   it("applies overlay artifacts before checking", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const overlayPath = join(dir, "overlay.json");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
@@ -666,7 +666,7 @@ describe("runCheckCommand", () => {
   it("uses slicing by default when property reads are declared", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -690,7 +690,7 @@ describe("runCheckCommand", () => {
   it("reports search-limit diagnostics when configured", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
@@ -726,7 +726,7 @@ describe("runCheckCommand", () => {
   it("does not apply search limits when searchLimits is false", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -748,7 +748,7 @@ describe("runCheckCommand", () => {
   it("reports storage diagnostics when available", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -774,7 +774,7 @@ describe("runCheckCommand", () => {
   it("reports hot-path diagnostics when available", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -825,7 +825,7 @@ describe("renderHumanCheckTargets", () => {
   it("prints a status row instead of Properties", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -841,7 +841,7 @@ describe("renderHumanCheckTargets", () => {
       [
         {
           modelPath,
-          propsPath: "props.mjs",
+          propsPath: "props.ts",
           check: result.check,
           reportPath: "report.json",
           artifacts: [{ kind: "trace", path: "traces/foo.trace.json" }],
@@ -854,7 +854,7 @@ describe("renderHumanCheckTargets", () => {
         showArtifacts: true,
       },
     );
-    expect(lines[0]).toMatch(/^ [×✓⚠] props\.mjs /);
+    expect(lines[0]).toMatch(/^ [×✓⚠] props\.ts /);
     expect(lines.join("\n")).not.toContain("Properties");
     expect(lines.join("\n")).not.toContain("Stats");
     expect(
@@ -878,7 +878,7 @@ describe("renderHumanCheckTargets", () => {
   it("hides Artifacts by default and shows them when showArtifacts is true", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -892,7 +892,7 @@ describe("renderHumanCheckTargets", () => {
     const result = await runCheckCommand({ modelPath, propsPath });
     const target = {
       modelPath,
-      propsPath: "props.mjs",
+      propsPath: "props.ts",
       check: result.check,
       reportPath: "report.json",
       artifacts: [{ kind: "trace" as const, path: "traces/foo.trace.json" }],
@@ -922,7 +922,7 @@ describe("renderHumanCheckTargets", () => {
   it("prefixes passing property verdicts with a pass symbol", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -937,7 +937,7 @@ describe("renderHumanCheckTargets", () => {
       [
         {
           modelPath,
-          propsPath: "props.mjs",
+          propsPath: "props.ts",
           check: result.check,
           artifacts: [],
           durationMs: 5,
@@ -956,7 +956,7 @@ describe("renderHumanCheckTargets", () => {
   it("aggregates multiple targets before the summary block", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -970,14 +970,14 @@ describe("renderHumanCheckTargets", () => {
       [
         {
           modelPath,
-          propsPath: "a.props.mjs",
+          propsPath: "a.props.ts",
           check: result.check,
           artifacts: [],
           durationMs: 5,
         },
         {
           modelPath,
-          propsPath: "b.props.mjs",
+          propsPath: "b.props.ts",
           check: result.check,
           artifacts: [],
           durationMs: 7,
@@ -991,8 +991,8 @@ describe("renderHumanCheckTargets", () => {
     const testFilesIndex = lines.findIndex((line) =>
       line.includes("Test Files"),
     );
-    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("a.props.mjs");
-    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("b.props.mjs");
+    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("a.props.ts");
+    expect(lines.slice(0, testFilesIndex).join("\n")).toContain("b.props.ts");
     expect(lines[testFilesIndex]).toContain("2 passed (2)");
   });
 
@@ -1007,7 +1007,7 @@ describe("renderHumanCheckTargets", () => {
   it("includes ANSI escapes in color mode and not in plain mode", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
       propsPath,
@@ -1028,7 +1028,7 @@ describe("runCheckCommand streaming output", () => {
   it("calls emit with row-oriented output while returning legacy lines", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const tracesDir = join(dir, "traces");
     const replayTestsDir = join(dir, "replay-tests");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
@@ -1062,7 +1062,7 @@ describe("runCheckCommand streaming output", () => {
   it("rejects function-valued property predicates with a migration error", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(
@@ -1085,7 +1085,7 @@ describe("runCheckCommand streaming output", () => {
   it("propagates memory guard limits to the Rust checker", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(

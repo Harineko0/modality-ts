@@ -37,7 +37,7 @@ npx modality extract src/App.tsx --report .modality/extraction-report.json
 
 ## 3. Write a property
 
-Properties live in files such as `app.props.mjs` and import helpers from
+Properties live in files such as `app.props.ts` and import helpers from
 `modality-ts/core`. A property is a plain data object — predicates are built from
 small combinators, not arbitrary functions.
 
@@ -103,7 +103,7 @@ classifies whether the real app actually reproduces it. See
 Write model, report, traces, and conformance artifacts into one directory:
 
 ```bash
-npx modality ci .modality/model.json app.props.mjs --artifacts .modality
+npx modality ci .modality/model.json app.props.ts --artifacts .modality
 ```
 
 See [CI integration](../guides/ci-integration.md).

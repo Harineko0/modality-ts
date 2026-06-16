@@ -48,7 +48,7 @@ stateDiagram-v2
 npx modality extract examples/checkout-app/App.tsx \
   --effect-api api.fetchQuote \
   --effect-api api.submitOrder
-npx modality check .modality/model.json examples/checkout-app/app.props.mjs
+npx modality check .modality/model.json examples/checkout-app/app.props.ts
 ```
 
 This is the example that drove several DSL additions: relational list data,

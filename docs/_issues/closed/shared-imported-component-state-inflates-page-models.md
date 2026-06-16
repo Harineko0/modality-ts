@@ -6,7 +6,7 @@ Extracting route pages in the TinyURL app pulled in state from shared components
 
 ## Why This Matters
 
-Developers expect `app/routes/analytics.props.mjs` to primarily check the analytics page. Instead, the extracted model included state from shared components such as dialog controls, tag comboboxes, theme provider, mobile navigation, and chart tabs. This makes a page property pay the cost of unrelated UI state.
+Developers expect `app/routes/analytics.props.ts` to primarily check the analytics page. Instead, the extracted model included state from shared components such as dialog controls, tag comboboxes, theme provider, mobile navigation, and chart tabs. This makes a page property pay the cost of unrelated UI state.
 
 ## Reproduction
 

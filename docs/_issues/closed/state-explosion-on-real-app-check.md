@@ -18,7 +18,7 @@ rtk pnpm exec modality extract
 rtk pnpm exec modality check
 ```
 
-The app had colocated `*.props.mjs` files under `app/routes/`. The full extraction completed with:
+The app had colocated `*.props.ts` files under `app/routes/`. The full extraction completed with:
 
 ```text
 extracted vars=45 transitions=46
@@ -38,7 +38,7 @@ Checking only one props file still reproduced the issue:
 
 ```bash
 cd /Users/hari/proj/gdgjp/tinyurl
-rtk pnpm exec modality check .modality/model.json app/routes/analytics.props.mjs
+rtk pnpm exec modality check .modality/model.json app/routes/analytics.props.ts
 ```
 
 That command also reached the Node heap limit.

@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   const artifactDir = await mkdtemp(join(tmpdir(), "modality-examples-ci-"));
   try {
     const sourcePath = join(demoDir, "App.tsx");
-    const propsPath = join(demoDir, "app.props.mjs");
+    const propsPath = join(demoDir, "app.props.ts");
     const modelPath = join(artifactDir, "model.json");
     const reportPath = join(artifactDir, "report.json");
     const tracesDir = join(artifactDir, "traces");

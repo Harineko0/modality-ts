@@ -11,13 +11,13 @@ artifacts into one directory.
 ## The `ci` command
 
 ```bash
-npx modality ci .modality/model.json app.props.mjs --artifacts .modality
+npx modality ci .modality/model.json app.props.ts --artifacts .modality
 ```
 
 You can also let CI derive the model path from a discovered property file:
 
 ```bash
-npx modality ci app.props.mjs --artifacts .modality
+npx modality ci app.props.ts --artifacts .modality
 ```
 
 It writes the model, the [trust ledger](../soundness/trust-ledger.md) report, violation

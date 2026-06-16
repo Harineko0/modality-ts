@@ -112,16 +112,16 @@ async function main(): Promise<void> {
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
     );
     console.log(
-      "       modality check [model.json] [props.mjs ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits] [--artifact|-A]",
+      "       modality check [model.json] [props.ts ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits] [--artifact|-A]",
     );
     console.log(
-      "         no args checks each discovered *.props.mjs against its matching .modality/models/**/*.model.json",
+      "         no args checks each discovered *.props.ts against its matching .modality/models/**/*.model.json",
     );
     console.log(
       "       modality ci <model.json> [props.ts] --artifacts .modality [--baseline report.json] [--source source.tsx] [--conform-count 8] [--min-transition-conform-pass-rate 1]",
     );
     console.log(
-      "         modality ci <props.mjs> --artifacts .modality derives the matching .modality/models model path",
+      "         modality ci <props.ts> --artifacts .modality derives the matching .modality/models model path",
     );
     console.log(
       "       modality replay <trace.json> [--mode abstract|action] [--harness harness.ts] [--states states.json] [--observed observed-states.json] [--report report.json]",
@@ -201,7 +201,7 @@ async function main(): Promise<void> {
     if (!artifactDir) throw new Error("Missing --artifacts path");
     let modelPath: string;
     let propsPath: string | undefined;
-    if (firstPositional.endsWith(".props.mjs")) {
+    if (firstPositional.endsWith(".props.ts")) {
       modelPath = artifactPathsForPropsFile(firstPositional).modelPath;
       propsPath = firstPositional;
     } else {

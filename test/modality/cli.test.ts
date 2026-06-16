@@ -321,7 +321,7 @@ describe("modality CLI", () => {
   it("stops gracefully when --max-states is hit", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(
@@ -366,7 +366,7 @@ describe("modality CLI", () => {
   it("rejects invalid --max-states values", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(propsPath, "export const properties = [];", "utf8");
 
@@ -386,7 +386,7 @@ describe("modality CLI", () => {
   it("rejects --no-search-limits combined with explicit limits", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(propsPath, "export const properties = [];", "utf8");
 
@@ -449,7 +449,7 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await mkdir(join(dir, "app"), { recursive: true });
     await writeFile(
-      join(dir, "app", "root.props.mjs"),
+      join(dir, "app", "root.props.ts"),
       passingProps("root"),
       "utf8",
     );
@@ -481,7 +481,7 @@ describe("modality CLI", () => {
   it("keeps explicit single-model check report paths", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "custom-report.json");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(propsPath, passingProps("root"), "utf8");
@@ -505,7 +505,7 @@ describe("modality CLI", () => {
 
     const { stdout } = await execFileAsync(
       tsxBin,
-      [cliPath, "ci", "app/root.props.mjs", "--artifacts", artifactDir],
+      [cliPath, "ci", "app/root.props.ts", "--artifacts", artifactDir],
       { cwd: dir },
     );
 
@@ -624,17 +624,17 @@ async function writeRouteFixtureApp(dir: string): Promise<void> {
     "utf8",
   );
   await writeFile(
-    join(dir, "app", "root.props.mjs"),
+    join(dir, "app", "root.props.ts"),
     "export const properties = [];",
     "utf8",
   );
   await writeFile(
-    join(dir, "app", "routes", "home.props.mjs"),
+    join(dir, "app", "routes", "home.props.ts"),
     "export const properties = [];",
     "utf8",
   );
   await writeFile(
-    join(dir, "app", "routes", "analytics.props.mjs"),
+    join(dir, "app", "routes", "analytics.props.ts"),
     "export const properties = [];",
     "utf8",
   );
@@ -665,12 +665,12 @@ async function writeFixtureApp(dir: string): Promise<void> {
     "utf8",
   );
   await writeFile(
-    join(dir, "src", "App.props.mjs"),
+    join(dir, "src", "App.props.ts"),
     "export const properties = [];",
     "utf8",
   );
   await writeFile(
-    join(dir, "src", "HomePage.props.mjs"),
+    join(dir, "src", "HomePage.props.ts"),
     "export const properties = [];",
     "utf8",
   );
@@ -706,7 +706,7 @@ async function writePerPropsCheckFixture(
     "utf8",
   );
   await writeFile(
-    join(dir, "app", "root.props.mjs"),
+    join(dir, "app", "root.props.ts"),
     passingProps("root"),
     "utf8",
   );
@@ -717,7 +717,7 @@ async function writePerPropsCheckFixture(
     "utf8",
   );
   await writeFile(
-    join(dir, "app", "routes", "home.props.mjs"),
+    join(dir, "app", "routes", "home.props.ts"),
     options.failingTarget === "home" ? failingProps() : passingProps("home"),
     "utf8",
   );

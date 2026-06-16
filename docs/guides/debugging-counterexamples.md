@@ -20,7 +20,7 @@ violated predicate's read set:
   2. click "Place order"           sys:pending[POST /orders]: 0 → 1   (CheckoutPage.tsx:41)
   3. click "Place order"           sys:pending[POST /orders]: 1 → 2   ← violates noDoubleSubmit
      hint: submit handler has no guard on order.kind === "submitting"
-  Property: app.props.mjs   |   Bounds: ≤2 pending, depth ≤12   |   Abstractions: 3 (listed)
+  Property: app.props.ts   |   Bounds: ≤2 pending, depth ≤12   |   Abstractions: 3 (listed)
 ```
 
 The **hint** line is heuristic and clearly labelled — pattern rules over the trace (e.g.

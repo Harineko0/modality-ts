@@ -2,7 +2,7 @@
 
 ## Summary
 
-While adding `*.props.mjs` files for `/Users/hari/proj/coffee-dx/apps/web`, explicit extraction of `app/_customer/home.tsx` did not model the imported `MenuItemCard` add/remove handlers as transitions that mutate `local:CustomerHome.cart`.
+While adding `*.props.ts` files for `/Users/hari/proj/coffee-dx/apps/web`, explicit extraction of `app/_customer/home.tsx` did not model the imported `MenuItemCard` add/remove handlers as transitions that mutate `local:CustomerHome.cart`.
 
 This makes core customer-order properties impossible to write honestly. The model can reach `phase === "confirm"` through the parent click handlers, but `cart` never becomes non-empty, so properties about "confirm only after selecting an item" or "close complete clears the selected items" are either vacuous or reason over an impossible state.
 

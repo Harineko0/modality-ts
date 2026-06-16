@@ -30,7 +30,7 @@ hit, but exhaustive [BFS](../architecture/checker.md) finds with a shortest trac
 
 ```bash
 npx modality extract examples/demo-app/App.tsx --effect-api api.placeOrder
-npx modality check .modality/model.json examples/demo-app/app.props.mjs
+npx modality check .modality/model.json examples/demo-app/app.props.ts
 ```
 
 Each violation produces a shortest counterexample trace; replaying it against the demo

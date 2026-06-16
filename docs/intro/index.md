@@ -31,7 +31,7 @@ hide in the interleavings nobody wrote a test for.
 ```mermaid
 flowchart LR
   src["React + TS source"] -->|extract| model["model.json<br/>(finite transition system)"]
-  props["*.props.mjs<br/>(properties)"] --> check
+  props["*.props.ts<br/>(properties)"] --> check
   model -->|check| check["Rust model checker<br/>(exhaustive BFS)"]
   check -->|verified| ok["✓ within bounds"]
   check -->|violated| trace["counterexample trace"]

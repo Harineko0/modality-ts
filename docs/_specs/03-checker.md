@@ -10,7 +10,7 @@ Design goals, in priority order: (1) **correctness** — a wrong checker is wors
 
 ```
 model.json + overlay module ─► loader (well-formedness, Spec 01 §7)
-property IR (*.props.mjs)    ─► property compiler (slicing per property)
+property IR (*.props.ts)    ─► property compiler (slicing per property)
                                 ├─► core search (BFS, §3)
                                 ├─► invariant monitor (§5)
                                 ├─► bounded-response monitor (§6)

@@ -3,6 +3,12 @@ import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getHeapStatistics } from "node:v8";
 import {
+  ModuleKind,
+  ModuleResolutionKind,
+  ScriptTarget,
+  transpileModule,
+} from "typescript";
+import {
   checkModel,
   type CheckOptions,
   type CheckResult,
@@ -380,7 +386,7 @@ async function loadProperties(
 ): Promise<Property[]> {
   const properties = await Promise.all(
     propsPaths.map(async (propsPath) => {
-      const modulePath = await importableCopy(propsPath);
+      const modulePath = await importableModulePath(propsPath);
       const module = (await import(
         /* @vite-ignore */ pathToFileURL(modulePath).href
       )) as {
@@ -416,9 +422,10 @@ async function loadProperties(
   return properties.flat();
 }
 
-async function importableCopy(path: string): Promise<string> {
-  if (!process.env.VITEST) return path;
+async function importableModulePath(path: string): Promise<string> {
   const extension = extname(path) || ".mjs";
+  if (extension === ".ts") return transpiledTypeScriptModule(path);
+  if (!process.env.VITEST) return path;
   const cacheDir = join(process.cwd(), ".modality", "import-cache");
   await mkdir(cacheDir, { recursive: true });
   const copyPath = join(
@@ -426,6 +433,28 @@ async function importableCopy(path: string): Promise<string> {
     `${Buffer.from(path).toString("hex")}.${process.pid}.${Date.now()}${extension}`,
   );
   await copyFile(path, copyPath);
+  return copyPath;
+}
+
+async function transpiledTypeScriptModule(path: string): Promise<string> {
+  const cacheDir = join(process.cwd(), ".modality", "import-cache");
+  await mkdir(cacheDir, { recursive: true });
+  const source = await readFile(path, "utf8");
+  const output = transpileModule(source, {
+    fileName: path,
+    compilerOptions: {
+      target: ScriptTarget.ES2022,
+      module: ModuleKind.ES2022,
+      moduleResolution: ModuleResolutionKind.NodeNext,
+      sourceMap: false,
+      verbatimModuleSyntax: true,
+    },
+  });
+  const copyPath = join(
+    cacheDir,
+    `${Buffer.from(path).toString("hex")}.${process.pid}.${Date.now()}.mjs`,
+  );
+  await writeFile(copyPath, output.outputText, "utf8");
   return copyPath;
 }
 

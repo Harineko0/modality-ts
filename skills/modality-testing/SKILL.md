@@ -60,7 +60,7 @@ npx modality extract [source.tsx ...] \
 - async operations, pending bound `maxPending`, stale reads, unhandled rejections,
   over-approx/manual transitions, ignored vars, and bound-hit events are understood.
 
-4. Write `*.props.mjs` files exporting serializable property objects. Prefer
+4. Write `*.props.ts` files exporting serializable property objects. Prefer
 `export function properties(model) { ... }` or `propertiesFor(model) { ... }` so
 model-aware helpers can validate IDs and infer `reads`.
 
@@ -98,8 +98,8 @@ Replay verdicts mean:
 7. Use CI artifacts for automation:
 
 ```bash
-npx modality ci .modality/model.json app.props.mjs --artifacts .modality
-npx modality ci app.props.mjs --artifacts .modality
+npx modality ci .modality/model.json app.props.ts --artifacts .modality
+npx modality ci app.props.ts --artifacts .modality
 ```
 
 Gate hard on reproduced violations, stale model hashes, new severe trust-ledger caveats,
@@ -351,11 +351,11 @@ a clean `verified-within-bounds` run.
 npm i -D modality-ts
 npx modality init
 npx modality extract [source.tsx ...]
-npx modality check [model.json] [props.mjs ...]
+npx modality check [model.json] [props.ts ...]
 npx modality replay <trace.json>
 npx modality conform --model .modality/model.json --count 8 --depth 4
 npx modality export .modality/model.json --format tla --out .modality/model.tla
-npx modality ci .modality/model.json [props.mjs] --artifacts .modality
+npx modality ci .modality/model.json [props.ts] --artifacts .modality
 ```
 
 Inside this repository, run validation commands through the project package manager:

@@ -7,7 +7,7 @@ sidebar_label: Overview
 
 The repository includes small apps under `examples/` that exercise common modeling
 patterns and double as integration tests. Each pairs an `App.tsx` with an
-`app.props.mjs` property file.
+`app.props.ts` property file.
 
 | Example | Demonstrates |
 | --- | --- |

@@ -41,7 +41,7 @@ npx modality extract [source.tsx ...]
 Check one model against one or more property files.
 
 ```bash
-npx modality check [model.json] [props.mjs ...]
+npx modality check [model.json] [props.ts ...]
 ```
 
 | Option | Meaning |
@@ -115,7 +115,7 @@ npx modality export [model.json] --format tla --out .modality/model.tla
 Run the bundled workflow and write all artifacts for automation.
 
 ```bash
-npx modality ci <model.json> [props.mjs] --artifacts .modality
+npx modality ci <model.json> [props.ts] --artifacts .modality
 ```
 
 | Option | Meaning |

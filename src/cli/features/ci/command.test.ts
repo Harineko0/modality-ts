@@ -111,7 +111,7 @@ describe("runCiCommand", () => {
   it("writes report and traces and fails on violations", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(propsPath, flagAlwaysFalseProps, "utf8");
@@ -152,7 +152,7 @@ describe("runCiCommand", () => {
   it("passes when all properties hold", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(propsPath, flagTrueProps, "utf8");
@@ -171,7 +171,7 @@ describe("runCiCommand", () => {
   it("fails when trust ledger regresses against a baseline report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     const current = model();
@@ -213,7 +213,7 @@ describe("runCiCommand", () => {
   it("fails when plugin provenance changes against a baseline report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(
@@ -265,7 +265,7 @@ describe("runCiCommand", () => {
   it("fails when the trust-ledger domain table grows against a baseline report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(
@@ -317,7 +317,7 @@ describe("runCiCommand", () => {
   it("fails when ignored vars grow against a baseline report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const overlayPath = join(dir, "overlay.json");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
@@ -394,7 +394,7 @@ describe("runCiCommand", () => {
   it("fails when extraction caveats grow against a baseline report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(
@@ -448,7 +448,7 @@ describe("runCiCommand", () => {
   it("rejects unsupported baseline check report artifact versions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const baselinePath = join(dir, "baseline-report.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
@@ -482,7 +482,7 @@ describe("runCiCommand", () => {
   it("runs generated conformance walks as part of CI", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
     await writeFile(propsPath, flagTrueProps, "utf8");
@@ -506,7 +506,7 @@ describe("runCiCommand", () => {
   it("passes CI source freshness when model source hash matches", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const sourcePath = join(dir, "App.tsx");
     const artifactDir = join(dir, ".modality");
     const source = "export function App() { return null; }";
@@ -535,7 +535,7 @@ describe("runCiCommand", () => {
   it("fails CI source freshness when model source hash is stale", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const sourcePath = join(dir, "App.tsx");
     const artifactDir = join(dir, ".modality");
     await writeFile(
@@ -572,7 +572,7 @@ describe("runCiCommand", () => {
   it("fails CI when conformance pass rate is below the configured threshold", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const walksPath = join(dir, "walks.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
@@ -643,7 +643,7 @@ describe("runCiCommand", () => {
   it("fails CI when a transition conformance pass rate is below the configured threshold", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
     const modelPath = join(dir, "model.json");
-    const propsPath = join(dir, "props.mjs");
+    const propsPath = join(dir, "props.ts");
     const walksPath = join(dir, "walks.json");
     const artifactDir = join(dir, ".modality");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");

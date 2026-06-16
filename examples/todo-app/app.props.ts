@@ -10,8 +10,9 @@ import {
   stepEnqueued,
   stepResolved,
 } from "modality-ts/core";
+import type { ExprIR, Property } from "modality-ts/core";
 
-function atMostOnePendingOp(opId) {
+function atMostOnePendingOp(opId: string): ExprIR {
   return andExpr(
     orExpr(
       neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
@@ -28,7 +29,7 @@ function atMostOnePendingOp(opId) {
   );
 }
 
-export function properties() {
+export function properties(): Property[] {
   return [
     {
       kind: "always",
