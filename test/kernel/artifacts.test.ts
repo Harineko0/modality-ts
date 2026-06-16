@@ -315,4 +315,41 @@ describe("artifact parsers", () => {
       ),
     ).toHaveLength(1);
   });
+
+  it("accepts transitionEnabledPrefix expression artifacts", () => {
+    expect(
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "always",
+              name: "resetFamilyEnabled",
+              predicate: {
+                kind: "transitionEnabledPrefix",
+                prefix: "LaneTimer.onClick.draftSec",
+              },
+            },
+          ],
+        }),
+      ),
+    ).toHaveLength(1);
+    expect(() =>
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "badPrefix",
+              predicate: {
+                step: { transitionId: "toggle" },
+                post: { kind: "transitionEnabledPrefix", prefix: 42 },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toThrow("transitionEnabledPrefix must declare prefix");
+  });
 });

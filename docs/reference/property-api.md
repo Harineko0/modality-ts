@@ -36,7 +36,8 @@ State predicates are `ExprIR` trees:
 | `lit(value)` | a literal |
 | `eq(a, b)` / `neq(a, b)` | equality / inequality |
 | `andExpr(...)` / `orExpr(...)` / `notExpr(x)` | boolean composition |
-| `enabled(model, transitionId)` | the [enabledness](../concepts/properties.md) accessor |
+| `enabled(model, transitionId)` | the [enabledness](../concepts/properties.md) accessor (exact id) |
+| `enabledTransitionPrefix(model, prefix)` | true when some enabled transition id starts with `prefix` |
 
 The numeric comparisons (`lt`, `lte`, `gt`, `gte`) and arithmetic (`add`, `sub`, `mod`)
 are available as `ExprIR` node kinds for [finite numeric domains](./domains.md).

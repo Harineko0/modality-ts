@@ -5,6 +5,7 @@ import {
   andExpr,
   lit as coreLit,
   enabled,
+  enabledTransitionPrefix,
   eq,
   leadsToWithin,
   type Model,
@@ -2629,6 +2630,129 @@ describe("checker", () => {
           : [],
       ),
     );
+  });
+
+  it("enabledTransitionPrefix matches suffixed transition ids when exact id is absent", () => {
+    const draftSecVar = "local:LaneTimer.draftSec";
+    const resetPrefix = "LaneTimer.onClick.draftSec";
+    const m: Model = {
+      schemaVersion: 1,
+      id: "lane-timer-prefix",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: draftSecVar,
+          domain: { kind: "boundedInt", min: 0, max: 180, overflow: "forbid" },
+          origin: "system",
+          scope: { kind: "route-local", route: "/" },
+          initial: 0,
+        },
+      ],
+      transitions: [
+        {
+          id: "LaneTimer.onClick.draftSec.gpspae",
+          cls: "user",
+          label: { kind: "click", text: "+10秒" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: draftSecVar,
+            expr: {
+              kind: "add",
+              args: [read(draftSecVar), lit(10)],
+            },
+          },
+          reads: [draftSecVar],
+          writes: [draftSecVar],
+          confidence: "exact",
+        },
+        {
+          id: "LaneTimer.onClick.draftSec.1ku31x",
+          cls: "user",
+          label: { kind: "click", text: "+1分" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: draftSecVar,
+            expr: {
+              kind: "add",
+              args: [read(draftSecVar), lit(60)],
+            },
+          },
+          reads: [draftSecVar],
+          writes: [draftSecVar],
+          confidence: "exact",
+        },
+        {
+          id: "LaneTimer.onClick.draftSec.e4lq40",
+          cls: "user",
+          label: { kind: "click", text: "+3分" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: draftSecVar,
+            expr: {
+              kind: "add",
+              args: [read(draftSecVar), lit(180)],
+            },
+          },
+          reads: [draftSecVar],
+          writes: [draftSecVar],
+          confidence: "exact",
+        },
+        {
+          id: "LaneTimer.onClick.draftSec.1sxiol",
+          cls: "user",
+          label: { kind: "click", text: "リセット" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: draftSecVar,
+            expr: lit(0),
+          },
+          reads: [draftSecVar],
+          writes: [draftSecVar],
+          confidence: "exact",
+        },
+      ],
+    };
+    const exactEnabled = checkModel(m, [
+      always(m, enabled(m, resetPrefix), {
+        name: "exactResetIdAbsent",
+      }),
+    ]);
+    expect(exactEnabled.verdicts[0]?.status).toBe("violated");
+    const prefixEnabled = checkModel(m, [
+      always(m, enabledTransitionPrefix(m, resetPrefix), {
+        name: "resetFamilyAlwaysEnabled",
+      }),
+    ]);
+    expect(prefixEnabled.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
   it("explores conflicting internal transition orders during stabilization", () => {

@@ -55,3 +55,34 @@ trigger transition was excluded from the response search.
 This makes simple bounded response properties unreliable for some route-local user
 clicks, so property authors have to fall back to `reachable` plus `alwaysStep` checks
 instead of directly expressing "this click immediately causes this state."
+
+## Current status (2026-06-17)
+
+An in-repo minimal regression matching the reported shape does **not** reproduce the
+vacuity warning on current HEAD. The fixture lives in
+`test/checker/checker.test.ts` (`treats route-local transitionId leadsToWithin triggers as
+fired`) and passes:
+
+```bash
+rtk pnpm build:rust
+rtk pnpm vitest run test/checker/checker.test.ts -t "route-local transitionId"
+```
+
+Both `printerSettingsOpenReachable` and
+`printerSettingsOpenClickImmediatelyOpensDialog` verify as expected (`reachable` and
+`verified-within-bounds` respectively).
+
+A follow-up check of
+`/Users/hari/proj/coffee-dx/apps/web/app/_drip2/home.props.mjs` found that the full
+discovered Drip2 check still fails, but not because of this `leadsToWithin`
+transition-id trigger behavior. With
+`.modality/models/app/_drip2/home.model.json`,
+`drip2CancelClickImmediatelyOpensDialog` is `verified-within-bounds`. The failing
+properties are `drip2LaneSlotsRemainEmptyInExtractedModel` and
+`drip2TimerResetAlwaysEnabled`; the discovered model initializes
+`local:DripHome.laneSlots` to `"many"` and has no transition with id
+`LaneTimer.onClick.draftSec`.
+
+If the original CustomerHome property still produces `Trigger never fired within
+bounds`, use its generated model artifact directly to build a more faithful in-repo
+regression.

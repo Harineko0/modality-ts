@@ -140,10 +140,10 @@ pub fn eval_expr(
                 return Value::Bool(false);
             };
             let transition = compiled.transition(idx);
-            Value::Bool(
-                transition_locals_mounted(compiled, idx, state)
-                    && guard_holds(compiled, transition, state),
-            )
+            Value::Bool(transition_is_enabled(compiled, transition, state))
+        }
+        ExprIR::TransitionEnabledPrefix { prefix } => {
+            Value::Bool(any_transition_enabled_with_prefix(compiled, state, prefix))
         }
         ExprIR::ReadPre { var, path } => {
             let read_state = options
@@ -231,6 +231,40 @@ pub fn guard_holds(
     )
     .as_bool()
     .unwrap_or(false)
+}
+
+fn transition_is_enabled(
+    compiled: &CompiledModel,
+    transition: &crate::model::Transition,
+    state: &ModelState,
+) -> bool {
+    let Some(&idx) = compiled.transition_index.get(&transition.id) else {
+        return false;
+    };
+    transition_locals_mounted(compiled, idx, state) && guard_holds(compiled, transition, state)
+}
+
+fn any_transition_enabled_with_prefix(
+    compiled: &CompiledModel,
+    state: &ModelState,
+    prefix: &str,
+) -> bool {
+    compiled
+        .sorted_transitions
+        .iter()
+        .filter(|transition| transition.id.starts_with(prefix))
+        .any(|transition| transition_is_enabled(compiled, transition, state))
+}
+
+fn transitions_matching_prefix<'a>(
+    compiled: &'a CompiledModel,
+    prefix: &str,
+) -> Vec<&'a crate::model::Transition> {
+    compiled
+        .sorted_transitions
+        .iter()
+        .filter(|transition| transition.id.starts_with(prefix))
+        .collect()
 }
 
 fn tagged_domain_for_expr(
@@ -761,10 +795,31 @@ fn eval_expr_checked(
                     ));
                 }
             }
-            Ok(Value::Bool(
-                transition_locals_mounted(compiled, idx, state)
-                    && guard_holds(compiled, transition, state),
-            ))
+            Ok(Value::Bool(transition_is_enabled(compiled, transition, state)))
+        }
+        ExprIR::TransitionEnabledPrefix { prefix } => {
+            let mut saw_match = false;
+            for transition in transitions_matching_prefix(compiled, prefix) {
+                saw_match = true;
+                for var in transition
+                    .reads
+                    .iter()
+                    .chain(transition.writes.iter())
+                    .chain(std::iter::once(&"sys:route".to_string()))
+                {
+                    if !allowed.contains(var) {
+                        return Err(format!(
+                            "{property_name}: {context} read undeclared var {var}"
+                        ));
+                    }
+                }
+            }
+            if !saw_match {
+                return Ok(Value::Bool(false));
+            }
+            Ok(Value::Bool(any_transition_enabled_with_prefix(
+                compiled, state, prefix,
+            )))
         }
         ExprIR::ReadPre { var, path } => {
             let Some(step_ctx) = options.step_ctx.as_ref() else {

@@ -473,6 +473,16 @@ describe("extraction architecture surface", () => {
           transition.effect.expr.value === 0,
       ),
     ).toBe(true);
+    const ids = incrementTransitions.map((transition) => transition.id);
+    expect(
+      ids.every((id) => id.startsWith("LaneTimer.onClick.draftSec.")),
+    ).toBe(true);
+    expect(new Set(ids).size).toBe(4);
+    expect(
+      result.transitions.some(
+        (transition) => transition.id === "LaneTimer.onClick.draftSec",
+      ),
+    ).toBe(false);
   });
 });
 

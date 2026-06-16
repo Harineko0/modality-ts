@@ -6,6 +6,7 @@ import {
   canonicalJson,
   canonicalState,
   enabled,
+  enabledTransitionPrefix,
   enumerateDomain,
   eq,
   evalStatePredicate,
@@ -1147,6 +1148,63 @@ describe("property DSL", () => {
     expect(property.enabledTransitions).toEqual(["toggle"]);
   });
 
+  it("emits transitionEnabledPrefix IR for suffixed transition families", () => {
+    const model = baseModel();
+    expect(
+      enabledTransitionPrefix(model, "LaneTimer.onClick.draftSec"),
+    ).toEqual({
+      kind: "transitionEnabledPrefix",
+      prefix: "LaneTimer.onClick.draftSec",
+    });
+  });
+
+  it("infers enabledTransitions for every transition matching a prefix", () => {
+    const model: Model = {
+      ...baseModel(),
+      transitions: [
+        {
+          id: "LaneTimer.onClick.draftSec.gpspae",
+          cls: "user",
+          label: { kind: "click", text: "+10秒" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "flag",
+            expr: { kind: "lit", value: true },
+          },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+        {
+          id: "LaneTimer.onClick.draftSec.1sxiol",
+          cls: "user",
+          label: { kind: "click", text: "reset" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "flag",
+            expr: { kind: "lit", value: false },
+          },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      model,
+      enabledTransitionPrefix(model, "LaneTimer.onClick.draftSec"),
+      { name: "resetFamilyEnabled" },
+    );
+    expect(property.enabledTransitions).toEqual([
+      "LaneTimer.onClick.draftSec.1sxiol",
+      "LaneTimer.onClick.draftSec.gpspae",
+    ]);
+  });
+
   it("allows explicit enabled transition metadata when inference cannot see through helpers", () => {
     const model = baseModel();
     const toggleEnabled = enabled(model, "toggle");
@@ -1188,5 +1246,14 @@ describe("evalStatePredicate", () => {
         {},
       ),
     ).toThrow(/transitionEnabled is only valid in step predicates/);
+    expect(() =>
+      evalStatePredicate(
+        {
+          kind: "transitionEnabledPrefix",
+          prefix: "LaneTimer.onClick.draftSec",
+        },
+        {},
+      ),
+    ).toThrow(/transitionEnabledPrefix is only valid in step predicates/);
   });
 });

@@ -372,6 +372,11 @@ function assertSerializableExpr(value: unknown, path: string): void {
         throw new Error(`${path}.transitionEnabled must declare transitionId`);
       }
       break;
+    case "transitionEnabledPrefix":
+      if (typeof value.prefix !== "string") {
+        throw new Error(`${path}.transitionEnabledPrefix must declare prefix`);
+      }
+      break;
     case "tagIs":
       if (typeof value.tag !== "string") {
         throw new Error(`${path}.tagIs must declare tag`);

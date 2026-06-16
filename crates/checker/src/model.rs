@@ -152,6 +152,10 @@ pub enum ExprIR {
         #[serde(rename = "transitionId")]
         transition_id: String,
     },
+    #[serde(rename = "transitionEnabledPrefix")]
+    TransitionEnabledPrefix {
+        prefix: String,
+    },
     #[serde(rename = "readPre")]
     ReadPre {
         var: String,

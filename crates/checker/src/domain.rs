@@ -112,6 +112,7 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
             }
             ExprIR::FreshToken { .. }
             | ExprIR::TransitionEnabled { .. }
+            | ExprIR::TransitionEnabledPrefix { .. }
             | ExprIR::Lit { .. }
             | ExprIR::ReadPre { .. }
             | ExprIR::ReadOpArg { .. } => {}

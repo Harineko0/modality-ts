@@ -134,7 +134,9 @@ Each property may declare a `reads` array. The combinator helpers infer it from 
 predicate automatically, but declaring it explicitly is recommended for clarity and for
 [slicing](../concepts/state-space-control.md): it tells the checker which variables the
 property depends on. An `enabled(t)` reference automatically pulls in `t`'s guard
-read-set and the route variable.
+read-set and the route variable. When extraction disambiguates duplicate handler ids
+with stable hash suffixes, use `enabledTransitionPrefix(model, baseId)` instead of
+relying on the unsuffixed base id.
 
 ## Using the model object
 

@@ -63,6 +63,7 @@ export type ExprIR =
   | { kind: "lenCat"; arg: ExprIR }
   | { kind: "freshToken"; domainOf: string }
   | { kind: "transitionEnabled"; transitionId: string }
+  | { kind: "transitionEnabledPrefix"; prefix: string }
   | { kind: "readPre"; var: string; path?: readonly string[] }
   | { kind: "readOpArg"; key: string }
   | { kind: "lt" | "lte" | "gt" | "gte"; args: readonly [ExprIR, ExprIR] }

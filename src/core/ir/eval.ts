@@ -66,6 +66,10 @@ function evalExpr(expr: ExprIR, state: ModelState): Value {
       throw new StatePredicateEvalError(
         "transitionEnabled is only valid in step predicates, not plain state predicates",
       );
+    case "transitionEnabledPrefix":
+      throw new StatePredicateEvalError(
+        "transitionEnabledPrefix is only valid in step predicates, not plain state predicates",
+      );
     case "lt":
     case "lte":
     case "gt":

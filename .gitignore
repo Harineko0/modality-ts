@@ -8,5 +8,5 @@ docs/build/
 native/
 target/
 *.tsbuildinfo
-.modality/
+**/.modality/
 .rtk

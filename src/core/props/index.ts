@@ -71,6 +71,10 @@ export function enabled(_model: Model, transitionId: string): ExprIR {
   return { kind: "transitionEnabled", transitionId };
 }
 
+export function enabledTransitionPrefix(_model: Model, prefix: string): ExprIR {
+  return { kind: "transitionEnabledPrefix", prefix };
+}
+
 export function stepEnqueued(op: string): StepPredicateFlat {
   return { enqueued: op };
 }
@@ -232,6 +236,15 @@ function inferReads(
         }
         break;
       }
+      case "transitionEnabledPrefix": {
+        reads.add("sys:route");
+        for (const transition of model.transitions) {
+          if (!transition.id.startsWith(expr.prefix)) continue;
+          for (const id of transition.reads) reads.add(id);
+          for (const id of transition.writes) reads.add(id);
+        }
+        break;
+      }
       case "readOpArg":
       case "lit":
         break;
@@ -270,6 +283,11 @@ function inferEnabledTransitions(
     switch (expr.kind) {
       case "transitionEnabled":
         ids.push(expr.transitionId);
+        break;
+      case "transitionEnabledPrefix":
+        for (const transition of model.transitions) {
+          if (transition.id.startsWith(expr.prefix)) ids.push(transition.id);
+        }
         break;
       case "eq":
       case "neq":
