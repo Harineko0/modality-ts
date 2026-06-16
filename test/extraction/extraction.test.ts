@@ -745,7 +745,7 @@ describe("useState inventory", () => {
       `
       import { useState } from 'react';
       function Popover(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
-        return <div {...props} />;
+        return <button type="button" {...props} />;
       }
       export function App() {
         const [open, setOpen] = useState(false);
@@ -820,7 +820,7 @@ describe("useState inventory", () => {
       `
       import { useState } from 'react';
       function Dialog(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
-        return <div {...props} />;
+        return <button type="button" {...props} />;
       }
       export function App() {
         const [createOpen, setCreateOpen] = useState(false);
@@ -920,7 +920,7 @@ describe("useState inventory", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
-  it("reports deeper component prop drilling as unextractable", () => {
+  it("models resolvable multi-hop component callback paths", () => {
     const result = extractUseStateSkeleton(
       `
       import { useState } from 'react';
@@ -937,12 +937,208 @@ describe("useState inventory", () => {
       `,
       { route: "/", fileName: "App.tsx" },
     );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      cls: "user",
+      label: { kind: "click" },
+      effect: {
+        kind: "assign",
+        var: "local:App.saveStatus",
+        expr: { kind: "lit", value: "posting" },
+      },
+      confidence: "exact",
+    });
+  });
+
+  it("reports unresolved deeper component prop paths as unextractable", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function UnknownWidget(_props: { onPress: () => void }) {
+        return <div />;
+      }
+      function Button(props: { onPress: () => void }) {
+        return <UnknownWidget onPress={props.onPress} />;
+      }
+      export function App() {
+        const [saveStatus, setSaveStatus] = useState<'idle' | 'posting'>('idle');
+        return <Button onPress={() => setSaveStatus('posting')} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
     expect(result.transitions).toEqual([]);
     expect(
       result.warnings.some((warning) =>
         warning.message.includes("Unextractable handler App.onPress"),
       ),
     ).toBe(true);
+  });
+
+  it("models transparent wrapper components with static host branches", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      const Slot = { Root: 'span' };
+      function Button({ asChild = false, ...props }: { asChild?: boolean; onClick?: () => void }) {
+        const Comp = asChild ? Slot.Root : 'button';
+        return <Comp {...props} />;
+      }
+      function Card(props: { onAdd: () => void }) {
+        return <Button onClick={props.onAdd} />;
+      }
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'posting'>('idle');
+        return <Card onAdd={() => setStatus('posting')} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      cls: "user",
+      label: { kind: "click" },
+      effect: {
+        kind: "assign",
+        var: "local:App.status",
+        expr: { kind: "lit", value: "posting" },
+      },
+    });
+  });
+
+  it("binds list item locals for component prop handlers in map callbacks", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function Row(props: { onPick: () => void }) {
+        return <button onClick={props.onPick}>Pick</button>;
+      }
+      export function App() {
+        const [selected, setSelected] = useState<string | null>(null);
+        return (
+          <>
+            {['alpha', 'beta'].map((item) => (
+              <Row key={item} onPick={() => setSelected(item)} />
+            ))}
+          </>
+        );
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.transitions.length).toBeGreaterThanOrEqual(2);
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.writes.includes("local:App.selected") &&
+          transition.effect.kind === "assign" &&
+          transition.effect.expr.kind === "lit" &&
+          transition.effect.expr.value === "alpha",
+      ),
+    ).toBe(true);
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.writes.includes("local:App.selected") &&
+          transition.effect.kind === "assign" &&
+          transition.effect.expr.kind === "lit" &&
+          transition.effect.expr.value === "beta",
+      ),
+    ).toBe(true);
+  });
+
+  it("registers timer vars and emits timer fire for component-prop timer handlers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function Button(props: { onClick: () => void }) {
+        return <button onClick={props.onClick}>Run</button>;
+      }
+      export function App() {
+        const [status, setStatus] = useState('idle');
+        return <Button onClick={() => setTimeout(() => setStatus('done'), 10)} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx", effectApis: ["setTimeout"] },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.vars.some((decl) => decl.id.startsWith("sys:timer:"))).toBe(
+      true,
+    );
+    const userTransition = result.transitions.find((t) => t.cls === "user");
+    expect(userTransition?.writes.some((w) => w.startsWith("sys:timer:"))).toBe(
+      true,
+    );
+    const fire = result.transitions.find((t) => t.cls === "env");
+    expect(fire?.writes).toContain("local:App.status");
+    const declaredVarIds = new Set(result.vars.map((decl) => decl.id));
+    for (const transition of result.transitions) {
+      for (const write of transition.writes) {
+        expect(declaredVarIds.has(write)).toBe(true);
+      }
+    }
+  });
+
+  it("keeps unknown spread wrappers unextractable", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      const Slot = { Root: (_props: any) => null };
+      function Button(props: { onClick?: () => void }) {
+        return <Slot.Root {...props} />;
+      }
+      export function App() {
+        const [status, setStatus] = useState('idle');
+        return <Button onClick={() => setStatus('posting')} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.transitions.some((transition) =>
+        transition.writes.includes("local:App.status"),
+      ),
+    ).toBe(false);
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Unextractable handler App.onClick"),
+      ),
+    ).toBe(true);
+  });
+
+  it("emits distinct transitions for repeated sibling child trigger paths", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      function Inner(props: { onPress?: () => void; testId: "a" | "b" }) {
+        return <button data-testid={props.testId} onClick={props.onPress} />;
+      }
+      function Card(props: { onSave: () => void }) {
+        return (
+          <>
+            <Inner testId="a" onPress={props.onSave} />
+            <Inner testId="b" onPress={props.onSave} />
+          </>
+        );
+      }
+      export function App() {
+        const [status, setStatus] = useState('idle');
+        return <Card onSave={() => setStatus('posting')} />;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    const statusTransitions = result.transitions.filter(
+      (transition) =>
+        transition.cls === "user" &&
+        transition.writes.includes("local:App.status"),
+    );
+    expect(statusTransitions.length).toBeGreaterThanOrEqual(2);
+    const transitionIds = new Set(statusTransitions.map((t) => t.id));
+    expect(transitionIds.size).toBe(statusTransitions.length);
   });
 
   it("reports stateful components rendered from list maps as unextractable", () => {

@@ -47,7 +47,7 @@ import {
   setterBindingFromDecl,
   settersForComponent,
 } from "./context.js";
-import { tagStableIdKey, withStableTransitionIds } from "./ids.js";
+import { safeId, tagStableIdKey, withStableTransitionIds } from "./ids.js";
 import { staticNavigationTransitions } from "./static-navigation.js";
 import {
   firstValue,
@@ -98,6 +98,7 @@ import {
   transitionsFromJsxAttribute,
   transitionsFromComponentPropAttribute,
   transitionsFromBoundedListAttribute,
+  transitionsFromBoundedListComponentPropAttribute,
   transitionsFromLiteralListAttribute,
 } from "./transition/handlers.js";
 import {
@@ -107,7 +108,10 @@ import {
 } from "./transition/guards.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
 import { stateVarForName } from "./transition/expressions.js";
-import { forwardsComponentProp } from "./transition/component-props.js";
+import {
+  forwardsComponentProp,
+  componentPropDeferredToChildTrigger,
+} from "./transition/component-props.js";
 import { isEventAttribute } from "./transition/ui.js";
 import { navigationJsxTransition } from "./transition/navigation.js";
 import {
@@ -264,6 +268,14 @@ export function extractReactSourceTransitions(
         vars.push(timerStateVarDecl(registration.varId));
       }
     }
+  };
+  const finalizeHandlerTimerContext = (handlerContext: {
+    timerRegistrations: TimerRegistration[];
+    envTransitions: Transition[];
+  }): Transition[] => {
+    registerTimerVars(handlerContext.timerRegistrations);
+    timerCounter += handlerContext.timerRegistrations.length;
+    return handlerContext.envTransitions;
   };
   const visit = (
     node: ts.Node,
@@ -492,6 +504,106 @@ export function extractReactSourceTransitions(
       isForwardablePropName(node.name.text) &&
       !isIntrinsicJsxAttribute(node)
     ) {
+      const componentPropHandlerContext = {
+        activeBoundary: effectiveBoundary,
+        transitionBindings,
+        timerRegistrations: [] as TimerRegistration[],
+        envTransitions: [] as Transition[],
+        timerIndex: { value: timerCounter },
+        routerSubmitContext: routerSubmitContext(nextComponent ?? "Anonymous"),
+      };
+      const literalListInfo = literalListRenderedHandlerInfo(node);
+      if (literalListInfo) {
+        const extracted = literalListInfo.values.flatMap((value) =>
+          transitionsFromComponentPropAttribute(
+            source,
+            fileName,
+            node,
+            scopedSetters,
+            handlers,
+            components,
+            nextComponent ?? "Anonymous",
+            effectApis,
+            options.asyncOutcomes ?? {},
+            sourcePlugins,
+            routerPlugin,
+            warnings,
+            routePatterns,
+            contextBindings,
+            resetSymbols,
+            {
+              ...componentPropHandlerContext,
+              initialLocals: new Map([
+                [
+                  literalListInfo.itemName,
+                  { expr: { kind: "lit", value }, reads: [] },
+                ],
+              ]),
+              valueSuffix: safeId(String(value)),
+            },
+          ),
+        );
+        if (extracted.length > 0) {
+          transitions.push(
+            ...tagStableIdKey(extracted, node),
+            ...finalizeHandlerTimerContext(componentPropHandlerContext),
+          );
+          ts.forEachChild(node, (child) =>
+            visit(child, nextComponent, effectiveBoundary),
+          );
+          return;
+        }
+      }
+      const listInfo = listRenderedHandlerInfo(
+        node,
+        vars,
+        nextComponent ?? "Anonymous",
+      );
+      if (listInfo) {
+        if (listInfo.domain.kind === "boundedList") {
+          const extracted = transitionsFromBoundedListComponentPropAttribute(
+            source,
+            fileName,
+            node,
+            scopedSetters,
+            handlers,
+            components,
+            nextComponent ?? "Anonymous",
+            {
+              varId: listInfo.varId,
+              domain: listInfo.domain,
+              itemName: listInfo.itemName,
+            },
+            effectApis,
+            options.asyncOutcomes ?? {},
+            sourcePlugins,
+            routerPlugin,
+            warnings,
+            routePatterns,
+            contextBindings,
+            resetSymbols,
+            componentPropHandlerContext,
+          );
+          if (extracted.length > 0) {
+            transitions.push(
+              ...tagStableIdKey(extracted, node),
+              ...finalizeHandlerTimerContext(componentPropHandlerContext),
+            );
+            ts.forEachChild(node, (child) =>
+              visit(child, nextComponent, effectiveBoundary),
+            );
+            return;
+          }
+        }
+        warnings.push({
+          message: `Unextractable list-rendered component prop handler ${nextComponent ?? "Anonymous"}.${node.name.text} over ${listInfo.domain.kind} ${listInfo.varId}`,
+          ...lineAndColumn(source, node),
+        });
+        ts.forEachChild(node, (child) =>
+          visit(child, nextComponent, effectiveBoundary),
+        );
+        return;
+      }
       const extracted = transitionsFromComponentPropAttribute(
         source,
         fileName,
@@ -505,11 +617,25 @@ export function extractReactSourceTransitions(
         sourcePlugins,
         routerPlugin,
         warnings,
+        routePatterns,
+        contextBindings,
+        resetSymbols,
+        componentPropHandlerContext,
       );
-      transitions.push(...extracted);
+      transitions.push(
+        ...extracted,
+        ...finalizeHandlerTimerContext(componentPropHandlerContext),
+      );
       const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
       if (
         extracted.length === 0 &&
+        !componentPropDeferredToChildTrigger(
+          source,
+          node,
+          components,
+          scopedSetters,
+          warnings,
+        ) &&
         !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
         const anchor = lineAndColumn(source, node);
@@ -687,6 +813,10 @@ export function extractReactSourceTransitions(
           node,
           handlers,
           components.get(nextComponent ?? ""),
+          components,
+          scopedSetters,
+          source,
+          warnings,
         ) &&
         !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
         !modeledSubmitHandlers.has(handlerId) &&

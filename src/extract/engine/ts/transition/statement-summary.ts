@@ -103,7 +103,7 @@ export function summarizeHandlerStatements(
     }
     const helper = helperSummariesFromCall(handler.body, state, setters);
     if (helper) return helper;
-    const summary = summarizeSetterCall(handler.body, setters, new Map(), {
+    const summary = summarizeSetterCall(handler.body, setters, state.locals, {
       resetSymbols: options.resetSymbols,
     });
     return summary ? [summary] : undefined;

@@ -153,9 +153,23 @@ export function inlinedHelperCall(
   call: ts.CallExpression,
   handlers: Map<string, ExtractableHandler>,
   setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
 ): { call: ts.CallExpression; locals: Map<string, BoundExpr> } | undefined {
-  if (!ts.isIdentifier(call.expression) || call.arguments.length !== 0)
-    return undefined;
+  if (!ts.isIdentifier(call.expression)) return undefined;
   const helper = handlers.get(call.expression.text);
-  return helper ? callSummaryFromHandler(helper, setters) : undefined;
+  if (!helper) return undefined;
+  if (call.arguments.length === 0) {
+    return callSummaryFromHandler(helper, setters, initialLocals);
+  }
+  const boundLocals = new Map(initialLocals);
+  for (let index = 0; index < call.arguments.length; index += 1) {
+    const parameter = helper.parameters[index];
+    const argument = call.arguments[index];
+    if (!parameter || !argument || !ts.isIdentifier(parameter.name))
+      return undefined;
+    const binding = valueExpr(argument, setters, initialLocals);
+    if (!binding) return undefined;
+    boundLocals.set(parameter.name.text, binding);
+  }
+  return callSummaryFromHandler(helper, setters, boundLocals);
 }

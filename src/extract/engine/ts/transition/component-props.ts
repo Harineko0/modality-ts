@@ -1,10 +1,11 @@
 import * as ts from "typescript";
-import { isExtractableHandler } from "../ast.js";
+import { isExtractableHandler, startsUppercase } from "../ast.js";
 import {
   componentName,
   handlerExpression,
   isForwardablePropName,
   isIntrinsicJsxAttribute,
+  jsxTagName,
 } from "../components.js";
 import type { Locator } from "modality-ts/core";
 import type {
@@ -13,8 +14,178 @@ import type {
   ExtractionWarning,
   SetterBinding,
 } from "../types.js";
-import { disabledGuardFor, type ParsedGuard } from "./guards.js";
+import {
+  combineParsedGuards,
+  disabledGuardFor,
+  type ParsedGuard,
+} from "./guards.js";
 import { isEventAttribute, locatorForEventAttribute } from "./ui.js";
+
+export interface ComponentPropTrigger {
+  attr: string;
+  locator?: Locator;
+  guard?: ParsedGuard;
+  pathSuffix?: string;
+}
+
+const HOST_INTERACTIVE_TAGS = new Set([
+  "a",
+  "button",
+  "form",
+  "input",
+  "select",
+  "textarea",
+]);
+
+const DEFAULT_MAX_TRIGGER_DEPTH = 5;
+
+export function isHostInteractiveTag(tag: string): boolean {
+  return HOST_INTERACTIVE_TAGS.has(tag);
+}
+
+export function resolveComponentPropTriggers(
+  source: ts.SourceFile,
+  component: ComponentDecl,
+  propName: string,
+  components: Map<string, ComponentDecl>,
+  setters: Map<string, SetterBinding>,
+  warnings: ExtractionWarning[],
+  options: {
+    visited?: Set<string>;
+    depth?: number;
+    maxDepth?: number;
+  } = {},
+): ComponentPropTrigger[] {
+  const visited = options.visited ?? new Set<string>();
+  const depth = options.depth ?? 0;
+  const maxDepth = options.maxDepth ?? DEFAULT_MAX_TRIGGER_DEPTH;
+  const componentLabel = componentName(component) ?? "Anonymous";
+  const visitKey = `${componentLabel}:${propName}`;
+  if (visited.has(visitKey) || depth > maxDepth) return [];
+  visited.add(visitKey);
+
+  const triggers: ComponentPropTrigger[] = [];
+  const localHandlers = componentLocalHandlers(component);
+  const childOccurrence = new Map<string, number>();
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isJsxAttribute(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      const attrName = node.name.text;
+      const expression = ts.isJsxExpression(node.initializer)
+        ? node.initializer.expression
+        : undefined;
+
+      if (isEventAttribute(attrName) && isIntrinsicJsxAttribute(node)) {
+        const handler = handlerExpression(expression, localHandlers);
+        if (
+          expression &&
+          (expressionReferencesProp(expression, component, propName) ||
+            (handler &&
+              handlerCallsProp(handler, component, propName, localHandlers)))
+        ) {
+          triggers.push({
+            attr: attrName,
+            locator: locatorForEventAttribute(node),
+            guard: disabledGuardFor(
+              node,
+              setters,
+              warnings,
+              source,
+              componentLabel,
+            ),
+          });
+        }
+      } else if (
+        isForwardablePropName(attrName) &&
+        !isIntrinsicJsxAttribute(node)
+      ) {
+        const childTag = jsxTagName(node);
+        const childComponent = childTag ? components.get(childTag) : undefined;
+        if (childTag && childComponent && expression) {
+          const handler = handlerExpression(expression, localHandlers);
+          if (
+            expressionReferencesProp(expression, component, propName) ||
+            (handler &&
+              handlerCallsProp(handler, component, propName, localHandlers))
+          ) {
+            const callerGuard = disabledGuardFor(
+              node,
+              setters,
+              warnings,
+              source,
+              componentLabel,
+            );
+            const occurrence = childOccurrence.get(childTag) ?? 0;
+            childOccurrence.set(childTag, occurrence + 1);
+            const childTriggers = resolveComponentPropTriggers(
+              source,
+              childComponent,
+              attrName,
+              components,
+              setters,
+              warnings,
+              { visited: new Set(visited), depth: depth + 1, maxDepth },
+            );
+            for (const [index, childTrigger] of childTriggers.entries()) {
+              const pathSuffix =
+                childTriggers.length > 1
+                  ? `${childTag}.${occurrence}.${index}`
+                  : occurrence > 0
+                    ? `${childTag}.${occurrence}`
+                    : childTag;
+              triggers.push({
+                attr: childTrigger.attr,
+                locator: childTrigger.locator,
+                guard: combineParsedGuards([childTrigger.guard, callerGuard]),
+                pathSuffix,
+              });
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(component);
+
+  if (
+    isForwardablePropName(propName) &&
+    componentSpreadsPropsToHostElement(component)
+  ) {
+    let spreadFound = false;
+    let spreadLocator: Locator | undefined;
+    const findSpread = (node: ts.Node): void => {
+      if (spreadFound) return;
+      if (
+        (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+        node.attributes.properties.some(ts.isJsxSpreadAttribute)
+      ) {
+        const hostTag = jsxHostTagName(node, component);
+        if (hostTag && isHostInteractiveTag(hostTag)) {
+          spreadFound = true;
+          spreadLocator = locatorForJsxHostElement(node);
+        }
+      }
+      ts.forEachChild(node, findSpread);
+    };
+    findSpread(component);
+    triggers.push({
+      attr: propName,
+      locator: spreadLocator,
+      pathSuffix: "spread",
+    });
+  }
+
+  if (triggers.length === 1) {
+    triggers[0] = { ...triggers[0], pathSuffix: undefined };
+  }
+  return triggers;
+}
 
 export function componentPropTrigger(
   source: ts.SourceFile,
@@ -23,46 +194,15 @@ export function componentPropTrigger(
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
 ): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
-  const localHandlers = componentLocalHandlers(component);
-  let trigger:
-    | { attr: string; locator?: Locator; guard?: ParsedGuard }
-    | undefined;
-  const visit = (node: ts.Node): void => {
-    if (trigger) return;
-    if (
-      ts.isJsxAttribute(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isEventAttribute(node.name.text) &&
-      isIntrinsicJsxAttribute(node)
-    ) {
-      const expression = ts.isJsxExpression(node.initializer)
-        ? node.initializer.expression
-        : undefined;
-      const handler = handlerExpression(expression, localHandlers);
-      if (
-        expression &&
-        (expressionReferencesProp(expression, component, propName) ||
-          (handler &&
-            handlerCallsProp(handler, component, propName, localHandlers)))
-      ) {
-        trigger = {
-          attr: node.name.text,
-          locator: locatorForEventAttribute(node),
-          guard: disabledGuardFor(
-            node,
-            setters,
-            warnings,
-            source,
-            componentName(component) ?? "Anonymous",
-          ),
-        };
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(component);
-  return trigger;
+  const triggers = resolveComponentPropTriggers(
+    source,
+    component,
+    propName,
+    new Map([[componentName(component) ?? "Anonymous", component]]),
+    setters,
+    warnings,
+  );
+  return triggers[0];
 }
 
 export function transparentComponentPropTrigger(
@@ -71,13 +211,19 @@ export function transparentComponentPropTrigger(
 ): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
   if (
     !isForwardablePropName(propName) ||
-    !componentSpreadsPropsToElement(component)
+    !componentSpreadsPropsToHostElement(component)
   )
     return undefined;
   return { attr: propName };
 }
 
 export function componentSpreadsPropsToElement(
+  component: ComponentDecl,
+): boolean {
+  return componentSpreadsPropsToAnyElement(component);
+}
+
+export function componentSpreadsPropsToAnyElement(
   component: ComponentDecl,
 ): boolean {
   let found = false;
@@ -96,24 +242,179 @@ export function componentSpreadsPropsToElement(
   return found;
 }
 
+export function componentSpreadsPropsToHostElement(
+  component: ComponentDecl,
+): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const hasSpread = node.attributes.properties.some(
+        ts.isJsxSpreadAttribute,
+      );
+      if (hasSpread) {
+        const hostTag = jsxHostTagName(node, component);
+        if (hostTag && isHostInteractiveTag(hostTag)) found = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return found;
+}
+
+function jsxHostTagName(
+  element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  component: ComponentDecl,
+): string | undefined {
+  const tag = element.tagName;
+  if (ts.isIdentifier(tag) && !startsUppercase(tag.text)) return tag.text;
+  if (ts.isIdentifier(tag)) return staticHostTagBinding(component, tag.text);
+  return undefined;
+}
+
+function staticHostTagBinding(
+  component: ComponentDecl,
+  varName: string,
+): string | undefined {
+  let result: string | undefined;
+  const visit = (node: ts.Node): void => {
+    if (result) return;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === varName &&
+      node.initializer
+    ) {
+      const hostTag = hostTagFromInitializer(node.initializer);
+      if (hostTag) result = hostTag;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(component);
+  return result;
+}
+
+function hostTagFromInitializer(expr: ts.Expression): string | undefined {
+  if (ts.isStringLiteral(expr) && isHostInteractiveTag(expr.text))
+    return expr.text;
+  if (ts.isConditionalExpression(expr)) {
+    const whenFalse = hostTagFromInitializer(expr.whenFalse);
+    if (whenFalse && isHostInteractiveTag(whenFalse)) return whenFalse;
+    const whenTrue = hostTagFromInitializer(expr.whenTrue);
+    if (whenTrue && isHostInteractiveTag(whenTrue)) return whenTrue;
+  }
+  return undefined;
+}
+
+function locatorForJsxHostElement(
+  element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+): Locator | undefined {
+  const attrs = element.attributes;
+  const testId = attrs.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) &&
+      ts.isIdentifier(property.name) &&
+      property.name.text === "data-testid" &&
+      property.initializer !== undefined &&
+      ts.isStringLiteral(property.initializer),
+  );
+  if (testId?.initializer && ts.isStringLiteral(testId.initializer)) {
+    return { kind: "testId", value: testId.initializer.text };
+  }
+  return undefined;
+}
+
+export function componentPropDeferredToChildTrigger(
+  source: ts.SourceFile,
+  node: ts.JsxAttribute,
+  components: Map<string, ComponentDecl>,
+  setters: Map<string, SetterBinding>,
+  warnings: ExtractionWarning[],
+): boolean {
+  if (!ts.isIdentifier(node.name)) return false;
+  const tag = jsxTagName(node);
+  const callee = tag ? components.get(tag) : undefined;
+  if (!callee) return false;
+  return (
+    resolveComponentPropTriggers(
+      source,
+      callee,
+      node.name.text,
+      components,
+      setters,
+      warnings,
+    ).length > 0
+  );
+}
+
+export function propNamesReferencedByHandler(
+  handler: ExtractableHandler,
+  component: ComponentDecl,
+): string[] {
+  const localHandlers = componentLocalHandlers(component);
+  return forwardableComponentPropNames(component).filter((propName) =>
+    handlerCallsProp(handler, component, propName, localHandlers),
+  );
+}
+
 export function forwardsComponentProp(
   node: ts.JsxAttribute,
   handlers: Map<string, ExtractableHandler>,
   component: ComponentDecl | undefined,
+  components?: Map<string, ComponentDecl>,
+  setters?: Map<string, SetterBinding>,
+  source?: ts.SourceFile,
+  warnings?: ExtractionWarning[],
 ): boolean {
   if (!component || !node.initializer) return false;
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  if (expression && expressionReferencesForwardableProp(expression, component))
-    return true;
+  if (
+    expression &&
+    expressionReferencesForwardableProp(expression, component)
+  ) {
+    if (components && setters && source && warnings) {
+      return forwardableComponentPropNames(component)
+        .filter((propName) =>
+          expressionReferencesProp(expression, component, propName),
+        )
+        .some(
+          (propName) =>
+            resolveComponentPropTriggers(
+              source,
+              component,
+              propName,
+              components,
+              setters,
+              warnings,
+            ).length > 0,
+        );
+    }
+    return false;
+  }
   const localHandlers = componentLocalHandlers(component);
   const handler =
     handlerExpression(expression, handlers) ??
     handlerExpression(expression, localHandlers);
-  return Boolean(
-    handler && handlerCallsForwardableProp(handler, component, localHandlers),
-  );
+  if (!handler) return false;
+  const referencedProps = propNamesReferencedByHandler(handler, component);
+  if (referencedProps.length === 0) return false;
+  if (components && setters && source && warnings) {
+    return referencedProps.some(
+      (propName) =>
+        resolveComponentPropTriggers(
+          source,
+          component,
+          propName,
+          components,
+          setters,
+          warnings,
+        ).length > 0,
+    );
+  }
+  return true;
 }
 
 export function componentLocalHandlers(

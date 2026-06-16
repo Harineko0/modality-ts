@@ -128,6 +128,87 @@ describe("runExtractCommand", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
+  it("extracts imported multi-hop component callback interactions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-imported-"));
+    const sourcePath = join(dir, "App.tsx");
+    const menuItemCardPath = join(dir, "MenuItemCard.tsx");
+    const buttonPath = join(dir, "Button.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      buttonPath,
+      `
+      export function Button({ asChild = false, ...props }: { asChild?: boolean; onClick?: () => void }) {
+        const Comp = asChild ? 'span' : 'button';
+        return <Comp {...props} />;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      menuItemCardPath,
+      `
+      import { Button } from './Button';
+      export function MenuItemCard(props: { onAdd: () => void }) {
+        return <Button onClick={props.onAdd} />;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import { MenuItemCard } from './MenuItemCard';
+      type CartItem = { id: string; qty: number };
+      export function App() {
+        const [cart, setCart] = useState<CartItem[]>([]);
+        const handleAdd = () => {
+          setCart((prev) => [...prev, { id: 'espresso', qty: 1 }]);
+        };
+        return <MenuItemCard onAdd={handleAdd} />;
+      }
+      `,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+
+    expect(model.vars.some((decl) => decl.id === "local:App.cart")).toBe(true);
+    expect(
+      model.transitions.some((transition) =>
+        transition.writes.includes("local:App.cart"),
+      ),
+    ).toBe(true);
+    const cartTransition = model.transitions.find((transition) =>
+      transition.writes.includes("local:App.cart"),
+    );
+    expect(cartTransition).toMatchObject({
+      cls: "user",
+      label: { kind: "click" },
+    });
+    expect(
+      report.handlers.some(
+        (handler: { id: string; classification: string; writes?: string[] }) =>
+          handler.id.startsWith("App.onClick") &&
+          handler.classification !== "unextractable",
+      ),
+    ).toBe(true);
+    expect(
+      (model.metadata?.extractionCaveats?.entries ?? []).some(
+        (entry: { id: string; kind: string }) =>
+          entry.id === "App.onAdd" && entry.kind === "unextractable",
+      ),
+    ).toBe(false);
+  });
+
   it("surfaces unextractable handlers in the extraction report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
@@ -1905,7 +1986,7 @@ describe("runExtractCommand", () => {
       `
       import { useState } from 'react';
       function Popover(props: { open: boolean; onOpenChange: (next: boolean) => void; children?: React.ReactNode }) {
-        return <div {...props} />;
+        return <button type="button" {...props} />;
       }
       export function App() {
         const [open, setOpen] = useState(false);

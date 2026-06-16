@@ -31,8 +31,8 @@ import {
   type ReactRouterSubmitContext,
 } from "./router-submit.js";
 import {
-  componentPropTrigger,
-  transparentComponentPropTrigger,
+  resolveComponentPropTriggers,
+  type ComponentPropTrigger,
 } from "./component-props.js";
 import {
   effectWriteVars,
@@ -238,16 +238,25 @@ export function transitionsFromComponentPropAttribute(
   sourcePlugins: readonly StateSourcePlugin[],
   routerPlugin: RouterPlugin | undefined,
   warnings: ExtractionWarning[],
+  routePatterns: readonly string[] = [],
+  contextBindings: ContextBindings = emptyContextBindings(),
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  handlerContext: HandlerExtractionContext = {},
 ): Transition[] {
   if (!node.initializer || !ts.isIdentifier(node.name)) return [];
   const tag = jsxTagName(node);
   if (!tag) return [];
   const callee = components.get(tag);
   if (!callee) return [];
-  const trigger =
-    componentPropTrigger(source, callee, node.name.text, setters, warnings) ??
-    transparentComponentPropTrigger(callee, node.name.text);
-  if (!trigger) return [];
+  const triggers = resolveComponentPropTriggers(
+    source,
+    callee,
+    node.name.text,
+    components,
+    setters,
+    warnings,
+  );
+  if (triggers.length === 0) return [];
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
@@ -257,17 +266,62 @@ export function transitionsFromComponentPropAttribute(
     renderGuardFor(node, setters, warnings, source, component, guardLocals),
     disabledGuardFor(node, setters, warnings, source, component, guardLocals),
   ]);
+  return triggers.flatMap((trigger) =>
+    transitionsForComponentPropTrigger(
+      source,
+      fileName,
+      node,
+      trigger,
+      expression,
+      setters,
+      handlers,
+      component,
+      effectApis,
+      asyncOutcomes,
+      sourcePlugins,
+      routerPlugin,
+      callerGuard,
+      routePatterns,
+      contextBindings,
+      warnings,
+      resetSymbols,
+      handlerContext,
+    ),
+  );
+}
+
+function transitionsForComponentPropTrigger(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  trigger: ComponentPropTrigger,
+  expression: ts.Expression | undefined,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
+  callerGuard: ParsedGuard | undefined,
+  routePatterns: readonly string[],
+  contextBindings: ContextBindings,
+  warnings: ExtractionWarning[],
+  resetSymbols: ReadonlySet<string>,
+  handlerContext: HandlerExtractionContext,
+): Transition[] {
   const combinedGuard = combineParsedGuards([trigger.guard, callerGuard]);
+  const triggerSuffix = trigger.pathSuffix ? `.${trigger.pathSuffix}` : "";
   if (expression && ts.isIdentifier(expression)) {
     const setter = setters.get(expression.text);
-    if (setter && booleanControlledCallbackValues(attr)) {
+    if (setter && booleanControlledCallbackValues(trigger.attr)) {
       const directTransitions = directSetterBooleanCallbackTransitions(
         source,
         fileName,
         node,
-        attr,
+        trigger.attr,
         setter,
-        component,
+        `${component}${triggerSuffix}`,
         combinedGuard,
         trigger.locator,
       );
@@ -278,28 +332,147 @@ export function transitionsFromComponentPropAttribute(
   }
   const handler = handlerExpression(expression, handlers);
   if (!handler) return [];
-  return tagStableIdKey(
-    transitionsFromResolvedHandler(
-      source,
-      fileName,
-      node,
-      trigger.attr,
-      handler,
-      setters,
-      handlers,
-      component,
-      effectApis,
-      asyncOutcomes,
-      sourcePlugins,
-      routerPlugin,
-      combinedGuard,
-      trigger.locator,
-      [],
-      emptyContextBindings(),
-      warnings,
-    ),
+  const transitions = transitionsFromResolvedHandler(
+    source,
+    fileName,
+    node,
+    trigger.attr,
     handler,
+    setters,
+    handlers,
+    component,
+    effectApis,
+    asyncOutcomes,
+    sourcePlugins,
+    routerPlugin,
+    combinedGuard,
+    trigger.locator,
+    routePatterns,
+    contextBindings,
+    warnings,
+    resetSymbols,
+    handlerContext,
   );
+  if (trigger.pathSuffix) {
+    return transitions.map((transition) => ({
+      ...transition,
+      id: `${transition.id}${triggerSuffix}`,
+    }));
+  }
+  return tagStableIdKey(transitions, handler);
+}
+
+export function transitionsFromBoundedListComponentPropAttribute(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  components: Map<string, ComponentDecl>,
+  component: string,
+  listInfo: {
+    varId: string;
+    domain: Extract<AbstractDomain, { kind: "boundedList" }>;
+    itemName: string;
+  },
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  sourcePlugins: readonly StateSourcePlugin[],
+  routerPlugin: RouterPlugin | undefined,
+  warnings: ExtractionWarning[],
+  routePatterns: readonly string[] = [],
+  contextBindings: ContextBindings = emptyContextBindings(),
+  resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
+  handlerContext: HandlerExtractionContext = {},
+): Transition[] {
+  if (!node.initializer || !ts.isIdentifier(node.name)) return [];
+  const tag = jsxTagName(node);
+  if (!tag) return [];
+  const callee = components.get(tag);
+  if (!callee) return [];
+  const triggers = resolveComponentPropTriggers(
+    source,
+    callee,
+    node.name.text,
+    components,
+    setters,
+    warnings,
+  );
+  if (triggers.length === 0) return [];
+  const expression = ts.isJsxExpression(node.initializer)
+    ? node.initializer.expression
+    : undefined;
+  const handler = handlerExpression(expression, handlers);
+  if (!handler) return [];
+  const guardLocals = componentGuardLocalsFor(node, setters);
+  const callerGuard = combineParsedGuards([
+    renderGuardFor(node, setters, warnings, source, component, guardLocals),
+    disabledGuardFor(node, setters, warnings, source, component, guardLocals),
+  ]);
+  const transitions: Transition[] = [];
+  for (const trigger of triggers) {
+    for (let index = 0; index < listInfo.domain.maxLen; index += 1) {
+      const initialLocals = mergeLocals(
+        handlerContext.initialLocals,
+        new Map([
+          [listInfo.itemName, readListItemBinding(listInfo.varId, index)],
+        ]),
+      );
+      const listGuard: ParsedGuard = {
+        expr: boundedListIndexGuard(listInfo.varId, index),
+        reads: [listInfo.varId],
+      };
+      const combinedGuard = combineParsedGuards([
+        trigger.guard,
+        callerGuard,
+        listGuard,
+      ]);
+      const baseLocator = trigger.locator;
+      const locator = baseLocator
+        ? { kind: "positional" as const, base: baseLocator, index }
+        : undefined;
+      const extracted = applyParsedGuard(
+        transitionsFromResolvedHandler(
+          source,
+          fileName,
+          node,
+          trigger.attr,
+          handler,
+          setters,
+          handlers,
+          component,
+          effectApis,
+          asyncOutcomes,
+          sourcePlugins,
+          routerPlugin,
+          undefined,
+          locator,
+          routePatterns,
+          contextBindings,
+          warnings,
+          resetSymbols,
+          {
+            ...handlerContext,
+            initialLocals,
+            valueSuffix: String(index),
+          },
+        ),
+        combinedGuard,
+      );
+      const triggerSuffix = trigger.pathSuffix ? `.${trigger.pathSuffix}` : "";
+      transitions.push(
+        ...extracted.map((transition) => ({
+          ...transition,
+          id: triggerSuffix
+            ? `${transition.id}${triggerSuffix}`
+            : transition.id,
+          confidence:
+            index <= 1 ? transition.confidence : ("over-approx" as const),
+        })),
+      );
+    }
+  }
+  return tagStableIdKey(transitions, handler);
 }
 
 export function transitionsFromBoundedListAttribute(
@@ -642,7 +815,12 @@ export function transitionsFromResolvedHandler(
     ),
   );
   if (!summary) return [];
-  const inlined = inlinedHelperCall(summary.call, handlers, setters);
+  const inlined = inlinedHelperCall(
+    summary.call,
+    handlers,
+    setters,
+    summary.locals,
+  );
   const inlinedCall = inlined?.call ?? summary.call;
   const locals = inlined?.locals ?? summary.locals;
   const navigation = navigationTransition(
