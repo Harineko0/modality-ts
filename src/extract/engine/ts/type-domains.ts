@@ -129,6 +129,9 @@ export function inferDomainFromTypeNodeSemanticDetailed(
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
 
+  // Schema adapters (Zod, ArkType, native Bounded/Wrapping/Uint8) are refinement
+  // providers for bounds erased from TypeScript types; run them before semantic
+  // broad-number fallback so erased `number` is not mistaken for recoverable info.
   const numeric = resolveNumericDomain({
     typeNode,
     initializer: astContext.initializer ?? ctx.initializer,
@@ -247,20 +250,13 @@ function isBooleanLike(checker: ts.TypeChecker, type: ts.Type): boolean {
     const members = type.types.filter((member) => !isNullishType(member));
     return (
       members.length > 0 &&
-      members.every(
-        (member) =>
-          member.flags & ts.TypeFlags.BooleanLiteral ||
-          checker.typeToString(member) === "true" ||
-          checker.typeToString(member) === "false",
-      )
+      members.every((member) => isBooleanLike(checker, member))
     );
   }
-  const text = checker.typeToString(type);
-  if (text === "boolean" || text === "true" || text === "false") return true;
-  if (type.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) {
-    return true;
-  }
-  return false;
+  if (type === checker.getBooleanType()) return true;
+  if (type.flags & ts.TypeFlags.BooleanLiteral) return true;
+  const text = checker.typeToString(type).toLowerCase();
+  return text === "boolean" || text === "true" || text === "false";
 }
 
 function isBroadString(type: ts.Type, checker?: ts.TypeChecker): boolean {
@@ -349,7 +345,9 @@ function inferUnionMembers(
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
   if (members.every((member) => member.isStringLiteral())) {
-    const values = members.map((member) => member.value as string);
+    const values = members
+      .map((member) => member.value as string)
+      .sort((left, right) => left.localeCompare(right));
     return { domain: { kind: "enum", values }, caveats: [] };
   }
   if (members.every((member) => member.isNumberLiteral())) {

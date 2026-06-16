@@ -73,7 +73,7 @@ export function App() {
     });
     expect(result.domain).toEqual({
       kind: "enum",
-      values: ["idle", "posting", "failed"],
+      values: ["failed", "idle", "posting"],
     });
   });
 
@@ -173,7 +173,7 @@ export const value: MaybeStatus = "idle";`,
     );
     expect(result.domain).toEqual({
       kind: "option",
-      inner: { kind: "enum", values: ["idle", "done"] },
+      inner: { kind: "enum", values: ["done", "idle"] },
     });
   });
 
@@ -352,6 +352,52 @@ export function App() {
     expect(result.caveats.length).toBeGreaterThan(0);
   });
 
+  it("resolves imported boolean aliases as bool", () => {
+    const typesPath = resolve(projectRoot, "types.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const { checker, sourceFile, node } = semanticCtx(
+      [
+        {
+          path: typesPath,
+          text: `export type Flag = boolean;`,
+        },
+        {
+          path: appPath,
+          text: `import type { Flag } from "./types.js";
+import { useState } from "react";
+export function App() {
+  const [enabled] = useState<Flag>(false);
+  return null;
+}`,
+        },
+      ],
+      appPath,
+      (source) => {
+        let call: ts.CallExpression | undefined;
+        const visit = (current: ts.Node): void => {
+          if (
+            ts.isCallExpression(current) &&
+            current.expression.getText(source) === "useState"
+          ) {
+            call = current;
+            return;
+          }
+          ts.forEachChild(current, visit);
+        };
+        visit(source);
+        return call?.typeArguments?.[0];
+      },
+    );
+    const result = inferDomainFromTypeNodeSemanticDetailed(
+      node as ts.TypeNode,
+      {
+        checker,
+        sourceFile,
+      },
+    );
+    expect(result.domain).toEqual({ kind: "bool" });
+  });
+
   it("preserves sparse numeric unions as intSet", () => {
     const appPath = resolve(projectRoot, "state.ts");
     const semanticProject = createSemanticProjectForTest([
@@ -384,6 +430,40 @@ export function App() {
       sourceFile,
     });
     expect(result.domain).toEqual({ kind: "intSet", values: [0, 2] });
+  });
+
+  it("preserves dense numeric unions as boundedInt", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const semanticProject = createSemanticProjectForTest([
+      {
+        path: appPath,
+        text: `export const value: 0 | 1 | 2 = 0;`,
+      },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath);
+    expect(sourceFile).toBeDefined();
+    if (!sourceFile) return;
+    let decl: ts.VariableDeclaration | undefined;
+    const visit = (current: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(current) &&
+        ts.isIdentifier(current.name) &&
+        current.name.text === "value" &&
+        current.type
+      ) {
+        decl = current;
+      }
+      ts.forEachChild(current, visit);
+    };
+    visit(sourceFile);
+    expect(decl?.type).toBeDefined();
+    if (!decl?.type) return;
+    const type = semanticProject.checker.getTypeFromTypeNode(decl.type);
+    const result = inferDomainFromTypeDetailed(type, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({ kind: "boundedInt", min: 0, max: 2 });
   });
 
   it("does not narrow broad string from literal initializer", () => {
