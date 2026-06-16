@@ -41,23 +41,22 @@ Properties live in files such as `app.props.ts` and import helpers from
 `modality-ts/core`. A property is a plain data object — predicates are built from
 small combinators, not arbitrary functions.
 
-```js
+```ts
 import { eq, lit, notExpr, orExpr, readVar } from "modality-ts/core";
+import type { PropertyFactory } from "modality-ts/core";
 
-export function properties() {
-  return [
-    {
-      kind: "always",
-      name: "checkoutOnlySucceedsForUsers",
-      reads: ["local:App.step", "local:App.auth"],
-      // step === "success"  →  auth === "user"
-      predicate: orExpr(
-        notExpr(eq(readVar("local:App.step"), lit("success"))),
-        eq(readVar("local:App.auth"), lit("user")),
-      ),
-    },
-  ];
-}
+export const properties: PropertyFactory = (_model) => [
+  {
+    kind: "always",
+    name: "checkoutOnlySucceedsForUsers",
+    reads: ["local:App.step", "local:App.auth"],
+    // step === "success"  →  auth === "user"
+    predicate: orExpr(
+      notExpr(eq(readVar("local:App.step"), lit("success"))),
+      eq(readVar("local:App.auth"), lit("user")),
+    ),
+  },
+];
 ```
 
 Variable IDs come from the generated model / extraction report. Common prefixes:

@@ -59,45 +59,44 @@ edges, `StepFacts` also exposes the operation's `args` snapshot.
 
 ## Example file
 
-```js
+```ts
 import {
   always, alwaysStep, leadsToWithin,
   andExpr, orExpr, notExpr, eq, lit, readVar, stepEnqueued,
 } from "modality-ts/core";
+import type { PropertyFactory } from "modality-ts/core";
 
-export function properties() {
-  return [
-    {
-      kind: "always",
-      name: "adminRequiresAuth",
-      reads: ["sys:route", "atom:sessionAtom"],
-      predicate: orExpr(
-        notExpr(eq(readVar("sys:route"), lit("/admin"))),
-        eq(readVar("atom:sessionAtom"), lit("authenticated")),
-      ),
+export const properties: PropertyFactory = (_model) => [
+  {
+    kind: "always",
+    name: "adminRequiresAuth",
+    reads: ["sys:route", "atom:sessionAtom"],
+    predicate: orExpr(
+      notExpr(eq(readVar("sys:route"), lit("/admin"))),
+      eq(readVar("atom:sessionAtom"), lit("authenticated")),
+    ),
+  },
+  {
+    kind: "alwaysStep",
+    name: "guestCannotSubmit",
+    reads: ["atom:authAtom"],
+    predicate: {
+      negate: true,
+      step: stepEnqueued("api.createTodo"),
+      pre: eq(readVar("atom:authAtom"), lit("guest")),
     },
-    {
-      kind: "alwaysStep",
-      name: "guestCannotSubmit",
-      reads: ["atom:authAtom"],
-      predicate: {
-        negate: true,
-        step: stepEnqueued("api.createTodo"),
-        pre: eq(readVar("atom:authAtom"), lit("guest")),
-      },
-    },
-    {
-      kind: "leadsToWithin",
-      name: "submitResolves",
-      trigger: stepEnqueued("api.placeOrder"),
-      goal: orExpr(
-        eq(readVar("local:App.order"), lit("success")),
-        eq(readVar("local:App.order"), lit("error")),
-      ),
-      budget: { environment: 3 },
-    },
-  ];
-}
+  },
+  {
+    kind: "leadsToWithin",
+    name: "submitResolves",
+    trigger: stepEnqueued("api.placeOrder"),
+    goal: orExpr(
+      eq(readVar("local:App.order"), lit("success")),
+      eq(readVar("local:App.order"), lit("error")),
+    ),
+    budget: { environment: 3 },
+  },
+];
 ```
 
 See the [writing-properties guide](../guides/writing-properties.md) for patterns.

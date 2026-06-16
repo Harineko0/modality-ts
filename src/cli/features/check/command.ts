@@ -24,6 +24,8 @@ import {
   type Model,
   type Property,
   type PropertyArtifact,
+  type PropertyExport,
+  type PropertyFactory,
   type StateVarDecl,
 } from "modality-ts/core";
 import {
@@ -390,11 +392,11 @@ async function loadProperties(
       const module = (await import(
         /* @vite-ignore */ pathToFileURL(modulePath).href
       )) as {
-        properties?: Property[] | ((model: Model) => Property[]);
-        propertiesFor?: (model: Model) => Property[];
-        default?: Property[] | PropertyArtifact;
+        properties?: PropertyExport;
+        propertiesFor?: PropertyFactory;
+        default?: readonly Property[] | PropertyArtifact;
       };
-      let loaded: Property[];
+      let loaded: readonly Property[];
       if (typeof module.propertiesFor === "function") {
         loaded = module.propertiesFor(model);
       } else if (typeof module.properties === "function") {

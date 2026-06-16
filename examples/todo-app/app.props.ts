@@ -10,7 +10,7 @@ import {
   stepEnqueued,
   stepResolved,
 } from "modality-ts/core";
-import type { ExprIR, Property } from "modality-ts/core";
+import type { ExprIR, PropertyFactory } from "modality-ts/core";
 
 function atMostOnePendingOp(opId: string): ExprIR {
   return andExpr(
@@ -29,8 +29,7 @@ function atMostOnePendingOp(opId: string): ExprIR {
   );
 }
 
-export function properties(): Property[] {
-  return [
+export const properties: PropertyFactory = (_model) => [
     {
       kind: "always",
       name: "naiveNoDoubleSubmitInvariant",
@@ -68,5 +67,4 @@ export function properties(): Property[] {
         post: neq(readVar("local:App.draft"), readPreVar("local:App.draft")),
       },
     },
-  ];
-}
+];

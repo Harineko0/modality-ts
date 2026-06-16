@@ -11,6 +11,7 @@ import type {
 
 export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
 export type {
+  Model,
   ModelState,
   Property,
   PropertyArtifact,
@@ -21,6 +22,9 @@ export type {
   StepPredicateIR,
   Value,
 } from "../ir/types.js";
+
+export type PropertyFactory = (model: Model) => readonly Property[];
+export type PropertyExport = readonly Property[] | PropertyFactory;
 
 export interface StepFacts {
   transition: import("../ir/types.js").Transition;

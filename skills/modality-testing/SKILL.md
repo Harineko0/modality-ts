@@ -61,8 +61,9 @@ npx modality extract [source.tsx ...] \
   over-approx/manual transitions, ignored vars, and bound-hit events are understood.
 
 4. Write `*.props.ts` files exporting serializable property objects. Prefer
-`export function properties(model) { ... }` or `propertiesFor(model) { ... }` so
-model-aware helpers can validate IDs and infer `reads`.
+`export const properties: PropertyFactory = (model) => ...` so editors infer the
+`model` parameter and return type while model-aware helpers validate IDs and infer
+`reads`.
 
 5. Check the model:
 
@@ -113,16 +114,19 @@ property objects.
 
 Accepted export shapes include:
 
-```js
-export const properties = [/* serializable properties */];
-export default { schemaVersion: 1, properties: [/* serializable properties */] };
-export function properties(model) { return [/* properties */]; }
-export function propertiesFor(model) { return [/* properties */]; }
+```ts
+import type { PropertyFactory } from "modality-ts/core";
+
+export const properties: PropertyFactory = (model) => [/* properties */];
 ```
+
+The loader also accepts plain `properties` arrays, `propertiesFor(model)`, and default
+property artifacts for compatibility, but prefer `PropertyFactory` in new TypeScript
+property files.
 
 Import property and predicate helpers from `modality-ts/core`:
 
-```js
+```ts
 import {
   always,
   alwaysStep,
@@ -144,6 +148,7 @@ import {
   stepResolved,
   stepTransitionId,
 } from "modality-ts/core";
+import type { PropertyFactory } from "modality-ts/core";
 ```
 
 Choose the property kind by intent:
@@ -159,44 +164,44 @@ Choose the property kind by intent:
 
 Model-aware helpers take `model` first and infer `reads` unless provided:
 
-```js
-export function properties(model) {
-  return [
-    always(
-      model,
-      orExpr(
-        notExpr(eq(readVar("sys:route"), lit("/admin"))),
-        eq(readVar("atom:sessionAtom"), lit("authenticated")),
-      ),
-      { name: "adminRequiresAuth" },
+```ts
+export const properties: PropertyFactory = (model) => [
+  always(
+    model,
+    orExpr(
+      notExpr(eq(readVar("sys:route"), lit("/admin"))),
+      eq(readVar("atom:sessionAtom"), lit("authenticated")),
     ),
-    alwaysStep(
-      model,
-      {
-        negate: true,
-        step: stepEnqueued("api.createTodo"),
-        pre: eq(readVar("atom:authAtom"), lit("guest")),
-      },
-      { name: "guestCannotSubmit" },
+    { name: "adminRequiresAuth" },
+  ),
+  alwaysStep(
+    model,
+    {
+      negate: true,
+      step: stepEnqueued("api.createTodo"),
+      pre: eq(readVar("atom:authAtom"), lit("guest")),
+    },
+    { name: "guestCannotSubmit" },
+  ),
+  leadsToWithin(
+    model,
+    stepEnqueued("api.placeOrder"),
+    orExpr(
+      eq(readVar("local:App.order"), lit("success")),
+      eq(readVar("local:App.order"), lit("error")),
     ),
-    leadsToWithin(
-      model,
-      stepEnqueued("api.placeOrder"),
-      orExpr(
-        eq(readVar("local:App.order"), lit("success")),
-        eq(readVar("local:App.order"), lit("error")),
-      ),
-      { name: "submitResolves", budget: { environment: 3 } },
-    ),
-  ];
-}
+    { name: "submitResolves", budget: { environment: 3 } },
+  ),
+];
 ```
 
 Plain object properties are also valid. Declare `reads` explicitly when writing them by
 hand, especially for useful slicing and focused diagnostics:
 
-```js
-export const properties = [
+```ts
+import type { Property } from "modality-ts/core";
+
+export const properties: readonly Property[] = [
   {
     kind: "alwaysStep",
     name: "staleFailureDoesNotMutateStatus",

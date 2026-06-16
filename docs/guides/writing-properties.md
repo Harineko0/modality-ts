@@ -10,16 +10,17 @@ function returning an array of property objects. Predicates are built from
 serializable data, evaluated by the [Rust checker](../architecture/checker.md), not
 arbitrary functions.
 
-```js
+```ts
 import {
   always, alwaysStep, leadsToWithin, reachable, reachableFrom,
   andExpr, orExpr, notExpr, eq, neq, lit, readVar, enabled,
   stepEnqueued, stepResolved,
 } from "modality-ts/core";
+import type { PropertyFactory } from "modality-ts/core";
 
-export function properties() {
-  return [ /* ... property objects ... */ ];
-}
+export const properties: PropertyFactory = (model) => [
+  /* ... property objects ... */
+];
 ```
 
 ## Choosing the right combinator

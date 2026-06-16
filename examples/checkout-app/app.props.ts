@@ -10,10 +10,9 @@ import {
   stepAny,
   stepResolved,
 } from "modality-ts/core";
-import type { Property } from "modality-ts/core";
+import type { PropertyFactory } from "modality-ts/core";
 
-export function properties(): Property[] {
-  return [
+export const properties: PropertyFactory = (_model) => [
     {
       kind: "always",
       name: "guestCannotReachSuccess",
@@ -103,5 +102,4 @@ export function properties(): Property[] {
       ),
       goal: eq(readVar("local:App.step"), lit("success")),
     },
-  ];
-}
+];
