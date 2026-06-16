@@ -1,4 +1,4 @@
-use crate::model::{CompiledModel, UNMOUNTED};
+use crate::model::CompiledModel;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,10 +14,7 @@ impl ModelState {
     pub fn from_json(compiled: &CompiledModel, json: &Map<String, Value>) -> Result<Self, String> {
         let mut values = vec![Value::Null; compiled.model.vars.len()];
         for (idx, decl) in compiled.model.vars.iter().enumerate() {
-            values[idx] = json
-                .get(&decl.id)
-                .cloned()
-                .unwrap_or(Value::Null);
+            values[idx] = json.get(&decl.id).cloned().unwrap_or(Value::Null);
         }
         Ok(Self { values })
     }
@@ -38,10 +35,6 @@ impl ModelState {
         let mut values = self.values.clone();
         values[var_idx] = value;
         Self { values }
-    }
-
-    pub fn set_var(&mut self, var_idx: usize, value: Value) {
-        self.values[var_idx] = value;
     }
 }
 
@@ -102,7 +95,11 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         }
         (Value::String(x), Value::String(y)) => x == y,
         (Value::Array(xs), Value::Array(ys)) => {
-            xs.len() == ys.len() && xs.iter().zip(ys).all(|(left, right)| values_equal(left, right))
+            xs.len() == ys.len()
+                && xs
+                    .iter()
+                    .zip(ys)
+                    .all(|(left, right)| values_equal(left, right))
         }
         (Value::Object(xs), Value::Object(ys)) => {
             xs.len() == ys.len()
@@ -114,7 +111,10 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
     }
 }
 
-pub fn changed_var_indexes(pre: &ModelState, post: &ModelState) -> std::collections::HashSet<usize> {
+pub fn changed_var_indexes(
+    pre: &ModelState,
+    post: &ModelState,
+) -> std::collections::HashSet<usize> {
     pre.values
         .iter()
         .zip(&post.values)
@@ -137,10 +137,6 @@ pub fn diff(pre: &ModelState, post: &ModelState, compiled: &CompiledModel) -> Ma
         }
     }
     out
-}
-
-pub fn is_unmounted(value: &Value) -> bool {
-    value == &Value::String(UNMOUNTED.into())
 }
 
 #[cfg(test)]
@@ -194,9 +190,7 @@ mod tests {
                     StateVarDecl {
                         id: "rec".into(),
                         domain: AbstractDomain::Record {
-                            fields: [("a".into(), AbstractDomain::Bool)]
-                                .into_iter()
-                                .collect(),
+                            fields: [("a".into(), AbstractDomain::Bool)].into_iter().collect(),
                         },
                         origin: json!("system"),
                         scope: Scope::Global,
@@ -226,16 +220,16 @@ mod tests {
     #[test]
     fn path_read_write_round_trips() {
         let base = json!({"a": {"b": 1}, "items": [10, 20]});
-        assert_eq!(
-            read_path(Some(&base), &["a".into(), "b".into()]),
-            json!(1)
-        );
+        assert_eq!(read_path(Some(&base), &["a".into(), "b".into()]), json!(1));
         assert_eq!(
             read_path(Some(&base), &["items".into(), "1".into()]),
             json!(20)
         );
         let updated = write_path(&base, &["a".into(), "b".into()], json!(9));
-        assert_eq!(read_path(Some(&updated), &["a".into(), "b".into()]), json!(9));
+        assert_eq!(
+            read_path(Some(&updated), &["a".into(), "b".into()]),
+            json!(9)
+        );
     }
 
     #[test]

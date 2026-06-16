@@ -1,5 +1,5 @@
-use crate::trace::Parent;
 use crate::state::ModelState;
+use crate::trace::Parent;
 use std::collections::HashMap;
 
 pub type StateId = u32;
@@ -39,6 +39,7 @@ impl StateArena {
 }
 
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct ParentRecord {
     pub parent: Option<StateId>,
     pub transition_id: Option<usize>,
@@ -47,8 +48,8 @@ pub struct ParentRecord {
 pub struct VisitedSet {
     pub arena: StateArena,
     canon_to_id: HashMap<Vec<u8>, StateId>,
+    #[cfg(test)]
     parents: Vec<ParentRecord>,
-    depths: Vec<u32>,
     shard_bits: u32,
     parents_by_canon: HashMap<Vec<u8>, Parent>,
     states_by_canon: HashMap<Vec<u8>, ModelState>,
@@ -59,8 +60,8 @@ impl VisitedSet {
         Self {
             arena: StateArena::new(),
             canon_to_id: HashMap::new(),
+            #[cfg(test)]
             parents: Vec::new(),
-            depths: Vec::new(),
             shard_bits,
             parents_by_canon: HashMap::new(),
             states_by_canon: HashMap::new(),
@@ -79,12 +80,9 @@ impl VisitedSet {
         self.canon_to_id.get(canon).copied()
     }
 
+    #[cfg(test)]
     pub fn parent_record(&self, id: StateId) -> &ParentRecord {
         &self.parents[id as usize]
-    }
-
-    pub fn depth(&self, id: StateId) -> u32 {
-        self.depths[id as usize]
     }
 
     pub fn parents_map(&self) -> &HashMap<Vec<u8>, Parent> {
@@ -101,11 +99,11 @@ impl VisitedSet {
         }
         let id = self.arena.insert(state.clone(), canon.clone());
         self.canon_to_id.insert(canon.clone(), id);
+        #[cfg(test)]
         self.parents.push(ParentRecord {
             parent: None,
             transition_id: None,
         });
-        self.depths.push(0);
         self.parents_by_canon.insert(
             canon.clone(),
             Parent {
@@ -124,15 +122,14 @@ impl VisitedSet {
         canon: Vec<u8>,
         parent_id: StateId,
         transition_id: usize,
-        depth: u32,
     ) -> StateId {
         let id = self.arena.insert(state.clone(), canon.clone());
         self.canon_to_id.insert(canon.clone(), id);
+        #[cfg(test)]
         self.parents.push(ParentRecord {
             parent: Some(parent_id),
             transition_id: Some(transition_id),
         });
-        self.depths.push(depth);
         let parent_canon = self.arena.canon(parent_id).to_vec();
         let transition_name = compiled.transition(transition_id).id.clone();
         self.parents_by_canon.insert(
@@ -184,10 +181,7 @@ pub fn sort_merge_candidates(
         shard_candidates.sort_by(|a, b| {
             a.post_canon
                 .cmp(&b.post_canon)
-                .then_with(|| {
-                    a.parent_frontier_position
-                        .cmp(&b.parent_frontier_position)
-                })
+                .then_with(|| a.parent_frontier_position.cmp(&b.parent_frontier_position))
                 .then_with(|| a.transition_id.cmp(&b.transition_id))
                 .then_with(|| a.raw_post_branch.cmp(&b.raw_post_branch))
                 .then_with(|| a.stabilization_branch.cmp(&b.stabilization_branch))
@@ -199,11 +193,11 @@ pub fn sort_merge_candidates(
 
 /// Deterministic merge of worker candidates into visited set.
 /// Returns newly inserted state IDs in discovery order (sorted by canon within shards).
+#[cfg(test)]
 pub fn merge_candidates(
     visited: &mut VisitedSet,
     compiled: &crate::model::CompiledModel,
     candidates: Vec<MergeCandidate>,
-    parent_depth: u32,
 ) -> Vec<StateId> {
     let sorted = sort_merge_candidates(visited, candidates);
     let mut inserted = Vec::new();
@@ -217,7 +211,6 @@ pub fn merge_candidates(
             candidate.post_canon,
             candidate.parent_id,
             candidate.transition_id,
-            parent_depth + 1,
         );
         inserted.push(id);
     }

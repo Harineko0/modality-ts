@@ -7,12 +7,12 @@ use crate::graph::{resolve_edge_mode, GraphRecording};
 use crate::model::{CheckOptionsIR, CheckRequest, CompiledModel, Model};
 use crate::property::{finalize_properties, observe_edge, observe_states};
 use crate::report::{build_check_result, invalid_model_result};
+use crate::stabilize::{sort_states_by_canon, stabilize};
 use crate::state::ModelState;
 use crate::step::facts;
-use crate::stabilize::{sort_states_by_canon, stabilize};
 use crate::trace::TraceContext;
 use crate::transition_index::enabled_non_internal;
-use crate::visited::{merge_candidates, sort_merge_candidates, MergeCandidate, StateId, VisitedSet};
+use crate::visited::{sort_merge_candidates, MergeCandidate, StateId, VisitedSet};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -69,7 +69,7 @@ pub fn check_model_compiled(
     let mut verdicts: HashMap<String, Value> = HashMap::new();
 
     let mut max_frontier = 0u32;
-    let mut final_frontier = 0u32;
+    let mut final_frontier;
     let mut expanded_depths = 0u32;
     let mut limit_hit: Option<Value> = None;
     let mut dominant_vars: HashMap<String, HashSet<String>> = compiled
@@ -92,15 +92,16 @@ pub fn check_model_compiled(
         &trace_ctx,
         &mut verdicts,
     );
-    record_dominant_vars(compiled, &frontier_states(&visited, &frontier), &mut dominant_vars);
+    record_dominant_vars(
+        compiled,
+        &frontier_states(&visited, &frontier),
+        &mut dominant_vars,
+    );
 
     let mut depth = 0u32;
     let mut edge_count = 0u32;
 
-    while !frontier.is_empty()
-        && depth < compiled.model.bounds.max_depth
-        && limit_hit.is_none()
-    {
+    while !frontier.is_empty() && depth < compiled.model.bounds.max_depth && limit_hit.is_none() {
         max_frontier = max_frontier.max(frontier.len() as u32);
         final_frontier = frontier.len() as u32;
 
@@ -127,7 +128,6 @@ pub fn check_model_compiled(
             &mut bound_hits,
             &options,
             edge_count,
-            depth,
             &mut canon_fn,
         )?;
 
@@ -220,7 +220,6 @@ pub fn check_model_compiled(
             crate::graph::EdgeRecordingMode::None => 0,
             crate::graph::EdgeRecordingMode::Reverse => graph.reverse_edges.len(),
             crate::graph::EdgeRecordingMode::Compact => graph.compact_edges.len(),
-            crate::graph::EdgeRecordingMode::Full => graph.full_edges.len(),
         },
         "storedStates": visited.arena.len(),
         "parentEntries": visited.len(),
@@ -228,7 +227,6 @@ pub fn check_model_compiled(
             crate::graph::EdgeRecordingMode::None => "none",
             crate::graph::EdgeRecordingMode::Reverse => "reverse",
             crate::graph::EdgeRecordingMode::Compact => "compact",
-            crate::graph::EdgeRecordingMode::Full => "full",
         },
     });
 
@@ -298,7 +296,9 @@ fn seed_frontier(
     let stabilized = sort_states_by_canon(
         initial_states(compiled)
             .into_iter()
-            .flat_map(|state| stabilize(compiled, state, changed.clone(), canon).unwrap_or_default())
+            .flat_map(|state| {
+                stabilize(compiled, state, changed.clone(), canon).unwrap_or_default()
+            })
             .collect(),
         canon,
     );
@@ -323,7 +323,6 @@ fn explore_depth_parallel(
     bound_hits: &mut HashSet<String>,
     options: &CheckOptionsIR,
     starting_edge_count: u32,
-    depth: u32,
     _canon: &mut dyn FnMut(&ModelState) -> Vec<u8>,
 ) -> Result<ExploreResult, String> {
     let worker_count = rayon::current_num_threads();
@@ -421,7 +420,6 @@ fn explore_depth_parallel(
                 candidate.post_canon,
                 candidate.parent_id,
                 candidate.transition_id,
-                depth + 1,
             );
             next.push(id);
         }
@@ -455,10 +453,7 @@ fn expand_chunk(
     };
 
     for &pre_id in chunk {
-        let parent_frontier_position = frontier_positions
-            .get(&pre_id)
-            .copied()
-            .unwrap_or(u32::MAX);
+        let parent_frontier_position = frontier_positions.get(&pre_id).copied().unwrap_or(u32::MAX);
         let pre = visited.arena.state(pre_id);
         let pre_canon = visited.arena.canon(pre_id).to_vec();
         for transition_id in enabled_non_internal(compiled, pre) {
@@ -492,11 +487,7 @@ fn expand_chunk(
                     stabilize(compiled, raw_post, changed, &mut canon).unwrap_or_default();
                 for (stabilization_branch, post) in stabilized.into_iter().enumerate() {
                     let post_canon = canon(&post);
-                    let sort_key = (
-                        pre_canon.clone(),
-                        transition_id,
-                        post_canon.clone(),
-                    );
+                    let sort_key = (pre_canon.clone(), transition_id, post_canon.clone());
                     edges.push(GeneratedEdge {
                         pre_id,
                         post_canon: post_canon.clone(),
@@ -694,11 +685,12 @@ pub fn model_successors(
         .unwrap_or_default()
         {
             let changed = crate::state::changed_var_indexes(&pre, &raw_post);
-            let mut canon_fn =
-                |s: &ModelState| canonical_identity(&compiled, s).bytes;
+            let mut canon_fn = |s: &ModelState| canonical_identity(&compiled, s).bytes;
             if let Ok(posts) = stabilize(&compiled, raw_post, changed, &mut canon_fn) {
                 for post in posts {
-                    out.push(crate::trace::make_trace_step(&compiled, &pre, &post, transition));
+                    out.push(crate::trace::make_trace_step(
+                        &compiled, &pre, &post, transition,
+                    ));
                 }
             }
         }
@@ -713,6 +705,7 @@ mod tests {
         AbstractDomain, Bounds, EffectIR, ExprIR, InitialValue, Model, PropertyIR, Scope,
         StateVarDecl, Transition,
     };
+    use crate::visited::merge_candidates;
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -768,14 +761,10 @@ mod tests {
                     cls: "user".into(),
                     label: json!({"kind": "click"}),
                     source: vec![],
-                    guard: ExprIR::Lit {
-                        value: json!(true),
-                    },
+                    guard: ExprIR::Lit { value: json!(true) },
                     effect: EffectIR::Assign {
                         var: "x".into(),
-                        expr: ExprIR::Lit {
-                            value: json!(true),
-                        },
+                        expr: ExprIR::Lit { value: json!(true) },
                     },
                     reads: vec![],
                     writes: vec!["x".into()],
@@ -832,7 +821,6 @@ mod tests {
             &mut enabled,
             &mut bound_hits,
             &options,
-            0,
             0,
             &mut canon_fn,
         )
@@ -898,7 +886,7 @@ mod tests {
                 post_canon,
             },
         ];
-        let inserted = merge_candidates(&mut visited, &compiled, candidates, 0);
+        let inserted = merge_candidates(&mut visited, &compiled, candidates);
         assert_eq!(inserted.len(), 1);
         let child = inserted[0];
         assert_eq!(visited.parent_record(child).parent, Some(pre_id));
@@ -965,16 +953,12 @@ mod tests {
                     cls: "user".into(),
                     label: json!({"kind": "click"}),
                     source: vec![],
-                    guard: ExprIR::Lit {
-                        value: json!(true),
-                    },
+                    guard: ExprIR::Lit { value: json!(true) },
                     effect: EffectIR::Seq {
                         effects: vec![
                             EffectIR::Assign {
                                 var: "out".into(),
-                                expr: ExprIR::Lit {
-                                    value: json!(true),
-                                },
+                                expr: ExprIR::Lit { value: json!(true) },
                             },
                             EffectIR::Assign {
                                 var: "a".into(),
@@ -1062,11 +1046,14 @@ mod tests {
                 post_canon,
             },
         ];
-        let inserted = merge_candidates(&mut visited, &compiled, candidates, 0);
+        let inserted = merge_candidates(&mut visited, &compiled, candidates);
         assert_eq!(inserted.len(), 1);
         let child = inserted[0];
         assert_eq!(visited.parent_record(child).parent, Some(parent_low));
-        assert_eq!(visited.parent_record(child).transition_id, Some(transition_id));
+        assert_eq!(
+            visited.parent_record(child).transition_id,
+            Some(transition_id)
+        );
     }
 
     #[test]
@@ -1074,9 +1061,7 @@ mod tests {
         let compiled = toggle_model();
         let properties = vec![PropertyIR::Always {
             name: "p".into(),
-            predicate: ExprIR::Lit {
-                value: json!(true),
-            },
+            predicate: ExprIR::Lit { value: json!(true) },
             reads: None,
             enabled_transitions: None,
             include_unmounted: None,
@@ -1149,9 +1134,7 @@ mod tests {
         let compiled = toggle_model();
         let properties = vec![PropertyIR::Always {
             name: "p".into(),
-            predicate: ExprIR::Lit {
-                value: json!(true),
-            },
+            predicate: ExprIR::Lit { value: json!(true) },
             reads: None,
             enabled_transitions: None,
             include_unmounted: None,
@@ -1185,9 +1168,7 @@ mod tests {
         let compiled = toggle_model();
         let properties = vec![PropertyIR::Always {
             name: "p".into(),
-            predicate: ExprIR::Lit {
-                value: json!(true),
-            },
+            predicate: ExprIR::Lit { value: json!(true) },
             reads: None,
             enabled_transitions: None,
             include_unmounted: None,
@@ -1217,9 +1198,7 @@ mod tests {
         let compiled = toggle_model();
         let properties = vec![PropertyIR::Always {
             name: "p".into(),
-            predicate: ExprIR::Lit {
-                value: json!(true),
-            },
+            predicate: ExprIR::Lit { value: json!(true) },
             reads: None,
             enabled_transitions: None,
             include_unmounted: None,

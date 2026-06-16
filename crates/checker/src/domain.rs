@@ -3,17 +3,13 @@ use crate::model::{
     UNMOUNTED,
 };
 use crate::navigation;
-use crate::state::{changed_var_indexes, ModelState};
+use crate::state::ModelState;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
 pub struct ValidationResult {
     pub ok: bool,
     pub errors: Vec<String>,
-}
-
-pub fn validate_model(model: &Model) -> Result<(), String> {
-    validate_model_with_options(model, false)
 }
 
 pub fn validate_model_with_options(model: &Model, sliced: bool) -> Result<(), String> {
@@ -34,7 +30,11 @@ pub fn validate_model_full(model: &Model, sliced: bool) -> ValidationResult {
         ));
     }
     validate_bounds(&mut errors, model);
-    push_duplicates(&mut errors, "state var", &model.vars.iter().map(|v| v.id.clone()).collect::<Vec<_>>());
+    push_duplicates(
+        &mut errors,
+        "state var",
+        &model.vars.iter().map(|v| v.id.clone()).collect::<Vec<_>>(),
+    );
     push_duplicates(
         &mut errors,
         "transition",
@@ -79,7 +79,10 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
             ExprIR::Read { var, .. } => {
                 reads.insert(var.clone());
             }
-            ExprIR::Eq { args } | ExprIR::Neq { args } | ExprIR::And { args } | ExprIR::Or { args } => {
+            ExprIR::Eq { args }
+            | ExprIR::Neq { args }
+            | ExprIR::And { args }
+            | ExprIR::Or { args } => {
                 for arg in args {
                     walk_expr(arg, reads);
                 }
@@ -123,7 +126,11 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
                     walk_expr(expr, reads);
                 }
             }
-            EffectIR::If { cond, then, else_branch } => {
+            EffectIR::If {
+                cond,
+                then,
+                else_branch,
+            } => {
                 walk_expr(cond, reads);
                 walk_effect(then, reads);
                 walk_effect(else_branch, reads);
@@ -164,7 +171,9 @@ fn effect_writes(effect: &crate::model::EffectIR) -> Vec<String> {
             | EffectIR::Choose { var, .. } => {
                 writes.insert(var.clone());
             }
-            EffectIR::If { then, else_branch, .. } => {
+            EffectIR::If {
+                then, else_branch, ..
+            } => {
                 walk(then, writes);
                 walk(else_branch, writes);
             }
@@ -317,23 +326,18 @@ pub fn enumerate_domain(domain: &AbstractDomain) -> Vec<Value> {
         }
         AbstractDomain::Record { fields } => {
             let entries: Vec<_> = sorted_fields(fields);
-            cartesian(
-                entries
-                    .iter()
-                    .map(|(_, d)| enumerate_domain(d))
-                    .collect(),
-            )
-            .into_iter()
-            .map(|values| {
-                let mut obj = serde_json::Map::new();
-                for (i, (key, _)) in entries.iter().enumerate() {
-                    if let Some(v) = values.get(i) {
-                        obj.insert((*key).clone(), v.clone());
+            cartesian(entries.iter().map(|(_, d)| enumerate_domain(d)).collect())
+                .into_iter()
+                .map(|values| {
+                    let mut obj = serde_json::Map::new();
+                    for (i, (key, _)) in entries.iter().enumerate() {
+                        if let Some(v) = values.get(i) {
+                            obj.insert((*key).clone(), v.clone());
+                        }
                     }
-                }
-                Value::Object(obj)
-            })
-            .collect()
+                    Value::Object(obj)
+                })
+                .collect()
         }
         AbstractDomain::Tagged { tag, variants } => {
             let mut out = Vec::new();
@@ -386,18 +390,16 @@ pub fn validate_value(domain: &AbstractDomain, value: &Value) -> bool {
     }
     match domain {
         AbstractDomain::Bool => value.is_boolean(),
-        AbstractDomain::Enum { values } => {
-            value.as_str().is_some_and(|s| values.contains(&s.to_string()))
+        AbstractDomain::Enum { values } => value
+            .as_str()
+            .is_some_and(|s| values.contains(&s.to_string())),
+        AbstractDomain::BoundedInt { min, max, .. } => {
+            value.as_i64().is_some_and(|n| n >= *min && n <= *max)
         }
-        AbstractDomain::BoundedInt { min, max, .. } => value
-            .as_i64()
-            .is_some_and(|n| n >= *min && n <= *max),
         AbstractDomain::IntSet { values, .. } => {
             value.as_i64().is_some_and(|n| values.contains(&n))
         }
-        AbstractDomain::Option { inner } => {
-            value.is_null() || validate_value(inner, value)
-        }
+        AbstractDomain::Option { inner } => value.is_null() || validate_value(inner, value),
         AbstractDomain::Record { fields } => {
             if let Value::Object(obj) = value {
                 fields
@@ -462,7 +464,10 @@ pub fn domain_at_path(domain: &AbstractDomain, path: &[String]) -> Option<Abstra
                 }
                 (*inner).clone()
             }
-            AbstractDomain::Tagged { tag: tag_field, variants } => {
+            AbstractDomain::Tagged {
+                tag: tag_field,
+                variants,
+            } => {
                 if segment == tag_field.as_str() {
                     AbstractDomain::Enum {
                         values: variants.keys().cloned().collect(),
@@ -493,13 +498,9 @@ pub enum NumericAssignOutcome {
 
 pub fn apply_numeric_assign(domain: &AbstractDomain, raw_value: i64) -> NumericAssignOutcome {
     match domain {
-        AbstractDomain::BoundedInt { min, max, .. } => apply_numeric_policy(
-            numeric_overflow_policy(domain),
-            raw_value,
-            *min,
-            *max,
-            None,
-        ),
+        AbstractDomain::BoundedInt { min, max, .. } => {
+            apply_numeric_policy(numeric_overflow_policy(domain), raw_value, *min, *max, None)
+        }
         AbstractDomain::IntSet { values, .. } => {
             if values.is_empty() {
                 return NumericAssignOutcome::Forbid("empty intSet domain".into());
@@ -530,9 +531,9 @@ fn apply_numeric_policy(
             return NumericAssignOutcome::Value(raw_value);
         }
         return match policy {
-            NumericOverflowPolicy::Forbid => NumericAssignOutcome::Forbid(format!(
-                "numeric value {raw_value} outside intSet"
-            )),
+            NumericOverflowPolicy::Forbid => {
+                NumericAssignOutcome::Forbid(format!("numeric value {raw_value} outside intSet"))
+            }
             NumericOverflowPolicy::Wrap => {
                 let len = values.len() as i64;
                 if len == 0 {
@@ -541,11 +542,9 @@ fn apply_numeric_policy(
                 let index = raw_value.rem_euclid(len) as usize;
                 NumericAssignOutcome::Value(values[index])
             }
-            NumericOverflowPolicy::Saturate => NumericAssignOutcome::Value(if raw_value <= min {
-                min
-            } else {
-                max
-            }),
+            NumericOverflowPolicy::Saturate => {
+                NumericAssignOutcome::Value(if raw_value <= min { min } else { max })
+            }
         };
     }
 
@@ -563,11 +562,9 @@ fn apply_numeric_policy(
             }
             NumericAssignOutcome::Value(min + raw_value.rem_euclid(span))
         }
-        NumericOverflowPolicy::Saturate => NumericAssignOutcome::Value(if raw_value < min {
-            min
-        } else {
-            max
-        }),
+        NumericOverflowPolicy::Saturate => {
+            NumericAssignOutcome::Value(if raw_value < min { min } else { max })
+        }
     }
 }
 
@@ -618,29 +615,6 @@ pub fn initial_states(compiled: &CompiledModel) -> Vec<ModelState> {
 
 pub fn initial_changed_var_indexes(compiled: &CompiledModel) -> HashSet<usize> {
     (0..compiled.model.vars.len()).collect()
-}
-
-pub fn changed_vars(
-    pre: &ModelState,
-    post: &ModelState,
-    var_ids: &[String],
-    compiled: &CompiledModel,
-) -> HashSet<String> {
-    changed_var_indexes(pre, post)
-        .into_iter()
-        .filter_map(|idx| {
-            let id = compiled.model.vars.get(idx)?.id.clone();
-            if var_ids.contains(&id) {
-                Some(id)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-pub fn initial_changed_vars(model: &Model) -> HashSet<String> {
-    model.vars.iter().map(|v| v.id.clone()).collect()
 }
 
 #[cfg(test)]
@@ -729,21 +703,14 @@ mod tests {
         fields.insert("a".into(), AbstractDomain::Bool);
         let values = enumerate_domain(&AbstractDomain::Record { fields });
         assert_eq!(values.len(), 4);
-        assert!(values.iter().all(|value| {
-            value
-                .as_object()
-                .and_then(|obj| obj.get("a"))
-                .is_some()
-        }));
+        assert!(values
+            .iter()
+            .all(|value| { value.as_object().and_then(|obj| obj.get("a")).is_some() }));
     }
 
     #[test]
     fn validate_rejects_invalid_initial() {
-        let model = with_system_vars(vec![minimal_decl(
-            "x",
-            AbstractDomain::Bool,
-            json!("nope"),
-        )]);
+        let model = with_system_vars(vec![minimal_decl("x", AbstractDomain::Bool, json!("nope"))]);
         let result = validate_model_full(&model, false);
         assert!(!result.ok);
         assert!(result.errors.iter().any(|e| e.contains("invalid initial")));
@@ -755,10 +722,7 @@ mod tests {
             values: vec![0, 2],
             overflow: None,
         };
-        assert_eq!(
-            enumerate_domain(&domain),
-            vec![json!(0), json!(2)]
-        );
+        assert_eq!(enumerate_domain(&domain), vec![json!(0), json!(2)]);
         assert!(validate_value(&domain, &json!(2)));
         assert!(!validate_value(&domain, &json!(1)));
     }

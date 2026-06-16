@@ -73,7 +73,9 @@ pub enum InitialValue {
 pub enum Scope {
     Global,
     #[serde(rename = "route-local")]
-    RouteLocal { route: String },
+    RouteLocal {
+        route: String,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -109,7 +111,10 @@ pub enum ExprIR {
     #[serde(rename = "lit")]
     Lit { value: Value },
     #[serde(rename = "read")]
-    Read { var: String, path: Option<Vec<String>> },
+    Read {
+        var: String,
+        path: Option<Vec<String>>,
+    },
     #[serde(rename = "eq")]
     Eq { args: Vec<ExprIR> },
     #[serde(rename = "neq")]
@@ -143,7 +148,10 @@ pub enum ExprIR {
         transition_id: String,
     },
     #[serde(rename = "readPre")]
-    ReadPre { var: String, path: Option<Vec<String>> },
+    ReadPre {
+        var: String,
+        path: Option<Vec<String>>,
+    },
     #[serde(rename = "readOpArg")]
     ReadOpArg { key: String },
     #[serde(rename = "lt")]
@@ -199,10 +207,7 @@ pub enum EffectIR {
     #[serde(rename = "dequeue")]
     Dequeue { index: usize },
     #[serde(rename = "navigate")]
-    Navigate {
-        mode: String,
-        to: Option<ExprIR>,
-    },
+    Navigate { mode: String, to: Option<ExprIR> },
     #[serde(rename = "opaque")]
     Opaque { r#ref: OpaqueRef },
 }
@@ -398,7 +403,6 @@ pub struct CompiledVar {
 
 #[derive(Debug, Clone)]
 pub struct CompiledTransition {
-    pub read_indexes: Vec<usize>,
     pub write_indexes: Vec<usize>,
     pub triggered_by_indexes: Vec<usize>,
     pub route_local_var_indexes: Vec<usize>,
@@ -463,7 +467,11 @@ impl CompiledModel {
                 Some(vars) if vars.is_empty() => Vec::new(),
                 Some(vars) => resolve_var_indexes(&var_index, vars)?,
             };
-            let touched: HashSet<usize> = read_indexes.iter().chain(write_indexes.iter()).copied().collect();
+            let touched: HashSet<usize> = read_indexes
+                .iter()
+                .chain(write_indexes.iter())
+                .copied()
+                .collect();
             let route_local_var_indexes = vars
                 .iter()
                 .enumerate()
@@ -476,7 +484,6 @@ impl CompiledModel {
                 })
                 .collect();
             transitions.push(CompiledTransition {
-                read_indexes,
                 write_indexes,
                 triggered_by_indexes,
                 route_local_var_indexes,
@@ -536,10 +543,6 @@ impl CompiledModel {
         &self.sorted_transitions[idx]
     }
 
-    pub fn transition_meta(&self, idx: usize) -> &CompiledTransition {
-        &self.transitions[idx]
-    }
-
     pub fn var_decl(&self, id: &str) -> Option<&StateVarDecl> {
         self.var_index.get(id).map(|&i| &self.model.vars[i])
     }
@@ -576,9 +579,7 @@ fn validate_no_opaque(effect: &EffectIR, transition_id: &str) -> Result<(), Stri
             Ok(())
         }
         EffectIR::If {
-            then,
-            else_branch,
-            ..
+            then, else_branch, ..
         } => {
             validate_no_opaque(then, transition_id)?;
             validate_no_opaque(else_branch, transition_id)
@@ -603,17 +604,6 @@ pub fn route_local_mounted(
         }
     }
     true
-}
-
-pub fn route_local_mounted_transition(
-    compiled: &CompiledModel,
-    transition: &Transition,
-    state: &crate::state::ModelState,
-) -> bool {
-    let Some(&idx) = compiled.transition_index.get(&transition.id) else {
-        return false;
-    };
-    route_local_mounted(compiled, idx, state)
 }
 
 #[cfg(test)]
@@ -665,9 +655,7 @@ mod tests {
                 cls: "user".into(),
                 label: json!({"kind": "click"}),
                 source: vec![],
-                guard: ExprIR::Lit {
-                    value: json!(true),
-                },
+                guard: ExprIR::Lit { value: json!(true) },
                 effect,
                 reads: vec![],
                 writes: vec![],
@@ -702,9 +690,7 @@ mod tests {
     fn compile_rejects_unknown_triggered_by_var() {
         let mut model = minimal_model(EffectIR::Assign {
             var: "sys:route".into(),
-            expr: ExprIR::Lit {
-                value: json!("/"),
-            },
+            expr: ExprIR::Lit { value: json!("/") },
         });
         model.transitions[0].cls = "internal".into();
         model.transitions[0].triggered_by = Some(vec!["missing".into()]);

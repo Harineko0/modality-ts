@@ -1,12 +1,23 @@
 use crate::canon::canonical_key;
 use crate::expr::{allowed_reads, eval_state_predicate};
-use crate::graph::{FullEdge, GraphRecording};
-use crate::model::{CompiledModel, PropertyIR, Scope, StepPredicateIR, UNMOUNTED};
+use crate::graph::GraphRecording;
+use crate::model::{CompiledModel, PropertyIR, Scope, UNMOUNTED};
 use crate::state::ModelState;
-use crate::step::{facts, matches_step_predicate, matches_step_spec, StepFacts};
-use crate::trace::{replay_checked_verdict, trace_to, trace_with_edge, trace_with_suffix, TraceContext};
+use crate::step::{matches_step_spec, StepFacts};
+use crate::trace::{
+    replay_checked_verdict, trace_to, trace_with_edge, trace_with_suffix, TraceContext,
+};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+struct FullEdge {
+    pre_canon: Vec<u8>,
+    post_canon: Vec<u8>,
+    pre: ModelState,
+    post: ModelState,
+    transition: crate::model::Transition,
+}
 
 pub fn observe_states(
     compiled: &CompiledModel,
@@ -33,11 +44,8 @@ pub fn observe_states(
                     if !property_mounted(compiled, property, state, *include_unmounted) {
                         continue;
                     }
-                    let allowed = allowed_reads(
-                        reads.as_deref(),
-                        enabled_transitions.as_deref(),
-                        compiled,
-                    );
+                    let allowed =
+                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
                     match eval_state_predicate(
                         compiled,
                         state,
@@ -65,11 +73,8 @@ pub fn observe_states(
                     if !property_mounted(compiled, property, state, *include_unmounted) {
                         continue;
                     }
-                    let allowed = allowed_reads(
-                        reads.as_deref(),
-                        enabled_transitions.as_deref(),
-                        compiled,
-                    );
+                    let allowed =
+                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
                     match eval_state_predicate(
                         compiled,
                         state,
@@ -124,11 +129,7 @@ pub fn observe_edge(
         if !property_mounted_edge(compiled, property, pre, post, *include_unmounted) {
             continue;
         }
-        let allowed = allowed_reads(
-            reads.as_deref(),
-            enabled_transitions.as_deref(),
-            compiled,
-        );
+        let allowed = allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
         let ok = match matches_step_spec(compiled, pre, post, step, predicate, &allowed, name) {
             Ok(v) => v,
             Err(msg) => {
@@ -174,15 +175,19 @@ pub fn finalize_properties(
                     include_unmounted,
                     ..
                 } => {
-                    let allowed_when = allowed_reads(
-                        reads.as_deref(),
-                        enabled_transitions.as_deref(),
-                        compiled,
-                    );
+                    let allowed_when =
+                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
                     let allowed_goal = allowed_when.clone();
-                    if let Some((canon, _)) =
-                        unreachable_witness(compiled, graph, ctx, when, goal, &allowed_when, &allowed_goal, *include_unmounted)
-                    {
+                    if let Some((canon, _)) = unreachable_witness(
+                        compiled,
+                        graph,
+                        ctx,
+                        when,
+                        goal,
+                        &allowed_when,
+                        &allowed_goal,
+                        *include_unmounted,
+                    ) {
                         Some(json!({
                             "status": "violated",
                             "property": name,
@@ -195,7 +200,6 @@ pub fn finalize_properties(
                     }
                 }
                 PropertyIR::LeadsToWithin {
-                    trigger,
                     goal,
                     budget,
                     allow_user_events,
@@ -208,7 +212,6 @@ pub fn finalize_properties(
                     ctx,
                     graph,
                     &name,
-                    trigger,
                     goal,
                     budget,
                     *allow_user_events,
@@ -236,7 +239,6 @@ fn finalize_leads_to(
     ctx: &TraceContext,
     graph: &GraphRecording,
     name: &str,
-    trigger: &StepPredicateIR,
     goal: &crate::model::ExprIR,
     budget: &crate::model::LeadsBudget,
     allow_user_events: Option<bool>,
@@ -244,7 +246,7 @@ fn finalize_leads_to(
     enabled_transitions: Option<&[String]>,
     include_unmounted: Option<bool>,
 ) -> Result<Option<Value>, String> {
-    let trigger_edges = resolve_trigger_edges(compiled, ctx, graph, name, trigger);
+    let trigger_edges = resolve_trigger_edges(compiled, ctx, graph, name);
     if trigger_edges.is_empty() {
         return Ok(Some(json!({
             "status": "vacuous-warning",
@@ -287,16 +289,9 @@ fn resolve_trigger_edges(
     ctx: &TraceContext,
     graph: &GraphRecording,
     property_name: &str,
-    trigger: &StepPredicateIR,
 ) -> Vec<FullEdge> {
     use crate::graph::EdgeRecordingMode;
     match graph.mode {
-        EdgeRecordingMode::Full => graph
-            .full_edges
-            .iter()
-            .filter(|e| matches_step_predicate(&e.step, &e.pre, &e.post, trigger))
-            .cloned()
-            .collect(),
         EdgeRecordingMode::Compact => graph
             .compact_edges
             .iter()
@@ -318,16 +313,12 @@ fn materialize_edge(
         .transition_index
         .get(&edge.transition_id)
         .map(|&idx| compiled.transition(idx).clone())?;
-    let step = facts(ctx.compiled, pre, post, &transition);
     Some(FullEdge {
         pre_canon: edge.pre_canon.clone(),
         post_canon: edge.post_canon.clone(),
-        pre_id: edge.pre_id,
-        post_id: edge.post_id,
         pre: pre.clone(),
         post: post.clone(),
         transition,
-        step,
     })
 }
 
@@ -434,12 +425,8 @@ fn failing_suffix_within(
             memo.insert(key, Some(vec![]));
             return Ok(Some(vec![]));
         }
-        let successors = scheduler_successors(
-            compiled,
-            state,
-            allow_user_events,
-            include_unmounted,
-        );
+        let successors =
+            scheduler_successors(compiled, state, allow_user_events, include_unmounted);
         if successors.is_empty() {
             memo.insert(key, Some(vec![]));
             return Ok(Some(vec![]));
@@ -502,25 +489,20 @@ fn scheduler_successors(
         .unwrap_or_default();
         for raw_post in posts {
             let changed = crate::state::changed_var_indexes(pre, &raw_post);
-            if let Ok(stabilized) = crate::stabilize::stabilize(
-                compiled,
-                raw_post,
-                changed,
-                &mut |s| canonical_key(compiled, s),
-            ) {
+            if let Ok(stabilized) =
+                crate::stabilize::stabilize(compiled, raw_post, changed, &mut |s| {
+                    canonical_key(compiled, s)
+                })
+            {
                 for post in stabilized {
                     let post_canon = canonical_key(compiled, &post);
-                    let step = facts(compiled, pre, &post, transition);
                     let _ = include_unmounted;
                     out.push(FullEdge {
                         pre_canon: pre_canon.clone(),
                         post_canon,
-                        pre_id: None,
-                        post_id: None,
                         pre: pre.clone(),
                         post,
                         transition: (*transition).clone(),
-                        step,
                     });
                 }
             }
@@ -536,10 +518,8 @@ fn scheduler_successors(
 }
 
 fn scheduler_allows(transition: &crate::model::Transition, allow_user_events: bool) -> bool {
-    matches!(
-        transition.cls.as_str(),
-        "env" | "library" | "internal"
-    ) || (allow_user_events && matches!(transition.cls.as_str(), "user" | "nav"))
+    matches!(transition.cls.as_str(), "env" | "library" | "internal")
+        || (allow_user_events && matches!(transition.cls.as_str(), "user" | "nav"))
 }
 
 fn property_name(property: &PropertyIR) -> String {
