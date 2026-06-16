@@ -1,166 +1,202 @@
 ---
 name: modality-testing
-description: Guide use of modality-ts for model-checking React and TypeScript state-transition behavior. Use when Codex needs to extract a finite model from React code, write or refine property files, run the modality CLI, inspect reports and counterexample traces, replay failures, configure CI artifacts, or decide whether a stateful UI workflow is a good fit for bounded model checking.
+description: Guide use of modality-ts for bounded model checking of React and TypeScript state-transition behavior. Use when Codex needs to choose whether a UI flow is a good fit, extract a finite model, write or refine serializable property files, model async side effects, use overlays/configuration, run modality CLI checks, inspect trust-ledger reports, debug/replay counterexamples, tune search limits, configure CI artifacts, or work with supported sources such as useState, Jotai, Zustand, SWR, Next.js, React Router, timers, effects, Suspense, and route state.
 ---
 
 # Modality Testing
 
-## Overview
+## Fit
 
-Use modality-ts to verify bounded, deterministic React state transitions. Focus on app behavior represented in TypeScript state, router state, cache/source state, and named side effects; keep DOM layout, CSS, animation timing, browser quirks, and unbounded external systems covered by ordinary unit, integration, or end-to-end tests.
+Use `modality-ts` for bounded, deterministic exploration of React state transitions:
+local state, route/history state, atoms/stores, cache templates, async effects, timers,
+and named side effects. Keep DOM layout, CSS, animation timing, browser quirks,
+unbounded server/database behavior, and visual correctness in ordinary unit,
+integration, or end-to-end tests.
 
-The built-in extraction pipeline can model React local state plus supported source plugins such as Jotai, SWR, and router state. When the target imports local modules, extraction follows relative TypeScript imports so atom definitions, SWR payload aliases, and helper handlers can contribute domains and transitions. Treat the generated model as the source of truth for exact variable IDs before writing properties.
+Treat the extracted model plus its trust ledger as the source of truth. Do not guess
+variable IDs, transition IDs, bounds, or caveats from code alone; inspect
+`.modality/model.json`, `.modality/app.model.ts`, and extraction/check reports.
 
-The checker is Rust-backed and evaluates serializable property IR. `*.props.mjs` files may use JavaScript helper functions to build IR objects, but property predicates themselves must be plain JSON-like objects, not callbacks. Old predicates such as `predicate: (state) => ...` are rejected with a migration error.
+## Core Workflow
 
-## Workflow
-
-1. Pick target components whose important behavior is finite enough to model.
-2. Initialize the project when no Modality config exists:
+1. Initialize a project when no local workspace/config exists:
 
 ```bash
 npx modality init
 ```
 
-3. Create `*.props.mjs` files next to target components when you want default source inference. `src/App.props.mjs` maps to `src/App.tsx`; multiple props files map to multiple sources.
-4. Extract a model. With colocated props files, let the CLI infer sources and write `.modality/model.json` plus `.modality/app.model.ts`:
+2. Extract a model. With discovered/colocated property files, the CLI can infer sources:
 
 ```bash
 npx modality extract
 ```
 
-Use explicit sources when inference is not desired:
+Target sources explicitly when needed, and write the trust ledger report when judging
+model precision:
 
 ```bash
-npx modality extract src/App.tsx src/HomePage.tsx
+npx modality extract src/App.tsx \
+  --effect-api api.placeOrder \
+  --report .modality/extraction-report.json
 ```
 
-5. Name modeled side-effect APIs when user flows depend on them:
+Useful extraction flags:
 
 ```bash
-npx modality extract --effect-api api.placeOrder
+npx modality extract [source.tsx ...] \
+  --out .modality/model.json \
+  --app-model .modality/app.model.ts \
+  --overlay modality.overlay.ts \
+  --config modality.config.ts \
+  --disable-plugin <id> \
+  --effect-api api.placeOrder
 ```
 
-6. Inspect the extraction summary and report. Confirm that expected plugins are present, important handlers are not listed as unextractable, and key variables such as auth atoms, SWR data, route state, and `sys:pending` appear in the model.
-7. Write property files that export serializable property objects. Prefer explicit `reads` for slicing and diagnostics, especially for hand-written object properties.
-8. Check the model. With default paths, `modality check` reads `.modality/model.json`, loads all discovered `*.props.mjs`, and writes `.modality/report.json`, `.modality/traces`, `.modality/replay-tests`, and `.modality/action-replay-tests`:
+3. Inspect the trust ledger before writing or trusting properties. Confirm:
+
+- expected plugins/adapters activated and route coverage is sensible;
+- key variables appear with usable domains;
+- important handlers are not missing or only `unextractable`;
+- async operations, pending bound `maxPending`, stale reads, unhandled rejections,
+  over-approx/manual transitions, ignored vars, and bound-hit events are understood.
+
+4. Write `*.props.mjs` files exporting serializable property objects. Prefer
+`export function properties(model) { ... }` or `propertiesFor(model) { ... }` so
+model-aware helpers can validate IDs and infer `reads`.
+
+5. Check the model:
 
 ```bash
 npx modality check
 ```
 
-9. Replay a failing counterexample when a property is violated. The trace path remains mandatory:
+Default search limits are active. Override them deliberately:
+
+```bash
+npx modality check --max-states 50000 --max-edges 150000
+npx modality check --no-search-limits
+```
+
+A search-limit hit is an `error` verdict, never verified. Use diagnostics
+(`dominantVars`, slicing data, limit reason) to refine domains, bounds, or properties.
+
+6. Replay violated traces when possible:
 
 ```bash
 npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json
+npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json \
+  --mode action --harness test/replay-harness.ts
 ```
 
-10. Prefer CI artifacts when automating verification:
+Replay verdicts mean:
+
+- `reproduced`: real app behavior; fix the app and keep the generated test.
+- `not-reproduced`: model divergence; inspect the diverging step provenance and refine
+  extraction/overlay/modeling.
+- `inconclusive`: harness, locator, provider, or timeout problem.
+
+7. Use CI artifacts for automation:
 
 ```bash
-npx modality ci .modality/model.json src/app.props.mjs --artifacts .modality
+npx modality ci .modality/model.json app.props.mjs --artifacts .modality
+npx modality ci app.props.mjs --artifacts .modality
 ```
 
-## Property Patterns
+Gate hard on reproduced violations, stale model hashes, new severe trust-ledger caveats,
+or conformance pass-rate drops. Treat not-reproduced violations as model-maintenance
+signals until the model is stable enough to hard-fail them.
 
-Use `always` for invariants over every reachable state. Use `alwaysStep` for transition-sensitive rules, especially side-effect enqueue/resolve behavior. Use `reachable` or `reachableFrom` when the expected behavior is that a useful state can be reached. Use `leadsToWithin` for bounded response properties after a step trigger.
+## Property Files
 
-Import predicate IR helpers from `modality-ts/core`. Common helpers are `readVar`, `readPreVar`, `readOpArg`, `lit`, `eq`, `neq`, `andExpr`, `orExpr`, `notExpr`, `enabled`, `stepEnqueued`, `stepResolved`, `stepTransitionId`, and `stepAny`.
+Predicates are data interpreted by the Rust checker. Do not put callback predicates in
+property objects.
 
-Accepted `*.props.mjs` export shapes:
+Accepted export shapes include:
 
 ```js
 export const properties = [/* serializable properties */];
-
 export default { schemaVersion: 1, properties: [/* serializable properties */] };
-
-export function properties(model) {
-  return [/* serializable properties, optionally built from model */];
-}
-
-export function propertiesFor(model) {
-  return [/* serializable properties, optionally built from model */];
-}
+export function properties(model) { return [/* properties */]; }
+export function propertiesFor(model) { return [/* properties */]; }
 ```
 
-Do not put executable predicates inside property objects. This is invalid:
-
-```js
-export const properties = [
-  { kind: "always", name: "legacy", predicate: (state) => !state.flag },
-];
-```
-
-Build predicate IR instead:
+Import property and predicate helpers from `modality-ts/core`:
 
 ```js
 import {
+  always,
+  alwaysStep,
+  reachable,
+  reachableFrom,
+  leadsToWithin,
   andExpr,
-  eq,
-  lit,
-  neq,
-  notExpr,
   orExpr,
-  readOpArg,
-  readPreVar,
+  notExpr,
+  eq,
+  neq,
+  lit,
   readVar,
+  readPreVar,
+  readOpArg,
+  enabled,
   stepAny,
   stepEnqueued,
   stepResolved,
+  stepTransitionId,
 } from "modality-ts/core";
+```
 
-function atMostOnePendingOp(opId) {
-  return andExpr(
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
-    ),
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
-    ),
-    orExpr(
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
-    ),
-  );
-}
+Choose the property kind by intent:
 
-export const properties = [
-  {
-    kind: "always",
-    name: "noDoubleSubmit",
-    reads: ["sys:pending"],
-    predicate: atMostOnePendingOp("api.placeOrder"),
-  },
-  {
-    kind: "alwaysStep",
-    name: "guestCannotSubmit",
-    reads: ["atom:authAtom", "sys:pending"],
-    predicate: {
-      negate: true,
-      step: stepEnqueued("api.placeOrder"),
-      pre: eq(readVar("atom:authAtom"), lit("guest")),
-    },
-  },
-  {
-    kind: "alwaysStep",
-    name: "successMatchesUser",
-    reads: ["local:App.auth", "local:App.userId", "local:App.step", "sys:pending"],
-    predicate: {
-      negate: true,
-      step: stepResolved("api.placeOrder", "success"),
-      post: andExpr(
-        eq(readVar("local:App.step"), lit("success")),
-        notExpr(
-          andExpr(
-            eq(readVar("local:App.auth"), lit("user")),
-            eq(readOpArg("userId"), readVar("local:App.userId")),
-          ),
-        ),
+- `always`: invariant over every reachable state.
+- `alwaysStep`: edge/action invariant; prefer for "cannot trigger", enqueue/resolve,
+  stale-response, and "must not clear/mutate on this transition" rules.
+- `reachable`: sanity/vacuity witness that some useful state is reachable.
+- `reachableFrom`: every state matching `when` can reach `goal`; counterexamples assert
+  path absence and are not replayable by nature.
+- `leadsToWithin`: bounded response after a trigger; set `budget` and use
+  `allowUserEvents: true` only when adversarial user interference should count.
+
+Model-aware helpers take `model` first and infer `reads` unless provided:
+
+```js
+export function properties(model) {
+  return [
+    always(
+      model,
+      orExpr(
+        notExpr(eq(readVar("sys:route"), lit("/admin"))),
+        eq(readVar("atom:sessionAtom"), lit("authenticated")),
       ),
-    },
-  },
+      { name: "adminRequiresAuth" },
+    ),
+    alwaysStep(
+      model,
+      {
+        negate: true,
+        step: stepEnqueued("api.createTodo"),
+        pre: eq(readVar("atom:authAtom"), lit("guest")),
+      },
+      { name: "guestCannotSubmit" },
+    ),
+    leadsToWithin(
+      model,
+      stepEnqueued("api.placeOrder"),
+      orExpr(
+        eq(readVar("local:App.order"), lit("success")),
+        eq(readVar("local:App.order"), lit("error")),
+      ),
+      { name: "submitResolves", budget: { environment: 3 } },
+    ),
+  ];
+}
+```
+
+Plain object properties are also valid. Declare `reads` explicitly when writing them by
+hand, especially for useful slicing and focused diagnostics:
+
+```js
+export const properties = [
   {
     kind: "alwaysStep",
     name: "staleFailureDoesNotMutateStatus",
@@ -175,46 +211,139 @@ export const properties = [
       ),
     },
   },
-  {
-    kind: "alwaysStep",
-    name: "invalidQuoteCannotEnterBilling",
-    reads: ["local:App.quoteStatus", "local:App.step"],
-    predicate: {
-      negate: true,
-      step: stepAny(),
-      pre: eq(readVar("local:App.quoteStatus"), lit("invalid")),
-      post: eq(readVar("local:App.step"), lit("billing")),
-    },
-  },
-  {
-    kind: "reachableFrom",
-    name: "reviewCanReachSuccess",
-    reads: ["local:App.auth", "local:App.step", "local:App.submitStatus"],
-    when: andExpr(
-      eq(readVar("local:App.auth"), lit("user")),
-      eq(readVar("local:App.step"), lit("review")),
-      eq(readVar("local:App.submitStatus"), lit("idle")),
-    ),
-    goal: eq(readVar("local:App.step"), lit("success")),
-  },
 ];
 ```
 
-For properties built through the model-aware builders `always(model, predicate, options)`, `alwaysStep(model, predicate, options)`, `reachable(model, predicate, options)`, `reachableFrom(model, when, goal, options)`, and `leadsToWithin(model, trigger, goal, options)`, reads can be inferred by walking IR. For direct object properties, declare `reads` explicitly when the property touches model variables. Use state keys as they appear in the extracted model, commonly `local:<Component>.<stateName>`, `sys:pending`, `sys:route`, `atom:<atomName>`, and SWR cache entries such as `swr:<key>:data`, `swr:<key>:error`, or `swr:<key>:isValidating`.
+Use `readVar("id", ["field", "nested"])` for nested records and string index segments
+for bounded lists such as `readVar("sys:pending", ["0", "opId"])`. Use `readPreVar`
+and `readOpArg` only inside step predicates/response properties where pre-state or
+enqueue-time operation args exist.
 
-`readVar("id", ["field", "nested"])` reads nested record fields. For bounded lists such as `sys:pending`, use string path segments for indices, for example `readVar("sys:pending", ["0", "opId"])`. Use `readPreVar` and `readOpArg` only inside step predicates such as `alwaysStep` or `leadsToWithin`; ordinary state predicates for `always`, `reachable`, and `reachableFrom` are evaluated over one state.
+Step predicates may use helper forms or flat metadata matchers such as
+`transitionId`, `transitionClass`, `labelKind`, `enqueued`, `resolved`, `navigated`,
+`navigatedTo`, `opId`, `continuation`, and `opArgs`. Composite step predicates are
+`{ step, pre?, post?, negate? }`.
 
-Flat step predicates can match transition metadata: `{ transitionId: "App.onSubmit" }`, `{ transitionClass: "user" }`, `{ labelKind: "click" }`, `{ enqueued: "api.placeOrder" }`, `{ resolved: ["api.placeOrder", "success"] }`, `{ navigated: true }`, `{ navigatedTo: "/checkout" }`, `{ opId: "api.placeOrder" }`, `{ continuation: "success" }`, or `{ opArgs: { userId: "tok1" } }`. Composite step predicates add optional `pre`, required `step`, optional `post`, and optional `negate`.
+Verdicts include `verified-within-bounds`, `violated`, `reachable`,
+`vacuous-warning`, and `error`. Investigate `vacuous-warning`; it is not a pass.
 
-For Jotai, prefer properties over the atom variable, for example `atom:authAtom`, and use the extracted tagged-union shape when the atom type is a discriminated union. For SWR, read the extracted data variable and nested payload fields through IR when the payload type is finite, for example `readVar("swr:event_snapshot_userId:data", ["application", "applied"])`. If the exact SWR key ID is not obvious, inspect `.modality/model.json` or the generated app model before writing the property.
+## Source And Variable Notes
+
+Common variable IDs:
+
+- `local:<Component>.<state>`: React `useState`, route-scoped and unmounted while
+  outside its route.
+- `atom:<name>` or `atom:<name>@store:<id>`: Jotai atoms.
+- `store:<name>.<field>`: Zustand store fields; actions become write transitions.
+- SWR cache/view variables derived from key classes, commonly data/error/validating
+  projections; inspect the model for exact IDs.
+- `sys:route`, `sys:history`, `sys:pending`, `sys:timer:*`, `sys:suspense:*`, and
+  Next-specific `sys:next:slot:*` / `sys:next:phase:*`.
+
+Supported sources and adapters:
+
+- `useState`: exact finite domains from TypeScript where possible; functional updaters
+  and React 18 batching are modeled.
+- Jotai: primitive/derived/writable atoms, store scoping, hydration; default-store
+  escape risks appear as global taints.
+- Zustand: `create`/`createStore`, fields/actions, selectors, `set`/`get`, common
+  middleware unwrapping, and many immer scalar/object mutations.
+- SWR: trusted per-key cache template, data/error/validating states, revalidation,
+  key windows, stale-data retention on failed revalidate.
+- Router/Next: `sys:route` and bounded `sys:history`; Next takes priority when present
+  and models App/Pages routes, layout/template/page mount scopes, route-tree vars, and
+  server APIs as nondeterministic async effects.
+- React features: effects become internal stabilization transitions; timers are env
+  transitions; Suspense gates subtrees; transitions/deferred values are modeled at
+  macro-step granularity.
+
+Finite domains are essential. Literal unions, discriminated unions, boolean domains,
+finite numeric aliases (`Bounded`, `Uint8`, etc.), and static schemas can be exact.
+Unbounded strings/numbers default to tokens or caveats; refine them only when a property
+needs sharper distinctions.
+
+## Side Effects And Bounds
+
+Name network/effect wrappers with repeated `--effect-api` flags or config. Async
+handlers split into:
+
+- a user transition for the synchronous prefix plus enqueue;
+- environment resolve transitions for success/error outcomes;
+- continuations guarded by outcome and pending operation identity.
+
+The concurrency bound `maxPending`/`K` is load-bearing. Raise it when a property needs
+multiple simultaneous requests, such as double-submit checks. Bound hits are recorded in
+the trust ledger and qualify any verdict.
+
+Continuations should reason about stale closures via `readOpArg` when values are captured
+at enqueue. Stale-read caveats are reported; replay/conformance decides whether a
+reported abstract failure is real app behavior.
+
+## Overlays And Config
+
+Use config for extraction shape and bounds: entry points/routes, plugins/adapters,
+effect APIs, `maxDepth`, `maxPending`, `maxInternalSteps`, `maxHistory`, and replay
+locator conventions.
+
+Use overlays for additive, reviewable model refinements. Prefer overlays when:
+
+- a `tokens` domain hides a property-relevant distinction;
+- a handler is `unextractable`;
+- the environment is too permissive;
+- async outcome payloads/errors need classes;
+- replay needs a missing locator;
+- an irrelevant variable should be explicitly ignored.
+
+Overlay examples:
+
+```ts
+import { overlay, enumOf, byTestId } from "modality-ts/core";
+
+export default overlay(M)
+  .transition("CheckoutPage.onRetry", {
+    reads: ["local:CheckoutPage.order"],
+    writes: ["local:CheckoutPage.order"],
+    effect: (s) => ({
+      ...s,
+      "local:CheckoutPage.order": { kind: "submitting" },
+    }),
+  })
+  .refineDomain("atom:cartTotal", enumOf("zero", "positive"), {
+    witness: { zero: () => 0, positive: () => 42 },
+  })
+  .refinePayload("POST /api/quote", "total", {
+    nonpositive: (t) => t <= 0,
+    positive: (t) => t > 0,
+  })
+  .assume("POST /login", (o) => o.kind !== "success" || o.token !== null)
+  .outcomes("POST /todos", { unauthorized: {}, server: {} })
+  .locator("CheckoutPage.onRetry", byTestId("retry-btn"))
+  .ignoreVar("local:DebugPanel.open");
+```
+
+Overlay entries override matching extracted entries. An entry matching nothing is drift
+and should fail. Use `modality extract --explain-drift` after refactors.
 
 ## Failure Triage
 
-When a check fails, inspect the report first, then open the trace for the shortest counterexample. Decide whether the result reveals a real bug, an overly broad model, a missing side-effect API, an incorrect property, or behavior that should be bounded differently.
+Read the check report before changing code. For each failure, decide whether it is:
 
-Use replay to confirm the failure sequence. If the model diverges from the intended app behavior, update the extraction target, side-effect declarations, finite domains, or property file before treating the result as a product bug.
+- a real product bug (`replay` reproduced);
+- an overly broad model or domain abstraction;
+- a missing/incorrect effect API declaration;
+- an unextractable or over-approx transition that needs an overlay;
+- an incorrect or vacuous property;
+- a bound/search-limit issue;
+- a harness/locator/provider problem.
 
-Extraction caveats matter. An `Unextractable handler` means the flow is not represented directly and may need a simpler handler shape, a supported helper pattern, or an overlay. An `over-approx` transition is useful for bug finding but is not a precise proof; inspect havoc writes and refine code, domains, or overlays when a property needs proof-level confidence. If a modeled side effect has lifecycle behavior that is not in the model, such as aborting or clearing pending requests, encode that behavior with an overlay or keep the property scoped to the modeled semantics.
+For `violated`, open the shortest trace and inspect focused diffs over the property's
+read set. For `leadsToWithin`, distinguish true non-convergence from a too-small budget.
+For `reachableFrom`, use the witness state and nearest-miss/certificate rather than
+expecting an action replay.
+
+Trust-ledger caveats matter. A green run with new global taints, unsound-risk caveats,
+stale model hashes, severe unextractables, or actual bound hits is not the same claim as
+a clean `verified-within-bounds` run.
 
 ## Command Reference
 
@@ -224,7 +353,17 @@ npx modality init
 npx modality extract [source.tsx ...]
 npx modality check [model.json] [props.mjs ...]
 npx modality replay <trace.json>
-npx modality conform --count 8 --depth 4
-npx modality export
-npx modality ci <model.json> [props.mjs] --artifacts .modality
+npx modality conform --model .modality/model.json --count 8 --depth 4
+npx modality export .modality/model.json --format tla --out .modality/model.tla
+npx modality ci .modality/model.json [props.mjs] --artifacts .modality
+```
+
+Inside this repository, run validation commands through the project package manager:
+
+```bash
+rtk pnpm typecheck
+rtk pnpm test
+rtk pnpm architecture
+rtk pnpm phase7
+rtk pnpm fix
 ```
