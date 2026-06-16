@@ -1,6 +1,9 @@
 import * as ts from "typescript";
 import type { AbstractDomain, Value } from "modality-ts/core";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import type {
+  SemanticTypeContext,
+  DomainRefinementProvider,
+} from "modality-ts/extract/engine/spi";
 import {
   firstValue,
   typeAliasDeclarations,
@@ -29,6 +32,7 @@ export function inferFieldDomain(
   varId?: string,
   sourceFile?: ts.SourceFile,
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): FieldDomainResult {
   const unwrappedInitializer = unwrapExpression(initializer);
   const semanticSource = types?.sourceFile ?? sourceFile;
@@ -41,9 +45,15 @@ export function inferFieldDomain(
         typeAliases,
         varId,
         initializer: unwrappedInitializer,
+        domainRefinements,
       },
       new Set(),
-      { initializer: unwrappedInitializer, sourceFile: semanticSource, varId },
+      {
+        initializer: unwrappedInitializer,
+        sourceFile: semanticSource,
+        varId,
+        domainRefinements,
+      },
     );
     const initial = unwrappedInitializer
       ? valueFromExpression(unwrappedInitializer, inferred.domain)
@@ -55,7 +65,12 @@ export function inferFieldDomain(
       typeNode,
       typeAliases,
       new Set(),
-      { initializer: unwrappedInitializer, sourceFile, varId },
+      {
+        initializer: unwrappedInitializer,
+        sourceFile,
+        varId,
+        domainRefinements,
+      },
     );
     const initial = unwrappedInitializer
       ? valueFromExpression(unwrappedInitializer, inferred.domain)
@@ -72,6 +87,7 @@ export function inferFieldDomain(
           typeAliases,
           varId,
           initializer: unwrappedInitializer,
+          domainRefinements,
         },
         typeAliases,
         typeNode,

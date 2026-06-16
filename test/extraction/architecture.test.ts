@@ -361,6 +361,35 @@ describe("extraction architecture surface", () => {
     }
   });
 
+  it("root package exports type-library adapter entry points without harness", () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(testDir, "../../package.json"), "utf8"),
+    );
+    for (const library of ["zod", "arktype"]) {
+      expect(
+        packageJson.exports[`./extract/type-libraries/${library}`],
+      ).toBeTruthy();
+      expect(
+        packageJson.exports[`./extract/type-libraries/${library}/harness`],
+      ).toBeUndefined();
+    }
+  });
+
+  it("extraction engine does not import type-library adapters", async () => {
+    const engineDir = resolve(srcDir, "extract/engine");
+    const files = await sourceFiles(engineDir);
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (specifier.includes("type-libraries")) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("built-in source slices import extraction through the public SPI only", async () => {
     const sourcesDir = resolve(srcDir, "extract/sources");
     const files = await sourceFiles(sourcesDir);

@@ -1,5 +1,8 @@
 import type { AbstractDomain } from "modality-ts/core";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import type {
+  SemanticTypeContext,
+  DomainRefinementProvider,
+} from "modality-ts/extract/engine/spi";
 import {
   inferDomainFromTypeNode,
   typeAliasDeclarations,
@@ -14,6 +17,7 @@ export function inferPayloadDomain(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
   const astDomain = inferDomainFromTypeNode(typeArg, typeAliases);
   if (!typeArg || !types?.checker) {
@@ -25,8 +29,10 @@ export function inferPayloadDomain(
       checker: types.checker,
       sourceFile: types.sourceFile ?? sourceFile,
       typeAliases,
+      domainRefinements,
     },
     new Set(),
+    { domainRefinements },
   ).domain;
   if (astDomain.kind === "tokens" && semanticDomain.kind !== "tokens") {
     return semanticDomain;

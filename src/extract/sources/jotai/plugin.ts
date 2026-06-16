@@ -17,7 +17,12 @@ export function jotaiSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["jotai"],
     discover: (ctx) =>
-      discoverJotaiAtomsDetailed(ctx.sourceText, ctx.fileName, ctx.types).decls,
+      discoverJotaiAtomsDetailed(
+        ctx.sourceText,
+        ctx.fileName,
+        ctx.types,
+        ctx.domainRefinements,
+      ).decls,
     writeChannels: (ctx) =>
       discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName),
     safetyWarnings: (ctx) =>

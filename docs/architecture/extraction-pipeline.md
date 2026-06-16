@@ -62,9 +62,10 @@ downgraded to `unextractable`.
 `D(τ)` maps TypeScript types to [domains](../concepts/state-and-domains.md) using
 `ts.TypeChecker` semantic inference as the primary structural source: records, enums,
 booleans, tagged unions, and other finite shapes flow from inferred types (including
-`z.infer` / `typeof schema.infer` when the checker preserves literals). **Schema
-adapters** (native aliases, Zod, ArkType) are **refinement providers** for constraints
-erased from TypeScript — currently static integer bounds on initializer chains. Record
+`z.infer` / `typeof schema.infer` when the checker preserves literals). **Type-library
+domain refinement providers** (native aliases, Zod, ArkType) recover constraints
+erased from TypeScript — currently static integer bounds on initializer chains; they
+are wired through the CLI registry, not embedded in the numeric engine. Record
 fields are pruned to those actually read.
 
 ### P3 — handler discovery

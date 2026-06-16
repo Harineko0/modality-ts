@@ -6,7 +6,8 @@ import {
   type DomainInferenceContext,
   type DomainInferenceResult,
 } from "./domains.js";
-import { resolveNumericDomain } from "./numeric/resolver.js";
+import { resolveDomainRefinements } from "./domain-refinements.js";
+import type { DomainRefinementProvider } from "../spi/index.js";
 
 const MAX_RECORD_PROPERTIES = 64;
 
@@ -17,6 +18,7 @@ export interface TypeDomainInferenceContext {
   typeAliases?: ReadonlyMap<string, ts.TypeNode>;
   initializer?: ts.Expression;
   declaration?: ts.VariableDeclaration;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export function inferDomainFromType(
@@ -134,15 +136,18 @@ export function inferDomainFromTypeNodeSemanticDetailed(
   // Schema adapters (Zod, ArkType, native Bounded/Wrapping/Uint8) are refinement
   // providers only — non-numerical schema shapes flow through semantic mapping when
   // `z.infer` / `typeof schema.infer` preserves finite structure in the checker.
-  const numeric = resolveNumericDomain({
-    typeNode,
-    initializer: astContext.initializer ?? ctx.initializer,
-    declaration: astContext.declaration ?? ctx.declaration,
-    sourceFile: ctx.sourceFile,
-    typeAliases: ctx.typeAliases ?? new Map(),
-    visited,
-    varId: ctx.varId ?? astContext.varId,
-  });
+  const numeric = resolveDomainRefinements(
+    {
+      typeNode,
+      initializer: astContext.initializer ?? ctx.initializer,
+      declaration: astContext.declaration ?? ctx.declaration,
+      sourceFile: ctx.sourceFile,
+      typeAliases: ctx.typeAliases ?? new Map(),
+      visited,
+      varId: ctx.varId ?? astContext.varId,
+    },
+    ctx.domainRefinements ?? astContext.domainRefinements ?? [],
+  );
   if (numeric.domain) {
     return {
       domain: numeric.domain,
@@ -184,13 +189,16 @@ export function inferDomainFromExpressionSemanticDetailed(
     });
   }
 
-  const numeric = resolveNumericDomain({
-    initializer: expression,
-    sourceFile: ctx.sourceFile,
-    typeAliases,
-    visited: new Set(),
-    varId: ctx.varId,
-  });
+  const numeric = resolveDomainRefinements(
+    {
+      initializer: expression,
+      sourceFile: ctx.sourceFile,
+      typeAliases,
+      visited: new Set(),
+      varId: ctx.varId,
+    },
+    ctx.domainRefinements ?? [],
+  );
   if (numeric.domain) {
     return {
       domain: numeric.domain,

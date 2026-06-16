@@ -13,6 +13,7 @@ import type {
   RouteInventory,
   LocationLowering,
   SemanticTypeContext,
+  DomainRefinementProvider,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
 import { globalTaintCaveat } from "../ts/caveats.js";
@@ -48,6 +49,7 @@ export interface ExtractionPipelineOptions {
   environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
   sourcePlugins?: readonly StateSourcePlugin[];
   routerPlugin?: RouterPlugin;
+  domainRefinements?: readonly DomainRefinementProvider[];
   inventory?: RouteInventory;
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
@@ -66,6 +68,7 @@ export interface ExtractionPipelineResult {
   plugins: {
     sources: readonly PluginProvenance[];
     router?: PluginProvenance;
+    domainRefinements?: readonly PluginProvenance[];
   };
 }
 
@@ -88,13 +91,22 @@ export const extractionPipelinePhases: readonly PipelinePhase[] = [
 export function createPluginRegistry(
   sourcePlugins: readonly StateSourcePlugin[] = [],
   routerPlugin?: RouterPlugin,
+  domainRefinementProviders: readonly DomainRefinementProvider[] = [],
 ): ExtractionPipelineResult["plugins"] {
   validateUniquePlugins(sourcePlugins);
+  validateUniqueDomainRefinementProviders(domainRefinementProviders);
   return {
     sources: sourcePlugins
       .map((plugin) => provenanceForSource(plugin))
       .sort(comparePluginProvenance),
     ...(routerPlugin ? { router: provenanceForRouter(routerPlugin) } : {}),
+    ...(domainRefinementProviders.length > 0
+      ? {
+          domainRefinements: domainRefinementProviders
+            .map((provider) => provenanceForDomainRefinement(provider))
+            .sort(comparePluginProvenance),
+        }
+      : {}),
   };
 }
 
@@ -102,7 +114,12 @@ export function runExtractionPipeline(
   options: ExtractionPipelineOptions,
 ): ExtractionPipelineResult {
   const sourcePlugins = options.sourcePlugins ?? [];
-  const plugins = createPluginRegistry(sourcePlugins, options.routerPlugin);
+  const domainRefinements = options.domainRefinements ?? [];
+  const plugins = createPluginRegistry(
+    sourcePlugins,
+    options.routerPlugin,
+    domainRefinements,
+  );
   const discoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
@@ -128,6 +145,7 @@ export function runExtractionPipeline(
         fileName: fragment.fileName,
         route: options.route,
         ...(types ? { types } : {}),
+        ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
       }),
     }));
   });
@@ -150,6 +168,7 @@ export function runExtractionPipeline(
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
           ...(types ? { types } : {}),
+          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
         }),
       );
     })
@@ -168,6 +187,7 @@ export function runExtractionPipeline(
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
           ...(types ? { types } : {}),
+          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
         }) ?? [],
     );
   });
@@ -195,6 +215,7 @@ export function runExtractionPipeline(
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
+    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
   const supplementalTypeText = discoveryInputs
     .map((fragment) => fragment.sourceText)
@@ -224,6 +245,7 @@ export function runExtractionPipeline(
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
+    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
@@ -307,6 +329,17 @@ function provenanceForSource(plugin: StateSourcePlugin): PluginProvenance {
   };
 }
 
+function provenanceForDomainRefinement(
+  provider: DomainRefinementProvider,
+): PluginProvenance {
+  return {
+    id: provider.id,
+    version: provider.version ?? "unknown",
+    kind: "domain-refinement",
+    packageNames: [...provider.packageNames].sort(),
+  };
+}
+
 function provenanceForRouter(plugin: RouterPlugin): PluginProvenance {
   return {
     id: plugin.id,
@@ -351,6 +384,17 @@ function pluginSafetyWarning(warning: {
       ? { column: warning.source.column }
       : {}),
   };
+}
+
+function validateUniqueDomainRefinementProviders(
+  providers: readonly DomainRefinementProvider[],
+): void {
+  const seen = new Set<string>();
+  for (const provider of providers) {
+    if (seen.has(provider.id))
+      throw new Error(`Duplicate domain refinement provider ${provider.id}`);
+    seen.add(provider.id);
+  }
 }
 
 function validateUniquePlugins(

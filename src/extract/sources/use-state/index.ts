@@ -4,6 +4,7 @@ import type {
   SourceDecl,
   WriteChannel,
   SemanticTypeContext,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import {
   inferUseStateDomainSemanticDetailed,
@@ -19,7 +20,13 @@ export function useStateSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["react"],
     discover: (ctx) =>
-      discoverUseState(ctx.sourceText, ctx.fileName, ctx.route, ctx.types),
+      discoverUseState(
+        ctx.sourceText,
+        ctx.fileName,
+        ctx.route,
+        ctx.types,
+        ctx.domainRefinements,
+      ),
     writeChannels: (ctx) =>
       discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
     harness,
@@ -57,6 +64,7 @@ function discoverUseState(
   fileName = "App.tsx",
   route = "/",
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const typeAliases = typeAliasDeclarations(source);
@@ -81,6 +89,7 @@ function discoverUseState(
           source,
           varId,
           types,
+          domainRefinements ?? [],
         ).domain;
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         const variable: StateVarDecl = {

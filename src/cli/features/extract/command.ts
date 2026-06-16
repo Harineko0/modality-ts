@@ -43,6 +43,7 @@ import type {
   LocationLowering,
   NavigationAdapter,
   NavIntent,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import {
   parseReactRouterRoutes,
@@ -96,6 +97,7 @@ export interface ModalityConfig {
   packageJsonPath?: string;
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
+  domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: RouterPlugin | false;
 }
 
@@ -113,6 +115,7 @@ export interface ExtractCommandOptions {
   configPath?: string;
   disabledPlugins?: readonly string[];
   sourcePlugins?: readonly StateSourcePlugin[];
+  domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: RouterPlugin | false;
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
@@ -157,6 +160,10 @@ export async function runExtractCommand(
     extraSourcePlugins: [
       ...(config.plugins ?? []),
       ...(options.sourcePlugins ?? []),
+    ],
+    extraDomainRefinementProviders: [
+      ...(config.domainRefinements ?? []),
+      ...(options.domainRefinements ?? []),
     ],
     routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
@@ -209,6 +216,7 @@ export async function runExtractCommand(
     environment: config.environment,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: routerAdapter,
+    domainRefinements: registry.domainRefinementProviders,
     inventory: project.inventory,
     bounds: { maxDepth: bounds.maxDepth },
   });
@@ -581,6 +589,7 @@ function runProjectExtractionPipeline(
     environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
     routerPlugin?: RouterPlugin;
+    domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;
   },
@@ -1549,7 +1558,11 @@ function firstSemverMajor(range: string): number | undefined {
 function pluginProvenance(
   plugins: ReturnType<typeof runExtractionPipeline>["plugins"],
 ): NonNullable<Model["metadata"]>["plugins"] {
-  return [...plugins.sources, ...(plugins.router ? [plugins.router] : [])].sort(
+  return [
+    ...plugins.sources,
+    ...(plugins.router ? [plugins.router] : []),
+    ...(plugins.domainRefinements ?? []),
+  ].sort(
     (left, right) =>
       left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
   );

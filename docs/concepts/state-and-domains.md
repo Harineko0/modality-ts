@@ -67,9 +67,11 @@ flowchart TD
   `bool`, `tagged`, …). When a Zod or ArkType schema exports an inferred type
   (`z.infer<typeof S>`, `typeof S.infer`) that preserves finite literals, extraction
   maps those shapes without interpreting the schema runtime.
-- **Schema adapters** recover **refinements erased from TypeScript**, currently static
-  integer bounds from `zod` (`z.number().int().min(a).max(b)`) and `arktype`
-  (`"a <= number.integer <= b"` initializer chains). Runtime-only predicates
+- **Type-library refinement providers** recover **refinements erased from TypeScript**,
+  currently static integer bounds from `zod` (`z.number().int().min(a).max(b)`) and
+  `arktype` (`"a <= number.integer <= b"` initializer chains). Providers live under
+  `src/extract/type-libraries/` and are wired through the CLI registry — they are not
+  part of the extraction engine's numeric module. Runtime-only predicates
   (`z.refine`, custom validators) are not interpreted unless represented in the
   inferred type or an adapter.
 - **Overflow policy** (`forbid | wrap | saturate`) is part of the domain. Reachable

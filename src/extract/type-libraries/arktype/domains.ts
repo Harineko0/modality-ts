@@ -1,17 +1,27 @@
 import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
-import { unprovableNumericDomainCaveat } from "../../caveats.js";
-import {
-  sourceAnchorFromNode,
-  type NumericDomainResolution,
-  type NumericDomainResolverContext,
-} from "../resolver.js";
+import type {
+  DomainRefinementContext,
+  DomainRefinementProvider,
+  DomainRefinementResolution,
+} from "modality-ts/extract/engine/spi";
+import { unprovableNumericDomainCaveat } from "../../engine/ts/caveats.js";
+import { sourceAnchorFromNode } from "../../engine/ts/domain-refinements.js";
 
 const ARKTYPE_INTEGER_RANGE = /^(-?\d+)\s*<=\s*number\.integer\s*<=\s*(-?\d+)$/;
 
-export function resolveArktypeNumericSchema(
-  ctx: NumericDomainResolverContext,
-): NumericDomainResolution | undefined {
+export function arktypeDomainRefinementProvider(): DomainRefinementProvider {
+  return {
+    id: "arktype",
+    version: "0.1.0",
+    packageNames: ["arktype"],
+    refineDomain: resolveArktypeNumericSchema,
+  };
+}
+
+function resolveArktypeNumericSchema(
+  ctx: DomainRefinementContext,
+): DomainRefinementResolution | undefined {
   const expression = expressionFromContext(ctx);
   if (!expression) return undefined;
   const schema = staticStringValue(expression);
@@ -82,7 +92,7 @@ function looksLikeArktypeSchema(expression: ts.Expression): boolean {
 }
 
 function expressionFromContext(
-  ctx: NumericDomainResolverContext,
+  ctx: DomainRefinementContext,
 ): ts.Expression | undefined {
   return ctx.initializer;
 }

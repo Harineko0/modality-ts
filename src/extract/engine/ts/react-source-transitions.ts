@@ -74,6 +74,7 @@ import type {
   StateSourcePlugin,
   WriteChannel,
   SemanticTypeContext,
+  DomainRefinementProvider,
 } from "../spi/index.js";
 import {
   timerSetterTaints,
@@ -151,6 +152,7 @@ export interface ReactSourceTransitionOptions {
   additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
   additionalComponentSources?: readonly string[];
   types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface ReactSourceTransitionResult {
@@ -352,6 +354,7 @@ export function extractReactSourceTransitions(
           providerComponents.has(nextComponent),
         ),
         options.types,
+        options.domainRefinements,
       )
     ) {
       return;
@@ -401,6 +404,7 @@ export function extractReactSourceTransitions(
           source,
           varId,
           options.types,
+          options.domainRefinements ?? [],
         );
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));

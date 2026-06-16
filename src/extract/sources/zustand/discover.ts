@@ -2,6 +2,7 @@ import * as ts from "typescript";
 import type {
   SourceDecl,
   SemanticTypeContext,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
@@ -77,6 +78,7 @@ export function discoverZustandStoresDetailed(
   sourceText: string,
   fileName = "state.ts",
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): DiscoverZustandResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveZustandImports(source);
@@ -136,6 +138,7 @@ export function discoverZustandStoresDetailed(
           storeFieldInitials,
           warnings,
           types,
+          domainRefinements,
         );
       } else {
         const objectLiteral = returnObjectLiteral(creatorCall.creatorFn);
@@ -153,6 +156,7 @@ export function discoverZustandStoresDetailed(
             storeFieldInitials,
             warnings,
             types,
+            domainRefinements,
           );
         }
       }
@@ -193,6 +197,7 @@ function processCombineStore(
   >,
   warnings: { message: string; source?: SourceAnchor }[],
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
   emitStateFieldsFromObject(
     initialLiteral,
@@ -206,6 +211,7 @@ function processCombineStore(
     storeFieldInitials,
     warnings,
     types,
+    domainRefinements,
   );
   const creatorObject = returnObjectLiteral(creatorFn);
   if (creatorObject) {
@@ -243,6 +249,7 @@ function processStoreObject(
   >,
   warnings: { message: string; source?: SourceAnchor }[],
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const actions =
@@ -264,6 +271,7 @@ function processStoreObject(
     storeFieldInitials,
     warnings,
     types,
+    domainRefinements,
   );
   collectActionsFromObject(objectLiteral, storeName, storeActions, storeFields);
 
@@ -290,6 +298,7 @@ function emitStateFieldsFromObject(
   >,
   warnings: { message: string; source?: SourceAnchor }[],
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const initials =
@@ -332,6 +341,7 @@ function emitStateFieldsFromObject(
       varId,
       source,
       types,
+      domainRefinements,
     );
     fields.add(name);
     initials.set(name, fieldDomain.initial);

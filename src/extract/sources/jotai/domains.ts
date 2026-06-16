@@ -5,7 +5,10 @@ import {
   inferDomainFromTypeNode,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import type {
+  SemanticTypeContext,
+  DomainRefinementProvider,
+} from "modality-ts/extract/engine/spi";
 import {
   inferDomainFromExpressionSemanticDetailed,
   inferDomainFromTypeNodeSemanticDetailed,
@@ -41,6 +44,7 @@ export function classifyAtomCall(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AtomClassification {
   const creator = atomCreatorName(call, imports.atomCreators) ?? "atom";
   switch (creator) {
@@ -87,7 +91,14 @@ export function classifyAtomCall(
     case "atomFamily":
       return classifyFamilyAtom(atomName);
     default:
-      return classifyCoreAtom(call, atomName, typeAliases, types, sourceFile);
+      return classifyCoreAtom(
+        call,
+        atomName,
+        typeAliases,
+        types,
+        sourceFile,
+        domainRefinements,
+      );
   }
 }
 
@@ -97,6 +108,7 @@ function classifyCoreAtom(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AtomClassification {
   const args = call.arguments;
   const first = args[0];
@@ -122,9 +134,21 @@ function classifyCoreAtom(
     if (second && isReadFunction(second)) {
       return {
         configKind: "readWriteDerived",
-        domain: inferAtomDomain(call, typeAliases, types, sourceFile),
+        domain: inferAtomDomain(
+          call,
+          typeAliases,
+          types,
+          sourceFile,
+          domainRefinements,
+        ),
         initial: firstValue(
-          inferAtomDomain(call, typeAliases, types, sourceFile),
+          inferAtomDomain(
+            call,
+            typeAliases,
+            types,
+            sourceFile,
+            domainRefinements,
+          ),
         ),
         emitVar: false,
         metadata: {
@@ -169,7 +193,13 @@ function classifyCoreAtom(
       },
     };
   }
-  const domain = inferAtomDomain(call, typeAliases, types, sourceFile);
+  const domain = inferAtomDomain(
+    call,
+    typeAliases,
+    types,
+    sourceFile,
+    domainRefinements,
+  );
   return {
     configKind: "primitive",
     domain,
@@ -557,6 +587,7 @@ export function inferAtomDomain(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
   const semanticSource = types?.sourceFile ?? sourceFile;
@@ -568,11 +599,13 @@ export function inferAtomDomain(
         sourceFile: semanticSource,
         typeAliases,
         initializer: call.arguments[0],
+        domainRefinements,
       },
       new Set(),
       {
         initializer: call.arguments[0],
         sourceFile: semanticSource,
+        domainRefinements,
       },
     ).domain;
   }
@@ -585,6 +618,7 @@ export function inferAtomDomain(
     undefined,
     types,
     semanticSource,
+    domainRefinements,
   );
 }
 
@@ -603,6 +637,7 @@ function domainFromExpression(
   typeArg?: ts.TypeNode,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
   if (typeArg && types?.checker) {
     return inferDomainFromTypeNodeSemanticDetailed(
@@ -612,9 +647,10 @@ function domainFromExpression(
         sourceFile: types.sourceFile ?? sourceFile,
         typeAliases,
         initializer: expr,
+        domainRefinements,
       },
       new Set(),
-      { initializer: expr, sourceFile },
+      { initializer: expr, sourceFile, domainRefinements },
     ).domain;
   }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
@@ -625,6 +661,7 @@ function domainFromExpression(
         checker: types.checker,
         sourceFile: types.sourceFile ?? sourceFile,
         typeAliases,
+        domainRefinements,
       },
       typeAliases,
       typeArg,

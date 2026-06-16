@@ -2,6 +2,7 @@ import type { ExprIR, Value } from "modality-ts/core";
 import type {
   SemanticTypeContext,
   SourceDecl,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
 import { inferPayloadDomain, typeAliasDeclarations } from "./domains.js";
@@ -31,6 +32,7 @@ export function discoverSwrHooks(
   sourceText: string,
   fileName = "App.tsx",
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const useSwrNames = useSwrImportNames(source);
@@ -61,6 +63,7 @@ export function discoverSwrHooks(
               typeAliases,
               types,
               source,
+              domainRefinements,
             ) as Value,
             ...(key.activeWhen ? { activeWhen: key.activeWhen as Value } : {}),
             ...optionsMetadata(node.arguments[2]),

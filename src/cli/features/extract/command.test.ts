@@ -16,11 +16,18 @@ import {
 import { runExtractCommand } from "./index.js";
 import { renderHumanExtractTargets } from "./output.js";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const repoRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../..",
+);
 
 async function mkSchemaExtractTemp(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));
-  await symlink(join(repoRoot, "node_modules"), join(dir, "node_modules"), "dir");
+  await symlink(
+    join(repoRoot, "node_modules"),
+    join(dir, "node_modules"),
+    "dir",
+  );
   return dir;
 }
 
@@ -81,6 +88,8 @@ describe("runExtractCommand", () => {
         plugin.version,
       ]),
     ).toEqual([
+      ["domain-refinement", "arktype", "0.1.0"],
+      ["domain-refinement", "zod", "0.1.0"],
       ["router", "router", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "swr", "0.1.0"],
@@ -3847,6 +3856,137 @@ export function App() {
     expect(
       model.vars.find((decl) => decl.id === "local:App.label")?.domain,
     ).toEqual({ kind: "tokens", count: 1 });
+  });
+
+  it("refines Zod numeric schema initializers through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-numeric-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { z } from "zod";
+export function App() {
+  const [n] = useState(z.number().int().min(0).max(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(model.metadata?.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
+  });
+
+  it("refines ArkType numeric schema initializers through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-numeric-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [n] = useState(type("0 <= number.integer <= 3"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
+  });
+
+  it("disabling zod removes initializer-chain refinement while typed extraction still works", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-disabled-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    const configPath = join(dir, "modality.config.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      JSON.stringify({ disabledPlugins: ["zod"] }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+export function App() {
+  const [typed] = useState<0 | 1 | 2 | 3>(0);
+  const [untyped] = useState(z.number().int().min(0).max(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+      configPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.untyped")?.domain,
+    ).toEqual({ kind: "tokens", count: 1 });
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.typed")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+    });
+    expect(model.metadata?.plugins).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
   });
 });
 

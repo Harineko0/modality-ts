@@ -118,8 +118,8 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | TanStack Query | ❌ 🔜 | template effort like SWR; fits the contract |
 | React Router | ✅ | the built-in [navigation adapter](../sources/router.md) |
 | TanStack Router | ❌ 🔜 | the [engine is framework-blind](../architecture/navigation.md); a new adapter can add it |
-| Zod | ✅ | static `z.number().int().min(a).max(b)` → [`boundedInt`](../concepts/state-and-domains.md#finite-numeric-domains) |
-| ArkType | ✅ | static `"a <= number.integer <= b"` → `boundedInt` |
+| Zod | ✅ | static `z.number().int().min(a).max(b)` via [type-library adapter](../architecture/type-library-adapters.md) |
+| ArkType | ✅ | static `"a <= number.integer <= b"` via [type-library adapter](../architecture/type-library-adapters.md) |
 | Valibot | ❌ 🔜 | no adapter yet |
 | Yup | ❌ | no adapter |
 

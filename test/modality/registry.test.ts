@@ -71,13 +71,31 @@ describe("modality plugin registry", () => {
         dependencies: {
           react: "^18.0.0",
           swr: "^2.0.0",
+          zod: "^4.0.0",
+          arktype: "^2.0.0",
           "react-router-dom": "^6.0.0",
         },
       }),
     ).toMatchObject({
       sourcePluginIds: ["swr", "use-state"],
       routerPluginId: "router",
+      domainRefinementProviders: expect.arrayContaining([
+        expect.objectContaining({ id: "zod" }),
+        expect.objectContaining({ id: "arktype" }),
+      ]),
       plugins: [
+        {
+          id: "arktype",
+          kind: "domain-refinement",
+          version: "0.1.0",
+          packageNames: ["arktype"],
+        },
+        {
+          id: "zod",
+          kind: "domain-refinement",
+          version: "0.1.0",
+          packageNames: ["zod"],
+        },
         {
           id: "router",
           kind: "router",
@@ -127,15 +145,28 @@ describe("modality plugin registry", () => {
           react: "^18.0.0",
           jotai: "^2.0.0",
           swr: "^2.0.0",
+          zod: "^4.0.0",
+          arktype: "^2.0.0",
           "react-router-dom": "^6.0.0",
         },
-        disabledPlugins: ["swr", "router"],
+        disabledPlugins: ["swr", "router", "zod"],
       }),
     ).toMatchObject({
       sourcePluginIds: ["jotai", "use-state"],
+      domainRefinementProviders: [expect.objectContaining({ id: "arktype" })],
       plugins: [
+        { id: "arktype", kind: "domain-refinement" },
         { id: "jotai", kind: "state-source" },
         { id: "use-state", kind: "state-source" },
+      ],
+    });
+  });
+
+  it("enables domain refinement providers when dependencies are unknown", () => {
+    expect(createBuiltinModalityRegistry()).toMatchObject({
+      domainRefinementProviders: [
+        expect.objectContaining({ id: "zod" }),
+        expect.objectContaining({ id: "arktype" }),
       ],
     });
   });

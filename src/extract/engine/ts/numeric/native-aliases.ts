@@ -1,10 +1,10 @@
 import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
-import {
-  numericLiteralFromTypeNode,
-  type NumericDomainResolution,
-  type NumericDomainResolverContext,
-} from "./resolver.js";
+import type {
+  DomainRefinementContext,
+  DomainRefinementResolution,
+} from "../../spi/index.js";
+import { numericLiteralFromTypeNode } from "../domain-refinements.js";
 
 const NATIVE_ALIASES: Record<
   string,
@@ -17,8 +17,8 @@ const NATIVE_ALIASES: Record<
 };
 
 export function resolveNativeNumericAlias(
-  ctx: NumericDomainResolverContext,
-): NumericDomainResolution | undefined {
+  ctx: DomainRefinementContext,
+): DomainRefinementResolution | undefined {
   const ref = typeReference(ctx.typeNode);
   if (!ref) return undefined;
   const { name, typeArgs } = ref;
@@ -51,7 +51,7 @@ function boundedResolution(
   min: number,
   max: number,
   overflow: "forbid" | "wrap",
-): NumericDomainResolution {
+): DomainRefinementResolution {
   const domain: AbstractDomain = {
     kind: "boundedInt",
     min,

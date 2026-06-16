@@ -1,15 +1,25 @@
 import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
-import { unprovableNumericDomainCaveat } from "../../caveats.js";
-import {
-  sourceAnchorFromNode,
-  type NumericDomainResolution,
-  type NumericDomainResolverContext,
-} from "../resolver.js";
+import type {
+  DomainRefinementContext,
+  DomainRefinementProvider,
+  DomainRefinementResolution,
+} from "modality-ts/extract/engine/spi";
+import { unprovableNumericDomainCaveat } from "../../engine/ts/caveats.js";
+import { sourceAnchorFromNode } from "../../engine/ts/domain-refinements.js";
 
-export function resolveZodNumericSchema(
-  ctx: NumericDomainResolverContext,
-): NumericDomainResolution | undefined {
+export function zodDomainRefinementProvider(): DomainRefinementProvider {
+  return {
+    id: "zod",
+    version: "0.1.0",
+    packageNames: ["zod"],
+    refineDomain: resolveZodNumericSchema,
+  };
+}
+
+function resolveZodNumericSchema(
+  ctx: DomainRefinementContext,
+): DomainRefinementResolution | undefined {
   const expression = ctx.initializer ?? ctx.typeNode;
   if (!expression || !ts.isExpression(expression)) return undefined;
   const parsed = parseZodNumberChain(expression);

@@ -1,15 +1,42 @@
 import type {
   AbstractDomain,
   EffectIR,
+  ExtractionCaveat,
   ExprIR,
   Locator,
   ModelState,
+  NumericReduction,
   SourceAnchor,
   StateVarDecl,
   TemplateFragment,
   Value,
 } from "modality-ts/core";
 import type * as ts from "typescript";
+
+export interface DomainRefinementContext {
+  typeNode?: ts.TypeNode;
+  initializer?: ts.Expression;
+  declaration?: ts.VariableDeclaration;
+  sourceFile?: ts.SourceFile;
+  typeAliases: ReadonlyMap<string, ts.TypeNode>;
+  visited: ReadonlySet<string>;
+  varId?: string;
+}
+
+export interface DomainRefinementResolution {
+  domain?: AbstractDomain;
+  caveats: ExtractionCaveat[];
+  reductions?: NumericReduction[];
+}
+
+export interface DomainRefinementProvider {
+  id: string;
+  version?: string;
+  packageNames: readonly string[];
+  refineDomain(
+    ctx: DomainRefinementContext,
+  ): DomainRefinementResolution | undefined;
+}
 
 export interface SemanticTypeContext {
   program: ts.Program;
@@ -59,18 +86,21 @@ export interface DiscoverCtx {
   fileName: string;
   route: string;
   types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface TypeCtx {
   sourceText: string;
   fileName: string;
   types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface ChannelCtx {
   sourceText: string;
   fileName: string;
   types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface ExtractCtx {
@@ -84,6 +114,7 @@ export interface ExtractCtx {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
   types?: SemanticTypeContext;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export interface SourceExtractionResult {

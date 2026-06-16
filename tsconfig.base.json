@@ -46,6 +46,12 @@
       ],
       "modality-ts/extract/sources/use-state/harness": [
         "src/extract/sources/use-state/harness.ts"
+      ],
+      "modality-ts/extract/type-libraries/zod": [
+        "src/extract/type-libraries/zod/index.ts"
+      ],
+      "modality-ts/extract/type-libraries/arktype": [
+        "src/extract/type-libraries/arktype/index.ts"
       ]
     },
     "skipLibCheck": true,

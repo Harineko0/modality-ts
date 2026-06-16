@@ -98,55 +98,13 @@ describe("numeric domain resolver", () => {
     expect(result.caveats[0]?.reason).toContain("bare number");
   });
 
-  it("resolves static zod schema from initializer", () => {
+  it("does not refine Zod schema initializers without providers", () => {
     const { call, sourceFile } = useStateCall(
       `const [n] = useState(z.number().int().min(0).max(3));`,
     );
     const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
-    expect(result.domain).toEqual({
-      kind: "boundedInt",
-      min: 0,
-      max: 3,
-      overflow: "forbid",
-    });
-    expect(result.caveats).toEqual([]);
-  });
-
-  it("resolves typed useState with zod initializer", () => {
-    const { call, sourceFile } = useStateCall(
-      `const [n] = useState<number>(z.number().int().min(0).max(3));`,
-    );
-    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
-    expect(result.domain).toEqual({
-      kind: "boundedInt",
-      min: 0,
-      max: 3,
-      overflow: "forbid",
-    });
-  });
-
-  it("resolves static arktype schema from initializer", () => {
-    const { call, sourceFile } = useStateCall(
-      `const [n] = useState(type("0 <= number.integer <= 3"));`,
-    );
-    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
-    expect(result.domain).toEqual({
-      kind: "boundedInt",
-      min: 0,
-      max: 3,
-      overflow: "forbid",
-    });
-    expect(result.caveats).toEqual([]);
-  });
-
-  it("abstracts dynamic zod schema with caveat", () => {
-    const { call, sourceFile } = useStateCall(
-      `const limit = 3; const [n] = useState(z.number().int().min(0).max(limit));`,
-    );
-    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
     expect(result.domain).toEqual({ kind: "tokens", count: 1 });
-    expect(result.caveats).toHaveLength(1);
-    expect(result.caveats[0]?.reason).toContain("dynamic bounds");
+    expect(result.caveats).toEqual([]);
   });
 
   it("initializes lengthCat from lazy finite Array.from", () => {
@@ -251,34 +209,6 @@ describe("numeric domain resolver", () => {
       min: 0,
       max: 0,
     });
-  });
-
-  it("still resolves Zod bounded int via numeric schema adapter", () => {
-    const { call, sourceFile } = useStateCall(
-      `const [n] = useState(z.number().int().min(0).max(3));`,
-    );
-    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
-    expect(result.domain).toEqual({
-      kind: "boundedInt",
-      min: 0,
-      max: 3,
-      overflow: "forbid",
-    });
-    expect(result.caveats).toEqual([]);
-  });
-
-  it("still resolves ArkType bounded int via numeric schema adapter", () => {
-    const { call, sourceFile } = useStateCall(
-      `const [n] = useState(type("0 <= number.integer <= 3"));`,
-    );
-    const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
-    expect(result.domain).toEqual({
-      kind: "boundedInt",
-      min: 0,
-      max: 3,
-      overflow: "forbid",
-    });
-    expect(result.caveats).toEqual([]);
   });
 
   it("falls back to tokens for z.string() schema initializer without finite literals", () => {

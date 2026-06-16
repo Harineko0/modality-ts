@@ -1,8 +1,11 @@
 import type { PluginProvenance } from "modality-ts/core";
 import type {
+  DomainRefinementProvider,
   NavigationAdapter,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
+import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
+import { zodDomainRefinementProvider } from "modality-ts/extract/type-libraries/zod";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import { nextAdapter } from "modality-ts/extract/sources/next";
 import { reactRouterAdapter } from "modality-ts/extract/sources/router";
@@ -13,12 +16,14 @@ import { zustandSource } from "modality-ts/extract/sources/zustand";
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
+  domainRefinementProviders: readonly DomainRefinementProvider[];
 }
 
 export interface BuiltinRegistryOptions {
   dependencies?: Readonly<Record<string, string>>;
   disabledPlugins?: readonly string[];
   extraSourcePlugins?: readonly StateSourcePlugin[];
+  extraDomainRefinementProviders?: readonly DomainRefinementProvider[];
   routerPlugin?: NavigationAdapter | false;
 }
 
@@ -27,6 +32,7 @@ export interface RegistrySummary {
   routerPluginId?: string;
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
+  domainRefinementProviders: readonly DomainRefinementProvider[];
   plugins: readonly PluginProvenance[];
 }
 
@@ -48,8 +54,24 @@ export function createBuiltinModalityRegistry(
     ),
     ...(options.extraSourcePlugins ?? []),
   ];
+  const domainRefinementBuiltins = [
+    zodDomainRefinementProvider(),
+    arktypeDomainRefinementProvider(),
+  ];
+  const domainRefinementProviders = [
+    ...domainRefinementBuiltins.filter(
+      (provider) =>
+        !disabled.has(provider.id) &&
+        shouldEnableBuiltin(provider, dependencies),
+    ),
+    ...(options.extraDomainRefinementProviders ?? []),
+  ];
   const routerPlugin = resolveBuiltinRouter(options, disabled);
-  return createModalityRegistry({ sourcePlugins, routerPlugin });
+  return createModalityRegistry({
+    sourcePlugins,
+    routerPlugin,
+    domainRefinementProviders,
+  });
 }
 
 function resolveBuiltinRouter(
@@ -84,9 +106,15 @@ function hasDependency(
 }
 
 export function createModalityRegistry(
-  options: ModalityPluginRegistry = { sourcePlugins: [] },
+  options: ModalityPluginRegistry = {
+    sourcePlugins: [],
+    domainRefinementProviders: [],
+  },
 ): RegistrySummary {
+  const domainRefinementProviders = options.domainRefinementProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
+  for (const provider of domainRefinementProviders)
+    validateDomainRefinementProvider(provider);
   if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
   const sourcePluginIds = sortedUnique(
     options.sourcePlugins.map((plugin) => plugin.id),
@@ -95,6 +123,7 @@ export function createModalityRegistry(
   return {
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
+    domainRefinementProviders,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     plugins: [
       ...options.sourcePlugins.map((plugin) => ({
@@ -113,6 +142,12 @@ export function createModalityRegistry(
             },
           ]
         : []),
+      ...domainRefinementProviders.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "domain-refinement" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
     ].sort(
       (left, right) =>
         left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
@@ -152,6 +187,16 @@ function validateStateSourcePlugin(plugin: StateSourcePlugin): void {
       `Invalid source plugin ${plugin.id}: harness.setup and harness.observe are required`,
     );
   }
+}
+
+function validateDomainRefinementProvider(
+  provider: DomainRefinementProvider,
+): void {
+  validateCommonPluginShape(provider, "domain refinement provider");
+  if (typeof provider.refineDomain !== "function")
+    throw new Error(
+      `Invalid domain refinement provider ${provider.id}: refineDomain must be a function`,
+    );
 }
 
 function validateRouterPlugin(plugin: NavigationAdapter): void {

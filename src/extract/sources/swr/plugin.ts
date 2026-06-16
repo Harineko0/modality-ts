@@ -10,7 +10,12 @@ export function swrSource(): StateSourcePlugin {
     version: "0.1.0",
     packageNames: ["swr"],
     discover: (ctx) =>
-      discoverSwrHooks(ctx.sourceText, ctx.fileName, ctx.types),
+      discoverSwrHooks(
+        ctx.sourceText,
+        ctx.fileName,
+        ctx.types,
+        ctx.domainRefinements,
+      ),
     writeChannels: (ctx) =>
       discoverSwrReadChannels(ctx.sourceText, ctx.fileName),
     template: (decl) => templateForSwrDecl(decl),

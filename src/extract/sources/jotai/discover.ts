@@ -2,6 +2,7 @@ import * as ts from "typescript";
 import type {
   SourceDecl,
   SemanticTypeContext,
+  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import {
@@ -62,6 +63,7 @@ export function discoverJotaiAtomsDetailed(
   sourceText: string,
   fileName = "state.ts",
   types?: SemanticTypeContext,
+  domainRefinements?: readonly DomainRefinementProvider[],
 ): DiscoverJotaiResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveJotaiImports(source);
@@ -95,6 +97,7 @@ export function discoverJotaiAtomsDetailed(
           typeAliases,
           types,
           source,
+          domainRefinements,
         );
         atomMetadata.set(atomName, classification.metadata);
         if (classification.warning) {
@@ -111,6 +114,7 @@ export function discoverJotaiAtomsDetailed(
           typeAliases,
           types,
           source,
+          domainRefinements,
         );
         atomNames.add(atomName);
         atomMetadata.set(atomName, classification.metadata);

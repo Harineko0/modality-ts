@@ -6,9 +6,10 @@ import {
   type NumericReduction,
   type Value,
 } from "modality-ts/core";
+import type { DomainRefinementProvider } from "../spi/index.js";
 import { modelSlackCaveat, unprovableNumericDomainCaveat } from "./caveats.js";
 import type { ExtractionWarning } from "./types.js";
-import { resolveNumericDomain } from "./numeric/resolver.js";
+import { resolveDomainRefinements } from "./domain-refinements.js";
 import {
   exactFirstReduction,
   mergeNumericReductions,
@@ -30,6 +31,7 @@ export interface DomainInferenceContext {
   declaration?: ts.VariableDeclaration;
   sourceFile?: ts.SourceFile;
   varId?: string;
+  domainRefinements?: readonly DomainRefinementProvider[];
 }
 
 export function inferDomainFromTypeNode(
@@ -102,6 +104,7 @@ export function inferUseStateDomainDetailed(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   sourceFile?: ts.SourceFile,
   varId?: string,
+  domainRefinements: readonly DomainRefinementProvider[] = [],
 ): DomainInferenceResult {
   const typeArg = call.typeArguments?.[0];
   const initializer = call.arguments[0];
@@ -110,16 +113,20 @@ export function inferUseStateDomainDetailed(
       initializer,
       sourceFile,
       varId,
+      domainRefinements,
     });
   }
   if (initializer) {
-    const schemaResolved = resolveNumericDomain({
-      initializer,
-      sourceFile,
-      typeAliases,
-      visited: new Set(),
-      varId,
-    });
+    const schemaResolved = resolveDomainRefinements(
+      {
+        initializer,
+        sourceFile,
+        typeAliases,
+        visited: new Set(),
+        varId,
+      },
+      domainRefinements,
+    );
     if (schemaResolved.domain) {
       return {
         domain: schemaResolved.domain,
@@ -181,6 +188,7 @@ export function inferUseStateDomainSemanticDetailed(
   sourceFile?: ts.SourceFile,
   varId?: string,
   types?: UseStateSemanticTypeContext,
+  domainRefinements: readonly DomainRefinementProvider[] = [],
 ): DomainInferenceResult {
   const semanticSource = types?.sourceFile;
   const callForSemantic =
@@ -200,12 +208,18 @@ export function inferUseStateDomainSemanticDetailed(
       varId,
       typeAliases: aliasesForSemantic,
       initializer,
+      domainRefinements,
     };
     const semantic = inferDomainFromTypeNodeSemanticDetailed(
       typeArg,
       inferenceCtx,
       new Set(),
-      { initializer, sourceFile: inferenceCtx.sourceFile, varId },
+      {
+        initializer,
+        sourceFile: inferenceCtx.sourceFile,
+        varId,
+        domainRefinements,
+      },
     );
     if (semantic.domain.kind !== "tokens" || semantic.caveats.length > 0) {
       return semantic;
@@ -215,6 +229,7 @@ export function inferUseStateDomainSemanticDetailed(
       typeAliases,
       sourceFile,
       varId,
+      domainRefinements,
     );
     if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
       return ast;
@@ -229,14 +244,18 @@ export function inferUseStateDomainSemanticDetailed(
       varId,
       typeAliases: aliasesForSemantic,
       initializer,
+      domainRefinements,
     };
-    const schemaResolved = resolveNumericDomain({
-      initializer,
-      sourceFile: semanticFile,
-      typeAliases: aliasesForSemantic,
-      visited: new Set(),
-      varId,
-    });
+    const schemaResolved = resolveDomainRefinements(
+      {
+        initializer,
+        sourceFile: semanticFile,
+        typeAliases: aliasesForSemantic,
+        visited: new Set(),
+        varId,
+      },
+      domainRefinements,
+    );
     if (schemaResolved.domain) {
       return {
         domain: schemaResolved.domain,
@@ -256,6 +275,7 @@ export function inferUseStateDomainSemanticDetailed(
         typeAliases,
         sourceFile,
         varId,
+        domainRefinements,
       );
       if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
         return ast;
@@ -268,7 +288,13 @@ export function inferUseStateDomainSemanticDetailed(
       typeArg,
     );
   }
-  return inferUseStateDomainDetailed(call, typeAliases, sourceFile, varId);
+  return inferUseStateDomainDetailed(
+    call,
+    typeAliases,
+    sourceFile,
+    varId,
+    domainRefinements,
+  );
 }
 
 function parseLocalStateVarId(
@@ -421,15 +447,18 @@ function inferNumericDomain(
   visited: ReadonlySet<string>,
   context: DomainInferenceContext,
 ): DomainInferenceResult {
-  const resolved = resolveNumericDomain({
-    typeNode: node,
-    initializer: context.initializer,
-    declaration: context.declaration,
-    sourceFile: context.sourceFile,
-    typeAliases,
-    visited,
-    varId: context.varId,
-  });
+  const resolved = resolveDomainRefinements(
+    {
+      typeNode: node,
+      initializer: context.initializer,
+      declaration: context.declaration,
+      sourceFile: context.sourceFile,
+      typeAliases,
+      visited,
+      varId: context.varId,
+    },
+    context.domainRefinements ?? [],
+  );
   if (resolved.domain) {
     return withDomainReductions(
       {
@@ -1037,15 +1066,18 @@ function domainFromTypeReferenceDetailed(
   const name = node.typeName.getText();
   if (visited.has(name))
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
-  const resolved = resolveNumericDomain({
-    typeNode: node,
-    initializer: context.initializer,
-    declaration: context.declaration,
-    sourceFile: context.sourceFile,
-    typeAliases,
-    visited,
-    varId: context.varId,
-  });
+  const resolved = resolveDomainRefinements(
+    {
+      typeNode: node,
+      initializer: context.initializer,
+      declaration: context.declaration,
+      sourceFile: context.sourceFile,
+      typeAliases,
+      visited,
+      varId: context.varId,
+    },
+    context.domainRefinements ?? [],
+  );
   if (resolved.domain) {
     return withDomainReductions(
       {
