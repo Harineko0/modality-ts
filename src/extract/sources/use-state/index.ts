@@ -5,7 +5,7 @@ import type {
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
 import {
-  inferUseStateDomain,
+  inferUseStateDomainDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
@@ -57,8 +57,13 @@ function discoverUseState(
       const setterName = node.name.elements[1];
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const componentId = component ?? "Anonymous";
-        const domain = inferUseStateDomain(node.initializer, typeAliases);
         const varId = `local:${componentId}.${stateName.name.text}`;
+        const domain = inferUseStateDomainDetailed(
+          node.initializer,
+          typeAliases,
+          source,
+          varId,
+        ).domain;
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         const variable: StateVarDecl = {
           id: varId,
@@ -87,6 +92,9 @@ function discoverUseState(
             ts.isIdentifier(setterName.name)
               ? { setterName: setterName.name.text }
               : {}),
+            ...(isNumericSeedUseState(node.initializer)
+              ? { numericSeed: true }
+              : {}),
           },
         });
       }
@@ -113,6 +121,14 @@ function discoverUseStateWriteChannels(
       },
     ];
   });
+}
+
+function isNumericSeedUseState(call: ts.CallExpression): boolean {
+  return (
+    !call.typeArguments?.[0] &&
+    call.arguments[0] !== undefined &&
+    ts.isNumericLiteral(call.arguments[0])
+  );
 }
 
 function isUseStateCall(node: ts.Expression): node is ts.CallExpression {

@@ -1,4 +1,8 @@
 import { extractSharedReactTransitionInventory } from "../shared/react-transition-extract.js";
+import {
+  collectNumericSeedVarIds,
+  widenNumericDomainsFromTransitions,
+} from "../../engine/ts/numeric/use-state-updaters.js";
 import type {
   ExtractedModelSkeleton,
   UseStateExtractionOptions,
@@ -32,8 +36,14 @@ export function extractUseStateSkeleton(
     ...(options.inventory ? { inventory: options.inventory } : {}),
   };
   const result = extractSharedReactTransitionInventory(ctx);
-  return {
+  const widenedVars = widenNumericDomainsFromTransitions({
     vars: result.vars,
+    transitions: result.transitions,
+    maxDepth: options.bounds?.maxDepth ?? 12,
+    numericSeedVarIds: collectNumericSeedVarIds(sourceText, fileName),
+  });
+  return {
+    vars: widenedVars,
     transitions: result.transitions,
     warnings: result.warnings,
   };

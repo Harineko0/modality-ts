@@ -243,4 +243,13 @@ describe("numeric domain resolver", () => {
       overflow: "forbid",
     });
   });
+
+  it("returns boundedInt for untyped numeric literal useState initializers", () => {
+    const { call } = useStateCall(`const [n] = useState(0);`);
+    expect(inferUseStateDomainDetailed(call).domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 0,
+    });
+  });
 });

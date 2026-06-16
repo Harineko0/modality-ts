@@ -20,6 +20,7 @@ export interface UseStateExtractionOptions {
   sourcePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];
   routerPlugin?: import("../../engine/spi/index.js").RouterPlugin;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
+  bounds?: Pick<import("modality-ts/core").Bounds, "maxDepth">;
 }
 
 export interface ExtractionWarning {

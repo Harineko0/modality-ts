@@ -201,6 +201,7 @@ export async function runExtractCommand(
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: routerAdapter,
     inventory: project.inventory,
+    bounds: { maxDepth: bounds.maxDepth },
   });
   const nextCacheFragments =
     routerAdapter.id === "next"
@@ -564,6 +565,7 @@ function runProjectExtractionPipeline(
     sourcePlugins: readonly StateSourcePlugin[];
     routerPlugin?: RouterPlugin;
     inventory: RouteInventory;
+    bounds?: Pick<Bounds, "maxDepth">;
   },
 ): ExtractionPipelineResult {
   const fragments =

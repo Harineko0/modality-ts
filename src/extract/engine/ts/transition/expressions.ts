@@ -139,6 +139,26 @@ export function valueExpr(
   }
   if (ts.isParenthesizedExpression(expression))
     return valueExpr(expression.expression, setters, locals);
+  if (ts.isCallExpression(expression)) {
+    const mathClamp = mathClampValueExpr(
+      expression,
+      setters,
+      locals,
+      snapshotReads,
+      snapshottedReads,
+    );
+    if (mathClamp) return mathClamp;
+  }
+  if (ts.isBinaryExpression(expression)) {
+    const numeric = numericBinaryValueExpr(
+      expression,
+      setters,
+      locals,
+      snapshotReads,
+      snapshottedReads,
+    );
+    if (numeric) return numeric;
+  }
   if (
     ts.isBinaryExpression(expression) &&
     (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
@@ -343,8 +363,140 @@ export function booleanExpr(
         reads: [...new Set([...left.reads, ...right.reads])],
       };
     }
+    if (
+      expression.operatorToken.kind === ts.SyntaxKind.LessThanToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.LessThanEqualsToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.GreaterThanToken ||
+      expression.operatorToken.kind === ts.SyntaxKind.GreaterThanEqualsToken
+    ) {
+      const left = valueExpr(expression.left, setters, locals);
+      const right = valueExpr(expression.right, setters, locals);
+      if (!left || !right) return undefined;
+      const kind =
+        expression.operatorToken.kind === ts.SyntaxKind.LessThanToken
+          ? "lt"
+          : expression.operatorToken.kind === ts.SyntaxKind.LessThanEqualsToken
+            ? "lte"
+            : expression.operatorToken.kind === ts.SyntaxKind.GreaterThanToken
+              ? "gt"
+              : "gte";
+      return {
+        expr: { kind, args: [left.expr, right.expr] },
+        reads: [...new Set([...left.reads, ...right.reads])],
+      };
+    }
   }
   return undefined;
+}
+
+function numericBinaryValueExpr(
+  expression: ts.BinaryExpression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>,
+  snapshotReads = true,
+  snapshottedReads?: ReadonlySet<string>,
+): BoundExpr | undefined {
+  const op = expression.operatorToken.kind;
+  if (
+    op !== ts.SyntaxKind.PlusToken &&
+    op !== ts.SyntaxKind.MinusToken &&
+    op !== ts.SyntaxKind.PercentToken
+  ) {
+    return undefined;
+  }
+  const left = valueExpr(
+    expression.left,
+    setters,
+    locals,
+    snapshotReads,
+    snapshottedReads,
+  );
+  const right = valueExpr(
+    expression.right,
+    setters,
+    locals,
+    snapshotReads,
+    snapshottedReads,
+  );
+  if (!left || !right) return undefined;
+  if (op === ts.SyntaxKind.PlusToken) {
+    const hasNumericLiteral =
+      (left.expr.kind === "lit" && typeof left.expr.value === "number") ||
+      (right.expr.kind === "lit" && typeof right.expr.value === "number");
+    if (!hasNumericLiteral) return undefined;
+  }
+  const kind =
+    op === ts.SyntaxKind.PlusToken
+      ? "add"
+      : op === ts.SyntaxKind.MinusToken
+        ? "sub"
+        : "mod";
+  return {
+    expr: { kind, args: [left.expr, right.expr] },
+    reads: [...new Set([...left.reads, ...right.reads])],
+  };
+}
+
+function mathClampValueExpr(
+  expression: ts.CallExpression,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr>,
+  snapshotReads = true,
+  snapshottedReads?: ReadonlySet<string>,
+): BoundExpr | undefined {
+  if (!ts.isPropertyAccessExpression(expression.expression)) return undefined;
+  const object = expression.expression.expression;
+  if (!ts.isIdentifier(object) || object.text !== "Math") return undefined;
+  const method = expression.expression.name.text;
+  if (method !== "min" && method !== "max") return undefined;
+  if (expression.arguments.length !== 2) return undefined;
+  const [arg0, arg1] = expression.arguments;
+  if (!arg0 || !arg1) return undefined;
+  let exprArg: ts.Expression;
+  let litArg: ts.Expression;
+  if (ts.isNumericLiteral(arg0) && !ts.isNumericLiteral(arg1)) {
+    litArg = arg0;
+    exprArg = arg1;
+  } else if (ts.isNumericLiteral(arg1) && !ts.isNumericLiteral(arg0)) {
+    litArg = arg1;
+    exprArg = arg0;
+  } else {
+    return undefined;
+  }
+  const boundExpr = valueExpr(
+    exprArg,
+    setters,
+    locals,
+    snapshotReads,
+    snapshottedReads,
+  );
+  const lit = literalValue(litArg);
+  if (!boundExpr || typeof lit !== "number") return undefined;
+  const litExpr: ExprIR = { kind: "lit", value: lit };
+  if (method === "min") {
+    return {
+      expr: {
+        kind: "cond",
+        args: [
+          { kind: "lte", args: [boundExpr.expr, litExpr] },
+          boundExpr.expr,
+          litExpr,
+        ],
+      },
+      reads: boundExpr.reads,
+    };
+  }
+  return {
+    expr: {
+      kind: "cond",
+      args: [
+        { kind: "gte", args: [boundExpr.expr, litExpr] },
+        boundExpr.expr,
+        litExpr,
+      ],
+    },
+    reads: boundExpr.reads,
+  };
 }
 
 export function modeledReadExpr(

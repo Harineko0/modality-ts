@@ -4,6 +4,7 @@ import type {
   StateVarDecl,
   TemplateFragment,
   Transition,
+  Bounds,
 } from "modality-ts/core";
 import type {
   StateSourcePlugin,
@@ -16,6 +17,7 @@ import { extractReactSourceTransitions } from "../ts/react-source-transitions.js
 import { globalTaintCaveat } from "../ts/caveats.js";
 import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
+import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
 import * as ts from "typescript";
 
@@ -46,6 +48,7 @@ export interface ExtractionPipelineOptions {
   inventory?: RouteInventory;
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
+  bounds?: Pick<Bounds, "maxDepth">;
 }
 
 export interface ExtractionPipelineResult {
@@ -227,6 +230,19 @@ export function runExtractionPipeline(
           options.lowering,
         )
       : [];
+  const numericSeedVarIds = new Set(
+    discoveries
+      .flatMap((discovery) => discovery.decls)
+      .filter((decl) => decl.metadata?.numericSeed === true)
+      .map((decl) => decl.id),
+  );
+  const mergedStateVars = [...stateVars, ...additionalVars];
+  const widenedStateVars = widenNumericDomainsFromTransitions({
+    vars: mergedStateVars,
+    transitions,
+    maxDepth: options.bounds?.maxDepth ?? 12,
+    numericSeedVarIds,
+  });
   return {
     transitions,
     warnings: [
@@ -234,7 +250,7 @@ export function runExtractionPipeline(
       ...genericExtraction.warnings,
       ...pluginWarnings.map((warning) => pluginSafetyWarning(warning)),
     ],
-    stateVars: [...stateVars, ...additionalVars],
+    stateVars: widenedStateVars,
     templateFragments,
     routeVars,
     writeChannels,

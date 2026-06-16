@@ -4478,4 +4478,169 @@ describe("React Router form action submits", () => {
       count: { kind: "lit", value: 2 },
     });
   });
+
+  it("lowers functional numeric updater arithmetic to add and sub", () => {
+    const increment = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return <button onClick={() => setCount((s) => s + 1)}>Inc</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      increment.transitions.find((transition) =>
+        transition.id.includes("count"),
+      )?.effect,
+    ).toMatchObject({
+      kind: "assign",
+      var: "local:App.count",
+      expr: {
+        kind: "add",
+        args: [
+          { kind: "read", var: "local:App.count" },
+          { kind: "lit", value: 1 },
+        ],
+      },
+    });
+
+    const decrement = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return <button onClick={() => setCount((s) => s - 1)}>Dec</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      decrement.transitions.find((transition) =>
+        transition.id.includes("count"),
+      )?.effect,
+    ).toMatchObject({
+      kind: "assign",
+      var: "local:App.count",
+      expr: {
+        kind: "sub",
+        args: [
+          { kind: "read", var: "local:App.count" },
+          { kind: "lit", value: 1 },
+        ],
+      },
+    });
+  });
+
+  it("lowers Math.min and Math.max numeric clamps in functional updaters", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return (
+          <button onClick={() => setCount((s) => Math.min(s + 10, 300))}>
+            Add
+          </button>
+        );
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.transitions.find((transition) => transition.id.includes("count"))
+        ?.effect,
+    ).toMatchObject({
+      kind: "assign",
+      var: "local:App.count",
+      expr: {
+        kind: "cond",
+        args: [
+          {
+            kind: "lte",
+            args: [
+              {
+                kind: "add",
+                args: [
+                  { kind: "read", var: "local:App.count" },
+                  { kind: "lit", value: 10 },
+                ],
+              },
+              { kind: "lit", value: 300 },
+            ],
+          },
+          {
+            kind: "add",
+            args: [
+              { kind: "read", var: "local:App.count" },
+              { kind: "lit", value: 10 },
+            ],
+          },
+          { kind: "lit", value: 300 },
+        ],
+      },
+    });
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.count")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 300,
+      overflow: "forbid",
+    });
+  });
+
+  it("does not lower string concatenation in functional updaters to numeric add", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [label, setLabel] = useState('a');
+        return <button onClick={() => setLabel((s) => s + 'x')}>Append</button>;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    const transition = result.transitions.find((entry) =>
+      entry.id.includes("label"),
+    );
+    expect(transition?.effect.kind).toBe("havoc");
+    expect(transition?.id).toContain(".unrepresentable");
+  });
+
+  it("widens LaneTimer-like draftSec domains through extractUseStateSkeleton", () => {
+    const maxDepth = 12;
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function LaneTimer() {
+        const [draftSec, setDraftSec] = useState(0);
+        return (
+          <>
+            <button onClick={() => setDraftSec((s) => s + 10)}>+10秒</button>
+            <button onClick={() => setDraftSec((s) => s + 60)}>+1分</button>
+            <button onClick={() => setDraftSec((s) => s + 180)}>+3分</button>
+            <button onClick={() => setDraftSec(0)}>リセット</button>
+          </>
+        );
+      }
+      `,
+      { route: "/", fileName: "LaneTimer.tsx", bounds: { maxDepth } },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:LaneTimer.draftSec")
+        ?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 180 * maxDepth,
+      overflow: "forbid",
+    });
+    expect(
+      result.transitions.some((transition) =>
+        transition.id.includes("draftSec.unrepresentable"),
+      ),
+    ).toBe(false);
+  });
 });

@@ -12,6 +12,7 @@ import {
 import type { RouterPlugin } from "modality-ts/extract/engine/spi";
 import { locationVars } from "../../src/extract/sources/router/routes.js";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(testDir, "../../src");
@@ -394,6 +395,83 @@ describe("extraction architecture surface", () => {
     const entries = await readdir(typesDir, { withFileTypes: true });
     expect(
       entries.every((entry) => entry.isFile() && entry.name.endsWith(".d.ts")),
+    ).toBe(true);
+  });
+
+  it("widens untyped numeric useState domains from functional updater transitions", () => {
+    const maxDepth = 12;
+    const sourceText = `
+      import { useState } from "react";
+
+      export function LaneTimer() {
+        const [draftSec, setDraftSec] = useState(0);
+        return (
+          <>
+            <button onClick={() => setDraftSec((s) => s + 10)}>+10秒</button>
+            <button onClick={() => setDraftSec((s) => s + 60)}>+1分</button>
+            <button onClick={() => setDraftSec((s) => s + 180)}>+3分</button>
+            <button onClick={() => setDraftSec(0)}>リセット</button>
+          </>
+        );
+      }
+    `;
+    const result = runExtractionPipeline({
+      sourceText,
+      fileName: "LaneTimer.tsx",
+      route: "/",
+      sourcePlugins: [useStateSource()],
+      bounds: { maxDepth },
+    });
+    const draftSec = result.stateVars.find(
+      (decl) => decl.id === "local:LaneTimer.draftSec",
+    );
+    expect(draftSec).toBeDefined();
+    expect(draftSec?.domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 180 * maxDepth,
+      overflow: "forbid",
+    });
+    const draftTransitions = result.transitions.filter((transition) =>
+      transition.id.includes("draftSec"),
+    );
+    expect(
+      draftTransitions.some((transition) =>
+        transition.id.includes(".unrepresentable"),
+      ),
+    ).toBe(false);
+    const incrementTransitions = draftTransitions.filter(
+      (transition) => transition.effect.kind === "assign",
+    );
+    expect(incrementTransitions).toHaveLength(4);
+    expect(
+      incrementTransitions.filter(
+        (transition) =>
+          transition.effect.kind === "assign" &&
+          transition.effect.expr.kind === "add",
+      ),
+    ).toHaveLength(3);
+    for (const delta of [10, 60, 180]) {
+      expect(
+        incrementTransitions.some(
+          (transition) =>
+            transition.effect.kind === "assign" &&
+            transition.effect.expr.kind === "add" &&
+            transition.effect.expr.args[0]?.kind === "read" &&
+            transition.effect.expr.args[0]?.var ===
+              "local:LaneTimer.draftSec" &&
+            transition.effect.expr.args[1]?.kind === "lit" &&
+            transition.effect.expr.args[1]?.value === delta,
+        ),
+      ).toBe(true);
+    }
+    expect(
+      incrementTransitions.some(
+        (transition) =>
+          transition.effect.kind === "assign" &&
+          transition.effect.expr.kind === "lit" &&
+          transition.effect.expr.value === 0,
+      ),
     ).toBe(true);
   });
 });

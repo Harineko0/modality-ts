@@ -206,4 +206,29 @@ describe("useState source plugin", () => {
       },
     ]);
   });
+
+  it("discovers untyped numeric useState initializers as singleton boundedInt seeds", () => {
+    const plugin = useStateSource();
+    const sourceText = `
+      import { useState } from 'react';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return null;
+      }
+    `;
+    const decl = plugin
+      .discover({ sourceText, fileName: "App.tsx", route: "/" })
+      .find((entry) => entry.id === "local:App.count");
+    expect(decl?.var?.domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 0,
+    });
+    expect(decl?.metadata).toMatchObject({
+      component: "App",
+      stateName: "count",
+      setterName: "setCount",
+      numericSeed: true,
+    });
+  });
 });

@@ -133,9 +133,18 @@ export function inferUseStateDomainDetailed(
       initializer.kind === ts.SyntaxKind.FalseKeyword
     )
       return { domain: { kind: "bool" }, caveats: [] };
-    if (ts.isStringLiteral(initializer) || ts.isNumericLiteral(initializer))
+    if (ts.isStringLiteral(initializer))
       return {
         domain: { kind: "enum", values: [initializer.text] },
+        caveats: [],
+      };
+    if (ts.isNumericLiteral(initializer))
+      return {
+        domain: {
+          kind: "boundedInt",
+          min: Number(initializer.text),
+          max: Number(initializer.text),
+        },
         caveats: [],
       };
     if (initializer.kind === ts.SyntaxKind.NullKeyword)
