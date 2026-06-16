@@ -68,9 +68,10 @@ See [State & domains](../concepts/state-and-domains.md#finite-numeric-domains).
 
 Prefer **static TypeScript types** (including `z.infer` / `typeof schema.infer`) when
 the checker exposes finite structure — extraction maps them directly with no overlay.
-Use **schema initializer chains** when numeric bounds are erased from the inferred type
-but provable on the schema AST (static `z.number().int().min/max`, arktype integer
-ranges). Reach for an **overlay** when:
+Use **schema initializer chains** when bounds are erased from the inferred type
+but provable on the schema AST (static `z.number().int().min/max`, ArkType string
+literal unions, integer ranges, and bounded `number.integer % n` intersections).
+Reach for an **overlay** when:
 
 - a property needs a distinction hidden by `tokens` (predicate abstraction);
 - runtime-only schema predicates are not reflected in TypeScript;

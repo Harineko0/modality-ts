@@ -22,6 +22,7 @@ export function jotaiSource(): StateSourcePlugin {
         ctx.fileName,
         ctx.types,
         ctx.domainRefinements,
+        ctx.relatedFragments,
       ).decls,
     writeChannels: (ctx) =>
       discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName),

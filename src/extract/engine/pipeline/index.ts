@@ -120,20 +120,17 @@ export function runExtractionPipeline(
     options.routerPlugin,
     domainRefinements,
   );
-  const discoveryFragments = options.discoverFragments ?? [
+  const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
-  const mergedDiscoveryFragment = {
-    sourceText: discoveryFragments
-      .map((fragment) => fragment.sourceText)
-      .join("\n"),
-    fileName: options.fileName,
-  };
-  const discoveryInputs =
-    discoveryFragments.length > 1
-      ? [mergedDiscoveryFragment]
-      : discoveryFragments;
-  const discoveries = discoveryInputs.flatMap((fragment) => {
+  const discoveryInputs = allDiscoveryFragments.filter(
+    (fragment) => fragment.fileName === options.fileName,
+  );
+  const discoveryFragments =
+    discoveryInputs.length > 0
+      ? discoveryInputs
+      : [{ sourceText: options.sourceText, fileName: options.fileName }];
+  const discoveries = discoveryFragments.flatMap((fragment) => {
     const types = semanticTypeContextForFile(
       options.semanticProject,
       fragment.fileName,
@@ -144,6 +141,7 @@ export function runExtractionPipeline(
         sourceText: fragment.sourceText,
         fileName: fragment.fileName,
         route: options.route,
+        relatedFragments: allDiscoveryFragments,
         ...(types ? { types } : {}),
         ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
       }),
@@ -157,7 +155,7 @@ export function runExtractionPipeline(
       (decl, index, all) =>
         all.findIndex((candidate) => candidate.id === decl.id) === index,
     );
-  const writeChannels = discoveryInputs
+  const writeChannels = discoveryFragments
     .flatMap((fragment) => {
       const types = semanticTypeContextForFile(
         options.semanticProject,
@@ -176,7 +174,7 @@ export function runExtractionPipeline(
       (channel, index, all) =>
         all.findIndex((candidate) => candidate.id === channel.id) === index,
     );
-  const pluginWarnings = discoveryInputs.flatMap((fragment) => {
+  const pluginWarnings = discoveryFragments.flatMap((fragment) => {
     const types = semanticTypeContextForFile(
       options.semanticProject,
       fragment.fileName,
@@ -217,7 +215,7 @@ export function runExtractionPipeline(
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const supplementalTypeText = discoveryInputs
+  const supplementalTypeText = allDiscoveryFragments
     .map((fragment) => fragment.sourceText)
     .join("\n");
   const supplementalTypes = typeAliasDeclarations(
@@ -238,7 +236,7 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     additionalTypeAliases: supplementalTypes,
-    additionalComponentSources: discoveryFragments
+    additionalComponentSources: allDiscoveryFragments
       .filter((fragment) => fragment.fileName !== options.fileName)
       .map((fragment) => fragment.sourceText),
     ...(options.environment ? { environment: options.environment } : {}),

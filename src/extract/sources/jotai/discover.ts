@@ -64,6 +64,8 @@ export function discoverJotaiAtomsDetailed(
   fileName = "state.ts",
   types?: SemanticTypeContext,
   domainRefinements?: readonly DomainRefinementProvider[],
+  relatedFragments?: readonly { sourceText: string; fileName: string }[],
+  options?: { skipStoreDuplication?: boolean },
 ): DiscoverJotaiResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveJotaiImports(source);
@@ -212,8 +214,35 @@ export function discoverJotaiAtomsDetailed(
 
   const componentStoreScopes = discoverComponentStoreScopes(source, imports);
   const storeScopedDecls: SourceDecl[] = [];
-  for (const storeScope of new Set(componentStoreScopes.values())) {
-    storeScopedDecls.push(...duplicateAtomsForStore(hydratedDecls, storeScope));
+  if (!options?.skipStoreDuplication) {
+    let atomsForStoreDuplication = hydratedDecls;
+    if (componentStoreScopes.size > 0 && relatedFragments) {
+      const externalDecls = relatedFragments
+        .filter((fragment) => fragment.fileName !== fileName)
+        .flatMap((fragment) =>
+          discoverJotaiAtomsDetailed(
+            fragment.sourceText,
+            fragment.fileName,
+            types,
+            domainRefinements,
+            relatedFragments,
+            { skipStoreDuplication: true },
+          ).decls.filter((decl) => decl.var),
+        );
+      const seen = new Set<string>();
+      atomsForStoreDuplication = [...hydratedDecls, ...externalDecls].filter(
+        (decl) => {
+          if (!decl.var || seen.has(decl.var.id)) return false;
+          seen.add(decl.var.id);
+          return true;
+        },
+      );
+    }
+    for (const storeScope of new Set(componentStoreScopes.values())) {
+      storeScopedDecls.push(
+        ...duplicateAtomsForStore(atomsForStoreDuplication, storeScope),
+      );
+    }
   }
 
   return {

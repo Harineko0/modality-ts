@@ -5,7 +5,7 @@ sidebar_label: Type-library adapters
 ---
 
 Zod, ArkType, and future schema libraries integrate as **domain refinement
-providers** — not state sources. They recover finite numeric bounds from schema
+providers** — not state sources. They recover finite constraints from schema
 initializer chains when TypeScript erases those constraints from inferred types.
 
 ## Where they live
@@ -28,11 +28,34 @@ Zustand, SWR). Do not place schema adapters there.
 
 - Inspect **static** TypeScript syntax on initializer chains (no runtime `zod` /
   `arktype` dependency in the extractor).
-- Return `boundedInt` when integer min/max are provable on the schema AST.
+- Return exact finite domains when constraints are provable on the schema AST.
 - Abstain (or emit a caveat) when bounds are dynamic or grammar is unsupported.
 - Do **not** interpret full schema runtimes; non-numerical shapes flow through
   TypeScript semantic mapping when `z.infer` / `typeof schema.infer` preserves
   finite structure.
+
+## ArkType static subset
+
+The ArkType adapter intentionally supports only a narrow, sound grammar on
+`type("…")` initializer strings:
+
+| ArkType grammar | Modality domain |
+| --- | --- |
+| `'a' \| 'b'` string literal unions | `enum` |
+| `a <= number.integer <= b` | `boundedInt` |
+| bounded `number.integer % n` intersections | `intSet` or `boundedInt` |
+
+Recognized but **not** refined (caveat + overlay/predicate usually needed):
+
+- string length (`string > 0`, `string.alphanumeric >= 3`, …)
+- array length (`string[] > 0`, `0 < string[] <= 10`, …)
+- unbounded divisors (`number % 2`, `number.integer % 2`)
+
+Zod recovers static integer domains from `z.number().int()` chains with static
+two-sided bounds, including inclusive aliases (`min`/`gte`, `max`/`lte`),
+exclusive bounds (`gt`/`lt`), sign aliases (`positive`, `nonnegative`,
+`negative`, `nonpositive`), and finite `multipleOf`/`step` divisibility filters
+(`boundedInt` when dense, `intSet` when sparse).
 
 ## Wiring and provenance
 

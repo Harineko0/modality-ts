@@ -54,7 +54,7 @@ flowchart TD
   q -->|"literal union 0..3"| r1["intSet or boundedInt 0..3"]
   q -->|"Bounded&lt;0,3&gt;"| r2["boundedInt 0..3 (forbid)"]
   q -->|"Uint8 / Byte"| r3["boundedInt 0..255 (wrap)"]
-  q -->|"zod / arktype static schema"| r4["boundedInt 0..3"]
+  q -->|"zod / arktype static schema"| r4["boundedInt / enum / intSet"]
   q -->|"bare number / float / dynamic"| t["tokens(1) + caveat"]
 ```
 
@@ -68,8 +68,12 @@ flowchart TD
   (`z.infer<typeof S>`, `typeof S.infer`) that preserves finite literals, extraction
   maps those shapes without interpreting the schema runtime.
 - **Type-library refinement providers** recover **refinements erased from TypeScript**,
-  currently static integer bounds from `zod` (`z.number().int().min(a).max(b)`) and
-  `arktype` (`"a <= number.integer <= b"` initializer chains). Providers live under
+  currently static integer bounds from `zod` (`.int()` with static two-sided bounds,
+  inclusive/exclusive aliases, sign aliases, and finite `multipleOf`/`step`) and
+  a narrow ArkType grammar on `type("…")` initializer strings: string literal unions
+  (`enum`), inclusive integer ranges (`boundedInt`), and bounded `number.integer % n`
+  intersections (`intSet` or `boundedInt`). String length, array length, and unbounded
+  divisors are recognized but caveated. Providers live under
   `src/extract/type-libraries/` and are wired through the CLI registry — they are not
   part of the extraction engine's numeric module. Runtime-only predicates
   (`z.refine`, custom validators) are not interpreted unless represented in the

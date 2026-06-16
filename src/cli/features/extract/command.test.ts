@@ -3566,6 +3566,62 @@ export function App() {
     ).toEqual({ kind: "tokens", count: 1 });
   });
 
+  it("preserves imported enum domains in multi-file extraction regardless of file order", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-multifile-"));
+    const typesPath = join(dir, "types.ts");
+    const alphaPath = join(dir, "Alpha.tsx");
+    const betaPath = join(dir, "Beta.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      typesPath,
+      `export type Status = "idle" | "done";\n`,
+      "utf8",
+    );
+    await writeFile(
+      alphaPath,
+      `import { useState } from "react";
+export function Alpha() {
+  const [flag] = useState(false);
+  return null;
+}
+`,
+      "utf8",
+    );
+    await writeFile(
+      betaPath,
+      `import { useState } from "react";
+import type { Status } from "./types.js";
+export function Beta() {
+  const [status] = useState<Status>("idle");
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePaths: [alphaPath, betaPath],
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:Beta.status")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["done", "idle"],
+    });
+    expect(
+      model.vars.find((decl) => decl.id === "local:Alpha.flag")?.domain,
+    ).toEqual({ kind: "bool" });
+  });
+
   it("extracts Jotai atom domains from imported type aliases", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
     const typesPath = join(dir, "types.ts");
@@ -3899,6 +3955,47 @@ export function App() {
     );
   });
 
+  it("refines Zod exclusive-bound alias chains through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-zod-gt-lte-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", zod: "^4.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { z } from "zod";
+export function App() {
+  const [n] = useState(z.number().int().gt(0).lte(3));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "boundedInt",
+      min: 1,
+      max: 3,
+      overflow: "forbid",
+    });
+    expect(model.metadata?.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+      ]),
+    );
+  });
+
   it("refines ArkType numeric schema initializers through registry providers", async () => {
     const dir = await mkSchemaExtractTemp("modality-extract-arktype-numeric-");
     const sourcePath = join(dir, "App.tsx");
@@ -3931,6 +4028,75 @@ export function App() {
       kind: "boundedInt",
       min: 0,
       max: 3,
+      overflow: "forbid",
+    });
+  });
+
+  it("refines ArkType string literal unions through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-literals-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [label] = useState(type("'idle' | 'posting'"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({
+      kind: "enum",
+      values: ["idle", "posting"],
+    });
+  });
+
+  it("refines ArkType bounded divisor schemas through registry providers", async () => {
+    const dir = await mkSchemaExtractTemp("modality-extract-arktype-divisor-");
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({
+        dependencies: { react: "^18.0.0", arktype: "^2.0.0" },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `import { useState } from "react";
+import { type } from "arktype";
+export function App() {
+  const [n] = useState(type("-5 <= (number.integer % 2) <= 5"));
+  return null;
+}
+`,
+      "utf8",
+    );
+
+    await runExtractCommand({ sourcePath, modelPath, packageJsonPath });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.find((decl) => decl.id === "local:App.n")?.domain,
+    ).toEqual({
+      kind: "intSet",
+      values: [-4, -2, 0, 2, 4],
       overflow: "forbid",
     });
   });

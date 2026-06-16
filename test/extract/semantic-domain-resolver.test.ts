@@ -510,4 +510,176 @@ export function App() {
     );
     expect(result.domain).toEqual({ kind: "tokens", count: 1 });
   });
+
+  it("maps string literal expressions to enum domains", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const { checker, sourceFile, node } = semanticCtx(
+      [{ path: appPath, text: `export const label = "idle";` }],
+      appPath,
+      (source) => {
+        let literal: ts.StringLiteral | undefined;
+        const visit = (current: ts.Node): void => {
+          if (ts.isStringLiteral(current)) {
+            literal = current;
+            return;
+          }
+          ts.forEachChild(current, visit);
+        };
+        visit(source);
+        return literal;
+      },
+    );
+    const result = inferDomainFromExpressionSemanticDetailed(
+      node as ts.Expression,
+      { checker, sourceFile },
+    );
+    expect(result.domain).toEqual({ kind: "enum", values: ["idle"] });
+  });
+
+  it("maps numeric literal expressions to one-value boundedInt domains", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const { checker, sourceFile, node } = semanticCtx(
+      [{ path: appPath, text: `export const count = 0;` }],
+      appPath,
+      (source) => {
+        let literal: ts.NumericLiteral | undefined;
+        const visit = (current: ts.Node): void => {
+          if (ts.isNumericLiteral(current)) {
+            literal = current;
+            return;
+          }
+          ts.forEachChild(current, visit);
+        };
+        visit(source);
+        return literal;
+      },
+    );
+    const result = inferDomainFromExpressionSemanticDetailed(
+      node as ts.Expression,
+      { checker, sourceFile },
+    );
+    expect(result.domain).toEqual({ kind: "boundedInt", min: 0, max: 0 });
+  });
+
+  it("maps boolean literal expressions to bool domains", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const { checker, sourceFile, node } = semanticCtx(
+      [{ path: appPath, text: `export const active = true;` }],
+      appPath,
+      (source) => {
+        let literal: ts.Node | undefined;
+        const visit = (current: ts.Node): void => {
+          if (current.kind === ts.SyntaxKind.TrueKeyword) {
+            literal = current;
+            return;
+          }
+          ts.forEachChild(current, visit);
+        };
+        visit(source);
+        return literal;
+      },
+    );
+    const result = inferDomainFromExpressionSemanticDetailed(
+      node as ts.Expression,
+      { checker, sourceFile },
+    );
+    expect(result.domain).toEqual({ kind: "bool" });
+  });
+
+  it("does not model string literals as records with length", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const { checker, sourceFile, node } = semanticCtx(
+      [{ path: appPath, text: `export const label = "idle";` }],
+      appPath,
+      (source) => {
+        let literal: ts.StringLiteral | undefined;
+        const visit = (current: ts.Node): void => {
+          if (ts.isStringLiteral(current)) {
+            literal = current;
+            return;
+          }
+          ts.forEachChild(current, visit);
+        };
+        visit(source);
+        return literal;
+      },
+    );
+    const expressionType = checker.getTypeAtLocation(node as ts.Expression);
+    const result = inferDomainFromTypeDetailed(expressionType, {
+      checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({ kind: "enum", values: ["idle"] });
+    expect(result.domain).not.toMatchObject({
+      kind: "record",
+      fields: { length: expect.anything() },
+    });
+  });
+
+  it("does not model broad string as a record with length", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const semanticProject = createSemanticProjectForTest([
+      { path: appPath, text: `export const label: string = "idle";` },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath);
+    expect(sourceFile).toBeDefined();
+    if (!sourceFile) return;
+    let decl: ts.VariableDeclaration | undefined;
+    const visit = (current: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(current) &&
+        ts.isIdentifier(current.name) &&
+        current.name.text === "label"
+      ) {
+        decl = current;
+      }
+      ts.forEachChild(current, visit);
+    };
+    visit(sourceFile);
+    expect(decl).toBeDefined();
+    if (!decl) return;
+    const type = semanticProject.checker.getTypeAtLocation(decl.name);
+    const result = inferDomainFromTypeDetailed(type, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({ kind: "tokens", count: 1 });
+    expect(result.domain).not.toMatchObject({
+      kind: "record",
+      fields: { length: expect.anything() },
+    });
+  });
+
+  it("falls back to tokens for boxed String types", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const semanticProject = createSemanticProjectForTest([
+      {
+        path: appPath,
+        text: `export const label: String = new String("idle");`,
+      },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath);
+    expect(sourceFile).toBeDefined();
+    if (!sourceFile) return;
+    let decl: ts.VariableDeclaration | undefined;
+    const visit = (current: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(current) &&
+        ts.isIdentifier(current.name) &&
+        current.name.text === "label"
+      ) {
+        decl = current;
+      }
+      ts.forEachChild(current, visit);
+    };
+    visit(sourceFile);
+    expect(decl).toBeDefined();
+    if (!decl) return;
+    const type = semanticProject.checker.getTypeAtLocation(decl.name);
+    const result = inferDomainFromTypeDetailed(type, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({ kind: "tokens", count: 1 });
+  });
 });

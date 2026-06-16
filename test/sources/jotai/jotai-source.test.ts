@@ -3,6 +3,7 @@ import {
   extractJotaiSkeleton,
   jotaiSource,
 } from "modality-ts/extract/sources/jotai";
+import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
 import { observe, setup } from "../../../src/extract/sources/jotai/harness.js";
 
 describe("Jotai source plugin", () => {
@@ -546,6 +547,42 @@ describe("Jotai source plugin", () => {
           fields: { error: { kind: "tokens", count: 1 } },
         },
       },
+    });
+  });
+
+  it("preserves enum and boundedInt domains for primitive atoms under semantic context", () => {
+    const fileName = "/project/state.ts";
+    const source = `
+      import { atom } from 'jotai';
+      export const statusAtom = atom("idle");
+      export const countAtom = atom(0);
+    `;
+    const semanticProject = createSemanticProjectForTest([
+      { path: fileName, text: source },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(fileName);
+    expect(sourceFile).toBeDefined();
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile,
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+    };
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName,
+      route: "/",
+      types,
+    });
+    const status = decls.find((decl) => decl.id === "atom:statusAtom");
+    expect(status?.var).toMatchObject({
+      domain: { kind: "enum", values: ["idle"] },
+      initial: "idle",
+    });
+    const count = decls.find((decl) => decl.id === "atom:countAtom");
+    expect(count?.var).toMatchObject({
+      domain: { kind: "boundedInt", min: 0, max: 0 },
+      initial: 0,
     });
   });
 });

@@ -4,6 +4,7 @@ import {
   zustandSource,
 } from "modality-ts/extract/sources/zustand";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
+import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
 import {
   observe,
   setup,
@@ -529,6 +530,44 @@ describe("Zustand source plugin", () => {
           { kind: "lit", value: 1 },
         ],
       },
+    });
+  });
+
+  it("preserves enum and boundedInt domains for initializer-only fields under semantic context", () => {
+    const fileName = "/project/state.ts";
+    const source = `
+      import { create } from 'zustand';
+      export const useGate = create(() => ({
+        label: "idle",
+        count: 0,
+      }));
+    `;
+    const semanticProject = createSemanticProjectForTest([
+      { path: fileName, text: source },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(fileName);
+    expect(sourceFile).toBeDefined();
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile,
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+    };
+    const decls = zustandSource().discover({
+      sourceText: source,
+      fileName,
+      route: "/",
+      types,
+    });
+    const label = decls.find((decl) => decl.id === "zustand:useGate.label");
+    expect(label?.var).toMatchObject({
+      domain: { kind: "enum", values: ["idle"] },
+      initial: "idle",
+    });
+    const count = decls.find((decl) => decl.id === "zustand:useGate.count");
+    expect(count?.var).toMatchObject({
+      domain: { kind: "boundedInt", min: 0, max: 0 },
+      initial: 0,
     });
   });
 });

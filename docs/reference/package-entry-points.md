@@ -38,7 +38,7 @@ See [Type-library adapters](../architecture/type-library-adapters.md).
 | Entry point | Adapter |
 | --- | --- |
 | `modality-ts/extract/type-libraries/zod` | Zod numeric schema initializer refinement |
-| `modality-ts/extract/type-libraries/arktype` | ArkType numeric schema initializer refinement |
+| `modality-ts/extract/type-libraries/arktype` | ArkType static schema initializer refinement |
 
 ## State-source slices
 

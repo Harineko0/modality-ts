@@ -87,6 +87,7 @@ export interface DiscoverCtx {
   route: string;
   types?: SemanticTypeContext;
   domainRefinements?: readonly DomainRefinementProvider[];
+  relatedFragments?: readonly { sourceText: string; fileName: string }[];
 }
 
 export interface TypeCtx {
