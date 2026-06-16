@@ -4,6 +4,7 @@ import {
   inferDomainFromTypeNode,
   inferDomainFromTypeNodeDetailed,
   inferUseStateDomainDetailed,
+  initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine";
 
@@ -146,6 +147,79 @@ describe("numeric domain resolver", () => {
     expect(result.domain).toEqual({ kind: "tokens", count: 1 });
     expect(result.caveats).toHaveLength(1);
     expect(result.caveats[0]?.reason).toContain("dynamic bounds");
+  });
+
+  it("initializes lengthCat from lazy finite Array.from", () => {
+    const { call, sourceFile } = useStateCall(
+      `type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      const [items] = useState<Item[]>(() => Array.from({ length: 3 }, makeItem));`,
+    );
+    const domain = inferUseStateDomainDetailed(
+      call,
+      new Map(),
+      sourceFile,
+    ).domain;
+    const result = initialValueForUseStateDetailed(
+      call,
+      domain,
+      sourceFile,
+      "local:App.items",
+    );
+    expect(result.value).toBe("many");
+    expect(result.caveats).toEqual([]);
+  });
+
+  it("emits model-slack for unprovable array initializer length", () => {
+    const { call, sourceFile } = useStateCall(
+      `type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      function App({ count }: { count: number }) {
+        const [items] = useState<Item[]>(() => Array.from({ length: count }, makeItem));
+        return null;
+      }`,
+    );
+    const domain = inferUseStateDomainDetailed(
+      call,
+      new Map(),
+      sourceFile,
+    ).domain;
+    const result = initialValueForUseStateDetailed(
+      call,
+      domain,
+      sourceFile,
+      "local:App.items",
+    );
+    expect(result.value).toBe("0");
+    expect(result.caveats).toHaveLength(1);
+    expect(result.caveats[0]).toMatchObject({
+      kind: "model-slack",
+      reason: expect.stringContaining("array initializer length"),
+    });
+  });
+
+  it("emits model-slack for property-access array initializer length", () => {
+    const { call, sourceFile } = useStateCall(
+      `type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      function App(props: { count: number }) {
+        const [items] = useState<Item[]>(() => Array.from({ length: props.count }, makeItem));
+        return null;
+      }`,
+    );
+    const domain = inferUseStateDomainDetailed(
+      call,
+      new Map(),
+      sourceFile,
+    ).domain;
+    const result = initialValueForUseStateDetailed(
+      call,
+      domain,
+      sourceFile,
+      "local:App.items",
+    );
+    expect(result.value).toBe("0");
+    expect(result.caveats[0]?.kind).toBe("model-slack");
   });
 
   it("resolves aliases declared in the same source file", () => {

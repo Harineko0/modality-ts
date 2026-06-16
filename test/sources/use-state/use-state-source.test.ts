@@ -164,6 +164,30 @@ describe("useState source plugin", () => {
     ]);
   });
 
+  it("initializes lengthCat from lazy finite Array.from in plugin discovery", () => {
+    const plugin = useStateSource();
+    const sourceText = `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App() {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: 3 }, makeItem),
+        );
+        return null;
+      }
+    `;
+    const decl = plugin
+      .discover({ sourceText, fileName: "App.tsx", route: "/" })
+      .find((entry) => entry.id === "local:App.items");
+    expect(decl?.var).toEqual(
+      expect.objectContaining({
+        domain: { kind: "lengthCat" },
+        initial: "many",
+      }),
+    );
+  });
+
   it("reports setter write channels for discovered useState variables", () => {
     const plugin = useStateSource();
     const sourceText = `

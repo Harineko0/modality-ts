@@ -13,6 +13,8 @@ import type {
 export {
   firstValue,
   inferDomainFromTypeNode,
+  inferUseStateDomain,
+  initialValueForUseState,
   typeAliasDeclarations,
 } from "../ts/domains.js";
 

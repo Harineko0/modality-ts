@@ -74,7 +74,7 @@ Algorithm `D(τ)` on the checker-resolved type, structural and recursive:
 | discriminated union of object types (common literal-typed field) | `tagged`, recursing into non-discriminant fields |
 | object type | `record` of `D(field)` — but see *field pruning* below |
 | `string`, bare/non-literal `number`, float, unprovable numeric constraint, unrecognized | `tokens(1)` ("some value") + extraction caveat — never a guessed range (a wrong bound would be unsound); refinable in overlay |
-| `Array<T>`, `ReadonlyArray<T>` | `lengthCat` by default; `boundedList` only via overlay |
+| `Array<T>`, `ReadonlyArray<T>` | `lengthCat` by default; `boundedList` only via overlay. Direct array literals and recognized finite lazy array constructors (`Array.from({ length: N }, …)`, `new Array(N)` with static `N`) initialize to the matching length category (`"0"`, `"1"`, `"many"`). Recognized but statically unprovable array lengths keep the default initial value and emit a `model-slack` caveat. |
 | function-typed, `unknown`, `any` | `tokens(1)` + warning (`any` hides structure) |
 
 Numeric inference flows through a `NumericDomainResolver` (native-alias, zod, and arktype adapters) that returns a domain **plus caveats/reductions**, so abstentions and wide-domain warnings reach the trust ledger (`metadata.extractionCaveats`, `metadata.numericReductions`) rather than being silently widened.

@@ -93,6 +93,146 @@ describe("useState inventory", () => {
     });
   });
 
+  it("initializes lengthCat from lazy finite Array.from initializers", () => {
+    const manyResult = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App() {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: 3 }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(manyResult.warnings).toEqual([]);
+    expect(
+      manyResult.vars.find((decl) => decl.id === "local:App.items"),
+    ).toEqual(
+      expect.objectContaining({
+        domain: { kind: "lengthCat" },
+        initial: "many",
+      }),
+    );
+
+    const constResult = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const LANE_COUNT = 3;
+      const makeItem = () => ({ id: 'x' });
+      export function App() {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: LANE_COUNT }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(constResult.warnings).toEqual([]);
+    expect(
+      constResult.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("many");
+
+    const oneResult = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App() {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: 1 }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      oneResult.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("1");
+
+    const zeroResult = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App() {
+        const [items] = useState<Item[]>(
+          Array.from({ length: 0 }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      zeroResult.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("0");
+  });
+
+  it("emits model-slack for unprovable lazy array initializer lengths", () => {
+    const result = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App({ count }: { count: number }) {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: count }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("0");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          caveat: expect.objectContaining({
+            kind: "model-slack",
+            reason: expect.stringContaining("array initializer length"),
+          }),
+        }),
+      ]),
+    );
+
+    const propsResult = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      export function App(props: { count: number }) {
+        const [items] = useState<Item[]>(() =>
+          Array.from({ length: props.count }, makeItem),
+        );
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      propsResult.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("0");
+    expect(propsResult.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          caveat: expect.objectContaining({
+            kind: "model-slack",
+            reason: expect.stringContaining("array initializer length"),
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("extracts exact M0 setter transitions from inline JSX handlers", () => {
     const result = extractUseStateSkeleton(
       `
@@ -1130,6 +1270,69 @@ describe("useState inventory", () => {
       writes: ["local:App.count"],
       confidence: "exact",
     });
+  });
+
+  it("inlines custom hook lazy array initializer with static const length", () => {
+    const result = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      const LANE_COUNT = 3;
+      function useItems() {
+        const [items, setItems] = useState<Item[]>(() =>
+          Array.from({ length: LANE_COUNT }, makeItem),
+        );
+        return [items, setItems] as const;
+      }
+      export function App() {
+        const [items, setItems] = useItems();
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.vars.find((decl) => decl.id === "local:App.items")).toEqual(
+      expect.objectContaining({
+        domain: { kind: "lengthCat" },
+        initial: "many",
+      }),
+    );
+  });
+
+  it("emits model-slack when inlining custom hook with unprovable array length", () => {
+    const result = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type Item = { id: string };
+      const makeItem = () => ({ id: 'x' });
+      function useItems(count: number) {
+        const [items, setItems] = useState<Item[]>(() =>
+          Array.from({ length: count }, makeItem),
+        );
+        return [items, setItems] as const;
+      }
+      export function App({ count }: { count: number }) {
+        const [items, setItems] = useItems(count);
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.items")?.initial,
+    ).toBe("0");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          caveat: expect.objectContaining({
+            kind: "model-slack",
+            reason: expect.stringContaining("array initializer length"),
+          }),
+        }),
+      ]),
+    );
   });
 
   it("extracts functional updater setter expressions", () => {
