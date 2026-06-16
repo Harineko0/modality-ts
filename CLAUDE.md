@@ -48,7 +48,7 @@ Vitest is configured for `test/**/*.test.ts` and `src/**/*.test.ts`. Add focused
 
 ## Commit & Pull Request Guidelines
 
-Recent history uses short imperative subjects, often with an initial capital, for example `Fix CLI positional parsing` or `Restructure into root src and test directories`. Keep commits focused. Pull requests should describe user-visible behavior, list validation commands run, link related issues, and include screenshots only for example-app UI changes. Do not commit generated artifacts, local `.env` files, npm tokens, or `dist/`.
+Recent history uses short imperative subjects, often with an initial capital, for example `Fix CLI positional parsing` or `Restructure into root src and test directories`. Keep commits focused. Pull requests should describe user-visible behavior, list validation commands run, link related issues, and include screenshots only for example-app UI changes. Do not commit generated artifacts, local `.env` files, npm tokens, or `dist/`. Place worktree directories under `../modality-ts-worktrees`.
 
 ## Agent-Specific Instructions
 
