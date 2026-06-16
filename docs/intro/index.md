@@ -103,8 +103,8 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | React | ✅ | the target; modeled at [event granularity](../concepts/transition-system.md#granularity-event-level-not-render-level) |
 | TypeScript | ✅ | required — domains are inferred from types |
 | Plain JavaScript | ❌ | no types means no domain inference |
-| Next.js | ❌ 🔜 | client UI transitions only; server/route execution (loaders, actions) is future work |
-| Remix | ❌ 🔜 | same as Next.js; routing via React Router is supported |
+| Next.js | ✅ | built-in [navigation adapter](../sources/next.md) for App Router and Pages Router; server execution is modeled as nondeterministic async effects |
+| Remix | ❌ 🔜 | no built-in Remix adapter yet; routing via React Router is supported |
 | `useState` | ✅ | [route-scoped local state](../sources/use-state.md) |
 | Jotai | ✅ | [atoms, derived/utility atoms, store scoping](../sources/jotai.md) |
 | Zustand | ✅ | [stores, actions, middleware, immer drafts](../sources/zustand.md) |
@@ -117,7 +117,7 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | `fetch` / named effect APIs | ✅ | [async split into enqueue + resolve](../concepts/transitions.md#async-split-transitions) |
 | TanStack Query | ❌ 🔜 | template effort like SWR; fits the contract |
 | React Router | ✅ | the built-in [navigation adapter](../sources/router.md) |
-| Next.js / TanStack Router | ❌ 🔜 | the [engine is framework-blind](../architecture/navigation.md); a new adapter can add them |
+| TanStack Router | ❌ 🔜 | the [engine is framework-blind](../architecture/navigation.md); a new adapter can add it |
 | Zod | ✅ | static `z.number().int().min(a).max(b)` → [`boundedInt`](../concepts/state-and-domains.md#finite-numeric-domains) |
 | ArkType | ✅ | static `"a <= number.integer <= b"` → `boundedInt` |
 | Valibot | ❌ 🔜 | no adapter yet |
