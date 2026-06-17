@@ -6,7 +6,7 @@ import type {
   Value,
 } from "modality-ts/core";
 import * as ts from "typescript";
-import type { RouterPlugin, StateSourcePlugin } from "../../spi/index.js";
+import type { NavigationAdapter, StateSourcePlugin } from "../../spi/index.js";
 import type { EffectOpAliases } from "../effect-op-aliases.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
@@ -170,7 +170,7 @@ export function transitionsFromJsxAttribute(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   disabledGuard: ParsedGuard | undefined,
   routePatterns: readonly string[],
   contextBindings: ContextBindings,
@@ -238,7 +238,7 @@ export function transitionsFromComponentPropAttribute(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   warnings: ExtractionWarning[],
   routePatterns: readonly string[] = [],
   contextBindings: ContextBindings = emptyContextBindings(),
@@ -304,7 +304,7 @@ function transitionsForComponentPropTrigger(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   callerGuard: ParsedGuard | undefined,
   routePatterns: readonly string[],
   contextBindings: ContextBindings,
@@ -380,7 +380,7 @@ export function transitionsFromBoundedListComponentPropAttribute(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   warnings: ExtractionWarning[],
   routePatterns: readonly string[] = [],
   contextBindings: ContextBindings = emptyContextBindings(),
@@ -554,7 +554,7 @@ export function transitionsFromLiteralListAttribute(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   disabledGuard: ParsedGuard | undefined,
   routePatterns: readonly string[],
   contextBindings: ContextBindings,
@@ -636,7 +636,7 @@ export function transitionsFromResolvedHandler(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: RouterPlugin | undefined,
+  routerPlugin: NavigationAdapter | undefined,
   disabledGuard: ParsedGuard | undefined,
   locator: Locator | undefined,
   routePatterns: readonly string[],

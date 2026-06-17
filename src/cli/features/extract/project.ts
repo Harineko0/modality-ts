@@ -2,11 +2,15 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import * as ts from "typescript";
 import type {
+  EffectApiProvider,
+  EffectApiSurfaceCtx,
   ImportEdgeContext,
+  ImportEdgeCtx,
   ModuleClassification,
   ModuleEntryExport,
   ModuleExtractionSurface,
   ModuleDirective,
+  ModuleRoleAdapter,
   ModuleRuntimeContext,
   NavigationAdapter,
   RouteInventory,
@@ -113,41 +117,159 @@ function createSourceFile(fileName: string, sourceText: string): ts.SourceFile {
   );
 }
 
+export interface SourceWithReachableImportsOptions {
+  navigation?: NavigationAdapter;
+  moduleRoleAdapters?: readonly ModuleRoleAdapter[];
+  effectApiProviders?: readonly EffectApiProvider[];
+  inventory?: RouteInventory;
+}
+
+const EXPLICIT_MODULE_CONTEXTS = new Set<ModuleRuntimeContext>([
+  "client",
+  "server",
+  "shared",
+  "type",
+]);
+
+const IMPORT_EDGE_PRIORITY: Record<ImportEdgeContext, number> = {
+  unknown: 0,
+  "client-value": 1,
+  "server-value": 1,
+  "render-value": 1,
+  type: 2,
+  asset: 2,
+};
+
+function mergeModuleClassifications(
+  results: readonly ModuleClassification[],
+  warnings: string[],
+  path: string,
+): ModuleClassification {
+  const directives = [
+    ...new Set(results.flatMap((result) => result.directives ?? [])),
+  ];
+  const serverOnly = results.some((result) => result.serverOnly === true);
+  const explicit = results.filter((result) =>
+    EXPLICIT_MODULE_CONTEXTS.has(result.defaultContext as ModuleRuntimeContext),
+  );
+  let defaultContext: ModuleClassification["defaultContext"] = "unknown";
+  if (explicit.length === 1) {
+    defaultContext = explicit[0]!.defaultContext;
+  } else if (explicit.length > 1) {
+    const contexts = [...new Set(explicit.map((result) => result.defaultContext))];
+    if (contexts.length === 1) {
+      defaultContext = contexts[0]!;
+    } else {
+      warnings.push(
+        `Conflicting module classifications for ${path}: ${contexts.sort().join(", ")}`,
+      );
+      defaultContext = [...contexts].sort()[0]!;
+    }
+  }
+  return {
+    defaultContext,
+    ...(directives.length > 0 ? { directives } : {}),
+    ...(serverOnly ? { serverOnly: true } : {}),
+  };
+}
+
+function classifyModuleFromProviders(
+  adapters: readonly ModuleRoleAdapter[],
+  path: string,
+  text: string,
+  route: RouteNode | undefined,
+  warnings: string[],
+): ModuleClassification {
+  if (adapters.length === 0) {
+    const directives = parseModuleDirectives(text);
+    if (directives.includes("use client"))
+      return { defaultContext: "client", directives };
+    if (directives.includes("use server"))
+      return { defaultContext: "server", serverOnly: true, directives };
+    return defaultClassification();
+  }
+  const ctx = { fileName: path, sourceText: text, route };
+  const results = adapters.map((adapter) => adapter.classifyModule(ctx));
+  return mergeModuleClassifications(results, warnings, path);
+}
+
+function moduleEntryExportsFromProviders(
+  adapters: readonly ModuleRoleAdapter[],
+  path: string,
+  text: string,
+  route: RouteNode | undefined,
+): readonly ModuleEntryExport[] {
+  if (adapters.length === 0) return inferDefaultEntryExports(text, path);
+  const ctx = { fileName: path, sourceText: text, route };
+  const byName = new Map<string, ModuleEntryExport>();
+  for (const adapter of [...adapters].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )) {
+    for (const entry of adapter.moduleEntryExports(ctx)) {
+      const key = entry.name === "default" ? "default" : entry.name;
+      if (!byName.has(key)) byName.set(key, entry);
+    }
+  }
+  if (byName.size === 0) return inferDefaultEntryExports(text, path);
+  return [...byName.values()].sort((left, right) => {
+    const leftKey = left.name === "default" ? "" : left.name;
+    const rightKey = right.name === "default" ? "" : right.name;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function classifyImportEdgeFromProviders(
+  adapters: readonly ModuleRoleAdapter[],
+  ctx: ImportEdgeCtx,
+  warnings: string[],
+): ImportEdgeContext {
+  if (adapters.length === 0) return ctx.isTypeOnly ? "type" : "unknown";
+  const results = adapters.map((adapter) => adapter.classifyImportEdge(ctx));
+  const nonUnknown = results.filter((result) => result !== "unknown");
+  if (nonUnknown.length === 0) return ctx.isTypeOnly ? "type" : "unknown";
+  const unique = [...new Set(nonUnknown)];
+  if (unique.length === 1) return unique[0]!;
+  const ranked = [...unique].sort(
+    (left, right) => IMPORT_EDGE_PRIORITY[right] - IMPORT_EDGE_PRIORITY[left],
+  );
+  if (IMPORT_EDGE_PRIORITY[ranked[0]!]! > IMPORT_EDGE_PRIORITY[ranked[1]!]!) {
+    return ranked[0]!;
+  }
+  warnings.push(
+    `Conflicting import edge classifications for ${ctx.specifier} in ${ctx.importer}`,
+  );
+  return [...unique].sort()[0]!;
+}
+
+function isServerOnlyTarget(
+  adapters: readonly ModuleRoleAdapter[],
+  path: string,
+  classification: ModuleClassification,
+): boolean {
+  if (classification.serverOnly === true) return true;
+  return adapters.some((adapter) =>
+    adapter.isServerOnlyModule(path, classification),
+  );
+}
+
+function shouldDiscoverEffectApis(
+  adapters: readonly ModuleRoleAdapter[],
+  ctx: EffectApiSurfaceCtx,
+): boolean {
+  const withHook = adapters.filter(
+    (adapter) => adapter.shouldDiscoverEffectApis !== undefined,
+  );
+  if (withHook.length > 0) {
+    return withHook.some((adapter) => adapter.shouldDiscoverEffectApis!(ctx));
+  }
+  return (
+    ctx.classification.serverOnly === true ||
+    ctx.classification.defaultContext === "server"
+  );
+}
+
 function defaultClassification(): ModuleClassification {
   return { defaultContext: "unknown" };
-}
-
-function classifyModule(
-  adapter: NavigationAdapter | undefined,
-  path: string,
-  text: string,
-  route?: RouteNode,
-): ModuleClassification {
-  if (adapter?.classifyModule) {
-    return adapter.classifyModule({ fileName: path, sourceText: text, route });
-  }
-  const directives = parseModuleDirectives(text);
-  if (directives.includes("use client"))
-    return { defaultContext: "client", directives };
-  if (directives.includes("use server"))
-    return { defaultContext: "server", serverOnly: true, directives };
-  return defaultClassification();
-}
-
-function moduleEntryExports(
-  adapter: NavigationAdapter | undefined,
-  path: string,
-  text: string,
-  route?: RouteNode,
-): readonly ModuleEntryExport[] {
-  if (adapter?.moduleEntryExports) {
-    return adapter.moduleEntryExports({
-      fileName: path,
-      sourceText: text,
-      route,
-    });
-  }
-  return inferDefaultEntryExports(text, path);
 }
 
 function inferDefaultEntryExports(
@@ -520,20 +642,11 @@ async function followDeclarationReference(
 }
 
 function classifyImportEdge(
-  adapter: NavigationAdapter | undefined,
-  ctx: Parameters<NonNullable<NavigationAdapter["classifyImportEdge"]>>[0],
+  adapters: readonly ModuleRoleAdapter[],
+  ctx: ImportEdgeCtx,
+  warnings: string[],
 ): ImportEdgeContext {
-  if (adapter?.classifyImportEdge) return adapter.classifyImportEdge(ctx);
-  return ctx.isTypeOnly ? "type" : "unknown";
-}
-
-function isServerOnlyTarget(
-  adapter: NavigationAdapter | undefined,
-  path: string,
-  classification: ModuleClassification,
-): boolean {
-  if (adapter?.isServerOnlyModule?.(path)) return true;
-  return classification.serverOnly === true;
+  return classifyImportEdgeFromProviders(adapters, ctx, warnings);
 }
 
 function statementIncludedInSurface(
@@ -679,10 +792,12 @@ function routeForFile(
 export async function sourceWithReachableImports(
   entries: Array<{ path: string; text: string }>,
   tsconfig: TsConfigResolution,
-  adapter?: NavigationAdapter,
-  inventory?: RouteInventory,
+  options: SourceWithReachableImportsOptions = {},
 ): Promise<ReachableImportsResult> {
   const warnings: string[] = [];
+  const moduleRoleAdapters = options.moduleRoleAdapters ?? [];
+  const effectApiProviders = options.effectApiProviders ?? [];
+  const inventory = options.inventory;
   const modules = new Map<string, ModuleRecord>();
   const manifestEntry = entries.find((entry) => isManifestFile(entry.path));
   const manifestDir = manifestEntry
@@ -700,14 +815,15 @@ export async function sourceWithReachableImports(
     if (existing) return existing;
     const sourceText = text ?? (await readFile(canonical, "utf8"));
     const route = routeForFile(canonical, inventory, manifestDir);
-    const classification = classifyModule(
-      adapter,
+    const classification = classifyModuleFromProviders(
+      moduleRoleAdapters,
       canonical,
       sourceText,
       route,
+      warnings,
     );
-    const entryExports = moduleEntryExports(
-      adapter,
+    const entryExports = moduleEntryExportsFromProviders(
+      moduleRoleAdapters,
       canonical,
       sourceText,
       route,
@@ -821,14 +937,14 @@ export async function sourceWithReachableImports(
           continue;
         }
 
-        const edgeContext = classifyImportEdge(adapter, {
+        const edgeContext = classifyImportEdge(moduleRoleAdapters, {
           importer: record.path,
           specifier: binding.specifier,
           imported: binding.imported,
           isTypeOnly: binding.isTypeOnly,
           importerContext: record.classification.defaultContext,
           surface: next.surface,
-        });
+        }, warnings);
 
         if (edgeContext === "type") {
           record.typeImports.add(binding.local);
@@ -851,7 +967,7 @@ export async function sourceWithReachableImports(
 
         if (
           next.surface === "interaction" &&
-          isServerOnlyTarget(adapter, target.path, target.classification)
+          isServerOnlyTarget(moduleRoleAdapters, target.path, target.classification)
         ) {
           warnings.push(
             `Client import skipped server-only module ${target.path} from ${record.path}`,
@@ -892,7 +1008,7 @@ export async function sourceWithReachableImports(
           (resolved.module.classification.defaultContext === "client" ||
             resolved.module.classification.defaultContext === "shared" ||
             resolved.module.classification.defaultContext === "unknown" ||
-            !adapter?.classifyModule);
+            !moduleRoleAdapters.length);
 
         if (promoteInteraction) {
           resolved.module.interactionDecls.add(resolved.declName);
@@ -951,17 +1067,20 @@ export async function sourceWithReachableImports(
       }
     }
 
-    if (adapter?.discoverEffectApis) {
-      const serverSurface =
-        record.classification.serverOnly === true ||
-        record.classification.defaultContext === "server" ||
-        (adapter.id === "next" &&
-          record.classification.defaultContext === "shared") ||
-        (adapter.id === "router" &&
-          record.classification.defaultContext === "shared" &&
-          record.entryExports.some((entry) => entry.context === "server"));
-      if (serverSurface && !record.isManifest) {
-        for (const entry of adapter.discoverEffectApis({
+    const effectSurfaceCtx: EffectApiSurfaceCtx = {
+      fileName: record.path,
+      sourceText: record.text,
+      route: record.route,
+      classification: record.classification,
+      entryExports: record.entryExports,
+      isManifest: record.isManifest,
+    };
+    if (
+      shouldDiscoverEffectApis(moduleRoleAdapters, effectSurfaceCtx) &&
+      !record.isManifest
+    ) {
+      for (const provider of effectApiProviders) {
+        for (const entry of provider.discoverEffectApis({
           fileName: record.path,
           sourceText: record.text,
           route: record.route,

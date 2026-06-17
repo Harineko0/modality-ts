@@ -29,10 +29,13 @@ export interface DomainRefinementResolution {
   reductions?: NumericReduction[];
 }
 
-export interface DomainRefinementProvider {
+export interface ModalityAdapterBase {
   id: string;
   version?: string;
   packageNames: readonly string[];
+}
+
+export interface DomainRefinementProvider extends ModalityAdapterBase {
   refineDomain(
     ctx: DomainRefinementContext,
   ): DomainRefinementResolution | undefined;
@@ -73,6 +76,9 @@ export interface WriteChannel {
 export interface ExtractionWarning {
   message: string;
   source?: SourceAnchor;
+  caveat?: ExtractionCaveat;
+  confidence?: "exact" | "over-approx" | "manual";
+  producer?: { kind: string; id: string };
 }
 
 export interface CallSite {
@@ -190,10 +196,7 @@ export interface ProbeWalk {
   steps: readonly string[];
 }
 
-export interface StateSourcePlugin {
-  id: string;
-  version?: string;
-  packageNames: readonly string[];
+export interface StateSourcePlugin extends ModalityAdapterBase {
   discover(ctx: DiscoverCtx): readonly SourceDecl[];
   domainHints?(decl: SourceDecl, ctx: TypeCtx): AbstractDomain | undefined;
   writeChannels(ctx: ChannelCtx): readonly WriteChannel[];
@@ -264,16 +267,54 @@ export interface EffectApiDiscoveryCtx {
   inventory?: RouteInventory;
 }
 
+export interface EffectApiSurfaceCtx {
+  fileName: string;
+  sourceText: string;
+  route?: RouteNode;
+  classification: ModuleClassification;
+  entryExports: readonly ModuleEntryExport[];
+  isManifest: boolean;
+  surface?: ModuleExtractionSurface;
+}
+
 export interface DiscoveredEffectApi {
   opId: string;
   source: { file: string; line: number; column: number };
   warning?: string;
 }
 
-export interface NavigationAdapter {
-  id: string;
-  version?: string;
-  packageNames: readonly string[];
+export interface ModuleRoleAdapter extends ModalityAdapterBase {
+  kind: "module-roles";
+  classifyModule(ctx: ModuleRoleCtx): ModuleClassification;
+  moduleEntryExports(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
+  classifyImportEdge(ctx: ImportEdgeCtx): ImportEdgeContext;
+  isServerOnlyModule(
+    fileName: string,
+    classification?: ModuleClassification,
+  ): boolean;
+  shouldDiscoverEffectApis?(ctx: EffectApiSurfaceCtx): boolean;
+}
+
+export interface EffectApiProvider extends ModalityAdapterBase {
+  kind: "effect-api";
+  discoverEffectApis(
+    ctx: EffectApiDiscoveryCtx,
+  ): readonly DiscoveredEffectApi[];
+}
+
+export interface NavigationLoweringCtx {
+  inventory: RouteInventory;
+  routePatterns: readonly string[];
+}
+
+export interface NavigationLoweringResult {
+  effect: EffectIR;
+  reads: readonly string[];
+  writes: readonly string[];
+  confidence?: "exact" | "over-approx";
+}
+
+export interface NavigationAdapter extends ModalityAdapterBase {
   discoverRoutes(ctx: RouteDiscoveryCtx): Promise<RouteInventory>;
   classifyNavigationCall(
     callee: string,
@@ -287,13 +328,6 @@ export interface NavigationAdapter {
     componentName: string,
     inventory: RouteInventory,
   ): string | undefined;
-  classifyModule?(ctx: ModuleRoleCtx): ModuleClassification;
-  moduleEntryExports?(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
-  classifyImportEdge?(ctx: ImportEdgeCtx): ImportEdgeContext;
-  isServerOnlyModule?(fileName: string): boolean;
-  discoverEffectApis?(
-    ctx: EffectApiDiscoveryCtx,
-  ): readonly DiscoveredEffectApi[];
   locationVars(
     inventory: RouteInventory,
     options: ResolvedOptions,
@@ -305,16 +339,8 @@ export interface NavigationAdapter {
   ): readonly StateVarDecl[];
   lowerNavigation?(
     intent: NavIntent,
-    ctx: {
-      inventory: RouteInventory;
-      routePatterns: readonly string[];
-    },
-  ): {
-    effect: EffectIR;
-    reads: readonly string[];
-    writes: readonly string[];
-    confidence?: "exact" | "over-approx";
-  };
+    ctx: NavigationLoweringCtx,
+  ): NavigationLoweringResult;
   mountScopeForComponent?(
     componentName: string,
     inventory: RouteInventory,
@@ -329,6 +355,3 @@ export interface NavigationAdapter {
     ): Promise<void> | void;
   };
 }
-
-/** @deprecated use NavigationAdapter */
-export type RouterPlugin = NavigationAdapter;

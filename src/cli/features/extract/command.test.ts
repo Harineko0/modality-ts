@@ -15,6 +15,7 @@ import {
 } from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
 import { renderHumanExtractTargets } from "./output.js";
+import { createBuiltinModalityRegistry } from "../../registry/index.js";
 
 const repoRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -32,6 +33,18 @@ async function mkSchemaExtractTemp(prefix: string): Promise<string> {
 }
 
 describe("runExtractCommand", () => {
+  it("wires module-role and effect API providers from registry adapters", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { next: "^15.0.0" },
+    });
+    expect(registry.adapters.moduleRoles.map((adapter) => adapter.kind)).toEqual(
+      ["module-roles"],
+    );
+    expect(registry.adapters.effectApis.map((provider) => provider.kind)).toEqual(
+      ["effect-api"],
+    );
+  });
+
   it("writes model and extraction report artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
@@ -1087,7 +1100,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
-      "plugins=router:router@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect-api:router-effect-api@0.1.0,module-role:router-module-roles@0.1.0,router:router@0.1.0,state-source:use-state@0.1.0",
     );
   });
 

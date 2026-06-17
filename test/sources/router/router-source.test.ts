@@ -7,7 +7,7 @@ import {
 } from "../../../src/extract/sources/router/harness.js";
 
 describe("router source plugin", () => {
-  it("exposes a RouterPlugin-compatible source slice", () => {
+  it("exposes a NavigationAdapter-compatible source slice", () => {
     const plugin = routerSource({ historyMaxLen: 2 });
     expect(plugin.id).toBe("router");
     expect(plugin.packageNames).toEqual(["react-router", "react-router-dom"]);

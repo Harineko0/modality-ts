@@ -9,7 +9,7 @@ import {
   runExtractionPipeline,
   type StateSourcePlugin,
 } from "modality-ts/extract";
-import type { RouterPlugin } from "modality-ts/extract/engine/spi";
+import type { NavigationAdapter } from "modality-ts/extract/engine/spi";
 import { locationVars } from "../../src/extract/sources/router/routes.js";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
@@ -162,7 +162,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "router",
       packageNames: ["router"],
       discoverRoutes: async () => inventory,
@@ -237,7 +237,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "route-tree",
       packageNames: ["next"],
       discoverRoutes: async () => inventory,

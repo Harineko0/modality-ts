@@ -97,6 +97,18 @@ describe("modality plugin registry", () => {
           packageNames: ["zod"],
         },
         {
+          id: "router-effect-api",
+          kind: "effect-api",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "router-module-roles",
+          kind: "module-role",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
           id: "router",
           kind: "router",
           version: "0.1.0",
@@ -128,11 +140,23 @@ describe("modality plugin registry", () => {
       }),
     ).toMatchObject({
       routerPluginId: "next",
+      adapters: {
+        moduleRoles: [expect.objectContaining({ id: "next-module-roles" })],
+        effectApis: [expect.objectContaining({ id: "next-effect-api" })],
+      },
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
           kind: "router",
           packageNames: ["next"],
+        }),
+        expect.objectContaining({
+          id: "next-module-roles",
+          kind: "module-role",
+        }),
+        expect.objectContaining({
+          id: "next-effect-api",
+          kind: "effect-api",
         }),
       ]),
     });

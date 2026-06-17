@@ -1,36 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  NavigationAdapter,
-  RouteInventory,
-} from "modality-ts/extract/engine/spi";
+import type { RouteInventory } from "modality-ts/extract/engine/spi";
 import { sourceWithReachableImports } from "../../src/cli/features/extract/project.js";
 import {
-  classifyNextImportEdge,
-  classifyNextModule,
-  isNextServerOnlyModule,
-  nextModuleEntryExports,
-} from "../../src/extract/sources/next/module-roles.js";
-import { discoverNextServerEffectApis } from "../../src/extract/sources/next/server-effects.js";
-
-function nextTestAdapter(inventory?: RouteInventory): NavigationAdapter {
-  return {
-    id: "next",
-    packageNames: ["next"],
-    discoverRoutes: async () => inventory ?? { routes: [] },
-    classifyNavigationCall: () => "unsupported",
-    locationVars: () => [],
-    harness: {
-      setup: () => ({}),
-      observe: () => "unobservable",
-      navigate: () => undefined,
-    },
-    classifyModule: classifyNextModule,
-    moduleEntryExports: nextModuleEntryExports,
-    classifyImportEdge: classifyNextImportEdge,
-    isServerOnlyModule: isNextServerOnlyModule,
-    discoverEffectApis: discoverNextServerEffectApis,
-  };
-}
+  nextEffectApiProvider,
+  nextModuleRoleAdapter,
+} from "../../src/extract/sources/next/index.js";
 
 describe("sourceWithReachableImports next boundaries", () => {
   const inventory: RouteInventory = {
@@ -41,6 +15,10 @@ describe("sourceWithReachableImports next boundaries", () => {
         file: "/proj/app/page.tsx",
       },
     ],
+  };
+  const nextProviders = {
+    moduleRoleAdapters: [nextModuleRoleAdapter()],
+    effectApiProviders: [nextEffectApiProvider()],
   };
 
   it("excludes server page handlers unless a client island is imported", async () => {
@@ -71,8 +49,7 @@ describe("sourceWithReachableImports next boundaries", () => {
         },
       ],
       { paths: [] },
-      nextTestAdapter(inventory),
-      inventory,
+      { ...nextProviders, inventory },
     );
 
     const page = result.sources.find((entry) =>
@@ -112,8 +89,7 @@ describe("sourceWithReachableImports next boundaries", () => {
         },
       ],
       { paths: [] },
-      nextTestAdapter(inventory),
-      inventory,
+      { ...nextProviders, inventory },
     );
 
     const island = result.sources.find((entry) =>
@@ -146,8 +122,7 @@ describe("sourceWithReachableImports next boundaries", () => {
         },
       ],
       { paths: [] },
-      nextTestAdapter(inventory),
-      inventory,
+      { ...nextProviders, inventory },
     );
 
     const actions = result.sources.find((entry) =>
@@ -181,8 +156,7 @@ describe("sourceWithReachableImports next boundaries", () => {
         },
       ],
       { paths: [] },
-      nextTestAdapter(inventory),
-      inventory,
+      { ...nextProviders, inventory },
     );
 
     const css = result.sources.find((entry) =>

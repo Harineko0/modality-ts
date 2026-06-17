@@ -1,22 +1,43 @@
 import type { PluginProvenance } from "modality-ts/core";
 import type {
   DomainRefinementProvider,
+  EffectApiProvider,
+  ModuleRoleAdapter,
   NavigationAdapter,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
 import { zodDomainRefinementProvider } from "modality-ts/extract/type-libraries/zod";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
-import { nextAdapter } from "modality-ts/extract/sources/next";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import {
+  nextAdapter,
+  nextEffectApiProvider,
+  nextModuleRoleAdapter,
+} from "modality-ts/extract/sources/next";
+import {
+  reactRouterAdapter,
+  reactRouterEffectApiProvider,
+  reactRouterModuleRoleAdapter,
+} from "modality-ts/extract/sources/router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
+
+export interface RegistryAdaptersBundle {
+  navigation?: NavigationAdapter;
+  moduleRoles: readonly ModuleRoleAdapter[];
+  effectApis: readonly EffectApiProvider[];
+  stateSources: readonly StateSourcePlugin[];
+  domainRefinements: readonly DomainRefinementProvider[];
+  observations: readonly [];
+}
 
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
   domainRefinementProviders: readonly DomainRefinementProvider[];
+  moduleRoleAdapters?: readonly ModuleRoleAdapter[];
+  effectApiProviders?: readonly EffectApiProvider[];
 }
 
 export interface BuiltinRegistryOptions {
@@ -34,6 +55,7 @@ export interface RegistrySummary {
   routerPlugin?: NavigationAdapter;
   domainRefinementProviders: readonly DomainRefinementProvider[];
   plugins: readonly PluginProvenance[];
+  adapters: RegistryAdaptersBundle;
 }
 
 export function createBuiltinModalityRegistry(
@@ -66,36 +88,62 @@ export function createBuiltinModalityRegistry(
     ),
     ...(options.extraDomainRefinementProviders ?? []),
   ];
-  const routerPlugin = resolveBuiltinRouter(options, disabled);
+  const builtinNavigation = resolveBuiltinNavigationBundle(options, disabled);
   return createModalityRegistry({
     sourcePlugins,
-    routerPlugin,
+    routerPlugin: builtinNavigation.navigation,
     domainRefinementProviders,
+    moduleRoleAdapters: builtinNavigation.moduleRoles,
+    effectApiProviders: builtinNavigation.effectApis,
   });
 }
 
-function resolveBuiltinRouter(
+function resolveBuiltinNavigationBundle(
   options: BuiltinRegistryOptions,
   disabled: Set<string>,
-): NavigationAdapter | undefined {
-  if (options.routerPlugin === false) return undefined;
-  if (options.routerPlugin) return options.routerPlugin;
+): {
+  navigation?: NavigationAdapter;
+  moduleRoles: ModuleRoleAdapter[];
+  effectApis: EffectApiProvider[];
+} {
+  if (options.routerPlugin === false) {
+    return { moduleRoles: [], effectApis: [] };
+  }
+  if (options.routerPlugin) {
+    return {
+      navigation: options.routerPlugin,
+      moduleRoles: [],
+      effectApis: [],
+    };
+  }
 
   const dependencies = options.dependencies;
   if (!disabled.has("next") && hasDependency(dependencies, "next")) {
-    return nextAdapter();
+    return {
+      navigation: nextAdapter(),
+      moduleRoles: [nextModuleRoleAdapter()],
+      effectApis: [nextEffectApiProvider()],
+    };
   }
   if (
     !disabled.has("router") &&
     (hasDependency(dependencies, "react-router") ||
       hasDependency(dependencies, "react-router-dom"))
   ) {
-    return reactRouterAdapter();
+    return {
+      navigation: reactRouterAdapter(),
+      moduleRoles: [reactRouterModuleRoleAdapter()],
+      effectApis: [reactRouterEffectApiProvider()],
+    };
   }
   if (!dependencies && !disabled.has("router")) {
-    return reactRouterAdapter();
+    return {
+      navigation: reactRouterAdapter(),
+      moduleRoles: [reactRouterModuleRoleAdapter()],
+      effectApis: [reactRouterEffectApiProvider()],
+    };
   }
-  return undefined;
+  return { moduleRoles: [], effectApis: [] };
 }
 
 function hasDependency(
@@ -112,19 +160,40 @@ export function createModalityRegistry(
   },
 ): RegistrySummary {
   const domainRefinementProviders = options.domainRefinementProviders ?? [];
+  const moduleRoleAdapters = options.moduleRoleAdapters ?? [];
+  const effectApiProviders = options.effectApiProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   for (const provider of domainRefinementProviders)
     validateDomainRefinementProvider(provider);
+  for (const adapter of moduleRoleAdapters) validateModuleRoleAdapter(adapter);
+  for (const provider of effectApiProviders)
+    validateEffectApiProvider(provider);
   if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
   const sourcePluginIds = sortedUnique(
     options.sourcePlugins.map((plugin) => plugin.id),
     "source plugin",
+  );
+  sortedUnique(
+    moduleRoleAdapters.map((adapter) => adapter.id),
+    "module-role adapter",
+  );
+  sortedUnique(
+    effectApiProviders.map((provider) => provider.id),
+    "effect API provider",
   );
   return {
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
     domainRefinementProviders,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    adapters: {
+      navigation: options.routerPlugin,
+      moduleRoles: moduleRoleAdapters,
+      effectApis: effectApiProviders,
+      stateSources: options.sourcePlugins,
+      domainRefinements: domainRefinementProviders,
+      observations: [],
+    },
     plugins: [
       ...options.sourcePlugins.map((plugin) => ({
         id: plugin.id,
@@ -142,6 +211,18 @@ export function createModalityRegistry(
             },
           ]
         : []),
+      ...moduleRoleAdapters.map((adapter) => ({
+        id: adapter.id,
+        version: adapter.version ?? "unknown",
+        kind: "module-role" as const,
+        packageNames: [...adapter.packageNames].sort(),
+      })),
+      ...effectApiProviders.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "effect-api" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
       ...domainRefinementProviders.map((provider) => ({
         id: provider.id,
         version: provider.version ?? "unknown",
@@ -196,6 +277,42 @@ function validateDomainRefinementProvider(
   if (typeof provider.refineDomain !== "function")
     throw new Error(
       `Invalid domain refinement provider ${provider.id}: refineDomain must be a function`,
+    );
+}
+
+function validateModuleRoleAdapter(adapter: ModuleRoleAdapter): void {
+  validateCommonPluginShape(adapter, "module-role adapter");
+  if (adapter.kind !== "module-roles")
+    throw new Error(
+      `Invalid module-role adapter ${adapter.id}: kind must be "module-roles"`,
+    );
+  if (typeof adapter.classifyModule !== "function")
+    throw new Error(
+      `Invalid module-role adapter ${adapter.id}: classifyModule must be a function`,
+    );
+  if (typeof adapter.moduleEntryExports !== "function")
+    throw new Error(
+      `Invalid module-role adapter ${adapter.id}: moduleEntryExports must be a function`,
+    );
+  if (typeof adapter.classifyImportEdge !== "function")
+    throw new Error(
+      `Invalid module-role adapter ${adapter.id}: classifyImportEdge must be a function`,
+    );
+  if (typeof adapter.isServerOnlyModule !== "function")
+    throw new Error(
+      `Invalid module-role adapter ${adapter.id}: isServerOnlyModule must be a function`,
+    );
+}
+
+function validateEffectApiProvider(provider: EffectApiProvider): void {
+  validateCommonPluginShape(provider, "effect API provider");
+  if (provider.kind !== "effect-api")
+    throw new Error(
+      `Invalid effect API provider ${provider.id}: kind must be "effect-api"`,
+    );
+  if (typeof provider.discoverEffectApis !== "function")
+    throw new Error(
+      `Invalid effect API provider ${provider.id}: discoverEffectApis must be a function`,
     );
 }
 

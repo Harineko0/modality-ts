@@ -11,7 +11,7 @@ import {
   readVar,
 } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  NavigationAdapter,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
@@ -4265,7 +4265,7 @@ describe("useState inventory", () => {
   });
 
   it("uses custom router plugins to summarize navigation calls", () => {
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "custom-router",
       packageNames: ["custom-router"],
       discoverRoutes: async () => ({ routes: [] }),

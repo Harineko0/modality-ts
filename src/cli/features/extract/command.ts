@@ -37,11 +37,12 @@ import {
 } from "modality-ts/core";
 import type { Bounds } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  EffectApiProvider,
+  ModuleRoleAdapter,
+  NavigationAdapter,
   StateSourcePlugin,
   RouteInventory,
   LocationLowering,
-  NavigationAdapter,
   NavIntent,
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
@@ -49,7 +50,6 @@ import {
   parseReactRouterRoutes,
   routerSource,
 } from "modality-ts/extract/sources/router";
-import { discoverNextServerEffectApis } from "../../../extract/sources/next/server-effects.js";
 import { discoverNextCacheFromSources } from "../../../extract/sources/next/cache.js";
 import {
   configSecurityWarnings,
@@ -100,7 +100,7 @@ export interface ModalityConfig {
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
   domainRefinements?: readonly DomainRefinementProvider[];
-  routerPlugin?: RouterPlugin | false;
+  routerPlugin?: NavigationAdapter | false;
 }
 
 export interface ExtractCommandOptions {
@@ -118,7 +118,7 @@ export interface ExtractCommandOptions {
   disabledPlugins?: readonly string[];
   sourcePlugins?: readonly StateSourcePlugin[];
   domainRefinements?: readonly DomainRefinementProvider[];
-  routerPlugin?: RouterPlugin | false;
+  routerPlugin?: NavigationAdapter | false;
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
   now?: Date;
@@ -193,10 +193,12 @@ export async function runExtractCommand(
         }
       : {}),
   };
-  const project = await buildClientProjectSurface(
-    projectWithNextConfig,
-    routerAdapter,
-  );
+  const project = await buildClientProjectSurface(projectWithNextConfig, {
+    navigation: routerAdapter,
+    moduleRoleAdapters: registry.adapters.moduleRoles,
+    effectApiProviders: registry.adapters.effectApis,
+    inventory: projectWithNextConfig.inventory,
+  });
   const route = resolveExtractionRoute(project, config, options, sourcePaths);
   const routePatterns = project.inventory.routes.map((node) => node.pattern);
   const effectOpAliases = project.effectOpAliases;
@@ -539,23 +541,24 @@ function emptySurfaceProject(input: {
   };
 }
 
-function withServerEffectDiscovery(
-  adapter: NavigationAdapter,
-): NavigationAdapter {
-  if (adapter.discoverEffectApis || adapter.id !== "next") return adapter;
-  return { ...adapter, discoverEffectApis: discoverNextServerEffectApis };
-}
-
 async function buildClientProjectSurface(
   project: ExtractionProject,
-  adapter: NavigationAdapter,
+  options: {
+    navigation: NavigationAdapter;
+    moduleRoleAdapters: readonly ModuleRoleAdapter[];
+    effectApiProviders: readonly EffectApiProvider[];
+    inventory: RouteInventory;
+  },
 ): Promise<ExtractionProject> {
-  const resolvedAdapter = withServerEffectDiscovery(adapter);
   const reachable = await sourceWithReachableImports(
     project.rawEntries,
     project.tsconfig,
-    resolvedAdapter,
-    project.inventory,
+    {
+      navigation: options.navigation,
+      moduleRoleAdapters: options.moduleRoleAdapters,
+      effectApiProviders: options.effectApiProviders,
+      inventory: options.inventory,
+    },
   );
   const includedSources = reachable.sources.filter((entry) => entry.included);
   const interactionSources = includedSources
@@ -602,7 +605,7 @@ function runProjectExtractionPipeline(
     effectOpAliases?: EffectOpAliases;
     environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
-    routerPlugin?: RouterPlugin;
+    routerPlugin?: NavigationAdapter;
     domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;

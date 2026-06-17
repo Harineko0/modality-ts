@@ -5,6 +5,7 @@ import {
   reactRouterActionOpId,
   reactRouterActionOutcomeHints,
 } from "./server-effects.js";
+import { reactRouterEffectApiProvider } from "./index.js";
 
 function parseActionBody(source: string): ts.Node | undefined {
   const file = ts.createSourceFile(
@@ -23,6 +24,22 @@ function parseActionBody(source: string): ts.Node | undefined {
   }
   return undefined;
 }
+
+describe("reactRouterEffectApiProvider", () => {
+  it("discovers ACTION <route> operations", () => {
+    const provider = reactRouterEffectApiProvider();
+    const apis = provider.discoverEffectApis({
+      fileName: "routes/drip.tsx",
+      sourceText: `
+        export async function action() {
+          return { ok: true };
+        }
+      `,
+      route: { pattern: "/drip", kind: "page", file: "routes/drip.tsx" },
+    });
+    expect(apis).toEqual([expect.objectContaining({ opId: "ACTION /drip" })]);
+  });
+});
 
 describe("reactRouterActionOpId", () => {
   it("uses ACTION prefix with route pattern", () => {

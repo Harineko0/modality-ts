@@ -1,4 +1,6 @@
 import type {
+  EffectApiProvider,
+  ModuleRoleAdapter,
   NavigationAdapter,
   ResolvedOptions,
 } from "modality-ts/extract/engine/spi";
@@ -11,6 +13,7 @@ import {
   nextModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
+import { discoverNextServerEffectApis } from "./server-effects.js";
 import {
   locationVars,
   lowerNextNavigation,
@@ -22,6 +25,41 @@ export interface NextSourceOptions {
   id?: string;
   packageNames?: readonly string[];
   historyMaxLen?: number;
+}
+
+export function nextModuleRoleAdapter(
+  options: Pick<NextSourceOptions, "id" | "packageNames"> = {},
+): ModuleRoleAdapter {
+  return {
+    id: options.id ?? "next-module-roles",
+    version: "0.1.0",
+    packageNames: options.packageNames ?? ["next"],
+    kind: "module-roles",
+    classifyModule: classifyNextModule,
+    moduleEntryExports: nextModuleEntryExports,
+    classifyImportEdge: classifyNextImportEdge,
+    isServerOnlyModule: (fileName, classification) =>
+      isNextServerOnlyModule(fileName) || classification?.serverOnly === true,
+    shouldDiscoverEffectApis(ctx) {
+      return (
+        ctx.classification.serverOnly === true ||
+        ctx.classification.defaultContext === "server" ||
+        ctx.classification.defaultContext === "shared"
+      );
+    },
+  };
+}
+
+export function nextEffectApiProvider(
+  options: Pick<NextSourceOptions, "id" | "packageNames"> = {},
+): EffectApiProvider {
+  return {
+    id: options.id ?? "next-effect-api",
+    version: "0.1.0",
+    packageNames: options.packageNames ?? ["next"],
+    kind: "effect-api",
+    discoverEffectApis: discoverNextServerEffectApis,
+  };
 }
 
 export function nextAdapter(
@@ -47,10 +85,6 @@ export function nextAdapter(
     classifyNavigationJsx,
     routeForComponent,
     mountScopeForComponent,
-    classifyModule: classifyNextModule,
-    moduleEntryExports: nextModuleEntryExports,
-    classifyImportEdge: classifyNextImportEdge,
-    isServerOnlyModule: isNextServerOnlyModule,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
     routeTreeVars,

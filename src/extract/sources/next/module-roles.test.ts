@@ -4,7 +4,61 @@ import {
   classifyNextModule,
   nextModuleEntryExports,
 } from "./module-roles.js";
+import { nextModuleRoleAdapter } from "./index.js";
 import { discoverNextServerEffectApis } from "./server-effects.js";
+
+describe("nextModuleRoleAdapter", () => {
+  const provider = nextModuleRoleAdapter();
+
+  it('classifies "use client" modules as client', () => {
+    expect(
+      provider.classifyModule({
+        fileName: "/proj/components/Counter.tsx",
+        sourceText: '"use client";\nexport function Counter() {}',
+      }),
+    ).toMatchObject({
+      defaultContext: "client",
+      directives: ["use client"],
+    });
+  });
+
+  it("classifies server-only files and metadata exports", () => {
+    expect(
+      provider.classifyModule({
+        fileName: "/proj/app/actions.ts",
+        sourceText: '"use server";\nexport async function save() {}',
+      }),
+    ).toMatchObject({
+      defaultContext: "server",
+      serverOnly: true,
+    });
+    expect(
+      provider.moduleEntryExports({
+        fileName: "/proj/app/page.tsx",
+        sourceText: `
+          export default function Home() {}
+          export async function generateMetadata() { return {}; }
+        `,
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "generateMetadata", context: "server" }),
+      ]),
+    );
+  });
+
+  it("treats css imports as asset edges", () => {
+    expect(
+      provider.classifyImportEdge({
+        importer: "/proj/app/page.tsx",
+        specifier: "./page.module.css",
+        isTypeOnly: false,
+        importerContext: "server",
+        surface: "render",
+      }),
+    ).toBe("asset");
+  });
+});
 
 describe("classifyNextModule", () => {
   it("classifies app router pages as server modules", () => {

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import type {
   LocationLowering,
   NavigationAdapter,
+  NavigationLoweringCtx,
+  NavigationLoweringResult,
   ResolvedOptions,
   RouteDiscoveryCtx,
   RouteInventory,
 } from "./spi/index.js";
 import { runExtractionPipeline } from "./pipeline/index.js";
 import { extractReactSourceTransitions } from "./ts/react-source-transitions.js";
+import { sourceWithReachableImports } from "../../cli/features/extract/project.js";
 
 function fitLocationVars(
   inventory: RouteInventory,
@@ -201,6 +204,25 @@ describe("navigation adapter interface fit", () => {
     ).toBe(true);
   });
 
+  it("NavigationLoweringCtx and NavigationLoweringResult type-check", () => {
+    const ctx: NavigationLoweringCtx = {
+      inventory,
+      routePatterns: ["/", "/settings"],
+    };
+    const result: NavigationLoweringResult = {
+      effect: {
+        kind: "navigate",
+        mode: "push",
+        to: { kind: "lit", value: "/" },
+      },
+      reads: [],
+      writes: ["sys:route", "sys:history"],
+      confidence: "exact",
+    };
+    expect(ctx.routePatterns).toContain("/");
+    expect(result.effect.kind).toBe("navigate");
+  });
+
   it("discovers FS-style Next routes from fixture files", async () => {
     const adapter = nextStyleAdapter();
     const inventoryFromFiles = await adapter.discoverRoutes({
@@ -219,58 +241,118 @@ describe("navigation adapter interface fit", () => {
     ]);
   });
 
-  it("accepts optional module-context methods on a Next-style adapter", () => {
-    const adapter: NavigationAdapter = {
-      ...nextStyleAdapter(),
-      classifyModule(ctx) {
-        const directives: ("use client" | "use server")[] = [];
-        if (ctx.sourceText.includes('"use client"'))
-          directives.push("use client");
-        if (ctx.sourceText.includes('"use server"'))
-          directives.push("use server");
-        if (directives.includes("use client"))
-          return { defaultContext: "client", directives };
-        if (ctx.fileName.endsWith("/route.ts"))
-          return { defaultContext: "server", serverOnly: true };
-        return { defaultContext: "shared" };
+  it("accepts a navigation-only adapter without module-role methods", () => {
+    const adapter = nextStyleAdapter();
+    expect(adapter.classifyModule).toBeUndefined();
+    expect(adapter.discoverEffectApis).toBeUndefined();
+  });
+
+  it("uses a fake module-role provider for server/client surface selection", async () => {
+    const moduleRoleAdapter = {
+      id: "fake-module-roles",
+      kind: "module-roles" as const,
+      packageNames: ["fake"],
+      classifyModule(ctx: { fileName: string; sourceText: string }) {
+        if (ctx.sourceText.includes('"use client"')) {
+          return {
+            defaultContext: "client" as const,
+            directives: ["use client" as const],
+          };
+        }
+        if (ctx.fileName.endsWith("/actions.ts")) {
+          return {
+            defaultContext: "server" as const,
+            serverOnly: true,
+          };
+        }
+        return { defaultContext: "server" as const };
       },
-      moduleEntryExports(ctx) {
-        if (!ctx.fileName.endsWith("/page.tsx")) return [];
-        return [
-          {
-            name: "default",
-            context: "shared",
-            reason: "server page render root",
-          },
-          {
-            name: "generateMetadata",
-            context: "server",
-            reason: "metadata export",
-          },
-        ];
+      moduleEntryExports(ctx: { fileName: string }) {
+        if (ctx.fileName.endsWith("/actions.ts")) {
+          return [
+            { name: "save", context: "server" as const, reason: "server action" },
+          ];
+        }
+        if (ctx.fileName.endsWith("/page.tsx")) {
+          return [
+            {
+              name: "default",
+              context: "server" as const,
+              reason: "server page render root",
+            },
+          ];
+        }
+        return [];
       },
-      classifyImportEdge(ctx) {
-        return ctx.isTypeOnly ? "type" : "unknown";
+      classifyImportEdge(ctx: { isTypeOnly: boolean }) {
+        return ctx.isTypeOnly ? ("type" as const) : ("unknown" as const);
       },
-      isServerOnlyModule(fileName) {
+      isServerOnlyModule(fileName: string) {
+        return fileName.endsWith("/actions.ts");
+      },
+      shouldDiscoverEffectApis(ctx: {
+        classification: { serverOnly?: boolean; defaultContext: string };
+      }) {
         return (
-          fileName.endsWith(".server.ts") || fileName.endsWith(".server.tsx")
+          ctx.classification.serverOnly === true ||
+          ctx.classification.defaultContext === "server"
         );
       },
     };
-    expect(
-      adapter.classifyModule?.({
-        fileName: "app/dashboard/page.tsx",
-        sourceText: '"use client";\nexport default function Dashboard() {}',
-      }),
-    ).toEqual({ defaultContext: "client", directives: ["use client"] });
-    expect(
-      adapter
-        .moduleEntryExports?.({
-          fileName: "app/settings/page.tsx",
-          sourceText: "export default function Settings() {}",
-        })
-        .map((entry) => entry.name),
-    ).toEqual(["default", "generateMetadata"]);
+    const effectApiProvider = {
+      id: "fake-effect-api",
+      kind: "effect-api" as const,
+      packageNames: ["fake"],
+      discoverEffectApis(ctx: { fileName: string }) {
+        if (!ctx.fileName.endsWith("/actions.ts")) return [];
+        return [
+          {
+            opId: "ACTION /actions#save",
+            source: { file: ctx.fileName, line: 1, column: 1 },
+          },
+        ];
+      },
+    };
+
+    const result = await sourceWithReachableImports(
+      [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
+            import { save } from "./actions";
+            export default function Home() {
+              return <form action={save}><button>Save</button></form>;
+            }
+          `,
+        },
+        {
+          path: "/proj/app/actions.ts",
+          text: `
+            "use server";
+            export async function save() {}
+          `,
+        },
+      ],
+      { paths: [] },
+      {
+        moduleRoleAdapters: [moduleRoleAdapter],
+        effectApiProviders: [effectApiProvider],
+        inventory: {
+          routes: [
+            {
+              pattern: "/",
+              kind: "page",
+              file: "/proj/app/page.tsx",
+            },
+          ],
+        },
+      },
+    );
+
+    expect(result.effectApis).toContain("ACTION /actions#save");
+    const actions = result.sources.find((entry) =>
+      entry.path.endsWith("app/actions.ts"),
+    );
+    expect(actions?.interactionText.trim()).toBe("");
   });
 });

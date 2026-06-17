@@ -1,4 +1,6 @@
 import type {
+  EffectApiProvider,
+  ModuleRoleAdapter,
   NavigationAdapter,
   ResolvedOptions,
 } from "modality-ts/extract/engine/spi";
@@ -18,6 +20,42 @@ export interface RouterSourceOptions {
   id?: string;
   packageNames?: readonly string[];
   historyMaxLen?: number;
+}
+
+export function reactRouterModuleRoleAdapter(
+  options: Pick<RouterSourceOptions, "id" | "packageNames"> = {},
+): ModuleRoleAdapter {
+  return {
+    id: options.id ?? "router-module-roles",
+    version: "0.1.0",
+    packageNames: options.packageNames ?? ["react-router", "react-router-dom"],
+    kind: "module-roles",
+    classifyModule: classifyReactRouterModule,
+    moduleEntryExports: reactRouterModuleEntryExports,
+    classifyImportEdge: classifyReactRouterImportEdge,
+    isServerOnlyModule: (fileName, classification) =>
+      isServerOnlyModulePath(fileName) || classification?.serverOnly === true,
+    shouldDiscoverEffectApis(ctx) {
+      return (
+        ctx.classification.serverOnly === true ||
+        ctx.classification.defaultContext === "server" ||
+        (ctx.classification.defaultContext === "shared" &&
+          ctx.entryExports.some((entry) => entry.context === "server"))
+      );
+    },
+  };
+}
+
+export function reactRouterEffectApiProvider(
+  options: Pick<RouterSourceOptions, "id" | "packageNames"> = {},
+): EffectApiProvider {
+  return {
+    id: options.id ?? "router-effect-api",
+    version: "0.1.0",
+    packageNames: options.packageNames ?? ["react-router", "react-router-dom"],
+    kind: "effect-api",
+    discoverEffectApis: discoverReactRouterActionEffectApis,
+  };
 }
 
 export function reactRouterAdapter(
@@ -42,11 +80,6 @@ export function reactRouterAdapter(
     classifyNavigationCall,
     classifyNavigationJsx,
     routeForComponent,
-    classifyModule: classifyReactRouterModule,
-    moduleEntryExports: reactRouterModuleEntryExports,
-    classifyImportEdge: classifyReactRouterImportEdge,
-    isServerOnlyModule: isServerOnlyModulePath,
-    discoverEffectApis: discoverReactRouterActionEffectApis,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
     harness,

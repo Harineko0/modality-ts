@@ -132,7 +132,12 @@ export interface Bounds {
 export interface PluginProvenance {
   id: string;
   version: string;
-  kind: "state-source" | "router" | "domain-refinement";
+  kind:
+    | "state-source"
+    | "router"
+    | "domain-refinement"
+    | "module-role"
+    | "effect-api";
   packageNames: readonly string[];
 }
 

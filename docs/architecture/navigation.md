@@ -7,8 +7,7 @@ sidebar_label: Navigation
 Routing is owned by a **framework-agnostic adapter**, not hardcoded into the extraction
 engine. Exactly one router is active per app (unlike state sources, which compose), so
 it is a sibling contract to the [state-source SPI](./state-sources.md): the
-`NavigationAdapter` (the older name `RouterPlugin` remains as a `@deprecated` alias; the
-react-router factory is `reactRouterAdapter()`).
+`NavigationAdapter` (the react-router factory is `reactRouterAdapter()`).
 
 ## The model: nodes are routes, edges are intents
 
