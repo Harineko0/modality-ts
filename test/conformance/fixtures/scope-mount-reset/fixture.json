@@ -1,0 +1,42 @@
+{
+  "id": "scope-mount-reset",
+  "featureIds": ["scope.mount-local.reset", "routing.mount-scope-reset"],
+  "targetIds": ["react-use-state", "react-router", "core"],
+  "root": "test/conformance/fixtures/scope-mount-reset",
+  "sourcePaths": ["app/routes/home.tsx"],
+  "propsPaths": ["app/routes/home.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 20
+  },
+  "expectations": {
+    "transitionIds": ["Home.onClick.count"],
+    "vars": [
+      {
+        "id": "local:Home.count",
+        "scope": { "kind": "route-local", "route": "/" },
+        "domainKind": "boundedInt"
+      },
+      {
+        "id": "sys:route",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}

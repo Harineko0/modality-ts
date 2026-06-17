@@ -25,6 +25,13 @@ describe("conformance matrix manifest", () => {
     expect(manifest.features.length).toBeGreaterThan(0);
     expect(manifest.targets.length).toBeGreaterThan(0);
     expect(manifest.fixtures.length).toBeGreaterThan(0);
+    expect(manifest.fixtures.map((fixture) => fixture.id)).toEqual(
+      expect.arrayContaining([
+        "state-local-setter-batch",
+        "scope-mount-reset",
+        "routing-location-assign",
+      ]),
+    );
   });
 
   it("requires supported cells to name at least one fixture", async () => {
@@ -34,6 +41,26 @@ describe("conformance matrix manifest", () => {
         expect(cell.fixtures.length).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("keeps supported cells aligned with canonical fixture ids", async () => {
+    const manifest = await readConformanceMatrixManifest(matrixPath);
+    const fixtureIds = new Set(manifest.fixtures.map((fixture) => fixture.id));
+    const supportedFixtureIds = new Set(
+      manifest.cells
+        .filter((cell) => cell.status === "supported")
+        .flatMap((cell) => cell.fixtures),
+    );
+    for (const fixtureId of supportedFixtureIds) {
+      expect(fixtureIds.has(fixtureId)).toBe(true);
+    }
+    expect([...supportedFixtureIds]).toEqual(
+      expect.arrayContaining([
+        "state-local-setter-batch",
+        "scope-mount-reset",
+        "routing-location-assign",
+      ]),
+    );
   });
 
   it("covers every builtin source adapter and type-library adapter", async () => {

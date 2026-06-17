@@ -4,11 +4,13 @@
 which behavioral capabilities the project models, which adapter or library
 columns exercise them, and how honestly complete that coverage is today.
 
+Canonical fixtures live under `test/conformance/fixtures/`. See
+`test/conformance/fixtures/README.md` for fixture layout and authoring rules.
+
 ## Status meanings
 
 - `supported`: a canonical fixture under `test/conformance/fixtures/` proves the
-  capability for the target column. Plan 22-2 adds those fixtures; until then
-  no cell should claim `supported` without a real fixture id.
+  capability for the target column.
 - `partial`: behavior exists in extraction, checking, or focused tests but lacks
   a canonical fixture.
 - `unsupported`: the capability is known absent for the target.
@@ -27,3 +29,6 @@ columns exercise them, and how honestly complete that coverage is today.
 
 `test/conformance/matrix.test.ts` parses `matrix.json` through
 `tools/conformance/manifest.ts` and enforces reference integrity.
+
+`rtk pnpm ci:conformance` runs supported fixtures through
+`tools/conformance/runner.ts` and writes a `ConformanceMatrixReport`.

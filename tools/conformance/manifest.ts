@@ -1,4 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import type {
+  FixtureBudgets,
+  FixtureSemanticExpectations,
+  FixtureThresholds,
+} from "./assertions.js";
 
 export type ConformanceFeatureLayer =
   | "typescript"
@@ -59,6 +65,41 @@ export interface ConformanceFixtureManifestEntry {
   targetIds: readonly string[];
   root?: string;
   notes?: string;
+}
+
+export interface ConformanceFixtureManifest {
+  id: string;
+  featureIds: readonly string[];
+  targetIds: readonly string[];
+  root: string;
+  sourcePaths: readonly string[];
+  propsPaths: readonly string[];
+  extract?: {
+    packageJsonPath?: string;
+    configPath?: string;
+    effectApis?: readonly string[];
+    route?: string;
+  };
+  check?: {
+    enabled?: boolean;
+    searchLimits?:
+      | {
+          maxStates?: number;
+          maxEdges?: number;
+          maxFrontier?: number;
+          memoryGuardBytes?: number;
+        }
+      | false;
+  };
+  conform?: {
+    enabled?: boolean;
+    walkCount?: number;
+    depth?: number;
+    seed?: number;
+  };
+  thresholds?: FixtureThresholds;
+  budgets?: FixtureBudgets;
+  expectations?: FixtureSemanticExpectations;
 }
 
 export interface ConformanceMatrixManifest {
@@ -232,6 +273,111 @@ export function parseConformanceMatrixManifest(
     cells,
     fixtures,
   };
+}
+
+export async function readConformanceFixtureManifest(
+  repoRoot: string,
+  fixtureRoot: string,
+): Promise<ConformanceFixtureManifest> {
+  const fixtureJsonPath = join(fixtureRoot, "fixture.json");
+  return parseConformanceFixtureManifest(
+    await readFile(fixtureJsonPath, "utf8"),
+    repoRoot,
+    fixtureRoot,
+  );
+}
+
+export async function loadConformanceFixtureManifests(
+  repoRoot: string,
+  matrix: ConformanceMatrixManifest,
+): Promise<ConformanceFixtureManifest[]> {
+  const manifests: ConformanceFixtureManifest[] = [];
+  for (const entry of matrix.fixtures) {
+    if (!entry.root) {
+      throw new Error(`fixture ${entry.id} missing root`);
+    }
+    const fixtureRoot = resolve(repoRoot, entry.root);
+    manifests.push(
+      await readConformanceFixtureManifest(repoRoot, fixtureRoot),
+    );
+  }
+  return manifests;
+}
+
+export function parseConformanceFixtureManifest(
+  json: string,
+  repoRoot: string,
+  fixtureRoot: string,
+): ConformanceFixtureManifest {
+  const value = JSON.parse(json) as unknown;
+  if (!isRecord(value)) throw new Error("fixture manifest must be an object");
+  assertNonEmptyString(value.id, "fixture.id");
+  assertStringArray(value.featureIds, "fixture.featureIds");
+  assertStringArray(value.targetIds, "fixture.targetIds");
+  assertNonEmptyString(value.root, "fixture.root");
+  assertStringArray(value.sourcePaths, "fixture.sourcePaths");
+  assertStringArray(value.propsPaths, "fixture.propsPaths");
+
+  const manifest: ConformanceFixtureManifest = {
+    id: value.id,
+    featureIds: value.featureIds as readonly string[],
+    targetIds: value.targetIds as readonly string[],
+    root: value.root,
+    sourcePaths: value.sourcePaths as readonly string[],
+    propsPaths: value.propsPaths as readonly string[],
+    ...(value.extract ? { extract: value.extract as ConformanceFixtureManifest["extract"] } : {}),
+    ...(value.check ? { check: value.check as ConformanceFixtureManifest["check"] } : {}),
+    ...(value.conform ? { conform: value.conform as ConformanceFixtureManifest["conform"] } : {}),
+    ...(value.thresholds ? { thresholds: value.thresholds as FixtureThresholds } : {}),
+    ...(value.budgets ? { budgets: value.budgets as FixtureBudgets } : {}),
+    ...(value.expectations
+      ? { expectations: value.expectations as FixtureSemanticExpectations }
+      : {}),
+  };
+
+  if (resolve(repoRoot, manifest.root) !== resolve(fixtureRoot)) {
+    throw new Error(
+      `fixture ${manifest.id} root ${manifest.root} does not match ${fixtureRoot}`,
+    );
+  }
+
+  for (const relativePath of manifest.sourcePaths) {
+    void relativePath;
+  }
+
+  return manifest;
+}
+
+export async function validateConformanceFixturePaths(
+  fixtureRoot: string,
+  manifest: ConformanceFixtureManifest,
+): Promise<void> {
+  for (const relativePath of manifest.sourcePaths) {
+    await assertPathExists(resolve(fixtureRoot, relativePath), `source path ${relativePath}`);
+  }
+  for (const relativePath of manifest.propsPaths) {
+    await assertPathExists(resolve(fixtureRoot, relativePath), `props path ${relativePath}`);
+  }
+  if (manifest.extract?.packageJsonPath) {
+    await assertPathExists(
+      resolve(fixtureRoot, manifest.extract.packageJsonPath),
+      `packageJsonPath ${manifest.extract.packageJsonPath}`,
+    );
+  }
+  if (manifest.extract?.configPath) {
+    await assertPathExists(
+      resolve(fixtureRoot, manifest.extract.configPath),
+      `configPath ${manifest.extract.configPath}`,
+    );
+  }
+}
+
+async function assertPathExists(path: string, label: string): Promise<void> {
+  try {
+    await access(path);
+  } catch {
+    throw new Error(`fixture invalid: missing ${label} at ${path}`);
+  }
 }
 
 function parseFeatureRow(value: unknown, path: string): ConformanceFeatureRow {

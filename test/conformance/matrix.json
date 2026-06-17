@@ -201,16 +201,14 @@
     {
       "featureId": "state.local.setter-batching",
       "targetId": "core",
-      "status": "partial",
-      "fixtures": [],
-      "notes": "Checker models assign transitions; canonical fixture pending"
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
     },
     {
       "featureId": "state.local.setter-batching",
       "targetId": "react-use-state",
-      "status": "partial",
-      "fixtures": [],
-      "notes": "use-state adapter and focused tests exist"
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
     },
     {
       "featureId": "state.local.setter-batching",
@@ -221,20 +219,20 @@
     {
       "featureId": "state.local.functional-updater",
       "targetId": "react-use-state",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
     },
     {
       "featureId": "scope.mount-local.reset",
       "targetId": "core",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
     },
     {
       "featureId": "scope.mount-local.reset",
       "targetId": "react-use-state",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
     },
     {
       "featureId": "effects.cleanup-order",
@@ -305,8 +303,8 @@
     {
       "featureId": "routing.location-assignment",
       "targetId": "react-router",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["routing-location-assign"]
     },
     {
       "featureId": "routing.location-assignment",
@@ -323,8 +321,8 @@
     {
       "featureId": "routing.mount-scope-reset",
       "targetId": "react-router",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
     },
     {
       "featureId": "state.external.atom-read",
@@ -353,8 +351,8 @@
     {
       "featureId": "reports.state-space-contributors",
       "targetId": "core",
-      "status": "partial",
-      "fixtures": []
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
     },
     {
       "featureId": "conform.walk-replay",

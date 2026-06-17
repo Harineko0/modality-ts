@@ -1,0 +1,47 @@
+{
+  "id": "state-local-setter-batch",
+  "featureIds": [
+    "state.local.setter-batching",
+    "state.local.functional-updater"
+  ],
+  "targetIds": ["react-use-state", "core"],
+  "root": "test/conformance/fixtures/state-local-setter-batch",
+  "sourcePaths": ["app/App.tsx"],
+  "propsPaths": ["app/app.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 20
+  },
+  "expectations": {
+    "transitionIdPrefixes": ["App.onClick.count.seq."],
+    "vars": [
+      {
+        "id": "local:App.count",
+        "scope": { "kind": "route-local", "route": "/" },
+        "domainKind": "boundedInt"
+      }
+    ],
+    "effectReadKinds": [
+      {
+        "transitionIdPrefix": "App.onClick.count.seq.",
+        "kinds": ["readPre", "read"]
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}
