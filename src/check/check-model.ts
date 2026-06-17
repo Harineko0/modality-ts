@@ -1,8 +1,5 @@
 import type { Model, Property } from "modality-ts/core";
-import {
-  sliceModelForProperty,
-  canSliceProperty,
-} from "./slicing/slice-model.js";
+import { sliceModelForCheckProperty } from "./slicing/slice-model.js";
 import { runRustCheck } from "./native.js";
 import type {
   CheckDiagnostics,
@@ -63,15 +60,28 @@ function checkModelSliced(
 ): CheckResult {
   const groups = new Map<
     string,
-    { model: Model; properties: Property[]; index: number }
+    {
+      model: Model;
+      properties: Property[];
+      index: number;
+      mode: SliceSummary["mode"];
+    }
   >();
   const sliceSummaries: SliceSummary[] = [];
   let sliceIndex = 0;
   for (const property of properties) {
-    const slice = canSliceProperty(property)
-      ? sliceModelForProperty(model, property)
-      : model;
-    const key = slice.vars.map((decl) => decl.id).join("\0");
+    const { model: slice, mode } = sliceModelForCheckProperty(model, property);
+    const key = [
+      slice.vars
+        .map((decl) => decl.id)
+        .sort()
+        .join("\0"),
+      slice.transitions
+        .map((transition) => transition.id)
+        .sort()
+        .join("\0"),
+      mode,
+    ].join("\x01");
     const group = groups.get(key);
     if (group) {
       group.properties.push(property);
@@ -80,6 +90,7 @@ function checkModelSliced(
         model: slice,
         properties: [property],
         index: sliceIndex,
+        mode,
       });
       sliceIndex += 1;
     }
@@ -124,6 +135,7 @@ function checkModelSliced(
       states: result.stats.states,
       edges: result.stats.edges,
       depth: result.stats.depth,
+      mode: group.mode,
     });
   }
 

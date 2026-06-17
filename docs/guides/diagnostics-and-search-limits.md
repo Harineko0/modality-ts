@@ -48,7 +48,9 @@ compact summaries):
 
 - **slicing** — whether slicing was enabled, how many slices, per-slice var/transition/
   state/edge/depth counts, and the skip reason when slicing was unavailable for a
-  property (e.g. `alwaysStep` uses full-model search).
+  property (e.g. untargeted or positive `alwaysStep` and `leadsToWithin` use full-model
+  search). Negated targeted `alwaysStep` slices report `mode: "targetedStep"` in
+  `sliceSummaries`.
 - **search** — max and final frontier size, expanded depths, elapsed time.
 - **limits** — the reason a run stopped early and which limit bound.
 - **dominantVars** — the variables with the most distinct observed values. This is your
@@ -71,8 +73,10 @@ compact summaries):
 [Per-property slicing](../concepts/state-space-control.md) is on by default and is the
 biggest single lever — an auth-guard property should not pay for checkout interleavings.
 The diagnostics show, per slice, how many vars and transitions survived, so you can see
-slicing working (or see why it was skipped). `alwaysStep` and `leadsToWithin` properties
-use full-model search by design, so they will report a slicing skip reason.
+slicing working (or see why it was skipped). Untargeted `alwaysStep` and `leadsToWithin`
+properties use full-model search by design, so they will report a slicing skip reason or
+`mode: "full"`. Focused negated `alwaysStep` properties with `stepTransitionId(...)`
+report `mode: "targetedStep"` and smaller transition counts.
 
 ## Contributors report
 

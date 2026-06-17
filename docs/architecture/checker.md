@@ -111,9 +111,14 @@ Before searching, each property's read set is computed and the model is sliced t
 **cone of influence** (`src/check/slicing/`): the least fixpoint of the property's reads,
 plus variables required by any `enabled(t)`, plus the reads of transitions that write
 into the cone. Variables outside the slice are frozen and their transitions dropped for
-that property's run; properties with identical slices share one search. `alwaysStep` and
-`leadsToWithin` use full-model search (their predicates observe edges broadly). Slicing
-is sound exactly because IR footprints are validated over-approximations.
+that property's run; properties with identical slices share one search. Untargeted
+`alwaysStep` and `leadsToWithin` use full-model search (their predicates observe edges
+broadly). Negated bad-step `alwaysStep` properties with a syntactic `stepTransitionId(...)`
+target may use a smaller targeted edge slice that keeps target execution vars without
+recursively pulling unrelated `sys:pending`, navigation, or history writers. Positive
+targeted `alwaysStep` predicates stay full-model because they still require every observed
+edge to match. Slicing is sound exactly because IR footprints are validated
+over-approximations.
 
 ## Limits, diagnostics, and failure modes
 
