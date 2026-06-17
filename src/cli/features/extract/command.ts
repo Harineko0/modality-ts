@@ -899,7 +899,14 @@ async function readTsConfigResolution(
 ): Promise<TsConfigResolution> {
   const tsconfigPath = await findNearestTsConfig(startDir);
   if (!tsconfigPath) return { paths: [] };
-  const parsed = JSON.parse(await readFile(tsconfigPath, "utf8")) as {
+  const sourceText = await readFile(tsconfigPath, "utf8");
+  const parseResult = ts.parseConfigFileTextToJson(tsconfigPath, sourceText);
+  if (parseResult.error) {
+    throw new Error(
+      ts.flattenDiagnosticMessageText(parseResult.error.messageText, "\n"),
+    );
+  }
+  const parsed = parseResult.config as {
     compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
   };
   const configDir = dirname(tsconfigPath);
