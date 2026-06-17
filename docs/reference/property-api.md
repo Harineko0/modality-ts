@@ -10,8 +10,10 @@ Helpers exported from `modality-ts/core` (and `modality-ts/core/props`) for buil
 
 ## Combinators
 
-Each takes the `model` first (so it can infer the `reads` set and validate variable IDs)
-and returns a `Property` object.
+Each takes the `model` first and returns a `Property` object. The `model` lets the
+combinator infer two fields from the predicate: `reads` (the variables the predicate
+touches) and `enabledTransitions` (any transitions referenced through `enabled()` /
+`enabledTransitionPrefix()`). Pass either option explicitly to override the inference.
 
 | Helper | Signature | Kind |
 | --- | --- | --- |
@@ -22,7 +24,9 @@ and returns a `Property` object.
 | `leadsToWithin` | `(model, trigger, goal, options & { budget, allowUserEvents? })` | bounded response |
 
 `options` is `{ name?, reads?, enabledTransitions?, includeUnmounted? }`. The `budget` is
-`{ steps?, environment? }`. If `reads` is omitted it is inferred from the predicate.
+`{ steps?, environment? }`. When `name` is omitted it defaults to the combinator kind
+(`"always"`, `"alwaysStep"`, etc.). `includeUnmounted` keeps mount-local variables in the
+read set even when their owning component is unmounted.
 
 ## Expression helpers
 
@@ -39,8 +43,46 @@ State predicates are `ExprIR` trees:
 | `enabled(model, transitionId)` | the [enabledness](../concepts/properties.md) accessor (exact id) |
 | `enabledTransitionPrefix(model, prefix)` | true when some enabled transition id starts with `prefix` |
 
-The numeric comparisons (`lt`, `lte`, `gt`, `gte`) and arithmetic (`add`, `sub`, `mod`)
-are available as `ExprIR` node kinds for [finite numeric domains](./domains.md).
+## Numeric expressions
+
+[Finite numeric domains](./domains.md) (`boundedInt`, `intSet`, and the branded aliases
+such as `Uint8`) can be compared and combined with arithmetic. These nodes have **no
+helper functions** — write the `ExprIR` object directly. Every operand is coerced to an
+integer first; a non-integer operand (or division by zero) makes the node fall back as
+noted below.
+
+Comparisons build a boolean `ExprIR` (use them like `eq`):
+
+| Node | Means | When an operand is not an integer |
+| --- | --- | --- |
+| `{ kind: "lt", args: [a, b] }` | `a < b` | the comparison is `false` |
+| `{ kind: "lte", args: [a, b] }` | `a ≤ b` | the comparison is `false` |
+| `{ kind: "gt", args: [a, b] }` | `a > b` | the comparison is `false` |
+| `{ kind: "gte", args: [a, b] }` | `a ≥ b` | the comparison is `false` |
+
+Arithmetic builds an integer `ExprIR` to nest inside a comparison:
+
+| Node | Means | Notes |
+| --- | --- | --- |
+| `{ kind: "add", args: [a, b] }` | `a + b` | |
+| `{ kind: "sub", args: [a, b] }` | `a − b` | |
+| `{ kind: "mod", args: [a, b] }` | `a mod b` | floored — the result has the sign of `b`, so it is non-negative for a positive `b`; `b = 0` is undefined |
+
+Arithmetic here is unbounded — the variable's [`overflow` policy](./domains.md#numeric-overflow-policy)
+(`forbid` / `wrap` / `saturate`) only governs what happens when a value is *assigned back*
+into a finite domain, not intermediate predicate math.
+
+```ts
+// "count never exceeds capacity, even after one more increment"
+always(
+  model,
+  notExpr({
+    kind: "lt",
+    args: [readVar("local:Cart.capacity"), { kind: "add", args: [readVar("local:Cart.count"), lit(1)] }],
+  }),
+  { name: "withinCapacity" },
+);
+```
 
 ## Step predicate helpers
 
@@ -53,9 +95,24 @@ For `alwaysStep` and as `leadsToWithin` triggers:
 | `stepTransitionId(id)` | a specific transition |
 | `stepAny()` | any edge |
 
+Each helper returns a flat step matcher (`StepPredicateFlat`). Beyond the helpers above,
+a flat matcher object accepts more fields directly — there is no dedicated helper, so
+write the object literal:
+
+| Field | Matches |
+| --- | --- |
+| `transitionClass` | edges whose transition class is one of `user`, `nav`, `env`, `internal`, `library` |
+| `labelKind` | edges whose event label kind matches (e.g. `click`, `submit`, `input`, `navigate`, `resolve`) |
+| `navigated` | any navigation edge (when `true`) |
+| `navigatedTo` | a navigation edge targeting a specific route |
+| `opId` | an edge whose pending op has this id |
+| `continuation` | an edge resolving to a specific continuation |
+| `opArgs` | an edge whose op `args` snapshot matches these values |
+
 A full step predicate may be composite: `{ step, pre?, post?, negate? }` — `pre`/`post`
 are `ExprIR` over the edge endpoints, and `negate` flips the match. On enqueue/resolve
-edges, `StepFacts` also exposes the operation's `args` snapshot.
+edges, read the operation's enqueue-time `args` snapshot from within `pre`/`post` using
+`readOpArg(key)`.
 
 For focused handler postconditions, prefer `negate: true` with a bad `post` on
 `stepTransitionId(id)` rather than `{ step: stepTransitionId(id), post: goodCondition }`:
