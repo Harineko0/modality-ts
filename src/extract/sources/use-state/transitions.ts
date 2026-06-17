@@ -1,4 +1,5 @@
 import { extractSharedReactTransitionInventory } from "../shared/react-transition-extract.js";
+import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
 import {
   collectNumericSeedVarIds,
   widenNumericDomainsFromTransitions,
@@ -29,6 +30,9 @@ export function extractUseStateSkeleton(
     effectApis: options.effectApis ?? [],
     routePatterns: options.routePatterns ?? [],
     asyncOutcomes: options.asyncOutcomes,
+    ...(isEffectOpAliasesPopulated(options.effectOpAliases)
+      ? { effectOpAliases: options.effectOpAliases }
+      : {}),
     sourcePlugins: options.sourcePlugins ?? [],
     ...(options.stateVars ? { stateVars: options.stateVars } : {}),
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),

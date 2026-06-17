@@ -7,7 +7,11 @@ export function isEventAttribute(name: string): boolean {
     name === "onClick" ||
     name === "onSubmit" ||
     name === "onChange" ||
-    name === "onInput"
+    name === "onInput" ||
+    name === "onDragStart" ||
+    name === "onDragOver" ||
+    name === "onDrop" ||
+    name === "onDragEnd"
   );
 }
 

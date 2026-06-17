@@ -17,6 +17,10 @@ import type {
   DomainRefinementProvider,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
+import {
+  isEffectOpAliasesPopulated,
+  type EffectOpAliases,
+} from "../ts/effect-op-aliases.js";
 import { globalTaintCaveat } from "../ts/caveats.js";
 import type { ExtractionWarning } from "../ts/types.js";
 import { typeAliasDeclarations } from "../ts/domains.js";
@@ -56,6 +60,7 @@ export interface ExtractionPipelineOptions {
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
   bounds?: Pick<Bounds, "maxDepth">;
   semanticProject?: SemanticProject;
+  effectOpAliases?: EffectOpAliases;
 }
 
 export interface ExtractionPipelineResult {
@@ -246,6 +251,9 @@ export function runExtractionPipeline(
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+    ...(isEffectOpAliasesPopulated(options.effectOpAliases)
+      ? { effectOpAliases: options.effectOpAliases }
+      : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>

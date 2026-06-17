@@ -12,6 +12,11 @@ import type {
   RouteInventory,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
+import {
+  allEffectOpAliasCanonicalIds,
+  type EffectOpAliases,
+  normalizeSourcePath,
+} from "../../../extract/engine/ts/effect-op-aliases.js";
 
 function parseModuleDirectives(sourceText: string): ModuleDirective[] {
   const directives: ModuleDirective[] = [];
@@ -50,6 +55,7 @@ export interface ReachableImportsResult {
   warnings: string[];
   effectApiProvenance: EffectApiProvenanceEntry[];
   effectApis: string[];
+  effectOpAliases: EffectOpAliases;
 }
 
 type Surface = ModuleExtractionSurface;
@@ -993,10 +999,22 @@ export async function sourceWithReachableImports(
     );
   }
 
-  const effectApis = [
-    ...new Set(effectApiProvenance.map((entry) => entry.opId)),
-  ].sort();
-  return { sources, warnings, effectApiProvenance, effectApis };
+  const effectOpAliases = discoverServerActionImportAliases(
+    modules,
+    effectApiProvenance,
+    tsconfig,
+  );
+  const canonicalIds = new Set(effectApiProvenance.map((entry) => entry.opId));
+  for (const canonical of allEffectOpAliasCanonicalIds(effectOpAliases))
+    canonicalIds.add(canonical);
+  const effectApis = [...canonicalIds].sort();
+  return {
+    sources,
+    warnings,
+    effectApiProvenance,
+    effectApis,
+    effectOpAliases,
+  };
 }
 
 function discoverFetchOps(
@@ -1138,4 +1156,62 @@ async function firstExistingModulePath(
     }
   }
   return undefined;
+}
+
+function discoverServerActionImportAliases(
+  modules: ReadonlyMap<string, ModuleRecord>,
+  provenance: readonly EffectApiProvenanceEntry[],
+  tsconfig: TsConfigResolution,
+): Map<string, Map<string, string>> {
+  const aliases = new Map<string, Map<string, string>>();
+  const actionsByModule = new Map<string, Map<string, string>>();
+  for (const entry of provenance) {
+    if (!entry.opId.startsWith("ACTION ") || !entry.opId.includes("#"))
+      continue;
+    const exportName = entry.opId.slice(entry.opId.lastIndexOf("#") + 1);
+    const modulePath = resolve(entry.source.file).split("\\").join("/");
+    let byExport = actionsByModule.get(modulePath);
+    if (!byExport) {
+      byExport = new Map();
+      actionsByModule.set(modulePath, byExport);
+    }
+    byExport.set(exportName, entry.opId);
+  }
+  for (const record of modules.values()) {
+    if (record.classification.serverOnly) continue;
+    const modulePath = normalizeSourcePath(record.path);
+    const sourceFile = createSourceFile(record.path, record.text);
+    const bindings = collectImportBindings(sourceFile, false);
+    for (const binding of bindings) {
+      if (binding.isTypeOnly || binding.local === "*") continue;
+      if (!isLocalImportSpecifier(binding.specifier)) continue;
+      const bases = importBases(
+        dirname(record.path),
+        binding.specifier,
+        tsconfig,
+      );
+      for (const base of bases) {
+        const candidates = [
+          resolve(base),
+          `${resolve(base)}.ts`,
+          `${resolve(base)}.tsx`,
+        ];
+        for (const candidate of candidates) {
+          const normalized = candidate.split("\\").join("/");
+          const byExport = actionsByModule.get(normalized);
+          if (!byExport) continue;
+          const imported = binding.imported ?? binding.local;
+          const canonical = byExport.get(imported);
+          if (!canonical) continue;
+          let perFile = aliases.get(modulePath);
+          if (!perFile) {
+            perFile = new Map();
+            aliases.set(modulePath, perFile);
+          }
+          perFile.set(binding.local, canonical);
+        }
+      }
+    }
+  }
+  return aliases;
 }

@@ -23,6 +23,47 @@ import {
 } from "../../src/extract/sources/use-state/transitions.js";
 
 const routerExtraction = { routerPlugin: reactRouterAdapter() };
+
+function collectReadOpArgKeys(effect: EffectIR): string[] {
+  const keys: string[] = [];
+  const visitExpr = (expr: import("modality-ts/core").ExprIR): void => {
+    if (expr.kind === "readOpArg") keys.push(expr.key);
+    if ("args" in expr && Array.isArray(expr.args))
+      expr.args.forEach(visitExpr);
+    if ("left" in expr) visitExpr(expr.left);
+    if ("right" in expr) visitExpr(expr.right);
+  };
+  const visit = (candidate: EffectIR): void => {
+    if (candidate.kind === "assign") visitExpr(candidate.expr);
+    if (candidate.kind === "seq") candidate.effects.forEach(visit);
+    if (candidate.kind === "if") {
+      visit(candidate.then);
+      visit(candidate.else);
+    }
+    if (candidate.kind === "enqueue") {
+      for (const expr of Object.values(candidate.args)) visitExpr(expr);
+    }
+  };
+  visit(effect);
+  return keys;
+}
+
+function enqueueArgKeysForOp(
+  transitions: readonly Model["transitions"][number][],
+  op: string,
+): Set<string> {
+  const keys = new Set<string>();
+  const start = transitions.find(
+    (transition) => transition.id === `App.onClick.${op}.start`,
+  );
+  if (!start || start.effect.kind !== "seq") return keys;
+  for (const effect of start.effect.effects) {
+    if (effect.kind === "enqueue" && effect.op === op) {
+      for (const key of Object.keys(effect.args)) keys.add(key);
+    }
+  }
+  return keys;
+}
 const analyticsInventory = {
   routes: [
     { pattern: "/", kind: "index" as const, file: "home.tsx" },
@@ -3479,12 +3520,13 @@ describe("useState inventory", () => {
         effectApis: ["api.saveTodo", "api.refreshTodo"],
       },
     );
-    expect(variableAwait.transitions).toEqual([]);
     expect(
-      variableAwait.warnings.some((warning) =>
-        warning.message.includes("Unextractable handler App.onClick"),
-      ),
-    ).toBe(true);
+      variableAwait.transitions.map((transition) => transition.id),
+    ).toEqual([
+      "App.onClick.api.saveTodo.start",
+      "App.onClick.api.saveTodo.success",
+      "App.onClick.api.refreshTodo.success",
+    ]);
 
     const promiseAllAwait = extractUseStateSkeleton(
       `
@@ -3600,6 +3642,425 @@ describe("useState inventory", () => {
         },
       ],
     ]);
+  });
+
+  it("extracts async try/catch handlers with variable await bindings", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+      export function App() {
+        const [job, setJob] = useState<{ status: JobStatus } | null>(null);
+        const [prompt, setPrompt] = useState('');
+        const [lineAccountId, setLineAccountId] = useState('a1');
+        return <button onClick={async () => {
+          try {
+            const result = await api.requestJob({ prompt, lineAccountId });
+            setJob(result.job);
+          } catch {
+            setJob({ status: 'failed' });
+          } finally {
+            setPrompt('');
+          }
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+        asyncOutcomes: {
+          "api.requestJob": {
+            success: {
+              job: { status: "pending" },
+              accountId: "a1",
+            },
+          },
+        },
+      },
+    );
+    expect(
+      result.transitions.map((transition) => [transition.id, transition.cls]),
+    ).toEqual([
+      ["App.onClick.api.requestJob.start", "user"],
+      ["App.onClick.api.requestJob.success", "env"],
+      ["App.onClick.api.requestJob.error", "env"],
+    ]);
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.requestJob.start",
+      ),
+    ).toMatchObject({
+      reads: ["local:App.lineAccountId", "local:App.prompt"],
+      effect: {
+        kind: "seq",
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "enqueue",
+            op: "api.requestJob",
+            args: {
+              prompt: { kind: "read", var: "local:App.prompt" },
+              lineAccountId: { kind: "read", var: "local:App.lineAccountId" },
+            },
+          }),
+        ]),
+      },
+    });
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.requestJob.success",
+      )?.effect,
+    ).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "assign",
+          var: "local:App.job",
+          expr: {
+            kind: "lit",
+            value: { status: "pending" },
+          },
+        }),
+      ]),
+    });
+  });
+
+  it("assigns nested status fields from awaited result bindings", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'pending' | 'processing' | 'completed' | 'failed'>('idle');
+        return <button onClick={async () => {
+          const result = await api.requestJob({});
+          setStatus(result.job.status);
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+        asyncOutcomes: {
+          "api.requestJob": {
+            success: {
+              job: { status: "processing" },
+            },
+          },
+        },
+      },
+    );
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.requestJob.success",
+      )?.effect,
+    ).toMatchObject({
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "assign",
+          var: "local:App.status",
+          expr: { kind: "lit", value: "processing" },
+        }),
+      ]),
+    });
+  });
+
+  it("infers nested finite record status domains", () => {
+    const result = extractUseStateVars(
+      `
+      import { useState } from 'react';
+      type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+      type Job = { job: { status: JobStatus } };
+      export function App() {
+        const [job, setJob] = useState<Job | null>(null);
+        return null;
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.vars.find((decl) => decl.id === "local:App.job")?.domain,
+    ).toEqual({
+      kind: "option",
+      inner: {
+        kind: "record",
+        fields: {
+          job: {
+            kind: "record",
+            fields: {
+              status: {
+                kind: "enum",
+                values: ["pending", "processing", "completed", "failed"],
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("guards async continuation writes with stale-result checks", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [selectedAccountId, setSelectedAccountId] = useState('a1');
+        const [job, setJob] = useState<{ status: string } | null>(null);
+        return <button onClick={async () => {
+          const result = await api.requestJob({ accountId: selectedAccountId });
+          if (selectedAccountId !== result.accountId) return;
+          setJob(result.job);
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+        asyncOutcomes: {
+          "api.requestJob": {
+            success: { accountId: "a1", job: { status: "pending" } },
+          },
+        },
+      },
+    );
+    const success = result.transitions.find(
+      (transition) => transition.id === "App.onClick.api.requestJob.success",
+    );
+    expect(success?.effect).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "if",
+          cond: {
+            kind: "neq",
+            args: [
+              { kind: "readPre", var: "local:App.selectedAccountId" },
+              { kind: "lit", value: "a1" },
+            ],
+          },
+        }),
+      ]),
+    });
+  });
+
+  it("applies pre-await guard returns to async start transitions", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [prompt, setPrompt] = useState('');
+        const [status, setStatus] = useState<'idle' | 'submitting'>('idle');
+        return <button onClick={async () => {
+          if (!prompt) return;
+          setStatus('submitting');
+          await api.requestJob({ prompt });
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+      },
+    );
+    expect(
+      result.transitions.find(
+        (transition) => transition.id === "App.onClick.api.requestJob.start",
+      ),
+    ).toMatchObject({
+      guard: { kind: "read", var: "local:App.prompt" },
+      reads: ["local:App.prompt"],
+    });
+  });
+
+  it("over-approximates unconfigured awaited result bindings without outcome readOpArg", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+      export function App() {
+        const [job, setJob] = useState<{ status: JobStatus } | null>(null);
+        return <button onClick={async () => {
+          const result = await api.requestJob({ prompt: 'x' });
+          setJob(result.job);
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+      },
+    );
+    const startArgs = enqueueArgKeysForOp(result.transitions, "api.requestJob");
+    const success = result.transitions.find(
+      (transition) => transition.id === "App.onClick.api.requestJob.success",
+    );
+    expect(success).toBeDefined();
+    for (const key of collectReadOpArgKeys(success!.effect)) {
+      if (key.startsWith("outcome:api.requestJob")) {
+        expect(startArgs.has(key)).toBe(true);
+      }
+    }
+    expect(success?.effect).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "havoc",
+          var: "local:App.job",
+        }),
+      ]),
+    });
+    expect(success?.confidence).toBe("over-approx");
+  });
+
+  it("over-approximates nested unconfigured awaited result property writes", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'pending' | 'processing'>('idle');
+        return <button onClick={async () => {
+          const result = await api.requestJob({});
+          setStatus(result.job.status);
+        }}>Submit</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.requestJob"],
+      },
+    );
+    const startArgs = enqueueArgKeysForOp(result.transitions, "api.requestJob");
+    const success = result.transitions.find(
+      (transition) => transition.id === "App.onClick.api.requestJob.success",
+    );
+    for (const key of collectReadOpArgKeys(success!.effect)) {
+      if (key.startsWith("outcome:api.requestJob")) {
+        expect(startArgs.has(key)).toBe(true);
+      }
+    }
+    expect(success?.effect).toMatchObject({
+      kind: "seq",
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "havoc",
+          var: "local:App.status",
+        }),
+      ]),
+    });
+    expect(success?.confidence).toBe("over-approx");
+  });
+
+  it("models confirm-gated async delete with declined and accepted paths", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'deleting'>('idle');
+        return <button onClick={async () => {
+          if (!window.confirm('Delete?')) return;
+          setStatus('deleting');
+          await api.deleteDefinition({ id: 'd1' });
+        }}>Delete</button>;
+      }
+      `,
+      {
+        route: "/",
+        fileName: "App.tsx",
+        effectApis: ["api.deleteDefinition"],
+      },
+    );
+    expect(
+      result.warnings.map((warning) => warning.message),
+    ).not.toContainEqual(expect.stringContaining("no-extractable-effect"));
+    expect(result.transitions.map((transition) => transition.id)).toEqual(
+      expect.arrayContaining([
+        "App.onClick.api.deleteDefinition.start",
+        "App.onClick.api.deleteDefinition.declined",
+      ]),
+    );
+    const confirmVar = "sys:confirm:App.onClick.api.deleteDefinition";
+    const start = result.transitions.find(
+      (transition) => transition.id === "App.onClick.api.deleteDefinition.start",
+    );
+    const declined = result.transitions.find(
+      (transition) =>
+        transition.id === "App.onClick.api.deleteDefinition.declined",
+    );
+    expect(declined?.confidence).toBe("over-approx");
+    expect(declined?.effect).toMatchObject({
+      kind: "seq",
+      effects: [
+        {
+          kind: "assign",
+          var: confirmVar,
+          expr: { kind: "lit", value: "declined" },
+        },
+      ],
+    });
+    expect(
+      start?.effect.kind === "seq" &&
+        start.effect.effects.some(
+          (effect) =>
+            effect.kind === "enqueue" &&
+            effect.op === "api.deleteDefinition",
+        ),
+    ).toBe(true);
+    expect(
+      start?.effect.kind === "seq" &&
+        start.effect.effects.some(
+          (effect) =>
+            effect.kind === "assign" &&
+            effect.var === confirmVar &&
+            effect.expr.kind === "lit" &&
+            effect.expr.value === "accepted",
+        ),
+    ).toBe(true);
+    expect(
+      declined?.effect.kind === "seq" &&
+        !declined.effect.effects.some((effect) => effect.kind === "enqueue"),
+    ).toBe(true);
+  });
+
+  it("extracts simple drag/drop state reset handlers", () => {
+    const result = extractUseStateSkeleton(
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [draggingId, setDraggingId] = useState<string | null>(null);
+        const [overId, setOverId] = useState<string | null>(null);
+        return (
+          <>
+            <div onDragStart={() => setDraggingId('d1')}>drag</div>
+            <div onDragOver={() => setOverId('d2')}>over</div>
+            <div onDragEnd={() => {
+              setDraggingId(null);
+              setOverId(null);
+            }}>end</div>
+          </>
+        );
+      }
+      `,
+      { route: "/", fileName: "App.tsx" },
+    );
+    expect(
+      result.warnings.map((warning) => warning.message),
+    ).not.toContainEqual(expect.stringContaining("no-extractable-effect"));
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.startsWith("App.onDragEnd") &&
+          transition.writes.includes("local:App.draggingId"),
+      ),
+    ).toBe(true);
+    expect(
+      result.transitions.some((transition) =>
+        transition.writes.includes("local:App.overId"),
+      ),
+    ).toBe(true);
   });
 
   it("havocs finite-domain setter writes from unrepresentable expressions", () => {

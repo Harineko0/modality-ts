@@ -1350,6 +1350,43 @@ describe("runExtractCommand", () => {
     );
   });
 
+  it("blocks empty-label form submit through required input guards", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [label, setLabel] = useState('');
+        return (
+          <form onSubmit={() => setLabel('saved')}>
+            <input required value={label} onChange={(e) => setLabel(e.target.value)} />
+            <button type="submit">Save</button>
+          </form>
+        );
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onSubmit.label",
+        guard: {
+          kind: "neq",
+          args: [
+            { kind: "readPre", var: "local:App.label" },
+            { kind: "lit", value: "" },
+          ],
+        },
+        reads: ["local:App.label"],
+      }),
+    );
+  });
+
   it("extracts Jotai default-store writes through source write channels", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");

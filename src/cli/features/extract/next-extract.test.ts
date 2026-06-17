@@ -216,6 +216,167 @@ describe("runExtractCommand next.js", () => {
     ).toBe(true);
   });
 
+  it("canonicalizes imported server action op ids without friendly duplicates", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-next-server-canonical-"),
+    );
+    const modelPath = join(dir, "model.json");
+    const { packageJsonPath, paths } = await writeNextProject(dir, {
+      "app/page.tsx": `
+        'use client';
+        import { useState } from 'react';
+        import { save } from './actions';
+        export default function Home() {
+          const [status, setStatus] = useState('idle');
+          return (
+            <button onClick={async () => {
+              setStatus('saving');
+              await save();
+              setStatus('done');
+            }}>Save</button>
+          );
+        }
+      `,
+      "app/actions.ts": `
+        'use server';
+        export async function save() {}
+      `,
+    });
+
+    const result = await runExtractCommand({
+      sourcePaths: paths,
+      modelPath,
+      packageJsonPath,
+      route: "/",
+      effectApis: [],
+    });
+
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    const opValues =
+      pendingVar?.domain.kind === "boundedList"
+        ? (
+            pendingVar.domain.inner as {
+              fields: { opId: { values: string[] } };
+            }
+          ).fields.opId.values
+        : [];
+    const actionIds = opValues.filter((op) => op.startsWith("ACTION "));
+    expect(actionIds).toHaveLength(1);
+    expect(opValues).not.toContain("save");
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.id.includes(actionIds[0] ?? "") &&
+          transition.id.endsWith(".start"),
+      ),
+    ).toBe(true);
+  });
+
+  it("scopes colliding server action import aliases per client module", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-next-server-alias-collision-"),
+    );
+    const modelPath = join(dir, "model.json");
+    const { packageJsonPath, paths } = await writeNextProject(dir, {
+      "app/account/page.tsx": `
+        'use client';
+        import { useState } from 'react';
+        import { save } from '../account-actions';
+        export default function AccountPage() {
+          const [status, setStatus] = useState('idle');
+          return (
+            <button onClick={async () => {
+              setStatus('saving');
+              await save();
+              setStatus('done');
+            }}>Save account</button>
+          );
+        }
+      `,
+      "app/profile/page.tsx": `
+        'use client';
+        import { useState } from 'react';
+        import { save } from '../profile-actions';
+        export default function ProfilePage() {
+          const [status, setStatus] = useState('idle');
+          return (
+            <button onClick={async () => {
+              setStatus('saving');
+              await save();
+              setStatus('done');
+            }}>Save profile</button>
+          );
+        }
+      `,
+      "app/local/page.tsx": `
+        'use client';
+        import { useState } from 'react';
+        async function save() {}
+        export default function LocalPage() {
+          const [status, setStatus] = useState('idle');
+          return (
+            <button onClick={async () => {
+              await save();
+              setStatus('done');
+            }}>Local save</button>
+          );
+        }
+      `,
+      "app/account-actions.ts": `
+        'use server';
+        export async function save() {}
+      `,
+      "app/profile-actions.ts": `
+        'use server';
+        export async function save() {}
+      `,
+    });
+
+    const result = await runExtractCommand({
+      sourcePaths: paths,
+      modelPath,
+      packageJsonPath,
+      route: "/account",
+      effectApis: [],
+    });
+
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    const opValues =
+      pendingVar?.domain.kind === "boundedList"
+        ? (
+            pendingVar.domain.inner as {
+              fields: { opId: { values: string[] } };
+            }
+          ).fields.opId.values
+        : [];
+    const actionIds = opValues.filter((op) => op.startsWith("ACTION "));
+    expect(actionIds).toHaveLength(2);
+    expect(opValues).not.toContain("save");
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.id.includes(actionIds[0] ?? "") &&
+          transition.id.endsWith(".start"),
+      ),
+    ).toBe(true);
+    expect(
+      result.model.transitions.some(
+        (transition) =>
+          transition.id.includes(actionIds[1] ?? "") &&
+          transition.id.endsWith(".start"),
+      ),
+    ).toBe(true);
+    expect(
+      result.model.transitions.some((transition) =>
+        transition.id.includes("LocalPage.onClick.save.start"),
+      ),
+    ).toBe(false);
+  });
+
   it("discovers Pages Router dynamic route patterns", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-next-pages-"));
     const modelPath = join(dir, "model.json");

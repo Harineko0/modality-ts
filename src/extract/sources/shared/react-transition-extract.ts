@@ -1,4 +1,6 @@
 import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
+import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
+import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
 import type { Value } from "modality-ts/core";
 import type {
   ExtractCtx,
@@ -13,6 +15,7 @@ export type SharedReactTransitionCtx = Omit<
   stateVars?: readonly ExtractCtx["stateVars"][number][];
   writeChannels?: readonly WriteChannel[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  effectOpAliases?: EffectOpAliases;
   environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
   resetSymbols?: ReadonlySet<string>;
@@ -27,6 +30,9 @@ function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
     effectApis: ctx.effectApis,
     routePatterns: ctx.routePatterns,
     asyncOutcomes: ctx.asyncOutcomes,
+    ...(isEffectOpAliasesPopulated(ctx.effectOpAliases)
+      ? { effectOpAliases: ctx.effectOpAliases }
+      : {}),
     sourcePlugins: ctx.sourcePlugins,
     ...(ctx.environment ? { environment: ctx.environment } : {}),
     ...(ctx.stateVars ? { stateVars: ctx.stateVars } : {}),

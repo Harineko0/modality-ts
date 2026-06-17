@@ -68,6 +68,8 @@ import {
 } from "../../../extract/engine/ts/caveats.js";
 import { timerStateVarDecl } from "../../../extract/engine/ts/transition/timers.js";
 import { environmentStateVarDecl } from "../../../extract/engine/ts/transition/environment-callbacks.js";
+import { confirmStateVarDecl } from "../../../extract/engine/ts/transition/async.js";
+import type { EffectOpAliases } from "../../../extract/engine/ts/effect-op-aliases.js";
 import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
 import { suspenseStateVarDecl } from "../../../extract/engine/ts/transition/suspense.js";
 import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
@@ -197,7 +199,13 @@ export async function runExtractCommand(
   );
   const route = resolveExtractionRoute(project, config, options, sourcePaths);
   const routePatterns = project.inventory.routes.map((node) => node.pattern);
+  const effectOpAliases = project.effectOpAliases;
   const effectApis = uniqueStrings([
+    ...(config.effectApis ?? []),
+    ...(options.effectApis ?? []),
+    ...project.effectApis,
+  ]);
+  const canonicalEffectApis = uniqueStrings([
     ...(config.effectApis ?? []),
     ...(options.effectApis ?? []),
     ...project.effectApis,
@@ -213,6 +221,7 @@ export async function runExtractCommand(
     route,
     routePatterns,
     effectApis,
+    effectOpAliases,
     environment: config.environment,
     sourcePlugins: registry.sourcePlugins,
     routerPlugin: routerAdapter,
@@ -282,7 +291,8 @@ export async function runExtractCommand(
       ...routeVars,
       ...synthesizeSystemVars(
         transitions,
-        effectApis,
+        canonicalEffectApis,
+        effectOpAliases,
         [...routeVars, ...stateVars],
         bounds.maxPending,
       ),
@@ -440,6 +450,7 @@ interface ExtractionProject {
   sources: Array<{ path: string; text: string }>;
   inventory: RouteInventory;
   effectApis: string[];
+  effectOpAliases: EffectOpAliases;
   effectApiProvenance: EffectApiProvenanceEntry[];
   surfaceWarnings: string[];
   configStartDir: string;
@@ -519,6 +530,7 @@ function emptySurfaceProject(input: {
     sources: [],
     inventory: { routes: [] },
     effectApis: [],
+    effectOpAliases: new Map(),
     effectApiProvenance: [],
     surfaceWarnings: [],
     configStartDir: input.configStartDir,
@@ -575,6 +587,7 @@ async function buildClientProjectSurface(
       text: entry.text,
     })),
     effectApis: reachable.effectApis,
+    effectOpAliases: reachable.effectOpAliases,
     effectApiProvenance: reachable.effectApiProvenance,
     surfaceWarnings: reachable.warnings,
   };
@@ -586,6 +599,7 @@ function runProjectExtractionPipeline(
     route: string;
     routePatterns: readonly string[];
     effectApis: readonly string[];
+    effectOpAliases?: EffectOpAliases;
     environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
     routerPlugin?: RouterPlugin;
@@ -1465,19 +1479,22 @@ function createExtractionCaveats(
 function synthesizeSystemVars(
   transitions: readonly Model["transitions"][number][],
   effectApis: readonly string[],
+  effectOpAliases: EffectOpAliases,
   vars: readonly StateVarDecl[],
   maxPending: number,
 ): StateVarDecl[] {
   const timerIds = collectSystemVarIds(transitions, "sys:timer:");
   const suspenseIds = collectSystemVarIds(transitions, "sys:suspense:");
   const webSocketIds = collectSystemVarIds(transitions, "sys:websocket:");
+  const confirmIds = collectSystemVarIds(transitions, "sys:confirm:");
   return [
-    ...pendingVars(effectApis, transitions, vars, maxPending),
+    ...pendingVars(effectApis, transitions, vars, maxPending, effectOpAliases),
     ...timerIds.sort().map((id) => timerStateVarDecl(id)),
     ...suspenseIds
       .sort()
       .map((id) => suspenseStateVarDecl(id.replace(/^sys:suspense:/, ""))),
     ...webSocketIds.sort().map((id) => environmentStateVarDecl(id)),
+    ...confirmIds.sort().map((id) => confirmStateVarDecl(id)),
   ];
 }
 
@@ -1793,21 +1810,31 @@ function pendingVars(
   transitions: readonly Model["transitions"][number][] = [],
   vars: readonly StateVarDecl[] = [],
   maxPending = 3,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): StateVarDecl[] {
+  const canonicalOp = (op: string): string => {
+    for (const perFile of effectOpAliases.values()) {
+      const canonical = perFile.get(op);
+      if (canonical) return canonical;
+    }
+    return op;
+  };
   const enqueues = transitions.flatMap((transition) =>
     enqueueOps(transition.effect),
   );
-  const opValues = new Set(effectApis);
+  const opValues = new Set(effectApis.map(canonicalOp));
   const continuationValues = new Set<string>();
   const argFields: Record<string, StateVarDecl["domain"]> = {};
   const varsById = new Map(vars.map((decl) => [decl.id, decl]));
   for (const op of effectApis) {
-    continuationValues.add(`App.onClick.${op}.cont`);
-    continuationValues.add(`App.onSubmit.${op}.cont`);
-    continuationValues.add(`App.onChange.${op}.cont`);
+    const canonical = canonicalOp(op);
+    continuationValues.add(`App.onClick.${canonical}.cont`);
+    continuationValues.add(`App.onSubmit.${canonical}.cont`);
+    continuationValues.add(`App.onChange.${canonical}.cont`);
   }
   for (const enqueue of enqueues) {
-    opValues.add(enqueue.op);
+    const op = canonicalOp(enqueue.op);
+    opValues.add(op);
     continuationValues.add(enqueue.continuation);
     for (const [name, expr] of Object.entries(enqueue.args)) {
       const domain = pendingArgDomain(expr, varsById);

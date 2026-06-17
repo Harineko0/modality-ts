@@ -142,6 +142,27 @@ export function disabledGuardFor(
   component: string,
   locals: Map<string, BoundExpr> = new Map(),
 ): ParsedGuard | undefined {
+  return combineParsedGuards([
+    disabledAttributeGuardFor(
+      eventAttribute,
+      setters,
+      warnings,
+      source,
+      component,
+      locals,
+    ),
+    submitRequiredEmptyValueGuard(eventAttribute, setters, locals),
+  ]);
+}
+
+function disabledAttributeGuardFor(
+  eventAttribute: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  warnings: ExtractionWarning[],
+  source: ts.SourceFile,
+  component: string,
+  locals: Map<string, BoundExpr> = new Map(),
+): ParsedGuard | undefined {
   const attrs = eventAttribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
   const disabled =
@@ -197,6 +218,63 @@ export function submitButtonDisabledAttribute(
   };
   visit(element);
   return found;
+}
+
+export function submitRequiredEmptyValueGuard(
+  eventAttribute: ts.JsxAttribute,
+  setters: Map<string, SetterBinding>,
+  locals: Map<string, BoundExpr> = new Map(),
+): ParsedGuard | undefined {
+  if (
+    !ts.isIdentifier(eventAttribute.name) ||
+    eventAttribute.name.text !== "onSubmit"
+  )
+    return undefined;
+  const element = jsxElementForAttribute(eventAttribute);
+  if (!element || !ts.isJsxElement(element)) return undefined;
+  const guards: ParsedGuard[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
+      const tag = ts.isIdentifier(node.tagName) ? node.tagName.text : undefined;
+      if (tag === "input" || tag === "textarea") {
+        const required = node.attributes.properties.some(
+          (property) =>
+            ts.isJsxAttribute(property) &&
+            ts.isIdentifier(property.name) &&
+            property.name.text === "required",
+        );
+        if (!required) return;
+        const valueAttr = node.attributes.properties.find(
+          (property): property is ts.JsxAttribute =>
+            ts.isJsxAttribute(property) &&
+            ts.isIdentifier(property.name) &&
+            property.name.text === "value",
+        );
+        if (
+          !valueAttr?.initializer ||
+          !ts.isJsxExpression(valueAttr.initializer) ||
+          !valueAttr.initializer.expression
+        )
+          return;
+        const bound = valueExpr(
+          valueAttr.initializer.expression,
+          setters,
+          locals,
+        );
+        if (!bound) return;
+        guards.push({
+          expr: {
+            kind: "neq",
+            args: [bound.expr, { kind: "lit", value: "" }],
+          },
+          reads: bound.reads,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(element);
+  return combineParsedGuards(guards);
 }
 
 export function jsxAttributeBoolean(

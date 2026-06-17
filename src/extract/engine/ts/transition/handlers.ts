@@ -7,6 +7,7 @@ import type {
 } from "modality-ts/core";
 import * as ts from "typescript";
 import type { RouterPlugin, StateSourcePlugin } from "../../spi/index.js";
+import type { EffectOpAliases } from "../effect-op-aliases.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
 import { handlerExpression, jsxTagName } from "../components.js";
@@ -156,6 +157,7 @@ export interface HandlerExtractionContext {
   envTransitions?: Transition[];
   timerIndex?: { value: number };
   routerSubmitContext?: ReactRouterSubmitContext;
+  effectOpAliases?: EffectOpAliases;
 }
 
 export function transitionsFromJsxAttribute(
@@ -694,12 +696,18 @@ export function transitionsFromResolvedHandler(
     routerPlugin,
     routePatterns,
     warnings,
+    handlerContext.effectOpAliases ?? new Map(),
   );
   if (asyncTransitions.length > 0)
     return applyParsedGuard(asyncTransitions, disabledGuard);
   if (
     ts.isBlock(handler.body) &&
-    containsAwaitedEffect(handler.body.statements, effectApis)
+    containsAwaitedEffect(
+      handler.body.statements,
+      effectApis,
+      fileName,
+      handlerContext.effectOpAliases ?? new Map(),
+    )
   ) {
     const anchor = lineAndColumn(source, handler);
     warnings.push({
