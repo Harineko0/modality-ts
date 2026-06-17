@@ -493,6 +493,39 @@ describe("runConformCommand", () => {
     ).rejects.toThrow("unsupported conform walks schemaVersion 2");
   });
 
+  it("propagates optional fixture metadata into conform reports", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-conform-"));
+    const walksPath = join(dir, "walks.json");
+    await writeFile(
+      walksPath,
+      JSON.stringify(conformWalks([{ id: "ok", trace }])),
+      "utf8",
+    );
+
+    const result = await runConformCommand({
+      walksPath,
+      fixtureId: "state-local-setter-batch",
+      featureIds: ["state.local.setter-batching"],
+      targetIds: ["react-use-state"],
+      thresholds: { minPassRate: 1, minTransitionPassRate: 0.9 },
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.report).toMatchObject({
+      fixtureId: "state-local-setter-batch",
+      featureIds: ["state.local.setter-batching"],
+      targetIds: ["react-use-state"],
+      thresholds: { minPassRate: 1, minTransitionPassRate: 0.9 },
+    });
+    expect(result.lines).toEqual([
+      "conform: total=1 reproduced=1 notReproduced=0 inconclusive=0",
+      "mode=abstract",
+      "fixture=state-local-setter-batch",
+      "features=state.local.setter-batching",
+      "targets=react-use-state",
+      "passRate=1",
+    ]);
+  });
+
   it("runs conform directly from a model by generating abstract walks", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-conform-"));
     const modelPath = join(dir, "model.json");
@@ -540,6 +573,36 @@ describe("runConformCommand", () => {
 });
 
 describe("renderHumanConformResult", () => {
+  it("prints fixture context when present", () => {
+    const lines = renderHumanConformResult({
+      report: {
+        schemaVersion: 1,
+        kind: "conform-report",
+        generatedAt: "2026-06-12T00:00:00.000Z",
+        mode: "abstract",
+        fixtureId: "state-local-setter-batch",
+        featureIds: ["state.local.setter-batching"],
+        targetIds: ["react-use-state"],
+        walks: [],
+        metrics: {
+          total: 8,
+          reproduced: 8,
+          notReproduced: 0,
+          inconclusive: 0,
+          passRate: 1,
+        },
+        transitionMetrics: [],
+      },
+      reportPath: ".modality/conform-report.json",
+      durationMs: 8,
+    });
+    expect(lines.join("\n")).toContain("fixture state-local-setter-batch");
+    expect(lines.join("\n")).toContain(
+      "features state.local.setter-batching",
+    );
+    expect(lines.join("\n")).toContain("targets react-use-state");
+  });
+
   it("prints row-oriented conform output", () => {
     const lines = renderHumanConformResult({
       report: {

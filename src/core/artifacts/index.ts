@@ -1,6 +1,9 @@
 import type { Model } from "../ir/types.js";
 import type {
+  CanaryFailureCategory,
+  CanaryRunReport,
   CheckReport,
+  ConformanceMatrixReport,
   ConformReport,
   ExtractionReport,
   ReplayReport,
@@ -159,7 +162,91 @@ export function parseConformReportArtifact(json: string): ConformReport {
     throw new Error("conform report artifact missing metrics");
   if (!Array.isArray(value.transitionMetrics))
     throw new Error("conform report artifact missing transitionMetrics");
+  if (value.fixtureId !== undefined) {
+    assertNonEmptyString(value.fixtureId, "conform report fixtureId");
+  }
+  if (value.featureIds !== undefined) {
+    assertStringArray(value.featureIds, "conform report featureIds");
+  }
+  if (value.targetIds !== undefined) {
+    assertStringArray(value.targetIds, "conform report targetIds");
+  }
+  if (value.thresholds !== undefined) {
+    if (!isRecord(value.thresholds))
+      throw new Error("conform report thresholds must be an object");
+    if (value.thresholds.minPassRate !== undefined) {
+      assertPassRate(value.thresholds.minPassRate, "conform report minPassRate");
+    }
+    if (value.thresholds.minTransitionPassRate !== undefined) {
+      assertPassRate(
+        value.thresholds.minTransitionPassRate,
+        "conform report minTransitionPassRate",
+      );
+    }
+  }
   return value as unknown as ConformReport;
+}
+
+export function parseConformanceMatrixReportArtifact(
+  json: string,
+): ConformanceMatrixReport {
+  const value = JSON.parse(json) as unknown;
+  if (!isRecord(value))
+    throw new Error("conformance matrix report artifact must be an object");
+  if (value.schemaVersion !== 1)
+    throw new Error(
+      `unsupported conformance matrix report schemaVersion ${String(value.schemaVersion)}`,
+    );
+  if (value.kind !== "conformance-matrix-report")
+    throw new Error(
+      "conformance matrix report artifact kind must be conformance-matrix-report",
+    );
+  assertNonEmptyString(value.matrixId, "conformance matrix report matrixId");
+  if (!Array.isArray(value.fixtureResults))
+    throw new Error(
+      "conformance matrix report artifact missing fixtureResults",
+    );
+  for (const [index, entry] of value.fixtureResults.entries()) {
+    assertConformanceFixtureResult(entry, `fixtureResults[${index}]`);
+  }
+  if (value.thresholdResults !== undefined) {
+    assertThresholdResults(value.thresholdResults, "thresholdResults");
+  }
+  if (value.budgetResults !== undefined) {
+    assertBudgetResults(value.budgetResults, "budgetResults");
+  }
+  if (value.classifications !== undefined) {
+    assertFailureClassifications(value.classifications, "classifications");
+  }
+  return value as unknown as ConformanceMatrixReport;
+}
+
+export function parseCanaryRunReportArtifact(json: string): CanaryRunReport {
+  const value = JSON.parse(json) as unknown;
+  if (!isRecord(value))
+    throw new Error("canary run report artifact must be an object");
+  if (value.schemaVersion !== 1)
+    throw new Error(
+      `unsupported canary run report schemaVersion ${String(value.schemaVersion)}`,
+    );
+  if (value.kind !== "canary-run-report")
+    throw new Error("canary run report artifact kind must be canary-run-report");
+  assertNonEmptyString(value.manifestId, "canary run report manifestId");
+  if (!Array.isArray(value.canaryResults))
+    throw new Error("canary run report artifact missing canaryResults");
+  for (const [index, entry] of value.canaryResults.entries()) {
+    assertCanaryResult(entry, `canaryResults[${index}]`);
+  }
+  if (value.thresholdResults !== undefined) {
+    assertThresholdResults(value.thresholdResults, "thresholdResults");
+  }
+  if (value.budgetResults !== undefined) {
+    assertBudgetResults(value.budgetResults, "budgetResults");
+  }
+  if (!Array.isArray(value.classifications))
+    throw new Error("canary run report artifact missing classifications");
+  assertFailureClassifications(value.classifications, "classifications");
+  return value as unknown as CanaryRunReport;
 }
 
 export function parsePropertyArtifact(json: string): Property[] {
@@ -445,4 +532,175 @@ function assertNoFunctions(value: unknown, path: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertNonEmptyString(value: unknown, path: string): void {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${path} must be a non-empty string`);
+  }
+}
+
+function assertPassRate(value: unknown, path: string): void {
+  if (typeof value !== "number" || value < 0 || value > 1) {
+    throw new Error(`${path} must be a number between 0 and 1`);
+  }
+}
+
+function assertPositiveInteger(value: unknown, path: string): void {
+  if (!Number.isInteger(value) || (value as number) <= 0) {
+    throw new Error(`${path} must be a positive integer`);
+  }
+}
+
+function assertNonNegativeInteger(value: unknown, path: string): void {
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new Error(`${path} must be a non-negative integer`);
+  }
+}
+
+function assertStringArray(value: unknown, path: string): void {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  for (const [index, entry] of value.entries()) {
+    assertNonEmptyString(entry, `${path}[${index}]`);
+  }
+}
+
+const REPORT_RESULT_STATUSES = new Set([
+  "pass",
+  "fail",
+  "skipped",
+  "error",
+]);
+
+const REPORT_GATE_STATUSES = new Set(["pass", "fail", "skipped"]);
+
+const CANARY_FAILURE_CATEGORIES = new Set<CanaryFailureCategory>([
+  "missing-semantic-abstraction",
+  "missing-adapter-capability",
+  "syntax-recognition-gap",
+  "incorrect-ir-or-checker",
+  "state-space-budget",
+  "environment-or-project-integration",
+  "explicit-unsupported-behavior",
+  "fixture-or-canary-invalid",
+]);
+
+const CANARY_FAILURE_SEVERITIES = new Set([
+  "blocker",
+  "action-required",
+  "accepted",
+]);
+
+function assertReportResultStatus(value: unknown, path: string): void {
+  if (typeof value !== "string" || !REPORT_RESULT_STATUSES.has(value)) {
+    throw new Error(`${path} has unsupported status`);
+  }
+}
+
+function assertGateStatus(value: unknown, path: string): void {
+  if (typeof value !== "string" || !REPORT_GATE_STATUSES.has(value)) {
+    throw new Error(`${path} has unsupported gate status`);
+  }
+}
+
+function assertThresholdResults(value: unknown, path: string): void {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    assertNonEmptyString(entry.id, `${path}[${index}].id`);
+    assertGateStatus(entry.status, `${path}[${index}].status`);
+    if (entry.expected !== undefined) {
+      assertPassRate(entry.expected, `${path}[${index}].expected`);
+    }
+    if (entry.actual !== undefined) {
+      assertPassRate(entry.actual, `${path}[${index}].actual`);
+    }
+  }
+}
+
+function assertBudgetResults(value: unknown, path: string): void {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    assertNonEmptyString(entry.id, `${path}[${index}].id`);
+    assertGateStatus(entry.status, `${path}[${index}].status`);
+    if (entry.maxStates !== undefined) {
+      assertPositiveInteger(entry.maxStates, `${path}[${index}].maxStates`);
+    }
+    if (entry.actualStates !== undefined) {
+      assertNonNegativeInteger(
+        entry.actualStates,
+        `${path}[${index}].actualStates`,
+      );
+    }
+    if (entry.maxEdges !== undefined) {
+      assertPositiveInteger(entry.maxEdges, `${path}[${index}].maxEdges`);
+    }
+    if (entry.actualEdges !== undefined) {
+      assertNonNegativeInteger(entry.actualEdges, `${path}[${index}].actualEdges`);
+    }
+    if (entry.maxFrontier !== undefined) {
+      assertPositiveInteger(entry.maxFrontier, `${path}[${index}].maxFrontier`);
+    }
+    if (entry.actualFrontier !== undefined) {
+      assertNonNegativeInteger(
+        entry.actualFrontier,
+        `${path}[${index}].actualFrontier`,
+      );
+    }
+  }
+}
+
+function assertFailureClassifications(value: unknown, path: string): void {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    assertNonEmptyString(entry.canaryId, `${path}[${index}].canaryId`);
+    if (entry.fixtureId !== undefined) {
+      assertNonEmptyString(entry.fixtureId, `${path}[${index}].fixtureId`);
+    }
+    if (
+      typeof entry.category !== "string" ||
+      !CANARY_FAILURE_CATEGORIES.has(entry.category as CanaryFailureCategory)
+    ) {
+      throw new Error(`${path}[${index}].category is unsupported`);
+    }
+    if (
+      typeof entry.severity !== "string" ||
+      !CANARY_FAILURE_SEVERITIES.has(entry.severity)
+    ) {
+      throw new Error(`${path}[${index}].severity is unsupported`);
+    }
+    assertStringArray(entry.evidence, `${path}[${index}].evidence`);
+    assertNonEmptyString(
+      entry.suggestedPlanFamily,
+      `${path}[${index}].suggestedPlanFamily`,
+    );
+  }
+}
+
+function assertConformanceFixtureResult(value: unknown, path: string): void {
+  if (!isRecord(value)) throw new Error(`${path} must be an object`);
+  assertNonEmptyString(value.fixtureId, `${path}.fixtureId`);
+  assertReportResultStatus(value.status, `${path}.status`);
+  assertStringArray(value.featureIds, `${path}.featureIds`);
+  assertStringArray(value.targetIds, `${path}.targetIds`);
+  if (value.thresholds !== undefined) {
+    assertThresholdResults(value.thresholds, `${path}.thresholds`);
+  }
+  if (value.budgets !== undefined) {
+    assertBudgetResults(value.budgets, `${path}.budgets`);
+  }
+}
+
+function assertCanaryResult(value: unknown, path: string): void {
+  if (!isRecord(value)) throw new Error(`${path} must be an object`);
+  assertNonEmptyString(value.canaryId, `${path}.canaryId`);
+  assertReportResultStatus(value.status, `${path}.status`);
+  if (value.thresholds !== undefined) {
+    assertThresholdResults(value.thresholds, `${path}.thresholds`);
+  }
+  if (value.budgets !== undefined) {
+    assertBudgetResults(value.budgets, `${path}.budgets`);
+  }
 }
