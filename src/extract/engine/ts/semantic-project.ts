@@ -27,7 +27,17 @@ export interface ResolvedModuleName {
   isExternal: boolean;
 }
 
-export interface SemanticProject {
+/** Minimal module-resolution surface for project-surface import graph walking. */
+export interface SemanticModuleResolver {
+  canonicalFileName(fileName: string): string;
+  getSourceFile(fileName: string): ts.SourceFile | undefined;
+  resolveModuleName(
+    specifier: string,
+    containingFile: string,
+  ): ResolvedModuleName | undefined;
+}
+
+export interface SemanticProject extends SemanticModuleResolver {
   program: ts.Program;
   checker: ts.TypeChecker;
   sourceFiles: ReadonlyMap<string, ts.SourceFile>;
@@ -345,8 +355,10 @@ export function createSemanticProject(
     );
     const resolved = resolution.resolvedModule;
     if (!resolved) return undefined;
-    const fileName = canonicalFileName(resolved.resolvedFileName);
-    const sourceFile = program.getSourceFile(fileName);
+    const fileName = resolve(resolved.resolvedFileName);
+    const canonical = canonicalFileName(fileName);
+    const sourceFile =
+      program.getSourceFile(canonical) ?? program.getSourceFile(fileName);
     const isExternal =
       resolved.isExternalLibraryImport === true ||
       (sourceFile !== undefined && sourceFile.isDeclarationFile);

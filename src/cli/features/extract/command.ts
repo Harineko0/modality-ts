@@ -560,9 +560,13 @@ async function buildClientProjectSurface(
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
   const resolvedAdapter = withServerEffectDiscovery(adapter);
+  const moduleResolver = createSemanticProject(
+    project.rawEntries,
+    project.semanticConfig,
+  );
   const reachable = await sourceWithReachableImports(
     project.rawEntries,
-    project.tsconfig,
+    moduleResolver,
     resolvedAdapter,
     project.inventory,
   );

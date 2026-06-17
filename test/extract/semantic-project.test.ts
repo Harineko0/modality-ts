@@ -280,7 +280,9 @@ export function App() {
           "@/shared/status.js",
           appPath,
         );
-        expect(resolved?.fileName).toBe(
+        expect(
+          semanticProject.canonicalFileName(resolved?.fileName ?? ""),
+        ).toBe(
           semanticProject.canonicalFileName(
             join(rootDir, "src/shared/status.ts"),
           ),
@@ -371,7 +373,9 @@ export const value: Shared = "ok";` }],
           "./lib/index.js",
           appPath,
         );
-        expect(resolved?.fileName).toBe(
+        expect(
+          semanticProject.canonicalFileName(resolved?.fileName ?? ""),
+        ).toBe(
           semanticProject.canonicalFileName(join(rootDir, "lib/index.ts")),
         );
         const appFile = semanticProject.getSourceFile(appPath);
