@@ -1,39 +1,35 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getHeapStatistics } from "node:v8";
 import {
-  ModuleKind,
-  ModuleResolutionKind,
-  ScriptTarget,
-  transpileModule,
-} from "typescript";
-import {
-  checkModel,
   type CheckOptions,
   type CheckResult,
+  checkModel,
   type PropertyVerdict,
 } from "modality-ts/check";
 import {
   assertSerializableProperty,
-  canonicalJson,
-  parseModelArtifact,
-  traceArtifact,
   type CheckReport,
+  canonicalJson,
   type DomainReportEntry,
   type Model,
   type Property,
   type PropertyArtifact,
   type PropertyExport,
   type PropertyFactory,
+  parseModelArtifact,
   type StateVarDecl,
+  traceArtifact,
 } from "modality-ts/core";
 import {
-  generateAbstractReplayTest,
-  generateActionReplayTest,
-  generateReplayHarness,
-} from "../../codegen/replay-test.js";
-import { loadAndApplyOverlay } from "../../overlay.js";
+  ModuleKind,
+  ModuleResolutionKind,
+  ScriptTarget,
+  transpileModule,
+} from "typescript";
+import { sliceModelForProperty } from "../../../check/slicing/slice-model.js";
 import { partitionCaveats } from "../../../extract/engine/ts/caveats.js";
 import {
   downgradeVerdictForReductions,
@@ -41,11 +37,16 @@ import {
   numericCoiDroppedReductions,
   reductionsAffectingProperty,
 } from "../../../extract/engine/ts/numeric/abstraction.js";
-import { sliceModelForProperty } from "../../../check/slicing/slice-model.js";
 import {
+  generateAbstractReplayTest,
+  generateActionReplayTest,
+  generateReplayHarness,
+} from "../../codegen/replay-test.js";
+import { loadAndApplyOverlay } from "../../overlay.js";
+import {
+  type ArtifactPathEntry,
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
-  type ArtifactPathEntry,
 } from "./output.js";
 
 const DEFAULT_CLI_MAX_STATES = 1_000_000;
@@ -424,16 +425,25 @@ async function loadProperties(
   return properties.flat();
 }
 
+function normalizedImportCacheKey(path: string): string {
+  return resolve(path);
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function importCacheFileName(path: string, extension: string): string {
+  return `props-${sha256(normalizedImportCacheKey(path))}.${process.pid}.${Date.now()}${extension}`;
+}
+
 async function importableModulePath(path: string): Promise<string> {
   const extension = extname(path) || ".mjs";
   if (extension === ".ts") return transpiledTypeScriptModule(path);
   if (!process.env.VITEST) return path;
   const cacheDir = join(process.cwd(), ".modality", "import-cache");
   await mkdir(cacheDir, { recursive: true });
-  const copyPath = join(
-    cacheDir,
-    `${Buffer.from(path).toString("hex")}.${process.pid}.${Date.now()}${extension}`,
-  );
+  const copyPath = join(cacheDir, importCacheFileName(path, extension));
   await copyFile(path, copyPath);
   return copyPath;
 }
@@ -452,10 +462,7 @@ async function transpiledTypeScriptModule(path: string): Promise<string> {
       verbatimModuleSyntax: true,
     },
   });
-  const copyPath = join(
-    cacheDir,
-    `${Buffer.from(path).toString("hex")}.${process.pid}.${Date.now()}.mjs`,
-  );
+  const copyPath = join(cacheDir, importCacheFileName(path, ".mjs"));
   await writeFile(copyPath, output.outputText, "utf8");
   return copyPath;
 }
