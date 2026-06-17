@@ -4660,6 +4660,149 @@ export default [route('/', 'routes/home.tsx')];`,
       column: 15,
     });
   });
+
+  it("resolves extensionless local imports through compiler module resolution", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extless-"));
+    const sourcePath = join(dir, "App.tsx");
+    const helperPath = join(dir, "helper.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          jsx: "react-jsx",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      helperPath,
+      `
+      export function Helper(props: { onTap: () => void }) {
+        return <button onClick={props.onTap}>Tap</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import { Helper } from './helper';
+      export function App() {
+        const [open, setOpen] = useState(false);
+        return <Helper onTap={() => setOpen(true)} />;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.onClick.open"],
+    );
+  });
+
+  it("resolves NodeNext .js specifiers to .ts sources during surface discovery", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-nodenext-js-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          jsx: "react-jsx",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "counter.ts"),
+      `export const label = "count";`,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import { label } from './counter.js';
+      export function App() {
+        const [count, setCount] = useState(0);
+        return <button onClick={() => setCount(1)}>{label}{count}</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      true,
+    );
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.onClick.count"],
+    );
+    expect(result.report.sourceFiles).toContain(join(dir, "counter.ts"));
+  });
+
+  it("excludes type-only imports from interaction surface", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-type-only-surface-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          jsx: "react-jsx",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "server.ts"),
+      `
+      export async function loadRemote() {
+        await fetch('https://example.com/data');
+      }
+      export type Label = 'a' | 'b';
+      `,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import type { Label } from './server.js';
+      export function App() {
+        const [label, setLabel] = useState<Label>('a');
+        return <button onClick={() => setLabel('b')}>{label}</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(
+      result.model.vars.find((decl) => decl.id === "local:App.label")?.domain,
+    ).toEqual({ kind: "enum", values: ["a", "b"] });
+    const pendingOps =
+      result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+        .kind === "boundedList"
+        ? (
+            result.model.vars.find((decl) => decl.id === "sys:pending")?.domain
+              .inner as { fields: { opId: { values: string[] } } }
+          ).fields.opId.values
+        : [];
+    expect(pendingOps).not.toContain("GET https://example.com/data");
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.onClick.label"],
+    );
+  });
 });
 
 function navigatesTo(effect: EffectIR, route: string): boolean {

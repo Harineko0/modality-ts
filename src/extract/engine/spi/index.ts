@@ -42,7 +42,18 @@ export interface SemanticTypeContext {
   program: ts.Program;
   checker: ts.TypeChecker;
   sourceFile?: ts.SourceFile;
+  canonicalFileName(fileName: string): string;
   getSourceFile(fileName: string): ts.SourceFile | undefined;
+  resolveModuleName(
+    specifier: string,
+    containingFile: string,
+  ):
+    | { fileName: string; sourceFile?: ts.SourceFile; isExternal: boolean }
+    | undefined;
+  symbolAt(node: ts.Node): ts.Symbol | undefined;
+  aliasedSymbolAt(node: ts.Node): ts.Symbol | undefined;
+  symbolKey(symbol: ts.Symbol): string;
+  localSymbolKey(node: ts.Node): string | undefined;
 }
 
 export {
