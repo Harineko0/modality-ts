@@ -1,3 +1,4 @@
+import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
 import type * as ts from "typescript";
 import type {
   AbstractDomain,
@@ -15,6 +16,7 @@ export interface UseStateExtractionOptions {
   effectApis?: readonly string[];
   routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  effectOpAliases?: EffectOpAliases;
   environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly import("../../engine/spi/index.js").WriteChannel[];

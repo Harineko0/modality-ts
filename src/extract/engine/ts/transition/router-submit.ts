@@ -469,7 +469,7 @@ export function transitionsFromUseSubmitHandler(
   const submitCall = findSubmitCall(handler, ctx.submitBindings);
   if (!submitCall) return [];
   const preStatements = statementsBeforeSubmit(handler, submitCall);
-  if (containsAwaitedEffect(preStatements, effectApis)) {
+  if (containsAwaitedEffect(preStatements, effectApis, fileName)) {
     const anchor = lineAndColumn(source, submitCall);
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [awaited-effect-before-submit] (${fileName}:${anchor.line}:${anchor.column})`,

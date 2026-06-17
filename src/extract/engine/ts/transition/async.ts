@@ -6,9 +6,14 @@ import type {
   EffectIR,
   ExprIR,
   Locator,
+  StateVarDecl,
   Transition,
   Value,
 } from "modality-ts/core";
+import {
+  canonicalEffectOp,
+  type EffectOpAliases,
+} from "../effect-op-aliases.js";
 import type { NavigationAdapter } from "../../spi/index.js";
 import type {
   BoundExpr,
@@ -19,7 +24,12 @@ import type {
 } from "../types.js";
 import { effectWriteVars, summarizeAsyncSegment } from "./effects.js";
 import { valueExpr } from "./expressions.js";
-import { andGuard } from "./guards.js";
+import {
+  andGuard,
+  combineParsedGuards,
+  parseGuardExpression,
+  type ParsedGuard,
+} from "./guards.js";
 import {
   firstNavigationInStatements,
   navigationEffect,
@@ -30,6 +40,13 @@ import {
   unhandledRejectionCaveat,
   unextractableHandlerCaveat,
 } from "../caveats.js";
+
+export interface AwaitedEffect {
+  op: string;
+  call: ts.CallExpression;
+  statement: ts.Statement;
+  bindingName?: string;
+}
 
 export function transitionsFromAsyncHandler(
   source: ts.SourceFile,
@@ -44,6 +61,7 @@ export function transitionsFromAsyncHandler(
   adapter: NavigationAdapter | undefined,
   routePatterns: readonly string[],
   warnings: ExtractionWarning[],
+  effectOpAliases: EffectOpAliases = new Map(),
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
   if (containsAwaitInLoop(expression.body)) {
@@ -64,13 +82,28 @@ export function transitionsFromAsyncHandler(
   const tryStatement = statements.find(ts.isTryStatement);
   const awaitStatement = tryStatement
     ? tryStatement.tryBlock.statements.find((statement) =>
-        expressionStatementAwait(statement, effectApis),
+        statementHasAwaitedEffect(
+          statement,
+          effectApis,
+          fileName,
+          effectOpAliases,
+        ),
       )
     : statements.find((statement) =>
-        expressionStatementAwait(statement, effectApis),
+        statementHasAwaitedEffect(
+          statement,
+          effectApis,
+          fileName,
+          effectOpAliases,
+        ),
       );
   if (!awaitStatement) return [];
-  const awaited = awaitedCall(awaitStatement, effectApis);
+  const awaited = awaitedEffect(
+    awaitStatement,
+    effectApis,
+    fileName,
+    effectOpAliases,
+  );
   const op = awaited?.op;
   if (!op) return [];
   const opArgs = awaited
@@ -79,7 +112,17 @@ export function transitionsFromAsyncHandler(
   const preStatements = tryStatement
     ? statements.slice(0, statements.indexOf(tryStatement))
     : statements.slice(0, statements.indexOf(awaitStatement));
-  const preSummaries = summarizeAsyncSegment(preStatements, setters);
+  const peeled = peelPreAwaitGuards(
+    preStatements,
+    setters,
+    component,
+    attr,
+    op,
+    locator,
+    [{ file: fileName, ...lineAndColumn(source, expression) }],
+  );
+  const preSummaries = summarizeAsyncSegment(peeled.statements, setters);
+  const outcomeLocals = outcomeLocalsForAwaitedEffect(awaited, asyncOutcomes);
   const successStatements = tryStatement
     ? tryStatement.tryBlock.statements.slice(
         tryStatement.tryBlock.statements.indexOf(awaitStatement) + 1,
@@ -100,15 +143,25 @@ export function transitionsFromAsyncHandler(
       component,
       locator,
       warnings,
+      effectOpAliases,
+      outcomeLocals,
     );
-    if (chained.length > 0) return chained;
+    if (chained.length > 0)
+      return [...chained, ...(peeled.declined ? [peeled.declined] : [])];
   }
   if (
-    containsAwaitedEffect(successStatements, effectApis) ||
+    containsAwaitedEffect(
+      successStatements,
+      effectApis,
+      fileName,
+      effectOpAliases,
+    ) ||
     (tryStatement?.catchClause &&
       containsAwaitedEffect(
         tryStatement.catchClause.block.statements,
         effectApis,
+        fileName,
+        effectOpAliases,
       ))
   ) {
     const { line, column } = lineAndColumn(source, awaitStatement);
@@ -127,18 +180,31 @@ export function transitionsFromAsyncHandler(
   const successSummariesInitial = summarizeAsyncSegment(
     successStatements,
     setters,
+    undefined,
+    outcomeLocals,
   );
   const catchSummariesInitial = tryStatement?.catchClause
-    ? summarizeAsyncSegment(tryStatement.catchClause.block.statements, setters)
+    ? summarizeAsyncSegment(
+        tryStatement.catchClause.block.statements,
+        setters,
+        undefined,
+        outcomeLocals,
+      )
     : [];
   const preEffects = preSummaries.map((summary) => summary.effect);
   const finallySummaries = tryStatement?.finallyBlock
-    ? summarizeAsyncSegment(tryStatement.finallyBlock.statements, setters)
+    ? summarizeAsyncSegment(
+        tryStatement.finallyBlock.statements,
+        setters,
+        undefined,
+        outcomeLocals,
+      )
     : [];
   const finallyEffects = finallySummaries.map((summary) => summary.effect);
   const preReads = uniqueStrings([
     ...preSummaries.flatMap((summary) => summary.reads),
     ...opArgs.reads,
+    ...(peeled.guard?.reads ?? []),
   ]);
   const successReads = uniqueStrings([
     ...successSummariesInitial.flatMap((summary) => summary.reads),
@@ -153,22 +219,35 @@ export function transitionsFromAsyncHandler(
     successStatements,
     setters,
     snapshotted,
+    outcomeLocals,
   );
   const catchSummaries = tryStatement?.catchClause
     ? summarizeAsyncSegment(
         tryStatement.catchClause.block.statements,
         setters,
         snapshotted,
+        outcomeLocals,
       )
     : [];
-  const successEffects = [
+  const successEffectsInitial = [
     ...successSummaries.map((summary) => summary.effect),
     ...finallyEffects,
   ];
-  const catchEffects = [
+  const catchEffectsInitial = [
     ...catchSummaries.map((summary) => summary.effect),
     ...finallyEffects,
   ];
+  const enqueueArgKeys = new Set(Object.keys(opArgs.args));
+  const successEffects = rewriteMissingOutcomeReadsInEffects(
+    successEffectsInitial,
+    op,
+    enqueueArgKeys,
+  );
+  const catchEffects = rewriteMissingOutcomeReadsInEffects(
+    catchEffectsInitial,
+    op,
+    enqueueArgKeys,
+  );
   const successNavigate = firstNavigationInStatements(
     successStatements,
     adapter,
@@ -177,9 +256,11 @@ export function transitionsFromAsyncHandler(
   if (
     successEffects.length === 0 &&
     catchEffects.length === 0 &&
-    !successNavigate
-  )
-    return [];
+    !successNavigate &&
+    preEffects.length === 0
+  ) {
+    return peeled.declined ? [peeled.declined] : [];
+  }
   const baseId = `${component}.${attr}.${op}`;
   const snapshotReads = uniqueStrings([...successReads, ...catchReads]);
   const snapshotArgs = Object.fromEntries(
@@ -191,16 +272,24 @@ export function transitionsFromAsyncHandler(
   const sourceAnchor = [
     { file: fileName, ...lineAndColumn(source, expression) },
   ];
+  const confirmAcceptedEffect = peeled.confirm
+    ? confirmChoiceAssign(peeled.confirm.varId, "accepted")
+    : undefined;
+  const startGuard = peeled.guard?.expr ?? { kind: "lit", value: true };
+  const startPreEffects = [
+    ...(confirmAcceptedEffect ? [confirmAcceptedEffect] : []),
+    ...preEffects,
+  ];
   const enqueue: Transition = {
     id: `${baseId}.start`,
     cls: "user",
     label: labelForEvent(attr, locator),
     source: sourceAnchor,
-    guard: { kind: "lit", value: true },
+    guard: startGuard,
     effect: {
       kind: "seq",
       effects: [
-        ...preEffects,
+        ...startPreEffects,
         {
           kind: "enqueue",
           op,
@@ -211,10 +300,11 @@ export function transitionsFromAsyncHandler(
     },
     reads: preReads,
     writes: uniqueStrings([
-      ...preEffects.flatMap(effectWriteVars),
+      ...startPreEffects.flatMap(effectWriteVars),
+      ...(peeled.confirm ? [peeled.confirm.varId] : []),
       "sys:pending",
     ]),
-    confidence: confidenceForEffects(preEffects),
+    confidence: confidenceForEffects(startPreEffects),
   };
   const success: Transition = {
     id: `${baseId}.success`,
@@ -237,6 +327,7 @@ export function transitionsFromAsyncHandler(
     successNavigate
       ? appendEffect(success, navigationEffect(successNavigate))
       : success,
+    ...(peeled.declined ? [peeled.declined] : []),
   ];
   if (catchEffects.length > 0 || asyncOutcomes[op]?.error !== undefined) {
     const errorTransition: Transition = {
@@ -271,6 +362,250 @@ export function transitionsFromAsyncHandler(
     ...transition,
     writes: [...new Set(transition.writes)],
   }));
+}
+
+function peelPreAwaitGuards(
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  component: string,
+  attr: string,
+  op: string,
+  locator: Locator | undefined,
+  sourceAnchor: Transition["source"],
+): {
+  guard?: ParsedGuard;
+  declined?: Transition;
+  confirm?: { varId: string };
+  statements: ts.Statement[];
+} {
+  const guards: ParsedGuard[] = [];
+  let index = 0;
+  let declined: Transition | undefined;
+  let confirm: { varId: string } | undefined;
+  while (index < statements.length) {
+    const statement = statements[index];
+    if (!statement || !ts.isIfStatement(statement)) break;
+    if (
+      !exitsWithoutEffects(statement.thenStatement) ||
+      statement.elseStatement
+    )
+      break;
+    if (isConfirmDeclinedIf(statement)) {
+      const baseId = `${component}.${attr}.${op}`;
+      const confirmVar = confirmVarId(component, attr, op);
+      confirm = { varId: confirmVar };
+      declined = {
+        id: `${baseId}.declined`,
+        cls: "user",
+        label: labelForEvent(attr, locator),
+        source: sourceAnchor,
+        guard: { kind: "lit", value: true },
+        effect: {
+          kind: "seq",
+          effects: [confirmChoiceAssign(confirmVar, "declined")],
+        },
+        reads: [],
+        writes: [confirmVar],
+        confidence: "over-approx",
+      };
+      index += 1;
+      continue;
+    }
+    const guard = earlyReturnContinueGuard(statement, setters);
+    if (!guard) break;
+    guards.push(guard);
+    index += 1;
+  }
+  return {
+    guard: combineParsedGuards(guards),
+    declined,
+    confirm,
+    statements: statements.slice(index),
+  };
+}
+
+function earlyReturnContinueGuard(
+  statement: ts.IfStatement,
+  setters: Map<string, SetterBinding>,
+): ParsedGuard | undefined {
+  const expr = statement.expression;
+  if (
+    ts.isPrefixUnaryExpression(expr) &&
+    expr.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    return parseGuardExpression(expr.operand, setters);
+  }
+  const condGuard = parseGuardExpression(expr, setters);
+  if (!condGuard) return undefined;
+  return {
+    expr: { kind: "not", args: [condGuard.expr] },
+    reads: condGuard.reads,
+  };
+}
+
+function isConfirmDeclinedIf(statement: ts.IfStatement): boolean {
+  return Boolean(extractConfirmCall(statement.expression));
+}
+
+export function extractConfirmCall(
+  expression: ts.Expression,
+): ts.CallExpression | undefined {
+  const target =
+    ts.isPrefixUnaryExpression(expression) &&
+    expression.operator === ts.SyntaxKind.ExclamationToken
+      ? expression.operand
+      : expression;
+  if (!ts.isCallExpression(target)) return undefined;
+  const name = callName(target.expression);
+  if (!name) return undefined;
+  if (
+    name === "confirm" ||
+    name === "window.confirm" ||
+    name === "globalThis.confirm"
+  ) {
+    return target;
+  }
+  return undefined;
+}
+
+function outcomeLocalsForAwaitedEffect(
+  awaited: AwaitedEffect,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+): Map<string, BoundExpr> {
+  const locals = new Map<string, BoundExpr>();
+  if (!awaited.bindingName) return locals;
+  const outcome = asyncOutcomes[awaited.op]?.success;
+  if (outcome !== undefined) {
+    locals.set(awaited.bindingName, {
+      expr: { kind: "lit", value: outcome },
+      reads: [],
+    });
+  }
+  return locals;
+}
+
+export function confirmVarId(
+  component: string,
+  attr: string,
+  op: string,
+): string {
+  return `sys:confirm:${component}.${attr}.${op}`;
+}
+
+export function confirmStateVarDecl(varId: string): StateVarDecl {
+  return {
+    id: varId,
+    domain: { kind: "enum", values: ["accepted", "declined"] },
+    origin: "system",
+    scope: { kind: "global" },
+    initial: "declined",
+  };
+}
+
+function confirmChoiceAssign(
+  varId: string,
+  choice: "accepted" | "declined",
+): EffectIR {
+  return {
+    kind: "assign",
+    var: varId,
+    expr: { kind: "lit", value: choice },
+  };
+}
+
+function rewriteMissingOutcomeReadsInEffects(
+  effects: readonly EffectIR[],
+  op: string,
+  enqueueArgKeys: ReadonlySet<string>,
+): EffectIR[] {
+  return effects.map((effect) =>
+    rewriteMissingOutcomeReads(effect, op, enqueueArgKeys),
+  );
+}
+
+function rewriteMissingOutcomeReads(
+  effect: EffectIR,
+  op: string,
+  enqueueArgKeys: ReadonlySet<string>,
+): EffectIR {
+  switch (effect.kind) {
+    case "assign": {
+      if (exprUsesMissingOutcomeRead(effect.expr, op, enqueueArgKeys)) {
+        return { kind: "havoc", var: effect.var };
+      }
+      return effect;
+    }
+    case "seq":
+      return {
+        kind: "seq",
+        effects: effect.effects.map((child) =>
+          rewriteMissingOutcomeReads(child, op, enqueueArgKeys),
+        ),
+      };
+    case "if":
+      return {
+        ...effect,
+        then: rewriteMissingOutcomeReads(effect.then, op, enqueueArgKeys),
+        else: rewriteMissingOutcomeReads(effect.else, op, enqueueArgKeys),
+      };
+    default:
+      return effect;
+  }
+}
+
+function exprUsesMissingOutcomeRead(
+  expr: ExprIR,
+  op: string,
+  enqueueArgKeys: ReadonlySet<string>,
+): boolean {
+  switch (expr.kind) {
+    case "readOpArg":
+      return outcomeReadOpArgKeyMissing(expr.key, op, enqueueArgKeys);
+    case "updateField":
+      return (
+        exprUsesMissingOutcomeRead(expr.target, op, enqueueArgKeys) ||
+        exprUsesMissingOutcomeRead(expr.value, op, enqueueArgKeys)
+      );
+    case "tagIs":
+      return exprUsesMissingOutcomeRead(expr.arg, op, enqueueArgKeys);
+    case "lenCat":
+      return exprUsesMissingOutcomeRead(expr.arg, op, enqueueArgKeys);
+    case "not":
+    case "eq":
+    case "neq":
+    case "and":
+    case "or":
+    case "cond":
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte":
+    case "add":
+    case "sub":
+    case "mod":
+      return expr.args.some((arg) =>
+        exprUsesMissingOutcomeRead(arg, op, enqueueArgKeys),
+      );
+    default:
+      return false;
+  }
+}
+
+function outcomeReadOpArgKeyMissing(
+  key: string,
+  op: string,
+  enqueueArgKeys: ReadonlySet<string>,
+): boolean {
+  const prefix = `outcome:${op}`;
+  if (!key.startsWith(prefix)) return false;
+  if (enqueueArgKeys.has(key)) return false;
+  if (key === prefix && enqueueArgKeys.has(prefix)) return false;
+  const nested = key.slice(prefix.length);
+  if (nested.startsWith(":")) {
+    const rootField = nested.slice(1).split(":")[0];
+    if (rootField && enqueueArgKeys.has(`${prefix}:${rootField}`)) return false;
+  }
+  return true;
 }
 
 export function containsAwaitInLoop(node: ts.Node): boolean {
@@ -310,23 +645,38 @@ export function transitionsFromSequentialAwait(
   component: string,
   locator: Locator | undefined,
   warnings: ExtractionWarning[],
+  effectOpAliases: EffectOpAliases = new Map(),
+  outcomeLocals: Map<string, BoundExpr> = new Map(),
 ): Transition[] {
   const secondIndex = successStatements.findIndex((statement) =>
-    expressionStatementAwait(statement, effectApis),
+    statementHasAwaitedEffect(statement, effectApis, fileName, effectOpAliases),
   );
   if (secondIndex < 0) return [];
   const secondAwait = successStatements[secondIndex];
   if (!secondAwait) return [];
-  const secondOp = awaitedOp(secondAwait, effectApis);
+  const secondOp = awaitedOp(secondAwait, effectApis, fileName, effectOpAliases);
   const promiseAllOps = secondOp
     ? undefined
-    : promiseAllAwaitOps(secondAwait, effectApis);
+    : promiseAllAwaitOps(secondAwait, effectApis, fileName, effectOpAliases);
   if (!secondOp && !promiseAllOps) return [];
   const betweenStatements = successStatements.slice(0, secondIndex);
   const tailStatements = successStatements.slice(secondIndex + 1);
-  if (containsAwaitedEffect(tailStatements, effectApis)) return [];
-  const betweenSummaries = summarizeAsyncSegment(betweenStatements, setters);
-  const tailSummaries = summarizeAsyncSegment(tailStatements, setters);
+  if (
+    containsAwaitedEffect(tailStatements, effectApis, fileName, effectOpAliases)
+  )
+    return [];
+  const betweenSummaries = summarizeAsyncSegment(
+    betweenStatements,
+    setters,
+    undefined,
+    outcomeLocals,
+  );
+  const tailSummaries = summarizeAsyncSegment(
+    tailStatements,
+    setters,
+    undefined,
+    outcomeLocals,
+  );
   const preEffects = preSummaries.map((summary) => summary.effect);
   const betweenEffects = betweenSummaries.map((summary) => summary.effect);
   const tailEffects = tailSummaries.map((summary) => summary.effect);
@@ -510,19 +860,35 @@ export function setterAssignEffect(
   return { kind: "assign", var: setter.varId, expr: { kind: "lit", value } };
 }
 
+export function statementHasAwaitedEffect(
+  statement: ts.Statement,
+  effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
+): boolean {
+  return (
+    Boolean(awaitedEffect(statement, effectApis, fileName, effectOpAliases)) ||
+    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
+  );
+}
+
 export function expressionStatementAwait(
   statement: ts.Statement,
   effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): boolean {
-  return Boolean(
-    awaitedOp(statement, effectApis) ??
-      promiseAllAwaitOps(statement, effectApis),
+  return (
+    statementHasAwaitedEffect(statement, effectApis, fileName, effectOpAliases) ||
+    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
   );
 }
 
 export function containsAwaitedEffect(
   statements: readonly ts.Statement[],
   effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): boolean {
   return statements.some((statement) => {
     let found = false;
@@ -534,10 +900,16 @@ export function containsAwaitedEffect(
       }
       if (insideAwait && ts.isCallExpression(node)) {
         const name = callName(node.expression);
-        if (name && effectApis.has(effectOpForCall(name, node))) {
-          found = true;
-          return;
+        if (name) {
+          const op = canonicalEffectOp(
+            effectOpForCall(name, node),
+            fileName,
+            effectOpAliases,
+          );
+          if (effectApis.has(op) || effectApis.has(effectOpForCall(name, node)))
+            found = true;
         }
+        return;
       }
       ts.forEachChild(node, (child) => visit(child, insideAwait));
     };
@@ -549,42 +921,67 @@ export function containsAwaitedEffect(
 export function awaitedOp(
   statement: ts.Statement,
   effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): string | undefined {
-  return awaitedCall(statement, effectApis)?.op;
+  return awaitedEffect(statement, effectApis, fileName, effectOpAliases)?.op;
+}
+
+export function awaitedEffect(
+  statement: ts.Statement,
+  effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
+): AwaitedEffect | undefined {
+  const located = awaitedCallExpressionInStatement(statement);
+  if (!located) return undefined;
+  const name = callName(located.call.expression);
+  if (!name) return undefined;
+  const rawOp = effectOpForCall(name, located.call);
+  const op = canonicalEffectOp(rawOp, fileName, effectOpAliases);
+  if (!effectApis.has(op) && !effectApis.has(rawOp)) return undefined;
+  return {
+    op,
+    call: located.call,
+    statement,
+    ...(located.bindingName ? { bindingName: located.bindingName } : {}),
+  };
 }
 
 export function awaitedCall(
   statement: ts.Statement,
   effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): { op: string; call: ts.CallExpression } | undefined {
-  const awaitExpression = awaitedCallExpressionInStatement(statement);
-  if (!awaitExpression) return undefined;
-  const name = callName(awaitExpression.expression);
-  if (!name) return undefined;
-  const op = effectOpForCall(name, awaitExpression);
-  if (!effectApis.has(op)) return undefined;
-  return { op, call: awaitExpression };
+  const awaited = awaitedEffect(statement, effectApis, fileName, effectOpAliases);
+  return awaited ? { op: awaited.op, call: awaited.call } : undefined;
 }
 
 export function awaitedCallExpressionInStatement(
   statement: ts.Statement,
-): ts.CallExpression | undefined {
+): { call: ts.CallExpression; bindingName?: string } | undefined {
   if (
     ts.isExpressionStatement(statement) &&
     ts.isAwaitExpression(statement.expression) &&
     ts.isCallExpression(statement.expression.expression)
   ) {
-    return statement.expression.expression;
+    return { call: statement.expression.expression };
   }
   if (ts.isVariableStatement(statement)) {
     for (const declaration of statement.declarationList.declarations) {
       if (
         declaration.initializer &&
         ts.isAwaitExpression(declaration.initializer) &&
-        ts.isCallExpression(declaration.initializer.expression) &&
-        callName(declaration.initializer.expression.expression) === "fetch"
+        ts.isCallExpression(declaration.initializer.expression)
       ) {
-        return declaration.initializer.expression;
+        const bindingName = ts.isIdentifier(declaration.name)
+          ? declaration.name.text
+          : undefined;
+        return {
+          call: declaration.initializer.expression,
+          ...(bindingName ? { bindingName } : {}),
+        };
       }
     }
   }
@@ -669,6 +1066,8 @@ export function effectCallArgs(
 export function promiseAllAwaitOps(
   statement: ts.Statement,
   effectApis: Set<string>,
+  fileName: string,
+  effectOpAliases: EffectOpAliases = new Map(),
 ): string[] | undefined {
   if (!ts.isExpressionStatement(statement)) return undefined;
   const expression = statement.expression;
@@ -688,11 +1087,17 @@ export function promiseAllAwaitOps(
   for (const element of call.arguments[0].elements) {
     if (!ts.isCallExpression(element)) return undefined;
     const name = callName(element.expression);
-    if (!name || !effectApis.has(name)) return undefined;
-    ops.push(name);
+    if (!name) return undefined;
+    const rawOp = effectOpForCall(name, element);
+    const op = canonicalEffectOp(rawOp, fileName, effectOpAliases);
+    if (!effectApis.has(op) && !effectApis.has(rawOp)) return undefined;
+    ops.push(op);
   }
   return ops.length > 0 ? ops : undefined;
 }
+
+export { canonicalEffectOp } from "../effect-op-aliases.js";
+export type { EffectOpAliases } from "../effect-op-aliases.js";
 
 export function pendingIs(op: string): Transition["guard"] {
   return pendingIsAt(0, op);
@@ -706,4 +1111,18 @@ export function pendingIsAt(index: number, op: string): Transition["guard"] {
       { kind: "lit", value: op },
     ],
   };
+}
+
+function exitsWithoutEffects(statement: ts.Statement): boolean {
+  if (ts.isReturnStatement(statement)) return true;
+  if (ts.isBlock(statement)) {
+    const meaningful = statement.statements.filter(
+      (child) => !ts.isEmptyStatement(child),
+    );
+    return (
+      meaningful.length > 0 &&
+      meaningful.every((child) => exitsWithoutEffects(child))
+    );
+  }
+  return false;
 }

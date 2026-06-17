@@ -166,10 +166,13 @@ export function summarizeAsyncSegment(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
   snapshottedReads?: ReadonlySet<string>,
+  initialLocals?: Map<string, BoundExpr>,
 ): EffectSummary[] {
   return uniqueSummariesByEffect(
-    summarizeStatements(statements, setters, { snapshottedReads }) ??
-      fallbackSummaries(statements, setters),
+    summarizeStatements(statements, setters, {
+      snapshottedReads,
+      ...(initialLocals?.size ? { initialLocals } : {}),
+    }) ?? fallbackSummaries(statements, setters),
   );
 }
 

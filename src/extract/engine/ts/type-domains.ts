@@ -465,22 +465,27 @@ function domainFromObjectType(
       fields[name] = { kind: "bool" };
       continue;
     }
-    if (ctx.checker.typeToString(propertyType) === "string") {
-      fields[name] = { kind: "tokens", count: 1 };
-      continue;
-    }
     const inferred = inferDomainFromTypeDetailed(
       propertyType,
       ctx,
       new Set(visited),
     );
-    let fieldDomain = inferred.domain;
-    if (property.flags & ts.SymbolFlags.Optional) {
-      if (fieldDomain.kind !== "option") {
-        fieldDomain = { kind: "option", inner: fieldDomain };
+    if (inferred.domain.kind !== "tokens") {
+      let fieldDomain = inferred.domain;
+      if (property.flags & ts.SymbolFlags.Optional) {
+        if (fieldDomain.kind !== "option") {
+          fieldDomain = { kind: "option", inner: fieldDomain };
+        }
       }
+      fields[name] = fieldDomain;
+      caveats.push(...inferred.caveats);
+      continue;
     }
-    fields[name] = fieldDomain;
+    if (ctx.checker.typeToString(propertyType) === "string") {
+      fields[name] = { kind: "tokens", count: 1 };
+      continue;
+    }
+    fields[name] = inferred.domain;
     caveats.push(...inferred.caveats);
   }
 

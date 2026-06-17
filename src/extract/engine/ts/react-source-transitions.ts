@@ -1,3 +1,6 @@
+import type {
+  EffectOpAliases,
+} from "./effect-op-aliases.js";
 import * as ts from "typescript";
 import {
   componentNameFor,
@@ -141,6 +144,7 @@ export interface ReactSourceTransitionOptions {
   effectApis?: readonly string[];
   routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
+  effectOpAliases?: EffectOpAliases;
   environment?: import("./environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
@@ -183,6 +187,7 @@ export function extractReactSourceTransitions(
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
   const routePatterns = options.routePatterns ?? [];
+  const effectOpAliases = options.effectOpAliases ?? new Map();
   const effectApis = new Set(options.effectApis ?? []);
   const sourcePlugins = options.sourcePlugins ?? [];
   const routerPlugin = options.routerPlugin;
@@ -557,6 +562,7 @@ export function extractReactSourceTransitions(
         envTransitions: [] as Transition[],
         timerIndex: { value: timerCounter },
         routerSubmitContext: routerSubmitContext(nextComponent ?? "Anonymous"),
+        effectOpAliases,
       };
       const literalListInfo = literalListRenderedHandlerInfo(node);
       if (literalListInfo) {
@@ -847,6 +853,7 @@ export function extractReactSourceTransitions(
           routerSubmitContext: routerSubmitContext(
             nextComponent ?? "Anonymous",
           ),
+          effectOpAliases,
         },
       );
       registerTimerVars(timerRegistrations);

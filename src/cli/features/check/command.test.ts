@@ -1,20 +1,46 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join, resolve } from "node:path";
 import { canonicalJson, type Model, type Property } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { runReplayCommand } from "../../replay.js";
 import { runCheckCommand } from "./index.js";
 import {
   renderHumanCheckResult,
   renderHumanCheckTargets,
   symbolForStatus,
 } from "./output.js";
-import { runReplayCommand } from "../../replay.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 
 const flagFalseIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }`;
 const flagTrueIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }`;
+
+const IMPORT_CACHE_DIR = join(process.cwd(), ".modality", "import-cache");
+const LONG_PATH_SEGMENT =
+  "very-long-path-segment-for-import-cache-filename-regression";
+
+async function cacheEntries(): Promise<Set<string>> {
+  try {
+    const entries = await readdir(IMPORT_CACHE_DIR);
+    return new Set(entries);
+  } catch {
+    return new Set();
+  }
+}
+
+function difference(after: string[], before: Set<string>): string[] {
+  return after.filter((entry) => !before.has(entry));
+}
+
+async function longNestedPath(root: string): Promise<string> {
+  let current = root;
+  for (let i = 0; i < 4; i++) {
+    current = join(current, LONG_PATH_SEGMENT);
+  }
+  await mkdir(current, { recursive: true });
+  return current;
+}
 
 function model(): Model {
   return {
@@ -818,6 +844,78 @@ describe("runCheckCommand", () => {
     await expect(runCheckCommand({ modelPath })).rejects.toThrow(
       "unsupported model schemaVersion 2",
     );
+  });
+
+  it("loads TypeScript properties from long absolute paths with bounded import-cache filenames", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-long-ts-"));
+    const nested = await longNestedPath(dir);
+    const modelPath = resolve(nested, "model.json");
+    const propsPath = resolve(nested, "index.props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const before = await cacheEntries();
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const after = await readdir(IMPORT_CACHE_DIR).catch(() => []);
+    const newEntries = difference(after, before);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.report.verdicts[0]).toMatchObject({
+      property: "flagCanBecomeTrue",
+      status: "reachable",
+    });
+    expect(newEntries.length).toBeGreaterThanOrEqual(1);
+    for (const entry of newEntries) {
+      expect(entry.length).toBeLessThan(120);
+      expect(entry).not.toContain(LONG_PATH_SEGMENT);
+      expect(entry).toMatch(/^props-[0-9a-f]{64}\.\d+\.\d+\.mjs$/);
+    }
+  });
+
+  it("copies non-TypeScript properties from long absolute paths with bounded import-cache filenames", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-long-mjs-"));
+    const nested = await longNestedPath(dir);
+    const modelPath = resolve(nested, "model.json");
+    const propsPath = resolve(nested, "index.props.mjs");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const before = await cacheEntries();
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const after = await readdir(IMPORT_CACHE_DIR).catch(() => []);
+    const newEntries = difference(after, before);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.report.verdicts[0]).toMatchObject({
+      property: "flagCanBecomeTrue",
+      status: "reachable",
+    });
+    expect(newEntries.length).toBeGreaterThanOrEqual(1);
+    for (const entry of newEntries) {
+      expect(entry.length).toBeLessThan(120);
+      expect(entry).not.toContain(LONG_PATH_SEGMENT);
+      expect(entry).toMatch(/^props-[0-9a-f]{64}\.\d+\.\d+\.mjs$/);
+    }
   });
 });
 

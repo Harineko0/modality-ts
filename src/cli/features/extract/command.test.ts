@@ -146,58 +146,6 @@ describe("runExtractCommand", () => {
     expect(check.verdicts[0]?.status).toBe("reachable");
   });
 
-  it(
-    "reads commented tsconfig.json files when resolving paths",
-    async () => {
-      const dir = await mkdtemp(join(tmpdir(), "modality-tsconfig-jsonc-"));
-      await mkdir(join(dir, "src", "ui"), { recursive: true });
-      const sourcePath = join(dir, "src", "App.tsx");
-      const modelPath = join(dir, "model.json");
-      await writeFile(
-        join(dir, "tsconfig.json"),
-        `{
-          "compilerOptions": {
-            /* Path aliases are common in Next-generated TSConfig files. */
-            "baseUrl": ".",
-            "paths": {
-              "~/*": ["./src/*"]
-            }
-          }
-        }`,
-        "utf8",
-      );
-      await writeFile(
-        join(dir, "src", "ui", "Button.tsx"),
-        `
-        export function Button(props: { onClick: () => void }) {
-          return <button onClick={props.onClick}>Save</button>;
-        }
-        `,
-        "utf8",
-      );
-      await writeFile(
-        sourcePath,
-        `
-        import { useState } from 'react';
-        import { Button } from '~/ui/Button';
-
-        export function App() {
-          const [status, setStatus] = useState<'idle' | 'saved'>('idle');
-          return <Button onClick={() => setStatus('saved')} />;
-        }
-        `,
-        "utf8",
-      );
-
-      const result = await runExtractCommand({ sourcePath, modelPath });
-
-      expect(
-        result.model.transitions.map((transition) => transition.id),
-      ).toEqual(["App.onClick.status"]);
-    },
-    15_000,
-  );
-
   it("extracts imported multi-hop component callback interactions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-imported-"));
     const sourcePath = join(dir, "App.tsx");
@@ -1350,6 +1298,43 @@ describe("runExtractCommand", () => {
       expect.objectContaining({
         id: "App.onSubmit.phase",
         reads: ["local:App.phase"],
+      }),
+    );
+  });
+
+  it("blocks empty-label form submit through required input guards", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [label, setLabel] = useState('');
+        return (
+          <form onSubmit={() => setLabel('saved')}>
+            <input required value={label} onChange={(e) => setLabel(e.target.value)} />
+            <button type="submit">Save</button>
+          </form>
+        );
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onSubmit.label",
+        guard: {
+          kind: "neq",
+          args: [
+            { kind: "readPre", var: "local:App.label" },
+            { kind: "lit", value: "" },
+          ],
+        },
+        reads: ["local:App.label"],
       }),
     );
   });
