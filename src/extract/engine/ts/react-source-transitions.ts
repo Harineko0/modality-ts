@@ -63,6 +63,7 @@ import type {
   EffectIR,
 } from "modality-ts/core";
 import type {
+  ContextBindings,
   ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
@@ -193,6 +194,19 @@ export function extractReactSourceTransitions(
     route,
     typeAliases,
   );
+  for (const fragment of options.additionalComponentSources ?? []) {
+    const supplemental = ts.createSourceFile(
+      fileName,
+      fragment,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    mergeContextBindings(
+      contextBindings,
+      discoverContextBindings(supplemental, fileName, route, typeAliases),
+    );
+  }
   const globalTaints = new Set<string>();
   let timerCounter = 0;
   let webSocketCounter = 0;
@@ -1051,6 +1065,27 @@ export function extractReactSourceTransitions(
     transitions: withStableTransitionIds(transitions),
     warnings,
   };
+}
+
+function mergeContextBindings(
+  target: ContextBindings,
+  source: ContextBindings,
+): void {
+  for (const decl of source.vars) {
+    if (!target.vars.some((candidate) => candidate.id === decl.id)) {
+      target.vars.push(decl);
+    }
+  }
+  for (const [name, setter] of source.setters) {
+    target.setters.set(name, setter);
+  }
+  for (const [hook, fields] of source.hookReturns) {
+    const merged = target.hookReturns.get(hook) ?? new Map();
+    for (const [field, setter] of fields) {
+      merged.set(field, setter);
+    }
+    target.hookReturns.set(hook, merged);
+  }
 }
 
 function resolveComponentRoutePattern(

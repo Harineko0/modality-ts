@@ -128,12 +128,9 @@ export function runExtractionPipeline(
     options,
     allDiscoveryFragments,
   );
-  const discoveryInputs = allDiscoveryFragments.filter(
-    (fragment) => resolve(fragment.fileName) === resolve(options.fileName),
-  );
   const discoveryFragments =
-    discoveryInputs.length > 0
-      ? discoveryInputs
+    allDiscoveryFragments.length > 0
+      ? allDiscoveryFragments
       : [{ sourceText: options.sourceText, fileName: options.fileName }];
   const discoveries = discoveryFragments.flatMap((fragment) => {
     const types = semanticTypeContextForFile(

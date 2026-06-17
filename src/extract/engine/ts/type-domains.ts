@@ -371,6 +371,9 @@ function inferUnionMembers(
   if (members.length === 0) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
+  if (members.length === 1) {
+    return inferDomainFromTypeDetailed(members[0]!, ctx, new Set(visited));
+  }
   if (members.every((member) => member.isStringLiteral())) {
     const values = members
       .map((member) => member.value as string)

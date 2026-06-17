@@ -12,11 +12,7 @@ function sourceFileForDiscovery(
   fileName: string,
   types?: SemanticTypeContext,
 ): ts.SourceFile {
-  if (
-    types?.sourceFile &&
-    types.sourceFile.fileName === fileName &&
-    types.sourceFile.text === sourceText
-  ) {
+  if (types?.sourceFile && types.sourceFile.fileName === fileName) {
     return types.sourceFile;
   }
   return ts.createSourceFile(

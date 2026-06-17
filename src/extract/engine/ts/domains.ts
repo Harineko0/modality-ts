@@ -221,9 +221,6 @@ export function inferUseStateDomainSemanticDetailed(
         domainRefinements,
       },
     );
-    if (semantic.domain.kind !== "tokens" || semantic.caveats.length > 0) {
-      return semantic;
-    }
     const ast = inferUseStateDomainDetailed(
       call,
       typeAliases,
@@ -231,6 +228,15 @@ export function inferUseStateDomainSemanticDetailed(
       varId,
       domainRefinements,
     );
+    if (
+      ts.isTypeReferenceNode(typeArg) &&
+      sameEnumValues(semantic.domain, ast.domain)
+    ) {
+      return { ...semantic, domain: ast.domain };
+    }
+    if (semantic.domain.kind !== "tokens" || semantic.caveats.length > 0) {
+      return semantic;
+    }
     if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
       return ast;
     }
@@ -295,6 +301,13 @@ export function inferUseStateDomainSemanticDetailed(
     varId,
     domainRefinements,
   );
+}
+
+function sameEnumValues(left: AbstractDomain, right: AbstractDomain): boolean {
+  if (left.kind !== "enum" || right.kind !== "enum") return false;
+  if (left.values.length !== right.values.length) return false;
+  const rightValues = new Set(right.values);
+  return left.values.every((value) => rightValues.has(value));
 }
 
 function parseLocalStateVarId(

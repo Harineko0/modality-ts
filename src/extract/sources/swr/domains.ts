@@ -34,8 +34,14 @@ export function inferPayloadDomain(
     new Set(),
     { domainRefinements },
   ).domain;
-  if (astDomain.kind === "tokens" && semanticDomain.kind !== "tokens") {
+  if (isUninformativeDomain(astDomain) && semanticDomain.kind !== "tokens") {
     return semanticDomain;
   }
   return astDomain;
+}
+
+function isUninformativeDomain(domain: AbstractDomain): boolean {
+  if (domain.kind === "tokens") return true;
+  if (domain.kind === "option") return isUninformativeDomain(domain.inner);
+  return false;
 }
