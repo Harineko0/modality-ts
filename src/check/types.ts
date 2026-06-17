@@ -40,6 +40,7 @@ export interface SliceSummary {
   states: number;
   edges: number;
   depth: number;
+  mode?: "state" | "targetedStep" | "full";
 }
 
 export type EdgeRecordingMode =

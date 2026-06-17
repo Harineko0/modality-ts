@@ -1,10 +1,22 @@
 import { checkModel } from "./check-model.js";
 import { modelInitialStates, modelSuccessors } from "./model-api.js";
-import { sliceModel } from "./slicing/slice-model.js";
+import {
+  propertySliceMode,
+  sliceModel,
+  sliceModelForCheckProperty,
+  sliceModelForProperty,
+  targetedAlwaysStepTransitionIds,
+} from "./slicing/slice-model.js";
 
 export { checkModel };
 export { modelInitialStates, modelSuccessors };
-export { sliceModel };
+export {
+  propertySliceMode,
+  sliceModel,
+  sliceModelForCheckProperty,
+  sliceModelForProperty,
+  targetedAlwaysStepTransitionIds,
+};
 export type {
   CheckDiagnostics,
   CheckOptions,
