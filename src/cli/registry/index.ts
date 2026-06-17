@@ -1,5 +1,6 @@
 import type { PluginProvenance } from "modality-ts/core";
 import type {
+  CacheStorageProvider,
   DomainRefinementProvider,
   EffectApiProvider,
   ModuleRoleAdapter,
@@ -11,6 +12,7 @@ import { zodDomainRefinementProvider } from "modality-ts/extract/type-libraries/
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import {
   nextAdapter,
+  nextCacheStorageProvider,
   nextEffectApiProvider,
   nextModuleRoleAdapter,
 } from "modality-ts/extract/sources/next";
@@ -27,6 +29,7 @@ export interface RegistryAdaptersBundle {
   navigation?: NavigationAdapter;
   moduleRoles: readonly ModuleRoleAdapter[];
   effectApis: readonly EffectApiProvider[];
+  cacheStorage: readonly CacheStorageProvider[];
   stateSources: readonly StateSourcePlugin[];
   domainRefinements: readonly DomainRefinementProvider[];
   observations: readonly [];
@@ -38,6 +41,7 @@ export interface ModalityPluginRegistry {
   domainRefinementProviders: readonly DomainRefinementProvider[];
   moduleRoleAdapters?: readonly ModuleRoleAdapter[];
   effectApiProviders?: readonly EffectApiProvider[];
+  cacheStorageProviders?: readonly CacheStorageProvider[];
 }
 
 export interface BuiltinRegistryOptions {
@@ -45,6 +49,7 @@ export interface BuiltinRegistryOptions {
   disabledPlugins?: readonly string[];
   extraSourcePlugins?: readonly StateSourcePlugin[];
   extraDomainRefinementProviders?: readonly DomainRefinementProvider[];
+  extraCacheStorageProviders?: readonly CacheStorageProvider[];
   routerPlugin?: NavigationAdapter | false;
 }
 
@@ -89,12 +94,17 @@ export function createBuiltinModalityRegistry(
     ...(options.extraDomainRefinementProviders ?? []),
   ];
   const builtinNavigation = resolveBuiltinNavigationBundle(options, disabled);
+  const cacheStorageProviders = resolveBuiltinCacheStorageProviders(
+    options,
+    disabled,
+  );
   return createModalityRegistry({
     sourcePlugins,
     routerPlugin: builtinNavigation.navigation,
     domainRefinementProviders,
     moduleRoleAdapters: builtinNavigation.moduleRoles,
     effectApiProviders: builtinNavigation.effectApis,
+    cacheStorageProviders,
   });
 }
 
@@ -146,6 +156,27 @@ function resolveBuiltinNavigationBundle(
   return { moduleRoles: [], effectApis: [] };
 }
 
+function resolveBuiltinCacheStorageProviders(
+  options: BuiltinRegistryOptions,
+  disabled: Set<string>,
+): CacheStorageProvider[] {
+  if (options.routerPlugin === false) {
+    return [...(options.extraCacheStorageProviders ?? [])];
+  }
+  if (options.routerPlugin) {
+    return [...(options.extraCacheStorageProviders ?? [])];
+  }
+
+  const dependencies = options.dependencies;
+  if (!disabled.has("next") && hasDependency(dependencies, "next")) {
+    return [
+      nextCacheStorageProvider(),
+      ...(options.extraCacheStorageProviders ?? []),
+    ];
+  }
+  return [...(options.extraCacheStorageProviders ?? [])];
+}
+
 function hasDependency(
   dependencies: Readonly<Record<string, string>> | undefined,
   packageName: string,
@@ -162,12 +193,15 @@ export function createModalityRegistry(
   const domainRefinementProviders = options.domainRefinementProviders ?? [];
   const moduleRoleAdapters = options.moduleRoleAdapters ?? [];
   const effectApiProviders = options.effectApiProviders ?? [];
+  const cacheStorageProviders = options.cacheStorageProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   for (const provider of domainRefinementProviders)
     validateDomainRefinementProvider(provider);
   for (const adapter of moduleRoleAdapters) validateModuleRoleAdapter(adapter);
   for (const provider of effectApiProviders)
     validateEffectApiProvider(provider);
+  for (const provider of cacheStorageProviders)
+    validateCacheStorageProvider(provider);
   if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
   const sourcePluginIds = sortedUnique(
     options.sourcePlugins.map((plugin) => plugin.id),
@@ -181,6 +215,10 @@ export function createModalityRegistry(
     effectApiProviders.map((provider) => provider.id),
     "effect API provider",
   );
+  sortedUnique(
+    cacheStorageProviders.map((provider) => provider.id),
+    "cache/storage provider",
+  );
   return {
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
@@ -190,6 +228,7 @@ export function createModalityRegistry(
       navigation: options.routerPlugin,
       moduleRoles: moduleRoleAdapters,
       effectApis: effectApiProviders,
+      cacheStorage: cacheStorageProviders,
       stateSources: options.sourcePlugins,
       domainRefinements: domainRefinementProviders,
       observations: [],
@@ -221,6 +260,12 @@ export function createModalityRegistry(
         id: provider.id,
         version: provider.version ?? "unknown",
         kind: "effect-api" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
+      ...cacheStorageProviders.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "cache-storage" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
       ...domainRefinementProviders.map((provider) => ({
@@ -313,6 +358,18 @@ function validateEffectApiProvider(provider: EffectApiProvider): void {
   if (typeof provider.discoverEffectApis !== "function")
     throw new Error(
       `Invalid effect API provider ${provider.id}: discoverEffectApis must be a function`,
+    );
+}
+
+function validateCacheStorageProvider(provider: CacheStorageProvider): void {
+  validateCommonPluginShape(provider, "cache/storage provider");
+  if (provider.kind !== "cache-storage")
+    throw new Error(
+      `Invalid cache/storage provider ${provider.id}: kind must be "cache-storage"`,
+    );
+  if (typeof provider.discoverCacheStorage !== "function")
+    throw new Error(
+      `Invalid cache/storage provider ${provider.id}: discoverCacheStorage must be a function`,
     );
 }
 

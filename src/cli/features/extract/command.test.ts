@@ -43,6 +43,89 @@ describe("runExtractCommand", () => {
     expect(registry.adapters.effectApis.map((provider) => provider.kind)).toEqual(
       ["effect-api"],
     );
+    expect(
+      registry.adapters.cacheStorage.map((provider) => provider.kind),
+    ).toEqual(["cache-storage"]);
+  });
+
+  it("merges Next cache/storage provider fragments into extracted model", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-cache-"));
+    const sourcePath = join(dir, "actions.ts");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { next: "^15.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+        "use server";
+        import { updateTag } from "next/cache";
+        export async function save() {
+          updateTag("posts");
+        }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.some((decl) => decl.id === "sys:next:cache:tag:posts"),
+    ).toBe(true);
+    expect(
+      model.transitions.some((transition) =>
+        transition.id.includes("updateTag"),
+      ),
+    ).toBe(true);
+    expect(
+      model.metadata?.plugins?.some(
+        (plugin) =>
+          plugin.kind === "cache-storage" && plugin.id === "next-cache-storage",
+      ),
+    ).toBe(true);
+    expect(result.pluginLabels.some((label) => label.includes("cache-storage"))).toBe(
+      true,
+    );
+  });
+
+  it("omits cache vars when Next cache/storage provider is not registered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-cache-"));
+    const sourcePath = join(dir, "actions.ts");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+        "use server";
+        import { updateTag } from "next/cache";
+        export async function save() {
+          updateTag("posts");
+        }
+      `,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.some((decl) => decl.id.startsWith("sys:next:cache:")),
+    ).toBe(false);
   });
 
   it("writes model and extraction report artifacts", async () => {

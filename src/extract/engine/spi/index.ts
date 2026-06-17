@@ -302,6 +302,26 @@ export interface EffectApiProvider extends ModalityAdapterBase {
   ): readonly DiscoveredEffectApi[];
 }
 
+export interface CacheStorageDiscoveryCtx {
+  rootDir?: string;
+  files: readonly { path: string; text: string }[];
+  inventory?: RouteInventory;
+  options: ResolvedOptions;
+}
+
+export interface CacheStorageFragment {
+  vars: readonly StateVarDecl[];
+  transitions: readonly import("modality-ts/core").Transition[];
+  caveats: readonly ExtractionCaveat[];
+  reductions?: readonly NumericReduction[];
+  warnings?: readonly string[];
+}
+
+export interface CacheStorageProvider extends ModalityAdapterBase {
+  kind: "cache-storage";
+  discoverCacheStorage(ctx: CacheStorageDiscoveryCtx): CacheStorageFragment;
+}
+
 export interface NavigationLoweringCtx {
   inventory: RouteInventory;
   routePatterns: readonly string[];

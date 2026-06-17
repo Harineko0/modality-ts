@@ -390,6 +390,25 @@ describe("extraction architecture surface", () => {
     expect(violations).toEqual([]);
   });
 
+  it("CLI extraction code does not import private Next cache modules", async () => {
+    const cliExtractDir = resolve(srcDir, "cli/features/extract");
+    const files = await sourceFiles(cliExtractDir);
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (
+          specifier.includes("extract/sources/next/cache") ||
+          specifier.endsWith("/next/cache.js") ||
+          specifier.endsWith("/next/cache")
+        ) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("built-in source slices import extraction through the public SPI only", async () => {
     const sourcesDir = resolve(srcDir, "extract/sources");
     const files = await sourceFiles(sourcesDir);

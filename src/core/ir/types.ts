@@ -137,7 +137,8 @@ export interface PluginProvenance {
     | "router"
     | "domain-refinement"
     | "module-role"
-    | "effect-api";
+    | "effect-api"
+    | "cache-storage";
   packageNames: readonly string[];
 }
 

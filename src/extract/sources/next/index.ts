@@ -20,6 +20,7 @@ import {
   mountScopeForComponent,
   routeTreeVars,
 } from "./routes.js";
+export { nextCacheStorageProvider } from "./cache-provider.js";
 
 export interface NextSourceOptions {
   id?: string;

@@ -27,6 +27,7 @@ import {
   type ExtractionCaveat,
   type ExtractionReport,
   type Model,
+  type NumericReduction,
   type OverlaySpec,
   type RouteCoverage,
   type RouteCoverageClassification,
@@ -50,7 +51,7 @@ import {
   parseReactRouterRoutes,
   routerSource,
 } from "modality-ts/extract/sources/router";
-import { discoverNextCacheFromSources } from "../../../extract/sources/next/cache.js";
+import type { CacheStorageFragment } from "modality-ts/extract/engine/spi";
 import {
   configSecurityWarnings,
   expandInventoryForI18n,
@@ -61,6 +62,7 @@ import {
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
+import type { RegistrySummary } from "../../registry/index.js";
 import {
   compareCaveats,
   modelSlackCaveat,
@@ -231,23 +233,19 @@ export async function runExtractCommand(
     inventory: project.inventory,
     bounds: { maxDepth: bounds.maxDepth },
   });
-  const nextCacheFragments =
-    routerAdapter.id === "next"
-      ? discoverNextCacheFromSources(
-          project.rawEntries.map((entry) => ({
-            fileName: entry.path,
-            sourceText: entry.text,
-          })),
-          project.inventory,
-        )
-      : { vars: [], transitions: [], warnings: [] };
+  const cacheStorageFragments = discoverCacheStorageFragments(
+    registry,
+    project,
+    route,
+    { maxHistory: 4 },
+  );
   const configTransitions =
     nextConfig && routerAdapter.id === "next"
       ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
       : [];
   const transitions = [
     ...pipeline.transitions,
-    ...nextCacheFragments.transitions,
+    ...cacheStorageFragments.transitions,
     ...configTransitions,
   ];
   const lowering = buildLocationLowering(
@@ -268,7 +266,7 @@ export async function runExtractCommand(
   ];
   const templateVars = [
     ...pipeline.templateFragments.flatMap((fragment) => fragment.vars),
-    ...nextCacheFragments.vars,
+    ...cacheStorageFragments.vars,
   ];
   const stateVars = refineAssignedLiteralDomains(
     [
@@ -287,7 +285,7 @@ export async function runExtractCommand(
     bounds,
     metadata: {
       sourceHashes: sourceHashes(project.sources),
-      plugins: pluginProvenance(pipeline.plugins),
+      plugins: pluginProvenance(pipeline.plugins, registry),
     },
     vars: [
       ...routeVars,
@@ -323,7 +321,7 @@ export async function runExtractCommand(
   }
   const structuredWarnings: ExtractionWarning[] = [
     ...project.surfaceWarnings.map((message) => ({ message })),
-    ...nextCacheFragments.warnings.map((message) => ({ message })),
+    ...cacheStorageFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,
     ...wideNumericReachabilityWarnings(overlay.model),
     ...wideProductDomainReachabilityWarnings(overlay.model),
@@ -340,10 +338,13 @@ export async function runExtractCommand(
       ...withInputClasses.model,
       metadata: {
         ...withInputClasses.model.metadata,
-        extractionCaveats,
+        extractionCaveats: mergeExtractionCaveats(
+          extractionCaveats,
+          cacheStorageFragments.caveats,
+        ),
       },
     },
-    withInputClasses.reductions,
+    [...withInputClasses.reductions, ...cacheStorageFragments.reductions],
   );
   const report = createExtractionReport(
     project.sourceFiles,
@@ -397,7 +398,7 @@ export async function runExtractCommand(
   const varCount =
     pipeline.stateVars.length +
     pipeline.templateFragments.flatMap((fragment) => fragment.vars).length +
-    nextCacheFragments.vars.length;
+    cacheStorageFragments.vars.length;
   const pluginLabels = registry.plugins.map(
     (plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`,
   );
@@ -1582,13 +1583,86 @@ function firstSemverMajor(range: string): number | undefined {
   return match ? Number(match[0]) : undefined;
 }
 
+function discoverCacheStorageFragments(
+  registry: RegistrySummary,
+  project: ExtractionProject,
+  route: string,
+  bounds: { maxHistory?: number },
+): {
+  vars: StateVarDecl[];
+  transitions: Transition[];
+  warnings: string[];
+  caveats: ExtractionCaveat[];
+  reductions: NumericReduction[];
+} {
+  const providers = [...registry.adapters.cacheStorage].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  const vars: StateVarDecl[] = [];
+  const transitions: Transition[] = [];
+  const warnings: string[] = [];
+  const caveats: ExtractionCaveat[] = [];
+  const reductions: NumericReduction[] = [];
+
+  for (const provider of providers) {
+    let fragment: CacheStorageFragment;
+    try {
+      fragment = provider.discoverCacheStorage({
+        rootDir: project.configStartDir,
+        files: project.rawEntries.map((entry) => ({
+          path: entry.path,
+          text: entry.text,
+        })),
+        inventory: project.inventory,
+        options: { route, bounds },
+      });
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : String(error ?? "unknown");
+      throw new Error(
+        `Cache/storage provider ${provider.id} failed during discovery: ${detail}`,
+      );
+    }
+    if (!Array.isArray(fragment.vars) || !Array.isArray(fragment.transitions)) {
+      throw new Error(
+        `Cache/storage provider ${provider.id} returned an invalid fragment`,
+      );
+    }
+    vars.push(...fragment.vars);
+    transitions.push(...fragment.transitions);
+    if (fragment.warnings) warnings.push(...fragment.warnings);
+    caveats.push(...fragment.caveats);
+    if (fragment.reductions) reductions.push(...fragment.reductions);
+  }
+
+  return { vars, transitions, warnings, caveats, reductions };
+}
+
+function mergeExtractionCaveats(
+  base: NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]>,
+  extra: readonly ExtractionCaveat[],
+): NonNullable<NonNullable<Model["metadata"]>["extractionCaveats"]> {
+  if (extra.length === 0) return base;
+  return {
+    entries: [...base.entries, ...extra].sort(compareCaveats),
+  };
+}
+
 function pluginProvenance(
   plugins: ReturnType<typeof runExtractionPipeline>["plugins"],
+  registry: RegistrySummary,
 ): NonNullable<Model["metadata"]>["plugins"] {
+  const cacheStorage = registry.adapters.cacheStorage.map((provider) => ({
+    id: provider.id,
+    version: provider.version ?? "unknown",
+    kind: "cache-storage" as const,
+    packageNames: [...provider.packageNames].sort(),
+  }));
   return [
     ...plugins.sources,
     ...(plugins.router ? [plugins.router] : []),
     ...(plugins.domainRefinements ?? []),
+    ...cacheStorage,
   ].sort(
     (left, right) =>
       left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),

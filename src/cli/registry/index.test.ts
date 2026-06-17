@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  CacheStorageProvider,
   EffectApiProvider,
   LocationLowering,
   ModuleRoleAdapter,
@@ -143,6 +144,22 @@ function fakeEffectApiProvider(
   };
 }
 
+function fakeCacheStorageProvider(
+  overrides: Partial<CacheStorageProvider> = {},
+): CacheStorageProvider {
+  return {
+    id: "fake-cache-storage",
+    kind: "cache-storage",
+    packageNames: ["fake"],
+    discoverCacheStorage: () => ({
+      vars: [],
+      transitions: [],
+      caveats: [],
+    }),
+    ...overrides,
+  };
+}
+
 describe("validateModuleRoleAdapter", () => {
   it("accepts a complete ModuleRoleAdapter", () => {
     expect(() =>
@@ -189,6 +206,45 @@ describe("validateEffectApiProvider", () => {
   });
 });
 
+describe("validateCacheStorageProvider", () => {
+  it("accepts a complete CacheStorageProvider", () => {
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        cacheStorageProviders: [fakeCacheStorageProvider()],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects providers missing discoverCacheStorage", () => {
+    const { discoverCacheStorage: _, ...incomplete } =
+      fakeCacheStorageProvider();
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        cacheStorageProviders: [incomplete as CacheStorageProvider],
+      }),
+    ).toThrow(
+      "Invalid cache/storage provider fake-cache-storage: discoverCacheStorage must be a function",
+    );
+  });
+
+  it("rejects providers with the wrong kind", () => {
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        cacheStorageProviders: [
+          fakeCacheStorageProvider({
+            kind: "effect-api" as CacheStorageProvider["kind"],
+          }),
+        ],
+      }),
+    ).toThrow(
+      'Invalid cache/storage provider fake-cache-storage: kind must be "cache-storage"',
+    );
+  });
+});
+
 describe("builtin module-role and effect API registration", () => {
   it("registers Next navigation, module-role, and effect API providers", () => {
     const registry = createBuiltinModalityRegistry({
@@ -202,6 +258,30 @@ describe("builtin module-role and effect API registration", () => {
     expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
       ["next-effect-api"],
     );
+    expect(
+      registry.adapters.cacheStorage.map((provider) => provider.id),
+    ).toEqual(["next-cache-storage"]);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "cache-storage" && plugin.id === "next-cache-storage",
+      ),
+    ).toBe(true);
+  });
+
+  it("omits Next cache/storage provider when Next is disabled", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { next: "^15.0.0" },
+      disabledPlugins: ["next"],
+    });
+    expect(registry.adapters.cacheStorage).toEqual([]);
+  });
+
+  it("omits Next cache/storage provider without a Next dependency", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "react-router-dom": "^6.0.0" },
+    });
+    expect(registry.adapters.cacheStorage).toEqual([]);
   });
 
   it("registers React Router navigation, module-role, and effect API providers", () => {

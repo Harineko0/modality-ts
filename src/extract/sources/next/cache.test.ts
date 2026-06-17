@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateNextCacheDiscoveries,
   createNextCacheTemplate,
+  discoverNextCacheFromSources,
   discoverNextCacheUsage,
   nextCacheVarDecls,
 } from "./cache.js";
+import { nextCacheStorageProvider } from "./cache-provider.js";
 import { nextCacheVarId } from "./routes.js";
 
 describe("discoverNextCacheUsage", () => {
@@ -140,5 +142,68 @@ describe("discoverNextCacheUsage", () => {
     expect(discovery.keys.map((key) => key.id)).toEqual(
       expect.arrayContaining(["tag:posts", "fetch:/api/posts"]),
     );
+  });
+});
+
+describe("nextCacheStorageProvider", () => {
+  it("returns vars and transitions matching low-level discovery", () => {
+    const sources = [
+      {
+        path: "/proj/app/actions.ts",
+        text: `
+          "use server";
+          import { updateTag } from "next/cache";
+          export async function save() {
+            updateTag("posts");
+          }
+        `,
+      },
+    ];
+    const provider = nextCacheStorageProvider();
+    const fragment = provider.discoverCacheStorage({
+      files: sources,
+      options: { route: "/" },
+    });
+    const direct = discoverNextCacheFromSources(
+      sources.map((source) => ({
+        fileName: source.path,
+        sourceText: source.text,
+      })),
+    );
+    expect(fragment.vars.map((decl) => decl.id)).toEqual(
+      direct.vars.map((decl) => decl.id),
+    );
+    expect(fragment.transitions.map((transition) => transition.id)).toEqual(
+      direct.transitions.map((transition) => transition.id),
+    );
+    expect(fragment.caveats).toEqual([]);
+  });
+
+  it("preserves warning strings pending structured caveat cleanup", () => {
+    const provider = nextCacheStorageProvider();
+    const fragment = provider.discoverCacheStorage({
+      files: [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
+            export default async function Page() {
+              await fetch("/api/user", { cache: "no-store" });
+            }
+          `,
+        },
+      ],
+      inventory: {
+        routes: [
+          { pattern: "/", kind: "page", file: "/proj/app/page.tsx" },
+        ],
+      },
+      options: { route: "/" },
+    });
+    expect(fragment.warnings).toEqual(
+      expect.arrayContaining([
+        "Dynamic request marker (no-store/connection) on route / skips cache vars",
+      ]),
+    );
+    expect(fragment.caveats).toEqual([]);
   });
 });
