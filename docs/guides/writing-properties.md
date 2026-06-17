@@ -78,6 +78,32 @@ The `step` matcher exposes `stepEnqueued(op)`, `stepResolved(op, outcome?)`,
 operation's argument snapshot (`opArgs`) to write **snapshot-staleness** rules without
 temporal operators.
 
+A composite `alwaysStep` predicate is checked on **every explored edge**. For focused
+postconditions on one handler, prefer a **negated bad-step** pattern instead of a
+positive target+post pair:
+
+```ts
+alwaysStep(
+  model,
+  {
+    negate: true,
+    step: stepTransitionId("Component.onSubmit"),
+    post: /* bad post-state condition */,
+  },
+  {
+    name: "submitDoesNotLeaveDraftDirty",
+    enabledTransitions: ["Component.onSubmit"],
+  },
+);
+```
+
+`{ step: stepTransitionId(id), post: goodCondition }` is **not** an implication over
+handler edges — it requires every observed edge to be that target edge with that
+postcondition, so unrelated transitions can produce confusing counterexamples. When
+slicing is enabled, negated properties with a syntactic `stepTransitionId(...)` target can
+use a targeted edge slice; broad matchers such as `stepAny()` and positive target
+predicates still use full-model search.
+
 ## Pattern: bounded response (`leadsToWithin`)
 
 "After submitting, the order must settle to success or error within 3 environment steps."

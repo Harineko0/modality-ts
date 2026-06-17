@@ -57,6 +57,13 @@ A full step predicate may be composite: `{ step, pre?, post?, negate? }` — `pr
 are `ExprIR` over the edge endpoints, and `negate` flips the match. On enqueue/resolve
 edges, `StepFacts` also exposes the operation's `args` snapshot.
 
+For focused handler postconditions, prefer `negate: true` with a bad `post` on
+`stepTransitionId(id)` rather than `{ step: stepTransitionId(id), post: goodCondition }`:
+the latter is checked on every explored edge, not as an implication over the target edge
+only. When slicing is enabled, a negated bad-step property with syntactic
+`stepTransitionId(...)` in the step matcher (not `enabledTransitions` alone) may use
+targeted edge slicing.
+
 ## Example file
 
 ```ts

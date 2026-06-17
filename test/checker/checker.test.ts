@@ -1,4 +1,11 @@
-import { checkModel, modelInitialStates, sliceModel } from "modality-ts/check";
+import {
+  checkModel,
+  modelInitialStates,
+  propertySliceMode,
+  sliceModel,
+  sliceModelForCheckProperty,
+  targetedAlwaysStepTransitionIds,
+} from "modality-ts/check";
 import {
   always,
   alwaysStep,
@@ -3524,6 +3531,436 @@ describe("checker", () => {
         verdict.status,
       ]),
     ).toEqual([["counterBounded", "verified-within-bounds"]]);
+  });
+
+  function focusedAlwaysStepNoiseModel(spamCount = 8): Model {
+    const spamVars = Array.from({ length: spamCount }, (_, index) => ({
+      id: `spam${index}`,
+      domain: bool,
+      origin: "system" as const,
+      scope: { kind: "global" as const },
+      initial: false,
+    }));
+    const spamTransitions = Array.from({ length: spamCount }, (_, index) => ({
+      id: `spamPending${index}`,
+      cls: "user" as const,
+      label: { kind: "click" as const, text: `Spam ${index}` },
+      source: [],
+      guard: lit(true),
+      effect: {
+        kind: "seq" as const,
+        effects: [
+          {
+            kind: "enqueue" as const,
+            op: "POST",
+            continuation: `spam#${index}`,
+            args: {},
+          },
+          {
+            kind: "assign" as const,
+            var: `spam${index}`,
+            expr: lit(true),
+          },
+        ],
+      },
+      reads: [`spam${index}`],
+      writes: ["sys:pending", `spam${index}`],
+      confidence: "exact" as const,
+    }));
+    return {
+      schemaVersion: 1,
+      id: "focused-always-step-noise",
+      bounds: { maxDepth: spamCount + 4, maxPending: 2, maxInternalSteps: 8 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "draft",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "empty",
+        },
+        ...spamVars,
+      ],
+      transitions: [
+        {
+          id: "prepare",
+          cls: "user",
+          label: { kind: "click", text: "Prepare" },
+          source: [],
+          guard: eq(read("draft"), lit("empty")),
+          effect: { kind: "assign", var: "draft", expr: lit("nonEmpty") },
+          reads: ["draft"],
+          writes: ["draft"],
+          confidence: "exact",
+        },
+        {
+          id: "submit",
+          cls: "user",
+          label: { kind: "submit", text: "Submit" },
+          source: [],
+          guard: eq(read("draft"), lit("nonEmpty")),
+          effect: {
+            kind: "seq",
+            effects: [
+              {
+                kind: "enqueue",
+                op: "POST",
+                continuation: "submit#1",
+                args: {},
+              },
+              { kind: "assign", var: "draft", expr: lit("empty") },
+            ],
+          },
+          reads: ["draft"],
+          writes: ["draft", "sys:pending"],
+          confidence: "exact",
+        },
+        {
+          id: "otherSubmit",
+          cls: "user",
+          label: { kind: "submit", text: "Other" },
+          source: [],
+          guard: eq(read("draft"), lit("nonEmpty")),
+          effect: {
+            kind: "seq",
+            effects: [
+              {
+                kind: "enqueue",
+                op: "POST",
+                continuation: "other#1",
+                args: {},
+              },
+              { kind: "assign", var: "draft", expr: lit("empty") },
+            ],
+          },
+          reads: ["draft"],
+          writes: ["draft", "sys:pending"],
+          confidence: "exact",
+        },
+        {
+          id: "navigateAway",
+          cls: "nav",
+          label: { kind: "navigate", mode: "push", to: "/b" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+        ...spamTransitions,
+      ],
+    };
+  }
+
+  it("detects syntactic alwaysStep transition targets for slicing", () => {
+    const m = focusedAlwaysStepNoiseModel(1);
+    const targeted = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submit"),
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitResetsDraft",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const enabledOnly = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepAny(),
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      { name: "enabledOnly", reads: ["draft"], enabledTransitions: ["submit"] },
+    );
+    const positiveTarget = alwaysStep(m, stepTransitionId("submit"), {
+      name: "positiveTarget",
+      reads: [],
+      enabledTransitions: ["submit"],
+    });
+    expect(targetedAlwaysStepTransitionIds(targeted)).toEqual(["submit"]);
+    expect(propertySliceMode(targeted)).toBe("targetedStep");
+    expect(propertySliceMode(enabledOnly)).toBe("full");
+    expect(targetedAlwaysStepTransitionIds(positiveTarget)).toEqual(["submit"]);
+    expect(propertySliceMode(positiveTarget)).toBe("full");
+  });
+
+  it("slices targeted alwaysStep without unrelated pending and navigation transitions", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submit"),
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitResetsDraft",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual(
+      expect.arrayContaining(["prepare", "submit"]),
+    );
+    expect(sliced.transitions.map((transition) => transition.id)).not.toEqual(
+      expect.arrayContaining(["navigateAway", "spamPending0", "spamPending1"]),
+    );
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:history");
+  });
+
+  it("keeps step-fact vars out of targeted alwaysStep dependency closure", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: { ...stepTransitionId("submit"), ...stepEnqueued("POST") },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitEnqueueResetsDraft",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    const transitionIds = sliced.transitions.map((transition) => transition.id);
+    expect(sliced.vars.map((decl) => decl.id)).toContain("sys:pending");
+    expect(transitionIds).toEqual(
+      expect.arrayContaining(["prepare", "submit"]),
+    );
+    expect(transitionIds).not.toEqual(
+      expect.arrayContaining(["spamPending0", "spamPending1", "navigateAway"]),
+    );
+  });
+
+  it("keeps positive targeted alwaysStep on the full model under slicing", () => {
+    const m = focusedAlwaysStepNoiseModel(2);
+    const property = alwaysStep(m, stepTransitionId("submit"), {
+      name: "everyEdgeIsSubmit",
+      reads: [],
+      enabledTransitions: ["submit"],
+    });
+    const full = checkModel(m, [property]);
+    const sliced = checkModel(m, [property], { slicing: true });
+    expect(propertySliceMode(property)).toBe("full");
+    expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe("full");
+    expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
+      m.transitions.length,
+    );
+    expect(sliced.verdicts).toEqual(full.verdicts);
+    expect(sliced.verdicts[0]?.status).toBe("violated");
+  });
+
+  it("keeps targeted alwaysStep verdict parity between sliced and full search", () => {
+    const m = focusedAlwaysStepNoiseModel(4);
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submit"),
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitResetsDraft",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const full = checkModel(m, [property]);
+    const sliced = checkModel(m, [property], { slicing: true });
+    expect(sliced.verdicts).toEqual(full.verdicts);
+    expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe(
+      "targetedStep",
+    );
+    expect(
+      sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions,
+    ).toBeLessThan(m.transitions.length);
+  });
+
+  it("lets targeted alwaysStep slicing avoid low maxEdges failures", () => {
+    const m = focusedAlwaysStepNoiseModel(10);
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submit"),
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitResetsDraft",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const maxEdges = 40;
+    const unsliced = checkModel(m, [property], { slicing: false, maxEdges });
+    const sliced = checkModel(m, [property], { slicing: true, maxEdges });
+    expect(unsliced.verdicts[0]?.status).toBe("error");
+    expect(
+      unsliced.verdicts[0]?.status === "error"
+        ? unsliced.verdicts[0]?.message
+        : "",
+    ).toContain("search limit exceeded");
+    expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
+      3,
+    );
+    expect(sliced.stats.edges).toBeLessThan(maxEdges);
+    expect(sliced.verdicts[0]?.status).toBe("verified-within-bounds");
+  });
+
+  it("keeps untargeted alwaysStep on the full model when slicing", () => {
+    const m = focusedAlwaysStepNoiseModel(4);
+    const property = alwaysStep(m, stepAny(), {
+      name: "allEdgesOk",
+      reads: ["draft"],
+    });
+    const result = checkModel(m, [property], { slicing: true });
+    expect(propertySliceMode(property)).toBe("full");
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
+      m.transitions.length,
+    );
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe("full");
+  });
+
+  it("groups targeted alwaysStep slices by transition set, not vars alone", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "focused-step-grouping",
+      bounds: { maxDepth: 4, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "draftA",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "empty",
+        },
+        {
+          id: "draftB",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "empty",
+        },
+      ],
+      transitions: [
+        {
+          id: "prepareA",
+          cls: "user",
+          label: { kind: "click", text: "Prepare A" },
+          source: [],
+          guard: eq(read("draftA"), lit("empty")),
+          effect: { kind: "assign", var: "draftA", expr: lit("nonEmpty") },
+          reads: ["draftA"],
+          writes: ["draftA"],
+          confidence: "exact",
+        },
+        {
+          id: "submitA",
+          cls: "user",
+          label: { kind: "submit", text: "Submit A" },
+          source: [],
+          guard: eq(read("draftA"), lit("nonEmpty")),
+          effect: { kind: "assign", var: "draftA", expr: lit("empty") },
+          reads: ["draftA"],
+          writes: ["draftA"],
+          confidence: "exact",
+        },
+        {
+          id: "prepareB",
+          cls: "user",
+          label: { kind: "click", text: "Prepare B" },
+          source: [],
+          guard: eq(read("draftB"), lit("empty")),
+          effect: { kind: "assign", var: "draftB", expr: lit("nonEmpty") },
+          reads: ["draftB"],
+          writes: ["draftB"],
+          confidence: "exact",
+        },
+        {
+          id: "submitB",
+          cls: "user",
+          label: { kind: "submit", text: "Submit B" },
+          source: [],
+          guard: eq(read("draftB"), lit("nonEmpty")),
+          effect: { kind: "assign", var: "draftB", expr: lit("empty") },
+          reads: ["draftB"],
+          writes: ["draftB"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const submitProperty = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submitA"),
+        post: eq(readVar("draftA"), lit("nonEmpty")),
+      },
+      {
+        name: "submitAResetsDraft",
+        reads: ["draftA"],
+        enabledTransitions: ["submitA"],
+      },
+    );
+    const otherProperty = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: stepTransitionId("submitB"),
+        post: eq(readVar("draftB"), lit("nonEmpty")),
+      },
+      {
+        name: "submitBResetsDraft",
+        reads: ["draftB"],
+        enabledTransitions: ["submitB"],
+      },
+    );
+    const result = checkModel(m, [submitProperty, otherProperty], {
+      slicing: true,
+    });
+    const summaries = result.diagnostics?.slicing?.sliceSummaries ?? [];
+    expect(summaries).toHaveLength(2);
+    expect(summaries.map((summary) => summary.mode)).toEqual([
+      "targetedStep",
+      "targetedStep",
+    ]);
+    expect(result.verdicts.map((verdict) => verdict.status)).toEqual([
+      "verified-within-bounds",
+      "verified-within-bounds",
+    ]);
+    expect(result.verdicts.map((verdict) => verdict.property)).toEqual([
+      "submitAResetsDraft",
+      "submitBResetsDraft",
+    ]);
   });
 
   it("stops gracefully when maxStates is exceeded", () => {
