@@ -4,7 +4,6 @@ import type {
   RouteInventory,
 } from "modality-ts/extract/engine/spi";
 import { sourceWithReachableImports } from "../../src/cli/features/extract/project.js";
-import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
 import {
   classifyNextImportEdge,
   classifyNextModule,
@@ -45,10 +44,11 @@ describe("sourceWithReachableImports next boundaries", () => {
   };
 
   it("excludes server page handlers unless a client island is imported", async () => {
-    const entries = [
-      {
-        path: "/proj/app/page.tsx",
-        text: `
+    const result = await sourceWithReachableImports(
+      [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
             import { Counter } from "../components/Counter";
             export default function Home() {
               return (
@@ -59,20 +59,18 @@ describe("sourceWithReachableImports next boundaries", () => {
               );
             }
           `,
-      },
-      {
-        path: "/proj/components/Counter.tsx",
-        text: `
+        },
+        {
+          path: "/proj/components/Counter.tsx",
+          text: `
             "use client";
             export function Counter() {
               return <button onClick={() => console.log("client")}>Client</button>;
             }
           `,
-      },
-    ];
-    const result = await sourceWithReachableImports(
-      entries,
-      createSemanticProjectForTest(entries),
+        },
+      ],
+      { paths: [] },
       nextTestAdapter(inventory),
       inventory,
     );
@@ -92,29 +90,28 @@ describe("sourceWithReachableImports next boundaries", () => {
   });
 
   it('includes "use client" components imported from server pages in interaction surface', async () => {
-    const entries = [
-      {
-        path: "/proj/app/page.tsx",
-        text: `
+    const result = await sourceWithReachableImports(
+      [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
             import { Island } from "../components/Island";
             export default function Home() {
               return <Island />;
             }
           `,
-      },
-      {
-        path: "/proj/components/Island.tsx",
-        text: `
+        },
+        {
+          path: "/proj/components/Island.tsx",
+          text: `
             "use client";
             export function Island() {
               return <button onClick={() => {}}>Tap</button>;
             }
           `,
-      },
-    ];
-    const result = await sourceWithReachableImports(
-      entries,
-      createSemanticProjectForTest(entries),
+        },
+      ],
+      { paths: [] },
       nextTestAdapter(inventory),
       inventory,
     );
@@ -127,29 +124,28 @@ describe("sourceWithReachableImports next boundaries", () => {
   });
 
   it('excludes "use server" action files from interaction but discovers server effect APIs', async () => {
-    const entries = [
-      {
-        path: "/proj/app/page.tsx",
-        text: `
+    const result = await sourceWithReachableImports(
+      [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
             import { save } from "./actions";
             export default function Home() {
               return <form action={save}><button>Save</button></form>;
             }
           `,
-      },
-      {
-        path: "/proj/app/actions.ts",
-        text: `
+        },
+        {
+          path: "/proj/app/actions.ts",
+          text: `
             "use server";
             export async function save() {
               await fetch("https://example.com/save");
             }
           `,
-      },
-    ];
-    const result = await sourceWithReachableImports(
-      entries,
-      createSemanticProjectForTest(entries),
+        },
+      ],
+      { paths: [] },
       nextTestAdapter(inventory),
       inventory,
     );
@@ -168,24 +164,23 @@ describe("sourceWithReachableImports next boundaries", () => {
   });
 
   it("does not drag css imports into interaction surface", async () => {
-    const entries = [
-      {
-        path: "/proj/app/page.tsx",
-        text: `
+    const result = await sourceWithReachableImports(
+      [
+        {
+          path: "/proj/app/page.tsx",
+          text: `
             import styles from "./page.module.css";
             export default function Home() {
               return <main className={styles.root}>Hello</main>;
             }
           `,
-      },
-      {
-        path: "/proj/app/page.module.css",
-        text: ".root { color: red; }",
-      },
-    ];
-    const result = await sourceWithReachableImports(
-      entries,
-      createSemanticProjectForTest(entries),
+        },
+        {
+          path: "/proj/app/page.module.css",
+          text: ".root { color: red; }",
+        },
+      ],
+      { paths: [] },
       nextTestAdapter(inventory),
       inventory,
     );

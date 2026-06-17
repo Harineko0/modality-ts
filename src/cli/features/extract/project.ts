@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { dirname, extname, resolve } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
 import * as ts from "typescript";
 import type {
   ImportEdgeContext,
@@ -12,7 +12,6 @@ import type {
   RouteInventory,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
-import type { SemanticProject } from "../../../extract/engine/ts/semantic-project.js";
 import {
   allEffectOpAliasCanonicalIds,
   type EffectOpAliases,
@@ -30,6 +29,11 @@ function parseModuleDirectives(sourceText: string): ModuleDirective[] {
       directives.push("use server");
   }
   return directives;
+}
+
+export interface TsConfigResolution {
+  baseUrl?: string;
+  paths: Array<{ prefix: string; suffix: string; targets: string[] }>;
 }
 
 export interface ProjectSourceEntry {
@@ -480,7 +484,7 @@ function resolveReExportTarget(
 async function followDeclarationReference(
   record: ModuleRecord,
   declName: string,
-  semanticProject: SemanticProject,
+  tsconfig: TsConfigResolution,
   ensureModule: (
     path: string,
     text?: string,
@@ -498,11 +502,10 @@ async function followDeclarationReference(
     );
     return { module: record, declName };
   }
-  const importedPath = resolveImportPath(
-    record.path,
+  const importedPath = await resolveImportPath(
+    dirname(record.path),
     reexport.specifier,
-    semanticProject,
-    warnings,
+    tsconfig,
   );
   if (!importedPath) return undefined;
   const target = await ensureModule(importedPath);
@@ -510,7 +513,7 @@ async function followDeclarationReference(
   return followDeclarationReference(
     target,
     reexport.exportedName,
-    semanticProject,
+    tsconfig,
     ensureModule,
     warnings,
   );
@@ -675,7 +678,7 @@ function routeForFile(
 
 export async function sourceWithReachableImports(
   entries: Array<{ path: string; text: string }>,
-  semanticProject: SemanticProject,
+  tsconfig: TsConfigResolution,
   adapter?: NavigationAdapter,
   inventory?: RouteInventory,
 ): Promise<ReachableImportsResult> {
@@ -783,7 +786,7 @@ export async function sourceWithReachableImports(
             const resolved = await followDeclarationReference(
               record,
               ref,
-              semanticProject,
+              tsconfig,
               ensureModule,
               warnings,
             );
@@ -802,11 +805,10 @@ export async function sourceWithReachableImports(
           (binding.local === ref && binding.isTypeOnly)
         ) {
           record.typeImports.add(binding.local);
-          const importedPath = resolveImportPath(
-            record.path,
+          const importedPath = await resolveImportPath(
+            dirname(record.path),
             binding.specifier,
-            semanticProject,
-            warnings,
+            tsconfig,
           );
           if (!importedPath) continue;
           const target = await ensureModule(importedPath);
@@ -837,11 +839,10 @@ export async function sourceWithReachableImports(
           continue;
         }
 
-        const importedPath = resolveImportPath(
-          record.path,
+        const importedPath = await resolveImportPath(
+          dirname(record.path),
           binding.specifier,
-          semanticProject,
-          warnings,
+          tsconfig,
         );
         if (!importedPath) continue;
 
@@ -881,7 +882,7 @@ export async function sourceWithReachableImports(
         const resolved = await followDeclarationReference(
           target,
           importedName,
-          semanticProject,
+          tsconfig,
           ensureModule,
           warnings,
         );
@@ -1001,7 +1002,7 @@ export async function sourceWithReachableImports(
   const effectOpAliases = discoverServerActionImportAliases(
     modules,
     effectApiProvenance,
-    semanticProject,
+    tsconfig,
   );
   const canonicalIds = new Set(effectApiProvenance.map((entry) => entry.opId));
   for (const canonical of allEffectOpAliasCanonicalIds(effectOpAliases))
@@ -1096,32 +1097,71 @@ function fetchMethodValue(
   return undefined;
 }
 
-function resolveImportPath(
-  containingFile: string,
+async function resolveImportPath(
+  baseDir: string,
   specifier: string,
-  semanticProject: SemanticProject,
-  warnings: string[],
-): string | undefined {
+  tsconfig: TsConfigResolution,
+): Promise<string | undefined> {
   if (specifier.startsWith("./+types/") || specifier.startsWith("../+types/"))
     return undefined;
-  const resolved = semanticProject.resolveModuleName(
-    specifier,
-    containingFile,
-  );
-  if (!resolved) {
-    warnings.push(
-      `Unresolved module ${specifier} in ${containingFile}`,
-    );
-    return undefined;
+  const bases = importBases(baseDir, specifier, tsconfig);
+  for (const base of bases) {
+    const resolved = await firstExistingModulePath(base);
+    if (resolved) return resolved;
   }
-  if (resolved.isExternal) return undefined;
-  return resolved.fileName;
+  return undefined;
+}
+
+function importBases(
+  baseDir: string,
+  specifier: string,
+  tsconfig: TsConfigResolution,
+): string[] {
+  if (specifier.startsWith(".")) return [resolve(baseDir, specifier)];
+  const matches = tsconfig.paths.flatMap((entry) => {
+    if (
+      !specifier.startsWith(entry.prefix) ||
+      !specifier.endsWith(entry.suffix)
+    )
+      return [];
+    const star = specifier.slice(
+      entry.prefix.length,
+      specifier.length - entry.suffix.length,
+    );
+    return entry.targets.map((target) => resolve(target.replace("*", star)));
+  });
+  if (matches.length > 0) return matches;
+  return tsconfig.baseUrl ? [resolve(tsconfig.baseUrl, specifier)] : [];
+}
+
+async function firstExistingModulePath(
+  base: string,
+): Promise<string | undefined> {
+  const candidates = /\.[cm]?[jt]sx?$/.test(base)
+    ? [base]
+    : [
+        `${base}.ts`,
+        `${base}.tsx`,
+        `${base}.mts`,
+        `${base}.cts`,
+        join(base, "index.ts"),
+        join(base, "index.tsx"),
+      ];
+  for (const candidate of candidates) {
+    try {
+      const candidateStat = await stat(candidate);
+      if (candidateStat.isFile()) return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return undefined;
 }
 
 function discoverServerActionImportAliases(
   modules: ReadonlyMap<string, ModuleRecord>,
   provenance: readonly EffectApiProvenanceEntry[],
-  semanticProject: SemanticProject,
+  tsconfig: TsConfigResolution,
 ): Map<string, Map<string, string>> {
   const aliases = new Map<string, Map<string, string>>();
   const actionsByModule = new Map<string, Map<string, string>>();
@@ -1145,25 +1185,32 @@ function discoverServerActionImportAliases(
     for (const binding of bindings) {
       if (binding.isTypeOnly || binding.local === "*") continue;
       if (!isLocalImportSpecifier(binding.specifier)) continue;
-      const importedPath = resolveImportPath(
-        record.path,
+      const bases = importBases(
+        dirname(record.path),
         binding.specifier,
-        semanticProject,
-        [],
+        tsconfig,
       );
-      if (!importedPath) continue;
-      const normalized = importedPath.split("\\").join("/");
-      const byExport = actionsByModule.get(normalized);
-      if (!byExport) continue;
-      const imported = binding.imported ?? binding.local;
-      const canonical = byExport.get(imported);
-      if (!canonical) continue;
-      let perFile = aliases.get(modulePath);
-      if (!perFile) {
-        perFile = new Map();
-        aliases.set(modulePath, perFile);
+      for (const base of bases) {
+        const candidates = [
+          resolve(base),
+          `${resolve(base)}.ts`,
+          `${resolve(base)}.tsx`,
+        ];
+        for (const candidate of candidates) {
+          const normalized = candidate.split("\\").join("/");
+          const byExport = actionsByModule.get(normalized);
+          if (!byExport) continue;
+          const imported = binding.imported ?? binding.local;
+          const canonical = byExport.get(imported);
+          if (!canonical) continue;
+          let perFile = aliases.get(modulePath);
+          if (!perFile) {
+            perFile = new Map();
+            aliases.set(modulePath, perFile);
+          }
+          perFile.set(binding.local, canonical);
+        }
       }
-      perFile.set(binding.local, canonical);
     }
   }
   return aliases;

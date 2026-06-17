@@ -345,14 +345,7 @@ function semanticTypeContextForFile(
     program: semanticProject.program,
     checker: semanticProject.checker,
     ...(sourceFile ? { sourceFile } : {}),
-    canonicalFileName: (name) => semanticProject.canonicalFileName(name),
     getSourceFile: (name) => semanticProject.getSourceFile(name),
-    resolveModuleName: (specifier, containingFile) =>
-      semanticProject.resolveModuleName(specifier, containingFile),
-    symbolAt: (node) => semanticProject.symbolAt(node),
-    aliasedSymbolAt: (node) => semanticProject.aliasedSymbolAt(node),
-    symbolKey: (symbol) => semanticProject.symbolKey(symbol),
-    localSymbolKey: (node) => semanticProject.localSymbolKey(node),
   };
 }
 
