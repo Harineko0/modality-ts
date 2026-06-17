@@ -166,6 +166,20 @@ export function inferDomainFromTypeNodeSemanticDetailed(
   const type = ctx.checker.getTypeFromTypeNode(typeNode);
   const semantic = inferDomainFromTypeDetailed(type, ctx);
   if (semantic.domain.kind === "tokens" && semantic.caveats.length === 0) {
+    if ((ctx.domainRefinements ?? astContext.domainRefinements)?.length) {
+      const declaredAlias = inferFromResolvedAliasDeclaration(
+        typeNode,
+        ctx,
+        visited,
+        astContext,
+      );
+      if (
+        declaredAlias.domain.kind !== "tokens" ||
+        declaredAlias.caveats.length > 0
+      ) {
+        return declaredAlias;
+      }
+    }
     const ast = inferDomainFromTypeNodeDetailed(
       typeNode,
       ctx.typeAliases ?? new Map(),
@@ -230,6 +244,69 @@ export function inferDomainFromExpressionSemanticDetailed(
   }
 
   return inferDomainFromTypeDetailed(expressionType, ctx);
+}
+
+function inferFromResolvedAliasDeclaration(
+  typeNode: ts.TypeNode,
+  ctx: TypeDomainInferenceContext,
+  visited: ReadonlySet<string>,
+  astContext: DomainInferenceContext,
+): DomainInferenceResult {
+  const declaration = resolvedTypeAliasDeclaration(typeNode, ctx.checker);
+  if (!declaration)
+    return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  const name = declaration.name.text;
+  if (visited.has(name)) {
+    return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  }
+  const sourceFile = declaration.getSourceFile();
+  const typeAliases = typeAliasDeclarationsFromSource(sourceFile);
+  return inferDomainFromTypeNodeDetailed(
+    declaration.type,
+    typeAliases,
+    new Set([...visited, name]),
+    {
+      ...astContext,
+      sourceFile,
+      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+      varId: ctx.varId ?? astContext.varId,
+    },
+  );
+}
+
+function resolvedTypeAliasDeclaration(
+  typeNode: ts.TypeNode,
+  checker: ts.TypeChecker,
+): ts.TypeAliasDeclaration | undefined {
+  const symbolNode = typeSymbolNode(typeNode);
+  if (!symbolNode) return undefined;
+  const symbol = checker.getSymbolAtLocation(symbolNode);
+  if (!symbol) return undefined;
+  const resolved =
+    symbol.flags & ts.SymbolFlags.Alias
+      ? checker.getAliasedSymbol(symbol)
+      : symbol;
+  return resolved.declarations?.find(ts.isTypeAliasDeclaration);
+}
+
+function typeSymbolNode(typeNode: ts.TypeNode): ts.Node | undefined {
+  if (ts.isTypeReferenceNode(typeNode)) return typeNode.typeName;
+  if (ts.isTypeQueryNode(typeNode)) return typeNode.exprName;
+  return undefined;
+}
+
+function typeAliasDeclarationsFromSource(
+  source: ts.SourceFile,
+): Map<string, ts.TypeNode> {
+  const aliases = new Map<string, ts.TypeNode>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) {
+      aliases.set(node.name.text, node.type);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return aliases;
 }
 
 function stringLiteralFromTypeString(typeString: string): string | undefined {

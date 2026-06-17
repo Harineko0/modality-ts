@@ -13,6 +13,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const GENERATED_REPLAY_E2E_TIMEOUT_MS = 30_000;
 
 describe("generateAbstractReplayTest", () => {
   it("emits a deterministic abstract replay vitest file", () => {
@@ -89,98 +90,110 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("resolve: replayAsync.resolve");
   });
 
-  it("emits generated action replay files that execute under jsdom", async () => {
-    const trace: Trace = {
-      steps: [
-        {
-          transitionId: "setFlag",
-          label: {
-            kind: "click",
-            locator: { kind: "testId", value: "set-flag" },
+  it(
+    "emits generated action replay files that execute under jsdom",
+    async () => {
+      const trace: Trace = {
+        steps: [
+          {
+            transitionId: "setFlag",
+            label: {
+              kind: "click",
+              locator: { kind: "testId", value: "set-flag" },
+            },
+            pre: { flag: false },
+            post: { flag: true },
+            diff: { flag: { before: false, after: true } },
           },
-          pre: { flag: false },
-          post: { flag: true },
-          diff: { flag: { before: false, after: true } },
-        },
-      ],
-    };
-    const dir = resolve(repoRoot, "src/cli/.tmp-generated-replay");
-    await rm(dir, { recursive: true, force: true });
-    await mkdir(dir, { recursive: true });
-    const harness = generateReplayHarness();
-    const replay = generateActionReplayTest("flag starts false", trace);
-    await writeFile(
-      resolve(dir, harness.fileName),
-      `${generatedAppHook()}\n${harness.source}`,
-      "utf8",
-    );
-    await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
-
-    try {
-      const result = await execFileAsync(
-        "pnpm",
-        ["vitest", "run", resolve(dir, replay.fileName)],
-        {
-          cwd: repoRoot,
-          env: { ...process.env, FORCE_COLOR: "0" },
-          timeout: 30_000,
-        },
-      );
-      expect(result.stdout).toContain("1 passed");
-    } finally {
+        ],
+      };
+      const dir = resolve(repoRoot, "src/cli/.tmp-generated-replay");
       await rm(dir, { recursive: true, force: true });
-    }
-  });
+      await mkdir(dir, { recursive: true });
+      const harness = generateReplayHarness();
+      const replay = generateActionReplayTest("flag starts false", trace);
+      await writeFile(
+        resolve(dir, harness.fileName),
+        `${generatedAppHook()}\n${harness.source}`,
+        "utf8",
+      );
+      await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
 
-  it("emits generated action replay files that can resolve queued async work", async () => {
-    const trace: Trace = {
-      steps: [
-        {
-          transitionId: "submit",
-          label: {
-            kind: "submit",
-            locator: { kind: "testId", value: "checkout" },
+      try {
+        const result = await execFileAsync(
+          "pnpm",
+          ["vitest", "run", resolve(dir, replay.fileName)],
+          {
+            cwd: repoRoot,
+            env: { ...process.env, FORCE_COLOR: "0" },
+            timeout: GENERATED_REPLAY_E2E_TIMEOUT_MS,
           },
-          pre: { status: "idle" },
-          post: { status: "submitting" },
-          diff: { status: { before: "idle", after: "submitting" } },
-        },
-        {
-          transitionId: "submit.resolve",
-          label: { kind: "resolve", op: "api.submitOrder", outcome: "success" },
-          pre: { status: "submitting" },
-          post: { status: "done" },
-          diff: { status: { before: "submitting", after: "done" } },
-        },
-      ],
-    };
-    const dir = resolve(repoRoot, "src/cli/.tmp-generated-async-replay");
-    await rm(dir, { recursive: true, force: true });
-    await mkdir(dir, { recursive: true });
-    const harness = generateReplayHarness();
-    const replay = generateActionReplayTest("checkout resolves", trace);
-    await writeFile(
-      resolve(dir, harness.fileName),
-      `${generatedAsyncAppHook()}\n${harness.source}`,
-      "utf8",
-    );
-    await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+        );
+        expect(result.stdout).toContain("1 passed");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    GENERATED_REPLAY_E2E_TIMEOUT_MS,
+  );
 
-    try {
-      const result = await execFileAsync(
-        "pnpm",
-        ["vitest", "run", resolve(dir, replay.fileName)],
-        {
-          cwd: repoRoot,
-          env: { ...process.env, FORCE_COLOR: "0" },
-          timeout: 30_000,
-        },
-      );
-      expect(result.stdout).toContain("1 passed");
-    } finally {
+  it(
+    "emits generated action replay files that can resolve queued async work",
+    async () => {
+      const trace: Trace = {
+        steps: [
+          {
+            transitionId: "submit",
+            label: {
+              kind: "submit",
+              locator: { kind: "testId", value: "checkout" },
+            },
+            pre: { status: "idle" },
+            post: { status: "submitting" },
+            diff: { status: { before: "idle", after: "submitting" } },
+          },
+          {
+            transitionId: "submit.resolve",
+            label: {
+              kind: "resolve",
+              op: "api.submitOrder",
+              outcome: "success",
+            },
+            pre: { status: "submitting" },
+            post: { status: "done" },
+            diff: { status: { before: "submitting", after: "done" } },
+          },
+        ],
+      };
+      const dir = resolve(repoRoot, "src/cli/.tmp-generated-async-replay");
       await rm(dir, { recursive: true, force: true });
-    }
-  });
+      await mkdir(dir, { recursive: true });
+      const harness = generateReplayHarness();
+      const replay = generateActionReplayTest("checkout resolves", trace);
+      await writeFile(
+        resolve(dir, harness.fileName),
+        `${generatedAsyncAppHook()}\n${harness.source}`,
+        "utf8",
+      );
+      await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+
+      try {
+        const result = await execFileAsync(
+          "pnpm",
+          ["vitest", "run", resolve(dir, replay.fileName)],
+          {
+            cwd: repoRoot,
+            env: { ...process.env, FORCE_COLOR: "0" },
+            timeout: GENERATED_REPLAY_E2E_TIMEOUT_MS,
+          },
+        );
+        expect(result.stdout).toContain("1 passed");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    GENERATED_REPLAY_E2E_TIMEOUT_MS,
+  );
 });
 
 function generatedAppHook(): string {

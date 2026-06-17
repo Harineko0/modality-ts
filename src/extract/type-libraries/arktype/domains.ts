@@ -37,8 +37,13 @@ export function arktypeDomainRefinementProvider(): DomainRefinementProvider {
 function resolveArktypeSchema(
   ctx: DomainRefinementContext,
 ): DomainRefinementResolution | undefined {
-  const expression = expressionFromContext(ctx);
+  const expression = schemaExpressionFromArktypeInfer(ctx) ?? ctx.initializer;
   if (!expression) return undefined;
+  const objectSchema = arktypeObjectExpression(expression);
+  if (objectSchema) {
+    const domain = domainFromArktypeObject(objectSchema);
+    if (domain) return { domain, caveats: [] };
+  }
   const schema = staticStringValue(expression);
   if (!schema) return undefined;
   const parsed = parseArktypeSchema(schema);
@@ -64,6 +69,56 @@ function resolveArktypeSchema(
       ],
     };
   }
+  return undefined;
+}
+
+function arktypeObjectExpression(
+  expression: ts.Expression,
+): ts.ObjectLiteralExpression | undefined {
+  if (ts.isObjectLiteralExpression(expression)) return expression;
+  if (!ts.isCallExpression(expression)) return undefined;
+  const callee = expression.expression;
+  if (!ts.isIdentifier(callee) || callee.text !== "type") return undefined;
+  const argument = expression.arguments[0];
+  return argument && ts.isObjectLiteralExpression(argument)
+    ? argument
+    : undefined;
+}
+
+function domainFromArktypeObject(
+  expression: ts.ObjectLiteralExpression,
+): AbstractDomain | undefined {
+  const fields: Record<string, AbstractDomain> = {};
+  for (const property of expression.properties) {
+    if (!ts.isPropertyAssignment(property)) return undefined;
+    const rawName = propertyName(property.name);
+    if (!rawName) return undefined;
+    const optional = rawName.endsWith("?");
+    const name = optional ? rawName.slice(0, -1) : rawName;
+    const domain = domainFromArktypeExpression(property.initializer);
+    if (!domain) return undefined;
+    fields[name] =
+      optional && domain.kind !== "option"
+        ? { kind: "option", inner: domain }
+        : domain;
+  }
+  return { kind: "record", fields };
+}
+
+function domainFromArktypeExpression(
+  expression: ts.Expression,
+): AbstractDomain | undefined {
+  const schema = staticStringValue(expression);
+  if (!schema) return undefined;
+  const trimmed = schema.trim();
+  if (trimmed === "boolean") return { kind: "bool" };
+  if (trimmed === "string") return { kind: "tokens", count: 1 };
+  const parsed = parseArktypeSchema(trimmed);
+  return parsed.kind === "domain" ? parsed.domain : undefined;
+}
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
   return undefined;
 }
 
@@ -284,8 +339,38 @@ function looksLikeArktypeSchema(
   );
 }
 
-function expressionFromContext(
+function schemaExpressionFromArktypeInfer(
   ctx: DomainRefinementContext,
 ): ts.Expression | undefined {
-  return ctx.initializer;
+  const typeNode = ctx.typeNode;
+  if (
+    !typeNode ||
+    !ts.isTypeQueryNode(typeNode) ||
+    !ts.isQualifiedName(typeNode.exprName) ||
+    typeNode.exprName.right.text !== "infer" ||
+    !ts.isIdentifier(typeNode.exprName.left)
+  ) {
+    return undefined;
+  }
+  return resolveConstInitializer(typeNode.exprName.left.text, ctx.sourceFile);
+}
+
+function resolveConstInitializer(
+  name: string,
+  sourceFile?: ts.SourceFile,
+): ts.Expression | undefined {
+  if (!sourceFile) return undefined;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.name.text === name &&
+        declaration.initializer
+      ) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return undefined;
 }

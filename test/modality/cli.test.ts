@@ -41,24 +41,28 @@ describe("modality CLI", () => {
     expect(config).not.toContain('route: "/"');
   });
 
-  it("accepts the README extract command from an example app directory", async () => {
-    const artifactDir = await mkdtemp(join(tmpdir(), "modality-cli-"));
-    const modelPath = join(artifactDir, "model.json");
+  it(
+    "accepts the README extract command from an example app directory",
+    async () => {
+      const artifactDir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+      const modelPath = join(artifactDir, "model.json");
 
-    const { stdout } = await execFileAsync(
-      tsxBin,
-      [cliPath, "extract", "App.tsx", "--out", modelPath],
-      {
-        cwd: todoDir,
-      },
-    );
+      const { stdout } = await execFileAsync(
+        tsxBin,
+        [cliPath, "extract", "App.tsx", "--out", modelPath],
+        {
+          cwd: todoDir,
+        },
+      );
 
-    const model = JSON.parse(await readFile(modelPath, "utf8"));
-    expect(stdout).toMatch(/^ [✓×⚠] /m);
-    expect(stdout).toContain(modelPath.split("/").pop() ?? modelPath);
-    expect(model.schemaVersion).toBe(1);
-    expect(model.transitions.length).toBeGreaterThan(0);
-  });
+      const model = JSON.parse(await readFile(modelPath, "utf8"));
+      expect(stdout).toMatch(/^ [✓×⚠] /m);
+      expect(stdout).toContain(modelPath.split("/").pop() ?? modelPath);
+      expect(model.schemaVersion).toBe(1);
+      expect(model.transitions.length).toBeGreaterThan(0);
+    },
+    CLI_E2E_TIMEOUT_MS,
+  );
 
   it("extracts inferred source files into per-props artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));

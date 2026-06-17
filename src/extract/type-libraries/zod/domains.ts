@@ -13,15 +13,22 @@ export function zodDomainRefinementProvider(): DomainRefinementProvider {
     id: "zod",
     version: "0.1.0",
     packageNames: ["zod"],
-    refineDomain: resolveZodNumericSchema,
+    refineDomain: resolveZodSchema,
   };
 }
 
-function resolveZodNumericSchema(
+function resolveZodSchema(
   ctx: DomainRefinementContext,
 ): DomainRefinementResolution | undefined {
-  const expression = ctx.initializer ?? ctx.typeNode;
+  const inferredExpression = schemaExpressionFromZodInfer(ctx);
+  const expression = inferredExpression ?? expressionFromContext(ctx);
   if (!expression || !ts.isExpression(expression)) return undefined;
+  const schemaDomain = domainFromZodSchemaExpression(
+    expression,
+    inferredExpression !== undefined,
+  );
+  if (schemaDomain) return { domain: schemaDomain, caveats: [] };
+
   const parsed = parseZodNumberChain(expression);
   if (!parsed) return undefined;
   if (parsed.dynamic) {
@@ -48,6 +55,70 @@ function resolveZodNumericSchema(
   };
 }
 
+function domainFromZodSchemaExpression(
+  expression: ts.Expression,
+  allowUninformativeTokens: boolean,
+): AbstractDomain | undefined {
+  const chain = flattenCallChain(expression);
+  if (chain.length === 0) return undefined;
+  const root = chain[0];
+  if (!root) return undefined;
+  let domain: AbstractDomain | undefined;
+  if (root.name === "string" && root.args.length === 0) {
+    domain = allowUninformativeTokens
+      ? { kind: "tokens", count: 1 }
+      : undefined;
+  } else if (root.name === "boolean" && root.args.length === 0) {
+    domain = { kind: "bool" };
+  } else if (root.name === "enum" && root.args.length === 1) {
+    domain = domainFromZodEnum(root.args[0]);
+  } else if (root.name === "object" && root.args.length === 1) {
+    domain = domainFromZodObject(root.args[0]);
+  }
+  if (!domain) return undefined;
+  for (const step of chain.slice(1)) {
+    if (step.name === "optional" || step.name === "nullable") {
+      domain = { kind: "option", inner: domain };
+    }
+  }
+  return domain;
+}
+
+function domainFromZodEnum(
+  expression: ts.Expression | undefined,
+): AbstractDomain | undefined {
+  if (!expression || !ts.isArrayLiteralExpression(expression)) return undefined;
+  const values: string[] = [];
+  for (const element of expression.elements) {
+    if (!ts.isStringLiteral(element)) return undefined;
+    values.push(element.text);
+  }
+  if (values.length === 0) return undefined;
+  return { kind: "enum", values: [...new Set(values)].sort() };
+}
+
+function domainFromZodObject(
+  expression: ts.Expression | undefined,
+): AbstractDomain | undefined {
+  if (!expression || !ts.isObjectLiteralExpression(expression))
+    return undefined;
+  const fields: Record<string, AbstractDomain> = {};
+  for (const property of expression.properties) {
+    if (!ts.isPropertyAssignment(property)) return undefined;
+    const name = propertyName(property.name);
+    if (!name) return undefined;
+    const domain = domainFromZodSchemaExpression(property.initializer, true);
+    if (!domain) return undefined;
+    fields[name] = domain;
+  }
+  return { kind: "record", fields };
+}
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
+  return undefined;
+}
+
 interface NumericBound {
   value: number;
   inclusive: boolean;
@@ -62,8 +133,9 @@ interface ZodNumberParse {
 }
 
 function domainFromZodNumberParse(
-  parsed: ZodNumberParse,
+  parsed: ZodNumberParse | null,
 ): AbstractDomain | undefined {
+  if (!parsed) return undefined;
   if (!parsed.integral || !parsed.lower || !parsed.upper) return undefined;
 
   const min = normalizeLowerBound(parsed.lower);
@@ -91,6 +163,63 @@ function domainFromZodNumberParse(
   }
 
   return { kind: "boundedInt", min, max, overflow: "forbid" };
+}
+
+function expressionFromContext(
+  ctx: DomainRefinementContext,
+): ts.Expression | undefined {
+  return ctx.initializer;
+}
+
+function schemaExpressionFromZodInfer(
+  ctx: DomainRefinementContext,
+): ts.Expression | undefined {
+  const typeNode = ctx.typeNode;
+  if (
+    !typeNode ||
+    !ts.isTypeReferenceNode(typeNode) ||
+    typeNode.typeArguments?.length !== 1
+  ) {
+    return undefined;
+  }
+  const typeName = typeNode.typeName;
+  if (
+    !ts.isQualifiedName(typeName) ||
+    !ts.isIdentifier(typeName.left) ||
+    typeName.left.text !== "z" ||
+    typeName.right.text !== "infer"
+  ) {
+    return undefined;
+  }
+  const query = typeNode.typeArguments[0];
+  if (
+    !query ||
+    !ts.isTypeQueryNode(query) ||
+    !ts.isIdentifier(query.exprName)
+  ) {
+    return undefined;
+  }
+  return resolveConstInitializer(query.exprName.text, ctx.sourceFile);
+}
+
+function resolveConstInitializer(
+  name: string,
+  sourceFile?: ts.SourceFile,
+): ts.Expression | undefined {
+  if (!sourceFile) return undefined;
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.name.text === name &&
+        declaration.initializer
+      ) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return undefined;
 }
 
 // Integer normalization: inclusive lower uses ceil, exclusive lower uses floor+1;
@@ -147,7 +276,7 @@ function parseZodNumberChain(expression: ts.Expression): ZodNumberParse | null {
   const chain = flattenCallChain(expression);
   if (chain.length === 0) return null;
   const root = chain[0];
-  if (!root || root.name !== "number" || root.args.length > 0) return null;
+  if (root?.name !== "number" || root.args.length > 0) return null;
   const result: ZodNumberParse = { integral: false, dynamic: false };
   for (const step of chain.slice(1)) {
     if (step.name === "int") {

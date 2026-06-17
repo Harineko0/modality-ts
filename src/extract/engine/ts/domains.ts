@@ -87,6 +87,13 @@ export function inferDomainFromTypeNodeDetailed(
         visited,
         context,
       );
+    case ts.SyntaxKind.TypeQuery:
+      return domainFromTypeQueryDetailed(
+        node as ts.TypeQueryNode,
+        typeAliases,
+        visited,
+        context,
+      );
     default:
       return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
@@ -1120,6 +1127,40 @@ function domainFromTypeReferenceDetailed(
     return { domain: { kind: "lengthCat" }, caveats: [] };
   if (name === "Record")
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+}
+
+function domainFromTypeQueryDetailed(
+  node: ts.TypeQueryNode,
+  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  visited: ReadonlySet<string>,
+  context: DomainInferenceContext,
+): DomainInferenceResult {
+  const resolved = resolveDomainRefinements(
+    {
+      typeNode: node,
+      initializer: context.initializer,
+      declaration: context.declaration,
+      sourceFile: context.sourceFile,
+      typeAliases,
+      visited,
+      varId: context.varId,
+    },
+    context.domainRefinements ?? [],
+  );
+  if (resolved.domain) {
+    return withDomainReductions(
+      {
+        domain: resolved.domain,
+        caveats: resolved.caveats,
+        reductions: resolved.reductions,
+      },
+      context,
+    );
+  }
+  if (resolved.caveats.length > 0) {
+    return { domain: { kind: "tokens", count: 1 }, caveats: resolved.caveats };
+  }
   return { domain: { kind: "tokens", count: 1 }, caveats: [] };
 }
 
