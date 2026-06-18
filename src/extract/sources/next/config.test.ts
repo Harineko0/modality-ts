@@ -58,6 +58,15 @@ describe("parseNextConfig", () => {
     expect(config.warnings.some((warning) => warning.includes("static"))).toBe(
       true,
     );
+    expect(config.caveats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "model-slack",
+          id: "next-config:no-object-literal",
+          reason: "Could not find a static next.config object literal",
+        }),
+      ]),
+    );
   });
 });
 

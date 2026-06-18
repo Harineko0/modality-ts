@@ -1,5 +1,6 @@
 import * as ts from "typescript";
 import type { SourceAnchor, Value } from "modality-ts/core";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import { providerScopeFromJsx } from "./jsx.js";
 import { isHookCall, resolveJotaiImports } from "./imports.js";
@@ -12,7 +13,13 @@ export interface HydrationOverride {
 
 export interface HydrationDiscovery {
   overrides: HydrationOverride[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: HydrationWarning[];
+}
+
+interface HydrationWarning {
+  message: string;
+  source?: import("modality-ts/core").SourceAnchor;
+  caveat?: import("modality-ts/core").ExtractionCaveat;
 }
 
 export function discoverHydrationOverrides(
@@ -21,7 +28,7 @@ export function discoverHydrationOverrides(
   imports = resolveJotaiImports(source),
 ): HydrationDiscovery {
   const overrides: HydrationOverride[] = [];
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: HydrationWarning[] = [];
   if (!imports.hooks.size) return { overrides, warnings };
 
   const visit = (node: ts.Node, storeScope?: string): void => {
@@ -43,10 +50,17 @@ export function discoverHydrationOverrides(
             name === "dangerouslyForceHydrate" &&
             prop.initializer.kind === ts.SyntaxKind.TrueKeyword
           ) {
+            const src = anchor(source, fileName, node);
+            const message =
+              "Jotai dangerouslyForceHydrate concurrent semantics not modeled";
             warnings.push({
-              message:
-                "Jotai dangerouslyForceHydrate concurrent semantics not modeled",
-              source: anchor(source, fileName, node),
+              message,
+              source: src,
+              caveat: modelSlackCaveat(
+                "jotai:useHydrateAtoms.dangerouslyForceHydrate",
+                message,
+                src,
+              ),
             });
           }
         }
@@ -54,17 +68,31 @@ export function discoverHydrationOverrides(
       if (!valuesArg) return;
       const pairs = hydrationPairs(valuesArg);
       if (!pairs) {
+        const src = anchor(source, fileName, node);
+        const message = "Jotai useHydrateAtoms dynamic values unsupported";
         warnings.push({
-          message: "Jotai useHydrateAtoms dynamic values unsupported",
-          source: anchor(source, fileName, node),
+          message,
+          source: src,
+          caveat: modelSlackCaveat(
+            "jotai:useHydrateAtoms.dynamic-values",
+            message,
+            src,
+          ),
         });
         return;
       }
       for (const [atomName, value] of pairs) {
         if (value === undefined) {
+          const src = anchor(source, fileName, node);
+          const message = `Jotai useHydrateAtoms dynamic value for ${atomName} unsupported`;
           warnings.push({
-            message: `Jotai useHydrateAtoms dynamic value for ${atomName} unsupported`,
-            source: anchor(source, fileName, node),
+            message,
+            source: src,
+            caveat: modelSlackCaveat(
+              `jotai:useHydrateAtoms.${atomName}`,
+              message,
+              src,
+            ),
           });
           continue;
         }

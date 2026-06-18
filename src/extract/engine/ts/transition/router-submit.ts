@@ -9,6 +9,7 @@ import type {
   ExtractionWarning,
   SetterBinding,
 } from "../types.js";
+import { unextractableHandlerCaveat } from "../caveats.js";
 import {
   confidenceForEffects,
   containsAwaitedEffect,
@@ -479,6 +480,11 @@ export function transitionsFromUseSubmitHandler(
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [awaited-effect-before-submit] (${fileName}:${anchor.line}:${anchor.column})`,
       ...anchor,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "awaited-effect-before-submit",
+        { file: fileName, ...anchor },
+      ),
     });
     return [];
   }

@@ -54,9 +54,9 @@ import {
 } from "modality-ts/extract/sources/router";
 import type { CacheStorageFragment } from "modality-ts/extract/engine/spi";
 import {
-  configSecurityWarnings,
   expandInventoryForI18n,
   nextConfigCandidates,
+  nextConfigExtractionWarnings,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
   type NextParsedConfig,
@@ -190,14 +190,6 @@ export async function runExtractCommand(
   const projectWithNextConfig = {
     ...projectWithInventory,
     inventory,
-    ...(nextConfig
-      ? {
-          surfaceWarnings: [
-            ...projectWithInventory.surfaceWarnings,
-            ...configSecurityWarnings(nextConfig),
-          ],
-        }
-      : {}),
   };
   const project = await buildClientProjectSurface(projectWithNextConfig, {
     navigation: routerAdapter,
@@ -323,6 +315,7 @@ export async function runExtractCommand(
     );
   }
   const structuredWarnings: ExtractionWarning[] = [
+    ...(nextConfig ? nextConfigExtractionWarnings(nextConfig) : []),
     ...project.surfaceWarnings.map((message) => ({ message })),
     ...cacheStorageFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,

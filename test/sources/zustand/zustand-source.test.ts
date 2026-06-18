@@ -361,6 +361,10 @@ describe("Zustand source plugin", () => {
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining("SSR-unsafe unguarded localStorage"),
+          caveat: expect.objectContaining({
+            kind: "model-slack",
+            id: "zustand:useTheme.color.localStorage",
+          }),
         }),
       ]),
     );

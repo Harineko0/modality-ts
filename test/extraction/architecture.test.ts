@@ -611,6 +611,28 @@ describe("extraction architecture surface", () => {
     }
     expect(violations).toEqual([]);
   });
+
+  it("does not regex-parse warning.message in report-building code", async () => {
+    const reportFiles = await sourceFiles(
+      resolve(srcDir, "cli/features/extract"),
+    );
+    const forbidden = [
+      /warning\.message\.match\(/,
+      /warning\.message\.exec\(/,
+      /\.match\([^)]*warning\.message/,
+      /\.exec\([^)]*warning\.message/,
+    ];
+    const violations: string[] = [];
+    for (const file of reportFiles) {
+      const text = await readFile(file, "utf8");
+      for (const pattern of forbidden) {
+        if (pattern.test(text)) {
+          violations.push(`${relativeToSrc(file)}: ${pattern}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });
 
 describe("trusted-layer vocabulary guards", () => {

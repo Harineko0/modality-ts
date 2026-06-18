@@ -100,6 +100,7 @@ export {
   configSecurityWarnings,
   expandInventoryForI18n,
   nextConfigCandidates,
+  nextConfigExtractionWarnings,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
   type NextParsedConfig,
