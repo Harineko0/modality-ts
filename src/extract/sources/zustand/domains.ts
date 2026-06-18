@@ -4,12 +4,8 @@ import type {
   SemanticTypeContext,
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
-import {
-  firstValue,
-} from "modality-ts/extract/engine/spi";
-import {
-  inferDomainSemantic,
-} from "../../engine/ts/type-domains.js";
+import { firstValue } from "modality-ts/extract/engine/spi";
+import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
 import {
   inferDomainFromTypeNodeDetailed,
   type DomainInferenceResult,

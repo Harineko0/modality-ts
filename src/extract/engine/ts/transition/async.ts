@@ -542,12 +542,19 @@ function rewriteMissingOutcomeReads(
           rewriteMissingOutcomeReads(child, op, enqueueArgKeys),
         ),
       };
-    case "if":
-      return {
+    case "if": {
+      const rewritten = {
         ...effect,
-        then: rewriteMissingOutcomeReads(effect.then, op, enqueueArgKeys),
         else: rewriteMissingOutcomeReads(effect.else, op, enqueueArgKeys),
       };
+      // biome-ignore lint/suspicious/noThenProperty: EffectIR intentionally names if-branch effects `then`.
+      rewritten["then"] = rewriteMissingOutcomeReads(
+        effect.then,
+        op,
+        enqueueArgKeys,
+      );
+      return rewritten;
+    }
     default:
       return effect;
   }

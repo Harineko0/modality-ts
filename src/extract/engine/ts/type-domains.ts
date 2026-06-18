@@ -354,10 +354,7 @@ function inferExpressionSemanticDetailed(
   }
 
   const expressionType = checker.getTypeAtLocation(expression);
-  if (
-    isBroadString(expressionType, checker) ||
-    isBroadNumber(expressionType)
-  ) {
+  if (isBroadString(expressionType, checker) || isBroadNumber(expressionType)) {
     return broadTypeResult(expressionType, typeCtx);
   }
 

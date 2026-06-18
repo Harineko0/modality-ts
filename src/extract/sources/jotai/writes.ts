@@ -1,5 +1,8 @@
 import * as ts from "typescript";
-import type { WriteChannel, SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import type {
+  WriteChannel,
+  SemanticTypeContext,
+} from "modality-ts/extract/engine/spi";
 import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
 import { propertyName, componentNameFor } from "../../engine/ts/ast.js";
@@ -18,10 +21,7 @@ import {
 import { atomVarId, familyVarId } from "./ids.js";
 import { discoverHydrationOverrides } from "./hydration.js";
 import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
-import {
-  classifyAtomCall,
-  staticFamilyParam,
-} from "./domains.js";
+import { classifyAtomCall, staticFamilyParam } from "./domains.js";
 import { typeAliasDeclarations } from "modality-ts/extract/engine/spi";
 import { isResettableKind, metadataFromRecord } from "./types.js";
 import { atomCreatorName, isAtomCreatorCall } from "./imports.js";
@@ -41,7 +41,12 @@ export function discoverJotaiSafetyWarnings(
   fileName = "state.ts",
   types?: SemanticTypeContext,
 ): { message: string; source?: SourceAnchor }[] {
-  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const source = semanticSourceFileFor(
+    sourceText,
+    fileName,
+    types,
+    ts.ScriptKind.TSX,
+  );
   const imports = resolveJotaiImports(source, types);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
   const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
@@ -140,7 +145,12 @@ export function discoverJotaiWritesDetailed(
   fileName = "state.ts",
   types?: SemanticTypeContext,
 ): JotaiWriteDiscovery {
-  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const source = semanticSourceFileFor(
+    sourceText,
+    fileName,
+    types,
+    ts.ScriptKind.TSX,
+  );
   const imports = resolveJotaiImports(source, types);
   const discovery = discoverJotaiAtomsDetailed(sourceText, fileName, types);
   const atomNames = new Set(discovery.atomNames);

@@ -78,7 +78,9 @@ function resolveZustandImportsSemantic(
   return { storeCreators, middlewares };
 }
 
-function resolveZustandImportsSyntax(source: ts.SourceFile): ZustandResolvedImports {
+function resolveZustandImportsSyntax(
+  source: ts.SourceFile,
+): ZustandResolvedImports {
   const storeCreators = new Map<string, string>();
   const middlewares = new Map<string, string>();
 

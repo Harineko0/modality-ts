@@ -63,9 +63,7 @@ function symbolKeyFor(
   return context.checker.getFullyQualifiedName(symbol);
 }
 
-function importDeclarationFor(
-  decl: ts.Node,
-): ts.ImportDeclaration | undefined {
+function importDeclarationFor(decl: ts.Node): ts.ImportDeclaration | undefined {
   let current: ts.Node | undefined = decl;
   while (current) {
     if (ts.isImportDeclaration(current)) return current;
@@ -153,11 +151,15 @@ function followRelativeReExport(
     for (const element of statement.exportClause.elements) {
       const localExport = element.name.text;
       const remoteExport = element.propertyName?.text ?? localExport;
-      if (localExport !== exportedName && remoteExport !== exportedName) continue;
+      if (localExport !== exportedName && remoteExport !== exportedName)
+        continue;
       return statement.moduleSpecifier.text;
     }
     for (const element of statement.exportClause.elements) {
-      if (element.name.text === "default" || element.propertyName?.text === "default") {
+      if (
+        element.name.text === "default" ||
+        element.propertyName?.text === "default"
+      ) {
         return statement.moduleSpecifier.text;
       }
     }
@@ -210,7 +212,9 @@ function exportedNameFromBinding(
   }
   const importClause = binding
     .getDeclarations()
-    ?.find((decl): decl is ts.ImportClause => ts.isImportClause(decl) && !!decl.name);
+    ?.find(
+      (decl): decl is ts.ImportClause => ts.isImportClause(decl) && !!decl.name,
+    );
   if (importClause) return "default";
   const fromSymbol = resolvedSymbol.getName();
   if (fromSymbol && fromSymbol !== "unknown" && fromSymbol !== "__type") {

@@ -689,7 +689,11 @@ export const countAtom = makeAtom(0);`;
       export const countAtom = atom(0);
     `;
     expect(
-      jotaiSource().discover({ sourceText: source, fileName: "state.ts", route: "/" }),
+      jotaiSource().discover({
+        sourceText: source,
+        fileName: "state.ts",
+        route: "/",
+      }),
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "atom:countAtom", kind: "jotai/atom" }),

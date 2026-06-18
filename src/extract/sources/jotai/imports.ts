@@ -117,7 +117,9 @@ function resolveJotaiImportsSemantic(
   };
 }
 
-function resolveJotaiImportsSyntax(source: ts.SourceFile): JotaiResolvedImports {
+function resolveJotaiImportsSyntax(
+  source: ts.SourceFile,
+): JotaiResolvedImports {
   const atomCreators = new Map<string, string>();
   const hooks = new Map<string, string>();
   const storeCreators = new Map<string, string>();

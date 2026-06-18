@@ -34,7 +34,12 @@ export function discoverZustandWritesDetailed(
   fileName = "state.ts",
   types?: SemanticTypeContext,
 ): ZustandWriteDiscovery {
-  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const source = semanticSourceFileFor(
+    sourceText,
+    fileName,
+    types,
+    ts.ScriptKind.TSX,
+  );
   const imports = resolveZustandImports(source, types);
   const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];

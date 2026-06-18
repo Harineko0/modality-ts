@@ -712,7 +712,11 @@ export function App() {
       }
     `;
     expect(
-      swrSource().discover({ sourceText: source, fileName: "App.tsx", route: "/" }),
+      swrSource().discover({
+        sourceText: source,
+        fileName: "App.tsx",
+        route: "/",
+      }),
     ).toEqual([
       expect.objectContaining({ id: "swr:api_todos", kind: "swr/useSWR" }),
     ]);
