@@ -73,6 +73,13 @@ export {
   useStateCallForSemanticInference,
 } from "../ts/domains.js";
 
+export {
+  collectSemanticNamedImports,
+  resolveSemanticNamedExport,
+  type ResolvedSemanticImport,
+  type SemanticImportContext,
+} from "../ts/semantic-imports.js";
+
 export interface SourceDecl {
   id: string;
   kind: string;

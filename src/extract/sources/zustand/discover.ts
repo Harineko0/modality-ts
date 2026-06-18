@@ -18,6 +18,7 @@ import {
   returnObjectLiteral,
 } from "./domains.js";
 import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import { storeVarId } from "./ids.js";
 import { metadataToRecord } from "./types.js";
 
@@ -58,20 +59,7 @@ function sourceFileForDiscovery(
   fileName: string,
   types?: SemanticTypeContext,
 ): ts.SourceFile {
-  if (
-    types?.sourceFile &&
-    types.sourceFile.fileName === fileName &&
-    types.sourceFile.text === sourceText
-  ) {
-    return types.sourceFile;
-  }
-  return ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  return semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
 }
 
 export function discoverZustandStoresDetailed(
@@ -81,7 +69,7 @@ export function discoverZustandStoresDetailed(
   domainRefinements?: readonly DomainRefinementProvider[],
 ): DiscoverZustandResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
-  const imports = resolveZustandImports(source);
+  const imports = resolveZustandImports(source, types);
   if (imports.storeCreators.size === 0) return emptyDiscoverResult();
 
   const typeAliases = compilerBackedTypeAliases(source, types);

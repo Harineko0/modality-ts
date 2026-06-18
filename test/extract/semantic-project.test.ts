@@ -18,6 +18,10 @@ import {
   loadSemanticProjectConfig,
   writeSemanticProjectFixture,
 } from "../../src/extract/engine/ts/semantic-project.js";
+import {
+  collectSemanticNamedImports,
+  resolveSemanticNamedExport,
+} from "../../src/extract/engine/ts/semantic-imports.js";
 
 const projectRoot = resolve("/project");
 const tempDirs: string[] = [];
@@ -1006,7 +1010,6 @@ export function App() {
         { sourceText: childText, fileName: childPath },
         { sourceText: appText, fileName: appPath },
       ],
-      additionalComponentSources: [childText],
     });
 
     expect(
@@ -1018,6 +1021,8 @@ export function App() {
   });
 
   it("keeps syntax-only extractReactSourceTransitions fallback without a semantic program", () => {
+    const typesPath = resolve(projectRoot, "types.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
     const helperText = `export type Mode = "on" | "off";`;
     const appText = `import type { Mode } from "./types.js";
 export function App() {
@@ -1025,21 +1030,12 @@ export function App() {
   return <button onClick={() => setMode("off")}>{mode}</button>;
 }`;
     const result = extractReactSourceTransitions(appText, {
-      fileName: "App.tsx",
+      fileName: appPath,
       route: "/",
-      additionalTypeAliases: new Map([
-        [
-          "Mode",
-          ts.factory.createUnionTypeNode([
-            ts.factory.createLiteralTypeNode(
-              ts.factory.createStringLiteral("on"),
-            ),
-            ts.factory.createLiteralTypeNode(
-              ts.factory.createStringLiteral("off"),
-            ),
-          ]),
-        ],
-      ]),
+      relatedFragments: [
+        { sourceText: helperText, fileName: typesPath },
+        { sourceText: appText, fileName: appPath },
+      ],
     });
     expect(result.vars.some((decl) => decl.id === "local:App.mode")).toBe(true);
     expect(
@@ -1188,5 +1184,124 @@ export function App() {
       typeAliases: aliases,
     });
     expect(result.domain).toEqual({ kind: "boundedInt", min: 0, max: 2 });
+  });
+});
+
+describe("semantic import recognition", () => {
+  it("recognizes direct package imports through checker symbols", () => {
+    const statePath = resolve(projectRoot, "state.ts");
+    const sourceText = `import { atom } from "jotai";
+export const countAtom = atom(0);`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: statePath, text: sourceText },
+    ]);
+    const types = semanticTypesFor(semanticProject, statePath);
+    const sourceFile = semanticProject.getSourceFile(statePath)!;
+    expect(
+      collectSemanticNamedImports(
+        sourceFile,
+        new Set(["jotai"]),
+        new Set(["atom"]),
+        types,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        localName: "atom",
+        exportedName: "atom",
+        moduleName: "jotai",
+      }),
+    ]);
+  });
+
+  it("recognizes renamed imports through checker symbols", () => {
+    const statePath = resolve(projectRoot, "state.ts");
+    const sourceText = `import { atom as makeAtom } from "jotai";
+export const countAtom = makeAtom(0);`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: statePath, text: sourceText },
+    ]);
+    const types = semanticTypesFor(semanticProject, statePath);
+    const sourceFile = semanticProject.getSourceFile(statePath)!;
+    const localBinding = identifierNode(sourceFile, "makeAtom");
+    expect(localBinding).toBeDefined();
+    expect(
+      resolveSemanticNamedExport(
+        localBinding!,
+        new Set(["jotai"]),
+        new Set(["atom"]),
+        types,
+      ),
+    ).toMatchObject({
+      localName: "makeAtom",
+      exportedName: "atom",
+      moduleName: "jotai",
+    });
+  });
+
+  it("recognizes local barrel re-exports through checker symbols", () => {
+    const barrelPath = resolve(projectRoot, "jotai.ts");
+    const statePath = resolve(projectRoot, "state.ts");
+    const barrelText = `export { atom } from "jotai";`;
+    const sourceText = `import { atom } from "./jotai.js";
+export const countAtom = atom(0);`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: barrelPath, text: barrelText },
+      { path: statePath, text: sourceText },
+    ]);
+    const types = semanticTypesFor(semanticProject, statePath);
+    const sourceFile = semanticProject.getSourceFile(statePath)!;
+    const atomBinding = identifierNode(sourceFile, "atom");
+    expect(atomBinding).toBeDefined();
+    expect(
+      collectSemanticNamedImports(
+        sourceFile,
+        new Set(["jotai"]),
+        new Set(["atom"]),
+        types,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        localName: "atom",
+        exportedName: "atom",
+        moduleName: "jotai",
+      }),
+    ]);
+  });
+
+  it("rejects local shadows of allowed library exports", () => {
+    const statePath = resolve(projectRoot, "state.ts");
+    const sourceText = `import { atom } from "jotai";
+function run() {
+  const atom = () => 0;
+  return atom();
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: statePath, text: sourceText },
+    ]);
+    const types = semanticTypesFor(semanticProject, statePath);
+    const sourceFile = semanticProject.getSourceFile(statePath)!;
+    let shadowIdentifier: ts.Identifier | undefined;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "atom" &&
+        node.parent &&
+        ts.isReturnStatement(node.parent)
+      ) {
+        shadowIdentifier = node.expression;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    expect(shadowIdentifier).toBeDefined();
+    expect(
+      resolveSemanticNamedExport(
+        shadowIdentifier!,
+        new Set(["jotai"]),
+        new Set(["atom"]),
+        types,
+      ),
+    ).toBeUndefined();
   });
 });

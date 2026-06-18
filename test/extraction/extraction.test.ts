@@ -5688,7 +5688,9 @@ describe("component and hook registry fallback", () => {
   const [count, setCount] = useState(0);
   return [count, setCount] as const;
 }`;
-    const appText = `export function App() {
+    const appText = `import { Child } from "./Child.js";
+import { useCounter } from "./useCounter.js";
+export function App() {
   const [count, setCount] = useCounter();
   const [done, setDone] = useState(false);
   return <Child onDone={() => setDone(true)} />;
@@ -5696,7 +5698,11 @@ describe("component and hook registry fallback", () => {
     const result = extractReactSourceTransitions(appText, {
       fileName: "App.tsx",
       route: "/",
-      additionalComponentSources: [childText, hookText],
+      relatedFragments: [
+        { sourceText: childText, fileName: "Child.tsx" },
+        { sourceText: hookText, fileName: "useCounter.ts" },
+        { sourceText: appText, fileName: "App.tsx" },
+      ],
     });
 
     expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(

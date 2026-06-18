@@ -17,7 +17,7 @@ export function swrSource(): StateSourcePlugin {
         ctx.domainRefinements,
       ),
     writeChannels: (ctx) =>
-      discoverSwrReadChannels(ctx.sourceText, ctx.fileName),
+      discoverSwrReadChannels(ctx.sourceText, ctx.fileName, ctx.types),
     template: (decl) => templateForSwrDecl(decl),
     harness,
     conformance: {

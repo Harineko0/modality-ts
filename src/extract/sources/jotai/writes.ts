@@ -1,5 +1,6 @@
 import * as ts from "typescript";
-import type { WriteChannel } from "modality-ts/extract/engine/spi";
+import type { WriteChannel, SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
 import { propertyName, componentNameFor } from "../../engine/ts/ast.js";
 import { discoverComponentStoreScopes } from "./stores.js";
@@ -38,15 +39,10 @@ export interface JotaiWriteDiscovery {
 export function discoverJotaiSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): { message: string; source?: SourceAnchor }[] {
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const imports = resolveJotaiImports(source);
+  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const imports = resolveJotaiImports(source, types);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
   const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
   warnings.push(...discovery.warnings);
@@ -134,23 +130,19 @@ export function discoverJotaiSafetyWarnings(
 export function discoverJotaiWriteChannels(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverJotaiWritesDetailed(sourceText, fileName).channels;
+  return discoverJotaiWritesDetailed(sourceText, fileName, types).channels;
 }
 
 export function discoverJotaiWritesDetailed(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): JotaiWriteDiscovery {
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const imports = resolveJotaiImports(source);
-  const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
+  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const imports = resolveJotaiImports(source, types);
+  const discovery = discoverJotaiAtomsDetailed(sourceText, fileName, types);
   const atomNames = new Set(discovery.atomNames);
   for (const [name] of discovery.atomMetadata) atomNames.add(name);
 

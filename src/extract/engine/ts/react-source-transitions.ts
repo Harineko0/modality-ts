@@ -156,8 +156,6 @@ export interface ReactSourceTransitionOptions {
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
-  additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
-  additionalComponentSources?: readonly string[];
   types?: SemanticTypeContext;
   domainRefinements?: readonly DomainRefinementProvider[];
 }
@@ -203,17 +201,15 @@ export function extractReactSourceTransitions(
     route,
     typeAliases,
   );
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
+  for (const relatedSource of relatedDiscoverySourceFiles(source, options)) {
     mergeContextBindings(
       contextBindings,
-      discoverContextBindings(supplemental, fileName, route, typeAliases),
+      discoverContextBindings(
+        relatedSource,
+        relatedSource.fileName,
+        route,
+        typeAliases,
+      ),
     );
   }
   const globalTaints = new Set<string>();
@@ -235,30 +231,25 @@ export function extractReactSourceTransitions(
     submitBindings,
     modeledSubmitHandlers,
   });
+  const relatedSourceFiles = relatedDiscoverySourceFiles(source, options);
+  const supplementalSources = (options.relatedFragments ?? [])
+    .filter((fragment) => fragment.fileName !== fileName)
+    .map((fragment) => ({
+      sourceText: fragment.sourceText,
+      fileName: fragment.fileName,
+    }));
   const components = buildComponentRegistry(source, {
     ...(options.types ? { types: options.types } : {}),
     primaryFileName: fileName,
-    relatedSourceFiles: relatedDiscoverySourceFiles(source, options),
-    ...(options.additionalComponentSources
-      ? {
-          supplementalSources: options.additionalComponentSources.map(
-            (sourceText) => ({ sourceText, fileName }),
-          ),
-        }
-      : {}),
+    relatedSourceFiles,
+    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
   });
   const componentDisplayMap = componentRegistryDisplayMap(components);
   const customHooks = buildCustomHookRegistry(source, {
     ...(options.types ? { types: options.types } : {}),
     primaryFileName: fileName,
-    relatedSourceFiles: relatedDiscoverySourceFiles(source, options),
-    ...(options.additionalComponentSources
-      ? {
-          supplementalSources: options.additionalComponentSources.map(
-            (sourceText) => ({ sourceText, fileName }),
-          ),
-        }
-      : {}),
+    relatedSourceFiles,
+    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
   });
   const statefulListComponents = detectStatefulListComponents(
     source,
@@ -1108,7 +1099,25 @@ function relatedDiscoverySourceFiles(
   primary: ts.SourceFile,
   options: ReactSourceTransitionOptions,
 ): ts.SourceFile[] {
-  if (!options.types?.getSourceFile) return [];
+  if (!options.types?.getSourceFile) {
+    const seen = new Set<string>();
+    const files: ts.SourceFile[] = [];
+    for (const fragment of options.relatedFragments ?? []) {
+      const key = resolve(fragment.fileName);
+      if (seen.has(key) || fragment.fileName === primary.fileName) continue;
+      seen.add(key);
+      files.push(
+        ts.createSourceFile(
+          fragment.fileName,
+          fragment.sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX,
+        ),
+      );
+    }
+    return files;
+  }
   const seen = new Set<string>();
   const files: ts.SourceFile[] = [];
   const addFile = (fileName: string): void => {
@@ -1133,26 +1142,46 @@ function collectProjectTypeAliases(
   const aliases = typeAliasDeclarations(primary);
   if (options.types?.getSourceFile) {
     const seen = new Set<string>();
-    const mergeFrom = (fragmentFileName: string): void => {
+    const mergeFrom = (fragment: {
+      sourceText: string;
+      fileName: string;
+    }): void => {
       const key =
-        options.types?.canonicalFileName?.(fragmentFileName) ??
-        resolve(fragmentFileName);
+        options.types?.canonicalFileName?.(fragment.fileName) ??
+        resolve(fragment.fileName);
       if (seen.has(key)) return;
       seen.add(key);
-      const sourceFile = options.types?.getSourceFile(fragmentFileName);
-      if (!sourceFile) return;
+      const sourceFile =
+        options.types?.getSourceFile(fragment.fileName) ??
+        ts.createSourceFile(
+          fragment.fileName,
+          fragment.sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TS,
+        );
       for (const [name, node] of typeAliasDeclarations(sourceFile)) {
         if (!aliases.has(name)) aliases.set(name, node);
       }
     };
-    mergeFrom(primary.fileName);
+    mergeFrom({ sourceText: primary.text, fileName: primary.fileName });
     for (const fragment of options.relatedFragments ?? []) {
-      mergeFrom(fragment.fileName);
+      mergeFrom(fragment);
     }
     return aliases;
   }
-  for (const [name, typeNode] of options.additionalTypeAliases ?? []) {
-    if (!aliases.has(name)) aliases.set(name, typeNode);
+  for (const fragment of options.relatedFragments ?? []) {
+    if (fragment.fileName === primary.fileName) continue;
+    const sourceFile = ts.createSourceFile(
+      fragment.fileName,
+      fragment.sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    for (const [name, node] of typeAliasDeclarations(sourceFile)) {
+      if (!aliases.has(name)) aliases.set(name, node);
+    }
   }
   return aliases;
 }

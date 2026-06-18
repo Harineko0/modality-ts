@@ -3005,7 +3005,7 @@ describe("runExtractCommand", () => {
     expect(statusAtom?.domain).toEqual({
       kind: "record",
       fields: {
-        status: { kind: "enum", values: ["open", "closed"] },
+        status: { kind: "enum", values: ["closed", "open"] },
       },
     });
   });

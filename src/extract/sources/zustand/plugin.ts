@@ -20,7 +20,7 @@ export function zustandSource(): StateSourcePlugin {
         ctx.domainRefinements,
       ).decls,
     writeChannels: (ctx) =>
-      discoverZustandWriteChannels(ctx.sourceText, ctx.fileName),
+      discoverZustandWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
     safetyWarnings: (ctx) =>
       discoverZustandSafetyWarnings(ctx.sourceText, ctx.fileName),
     summarizeWrite: summarizeZustandSetState,

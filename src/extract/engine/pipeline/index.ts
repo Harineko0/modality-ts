@@ -23,25 +23,9 @@ import {
 } from "../ts/effect-op-aliases.js";
 import { globalTaintCaveat } from "../ts/caveats.js";
 import type { ExtractionWarning } from "../ts/types.js";
-import { typeAliasDeclarations } from "../ts/domains.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
 import type { SemanticProject } from "../ts/semantic-project.js";
-import * as ts from "typescript";
-
-function supplementalTypeAliases(
-  fragments: readonly { sourceText: string; fileName: string }[],
-): Map<string, ts.TypeNode> {
-  return typeAliasDeclarations(
-    ts.createSourceFile(
-      "__types__.ts",
-      fragments.map((fragment) => fragment.sourceText).join("\n"),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    ),
-  );
-}
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -236,14 +220,6 @@ export function runExtractionPipeline(
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const syntaxOnlyDiscovery =
-    !options.semanticProject &&
-    allDiscoveryFragments.some(
-      (fragment) => fragment.fileName !== options.fileName,
-    );
-  const supplementalComponentSources = allDiscoveryFragments
-    .filter((fragment) => fragment.fileName !== options.fileName)
-    .map((fragment) => fragment.sourceText);
   const genericExtraction = extractReactSourceTransitions(options.sourceText, {
     route: options.route,
     fileName: options.fileName,
@@ -253,16 +229,6 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     relatedFragments,
-    ...(syntaxOnlyDiscovery || !options.semanticProject
-      ? {
-          additionalTypeAliases: supplementalTypeAliases(allDiscoveryFragments),
-          ...(syntaxOnlyDiscovery
-            ? { additionalComponentSources: supplementalComponentSources }
-            : {}),
-        }
-      : supplementalComponentSources.length > 0
-        ? { additionalComponentSources: supplementalComponentSources }
-        : {}),
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),

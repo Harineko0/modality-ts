@@ -261,7 +261,13 @@ function collectRelatedSourceFiles(
   primary: ts.SourceFile,
   options: RegistryBuildOptions,
 ): ts.SourceFile[] {
-  if (!options.types?.getSourceFile) return [];
+  if (options.relatedSourceFiles && options.relatedSourceFiles.length > 0) {
+    if (!options.types?.getSourceFile) {
+      return options.relatedSourceFiles.filter((file) => file !== primary);
+    }
+  } else if (!options.types?.getSourceFile) {
+    return [];
+  }
   const seen = new Set<string>();
   const files: ts.SourceFile[] = [];
   const addFile = (fileName: string): void => {
@@ -290,7 +296,10 @@ export function buildComponentRegistry(
   };
   populateComponentRegistryFromSource(registry, primary, populateOptions);
   for (const sourceFile of collectRelatedSourceFiles(primary, options)) {
-    populateComponentRegistryFromSource(registry, sourceFile, populateOptions);
+    populateComponentRegistryFromSource(registry, sourceFile, {
+      ...populateOptions,
+      syntaxOnlyMerge: !options.types,
+    });
   }
   for (const supplemental of options.supplementalSources ?? []) {
     const supplementalSource = ts.createSourceFile(
@@ -319,7 +328,10 @@ export function buildCustomHookRegistry(
   };
   populateCustomHookRegistryFromSource(registry, primary, populateOptions);
   for (const sourceFile of collectRelatedSourceFiles(primary, options)) {
-    populateCustomHookRegistryFromSource(registry, sourceFile, populateOptions);
+    populateCustomHookRegistryFromSource(registry, sourceFile, {
+      ...populateOptions,
+      syntaxOnlyMerge: !options.types,
+    });
   }
   for (const supplemental of options.supplementalSources ?? []) {
     const supplementalSource = ts.createSourceFile(

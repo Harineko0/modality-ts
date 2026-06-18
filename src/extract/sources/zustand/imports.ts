@@ -1,4 +1,6 @@
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import { collectSemanticNamedImports } from "modality-ts/extract/engine/spi";
 
 export const ZUSTAND_CORE_MODULES = new Set([
   "zustand",
@@ -37,9 +39,46 @@ export interface ZustandResolvedImports {
   middlewares: Map<string, string>;
 }
 
+const ZUSTAND_ALLOWED_EXPORTS = new Set([
+  ...STORE_CREATOR_SYMBOLS,
+  ...MIDDLEWARE_SYMBOLS,
+]);
+
 export function resolveZustandImports(
   source: ts.SourceFile,
+  types?: SemanticTypeContext,
 ): ZustandResolvedImports {
+  if (types?.checker) {
+    return resolveZustandImportsSemantic(source, types);
+  }
+  return resolveZustandImportsSyntax(source);
+}
+
+function resolveZustandImportsSemantic(
+  source: ts.SourceFile,
+  types: SemanticTypeContext,
+): ZustandResolvedImports {
+  const storeCreators = new Map<string, string>();
+  const middlewares = new Map<string, string>();
+
+  for (const resolved of collectSemanticNamedImports(
+    source,
+    ZUSTAND_MODULES,
+    ZUSTAND_ALLOWED_EXPORTS,
+    types,
+  )) {
+    const { localName, exportedName } = resolved;
+    if (STORE_CREATOR_SYMBOLS.has(exportedName)) {
+      storeCreators.set(localName, exportedName);
+    }
+    if (MIDDLEWARE_SYMBOLS.has(exportedName)) {
+      middlewares.set(localName, exportedName);
+    }
+  }
+  return { storeCreators, middlewares };
+}
+
+function resolveZustandImportsSyntax(source: ts.SourceFile): ZustandResolvedImports {
   const storeCreators = new Map<string, string>();
   const middlewares = new Map<string, string>();
 

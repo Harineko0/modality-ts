@@ -3,7 +3,9 @@ import type {
   CallSite,
   M0Ctx,
   WriteChannel,
+  SemanticTypeContext,
 } from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
 import { propertyName } from "../../engine/ts/ast.js";
 import { isStoreCreatorCall, resolveZustandImports } from "./imports.js";
@@ -22,23 +24,19 @@ export interface ZustandWriteDiscovery {
 export function discoverZustandWriteChannels(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverZustandWritesDetailed(sourceText, fileName).channels;
+  return discoverZustandWritesDetailed(sourceText, fileName, types).channels;
 }
 
 export function discoverZustandWritesDetailed(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): ZustandWriteDiscovery {
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const imports = resolveZustandImports(source);
-  const discovery = discoverZustandStoresDetailed(sourceText, fileName);
+  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const imports = resolveZustandImports(source, types);
+  const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];
   const warnings: { message: string; source?: SourceAnchor }[] = [
     ...discovery.warnings,
