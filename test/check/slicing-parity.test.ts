@@ -146,6 +146,87 @@ describe("enabled transition guard-only slicing", () => {
     });
   });
 
+  it("prunes mount-local writes for enabled observation of a mount-local transition", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "enabled-mount-local-observation",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: "/a",
+        },
+        {
+          id: "status",
+          domain: { kind: "enum", values: ["connected", "disconnected"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "local:a.wide",
+          domain: wideProductDomain(),
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: Object.fromEntries(
+            Array.from({ length: 32 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+      ],
+      transitions: [
+        {
+          id: "setWide",
+          cls: "user",
+          label: { kind: "click", text: "Set wide" },
+          source: [],
+          guard: {
+            kind: "and",
+            args: [
+              { kind: "eq", args: [read("sys:route"), lit("/a")] },
+              { kind: "eq", args: [read("status"), lit("connected")] },
+            ],
+          },
+          effect: {
+            kind: "assign",
+            var: "local:a.wide",
+            expr: {
+              kind: "updateField",
+              target: read("local:a.wide"),
+              field: "flag0",
+              value: lit(true),
+            },
+          },
+          reads: ["sys:route", "status", "local:a.wide"],
+          writes: ["local:a.wide"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      m,
+      orExpr(neq(readVar("status"), lit("connected")), enabled(m, "setWide")),
+      { name: "wideGuardedByConnection", reads: ["status"] },
+    );
+    const { model: sliced } = sliceModelForCheckProperty(m, property);
+    const varIds = sliced.vars.map((decl) => decl.id);
+    expect(varIds).toContain("status");
+    expect(varIds).toContain("sys:route");
+    expect(varIds).not.toContain("local:a.wide");
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "setWide",
+    ]);
+    expect(sliced.transitions[0]?.reads).toEqual(["status", "sys:route"]);
+    expect(sliced.transitions[0]?.writes).toEqual([]);
+    expect(sliced.transitions[0]?.effect).toEqual({
+      kind: "seq",
+      effects: [],
+    });
+  });
+
   it("prunes transition writes for prefix-enabled predicates", () => {
     const m: Model = {
       schemaVersion: 1,

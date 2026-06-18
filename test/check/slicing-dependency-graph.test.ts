@@ -159,6 +159,18 @@ describe("dependency graph slicing", () => {
     ]);
   });
 
+  it("does not reverse-expand route-local siblings from guard-var property reads", () => {
+    const model = routeLocalEconomyModel();
+    const graph = buildModelDependencyGraph(model);
+    const closure = computeStateSliceClosure(graph, {
+      propertyReads: ["sys:route"],
+      enabledTransitionIds: [],
+    });
+    expect([...closure.neededVars]).toEqual(["sys:route"]);
+    expect([...closure.neededTransitions]).toEqual([]);
+    expect(closure.mountScopeDependencies).toEqual([]);
+  });
+
   it("keeps pending queue vars out of unrelated targeted-step closure", () => {
     const model = routeLocalEconomyModel();
     const graph = buildModelDependencyGraph(model);

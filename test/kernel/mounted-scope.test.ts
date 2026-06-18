@@ -262,7 +262,7 @@ describe("mounted scopes", () => {
     ]);
   });
 
-  it("retains mount-local state when a guard var is needed", () => {
+  it("does not retain route-local siblings when only a shared guard var is read", () => {
     const model: Model = {
       schemaVersion: 1,
       id: "mount-local-guard-reverse",
@@ -300,24 +300,15 @@ describe("mounted scopes", () => {
       ],
       transitions: [],
     };
-    const { model: sliced, diagnostics } = sliceModelForCheckProperty(model, {
+    const { model: sliced } = sliceModelForCheckProperty(model, {
       kind: "always",
       name: "onRouteA",
       predicate: eq(readVar("sys:route"), lit("/a")),
       reads: ["sys:route"],
     });
-    expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
-      "local:panel",
-      "sys:route",
-    ]);
+    expect(sliced.vars.map((decl) => decl.id).sort()).toEqual(["sys:route"]);
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("local:panel");
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("local:slotPanel");
-    expect(diagnostics?.mountScopeDependencies).toEqual([
-      {
-        varId: "local:panel",
-        guardReads: ["sys:route"],
-        retainedBecause: ["guard-read:sys:route"],
-      },
-    ]);
   });
 
   it("includes mountScopeDependencies in sliced check diagnostics", () => {

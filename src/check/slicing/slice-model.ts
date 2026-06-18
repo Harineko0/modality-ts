@@ -118,6 +118,7 @@ export function sliceModelForProperty(
   const {
     neededVars,
     neededTransitions,
+    observationOnlyTransitions,
     mountScopeDependencies,
     closureFallback,
   } = computeStateSliceClosure(graph, {
@@ -132,6 +133,7 @@ export function sliceModelForProperty(
     model.transitions.filter((transition) =>
       neededTransitions.has(transition.id),
     ),
+    observationOnlyTransitions,
   );
   return {
     model: { ...model, vars, transitions },
@@ -170,16 +172,20 @@ export function sliceModelForTargetedStepProperty(
       graph.pendingQueueVarIds,
     ),
   );
-  const { executionVars, neededTransitions, mountScopeDependencies } =
-    computeTargetedStepSliceClosure(graph, {
-      propertyReads: deps.stateReads,
-      preconditionReads: deps.preconditionReads ?? [],
-      postconditionReads: deps.postconditionReads ?? [],
-      postMentionedVars,
-      stepFactVars: deps.stepFactVars,
-      enabledTransitionIds: deps.enabledTransitions,
-      targetTransitionIds: targetIds,
-    });
+  const {
+    executionVars,
+    neededTransitions,
+    observationOnlyTransitions,
+    mountScopeDependencies,
+  } = computeTargetedStepSliceClosure(graph, {
+    propertyReads: deps.stateReads,
+    preconditionReads: deps.preconditionReads ?? [],
+    postconditionReads: deps.postconditionReads ?? [],
+    postMentionedVars,
+    stepFactVars: deps.stepFactVars,
+    enabledTransitionIds: deps.enabledTransitions,
+    targetTransitionIds: targetIds,
+  });
   const vars = model.vars.filter((decl) => executionVars.has(decl.id));
   const transitions = finalizeSlicedTransitions(
     model,
@@ -187,6 +193,7 @@ export function sliceModelForTargetedStepProperty(
     model.transitions.filter((transition) =>
       neededTransitions.has(transition.id),
     ),
+    observationOnlyTransitions,
   );
   return {
     model: { ...model, vars, transitions },
@@ -829,12 +836,16 @@ function finalizeSlicedTransitions(
   model: Model,
   vars: readonly Model["vars"][number][],
   transitions: readonly Transition[],
+  observationOnlyTransitions: ReadonlySet<string> = new Set(),
 ): Transition[] {
   const retainedVarIds = new Set(vars.map((decl) => decl.id));
   const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
   const pendingQueues = pendingQueueVarIds(model);
   const retainsPending = vars.some((decl) => pendingQueues.has(decl.id));
   return transitions.map((transition) => {
+    if (observationOnlyTransitions.has(transition.id)) {
+      return stripObservationOnlyTransition(transition);
+    }
     const stripped = retainsPending
       ? transition
       : {
@@ -850,6 +861,16 @@ function finalizeSlicedTransitions(
       pendingQueues,
     );
   });
+}
+
+function stripObservationOnlyTransition(transition: Transition): Transition {
+  const guardReads = [...exprReads(transition.guard)].sort();
+  return {
+    ...transition,
+    reads: guardReads,
+    writes: [],
+    effect: { kind: "seq", effects: [] },
+  };
 }
 
 function stripToEnabledObservationTransition(

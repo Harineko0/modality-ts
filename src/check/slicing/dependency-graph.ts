@@ -42,6 +42,7 @@ export interface StateSliceClosureInput {
 export interface StateSliceClosureResult {
   neededVars: Set<string>;
   neededTransitions: Set<string>;
+  observationOnlyTransitions: Set<string>;
   mountScopeDependencies: readonly MountScopeDependency[];
   closureFallback?: string;
 }
@@ -59,6 +60,7 @@ export interface TargetedStepSliceClosureInput {
 export interface TargetedStepSliceClosureResult {
   executionVars: Set<string>;
   neededTransitions: Set<string>;
+  observationOnlyTransitions: Set<string>;
   mountScopeDependencies: readonly MountScopeDependency[];
   closureFallback?: string;
 }
@@ -110,12 +112,14 @@ export function computeStateSliceClosure(
   input: StateSliceClosureInput,
 ): StateSliceClosureResult {
   const forcedTransitions = new Set(input.enabledTransitionIds);
+  const observationOnlyTransitions = new Set(input.enabledTransitionIds);
   const neededVars = new Set([
     ...input.propertyReads,
     ...enabledTransitionSeedVars(graph, forcedTransitions),
   ]);
   const neededTransitions = new Set<string>();
   const mountAcc = createMountScopeAccumulator();
+  const goalVars = new Set(neededVars);
   const seedVars = new Set(neededVars);
   const directionalAnalysis = input.directionalPredicate
     ? analyzeDirectionalPredicate(input.directionalPredicate)
@@ -127,17 +131,20 @@ export function computeStateSliceClosure(
 
   reachVarsThroughTransitions(graph, neededVars, neededTransitions, mountAcc, {
     seedVars,
+    goalVars,
     directionalAnalysis,
+    observationOnlyTransitions,
   });
 
   for (const id of forcedTransitions) {
     neededTransitions.add(id);
-    addEnabledObservationMountLocals(graph, neededVars, id);
+    addEnabledObservationGuardVars(graph, neededVars, id);
   }
 
   return {
     neededVars,
     neededTransitions,
+    observationOnlyTransitions,
     mountScopeDependencies: finalizeMountScopeDependencies(
       mountAcc,
       neededVars,
@@ -161,7 +168,9 @@ export function computeTargetedStepSliceClosure(
     ...input.postMentionedVars,
   ]);
   const neededTransitions = new Set<string>();
+  const observationOnlyTransitions = new Set<string>();
   const mountAcc = createMountScopeAccumulator();
+  const goalVars = new Set(executionVars);
   const seedVars = new Set(executionVars);
   const targetEffectReads = new Set<string>();
 
@@ -191,10 +200,12 @@ export function computeTargetedStepSliceClosure(
       mountAcc,
       {
         seedVars,
+        goalVars,
         directionalAnalysis: guardAnalysis,
         directionalWriteVars: new Set(
           guardAnalysis.clauses.map((clause) => clause.var),
         ),
+        observationOnlyTransitions,
       },
     );
   }
@@ -210,9 +221,10 @@ export function computeTargetedStepSliceClosure(
   }
 
   for (const id of input.enabledTransitionIds) {
-    if (!targetIdSet.has(id)) neededTransitions.add(id);
-    addEnabledObservationMountLocals(graph, executionVars, id);
-    addTransitionGuardReads(graph, executionVars, id);
+    if (targetIdSet.has(id)) continue;
+    neededTransitions.add(id);
+    observationOnlyTransitions.add(id);
+    addEnabledObservationGuardVars(graph, executionVars, id);
   }
 
   const internalWriteObsVars = new Set([
@@ -237,6 +249,7 @@ export function computeTargetedStepSliceClosure(
   return {
     executionVars,
     neededTransitions,
+    observationOnlyTransitions,
     mountScopeDependencies: finalizeMountScopeDependencies(
       mountAcc,
       executionVars,
@@ -272,8 +285,10 @@ function reachVarsThroughTransitions(
   mountAcc: MountScopeAccumulator,
   options: {
     seedVars: ReadonlySet<string>;
+    goalVars: ReadonlySet<string>;
     directionalAnalysis?: DirectionalPredicateAnalysis;
     directionalWriteVars?: ReadonlySet<string>;
+    observationOnlyTransitions?: ReadonlySet<string>;
   },
 ): void {
   let changed = true;
@@ -301,6 +316,16 @@ function reachVarsThroughTransitions(
         return true;
       });
       if (neededWrites.length === 0) continue;
+      if (
+        shouldSkipUnrelatedHavocTransition(
+          transition,
+          neededWrites,
+          options.goalVars,
+          options.observationOnlyTransitions,
+        )
+      ) {
+        continue;
+      }
       if (options.directionalAnalysis) {
         const relevant = isTransitionDirectionallyRelevant(
           transition,
@@ -353,27 +378,6 @@ function expandMountGuardDependencies(
       }
     }
   }
-  for (const decl of graph.mountLocalVars) {
-    const guard = mountGuardForScope(decl.scope);
-    if (!guard) continue;
-    for (const read of exprReads(guard)) {
-      if (!neededVars.has(read)) continue;
-      if (!seedVars.has(read)) continue;
-      const mountLocalWasNeeded = neededVars.has(decl.id);
-      if (!mountLocalWasNeeded) {
-        neededVars.add(decl.id);
-        changed = true;
-      }
-      if (!seedVars.has(decl.id)) {
-        recordMountScopeDependency(
-          mountAcc,
-          decl.id,
-          guard,
-          `guard-read:${read}`,
-        );
-      }
-    }
-  }
   return changed;
 }
 
@@ -390,19 +394,78 @@ function expandMountGuardReads(
   }
 }
 
-function addEnabledObservationMountLocals(
+function addEnabledObservationGuardVars(
   graph: ModelDependencyGraph,
   vars: Set<string>,
   transitionId: string,
 ): void {
   const transition = graph.transitionsById.get(transitionId);
   if (!transition) return;
-  for (const varId of [...transition.reads, ...transition.writes]) {
-    if (graph.pendingQueueVarIds.has(varId)) continue;
-    const decl = graph.varsById.get(varId);
-    if (decl?.scope.kind === "mount-local") vars.add(varId);
-  }
+  for (const read of exprReads(transition.guard)) vars.add(read);
   expandMountGuardReads(graph, vars);
+}
+
+function shouldSkipUnrelatedHavocTransition(
+  transition: Transition,
+  neededWrites: readonly string[],
+  goalVars: ReadonlySet<string>,
+  observationOnlyTransitions?: ReadonlySet<string>,
+): boolean {
+  if (observationOnlyTransitions?.has(transition.id)) return false;
+  if (neededWrites.some((write) => goalVars.has(write))) return false;
+  if (
+    !neededWrites.every((write) =>
+      effectOnlyHavocsVar(transition.effect, write),
+    )
+  ) {
+    return false;
+  }
+  return !transition.reads.some((read) => goalVars.has(read));
+}
+
+function effectOnlyHavocsVar(
+  effect: Transition["effect"],
+  varId: string,
+): boolean {
+  let sawHavoc = false;
+  let unsupported = false;
+  walkEffect(effect, (node) => {
+    switch (node.kind) {
+      case "havoc":
+        if (node.var === varId) sawHavoc = true;
+        else unsupported = true;
+        return;
+      case "assign":
+      case "opaque":
+      case "choose":
+      case "enqueue":
+      case "dequeue":
+      case "if":
+        unsupported = true;
+        return;
+      default:
+        return;
+    }
+  });
+  return sawHavoc && !unsupported;
+}
+
+function walkEffect(
+  effect: Transition["effect"],
+  visit: (node: Transition["effect"]) => void,
+): void {
+  visit(effect);
+  switch (effect.kind) {
+    case "seq":
+      for (const child of effect.effects) walkEffect(child, visit);
+      return;
+    case "if":
+      walkEffect(effect.then, visit);
+      walkEffect(effect.else, visit);
+      return;
+    default:
+      return;
+  }
 }
 
 function targetGuardEnabledAtInitial(

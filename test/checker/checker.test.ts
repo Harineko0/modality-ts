@@ -2851,6 +2851,319 @@ describe("checker", () => {
     expect(summary?.prunedSystemVars).toContain("sys:pending");
   });
 
+  function coffeeNearFullSliceModel(): Model {
+    const customerRoute = "/customer/home";
+    const printerStatus = {
+      kind: "enum" as const,
+      values: ["connected", "disconnected", "error"],
+    };
+    const printerDataFields = Object.fromEntries(
+      Array.from({ length: 16 }, (_, index) => [`bit${index}`, bool]),
+    );
+    const orderHistoryFields = Object.fromEntries(
+      Array.from({ length: 16 }, (_, index) => [`order${index}`, bool]),
+    );
+    const densityValues = [1, 2, 3, 4, 5, 6, 7];
+    const routeSiblings = [
+      "local:home.autoPrint",
+      "local:home.printerSettingsOpen",
+      "local:home.orderHistoryOpen",
+    ];
+    return {
+      schemaVersion: 1,
+      id: "coffee-near-full-slice",
+      bounds: { maxDepth: 4, maxPending: 5, maxInternalSteps: 8 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: [customerRoute, "/other"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: customerRoute,
+        },
+        {
+          id: "sys:history",
+          domain: {
+            kind: "boundedList",
+            inner: { kind: "enum", values: [customerRoute, "/other"] },
+            maxLen: 3,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "printerStatus",
+          domain: printerStatus,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "printerStatusData",
+          domain: { kind: "record", fields: printerDataFields },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 16 }, (_, index) => [`bit${index}`, false]),
+          ),
+        },
+        {
+          id: "orderHistoryCursor",
+          domain: { kind: "enum", values: ["none", "page1", "page2"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "none",
+        },
+        {
+          id: "orderHistoryDialog",
+          domain: { kind: "enum", values: ["idle", "loading", "open"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "idle",
+        },
+        {
+          id: "orderHistoryPayload",
+          domain: { kind: "record", fields: orderHistoryFields },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 16 }, (_, index) => [`order${index}`, false]),
+          ),
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 5 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        ...routeSiblings.map((id) => ({
+          id,
+          domain: bool,
+          origin: "system" as const,
+          scope: routeMountScope(customerRoute),
+          initial: false,
+        })),
+        ...densityValues.map((value) => ({
+          id: `optimisticDensity${value}`,
+          domain: bool,
+          origin: "system" as const,
+          scope: routeMountScope(customerRoute),
+          initial: false,
+        })),
+      ],
+      transitions: [
+        ...densityValues.map((value) => ({
+          id: `setDensity${value}`,
+          cls: "user" as const,
+          label: { kind: "click" as const, text: `Set density ${value}` },
+          source: [],
+          guard: {
+            kind: "and" as const,
+            args: [
+              {
+                kind: "eq" as const,
+                args: [read("sys:route"), lit(customerRoute)],
+              },
+              {
+                kind: "eq" as const,
+                args: [read("printerStatus"), lit("connected")],
+              },
+            ],
+          },
+          effect: {
+            kind: "assign" as const,
+            var: `optimisticDensity${value}`,
+            expr: lit(true),
+          },
+          reads: [
+            "sys:route",
+            "printerStatus",
+            `optimisticDensity${value}`,
+            "printerStatusData",
+          ],
+          writes: [`optimisticDensity${value}`, "printerStatusData"],
+          confidence: "exact" as const,
+        })),
+        {
+          id: "loadMoreOrders",
+          cls: "user",
+          label: { kind: "click", text: "Load more orders" },
+          source: [],
+          guard: {
+            kind: "and",
+            args: [
+              { kind: "neq", args: [read("orderHistoryCursor"), lit("none")] },
+              { kind: "eq", args: [read("orderHistoryDialog"), lit("idle")] },
+            ],
+          },
+          effect: {
+            kind: "enqueue",
+            queue: "sys:pending",
+            op: "POST",
+            continuation: "loadMore#1",
+            args: {},
+          },
+          reads: [
+            "orderHistoryCursor",
+            "orderHistoryDialog",
+            "orderHistoryPayload",
+          ],
+          writes: ["sys:pending", "orderHistoryPayload"],
+          confidence: "exact",
+        },
+        {
+          id: "internal:refreshPrinterData",
+          cls: "internal",
+          label: { kind: "internal", text: "Refresh printer data" },
+          source: [],
+          guard: {
+            kind: "eq",
+            args: [read("printerStatus"), lit("connected")],
+          },
+          effect: { kind: "havoc", var: "printerStatusData" },
+          reads: ["printerStatus"],
+          writes: ["printerStatusData"],
+          triggeredBy: ["printerStatus"],
+          confidence: "exact",
+        },
+        {
+          id: "internal:refreshOrderHistory",
+          cls: "internal",
+          label: { kind: "internal", text: "Refresh order history" },
+          source: [],
+          guard: {
+            kind: "neq",
+            args: [read("orderHistoryCursor"), lit("none")],
+          },
+          effect: { kind: "havoc", var: "orderHistoryPayload" },
+          reads: ["orderHistoryCursor"],
+          writes: ["orderHistoryPayload"],
+          triggeredBy: ["orderHistoryCursor"],
+          confidence: "exact",
+        },
+        ...routeSiblings.map((id) => ({
+          id: `toggle:${id}`,
+          cls: "user" as const,
+          label: { kind: "click" as const, text: `Toggle ${id}` },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign" as const, var: id, expr: lit(true) },
+          reads: [id],
+          writes: [id],
+          confidence: "exact" as const,
+        })),
+      ],
+    };
+  }
+
+  it("slices Coffee-shaped density and load-more enabled properties below near-full budgets", () => {
+    const m = coffeeNearFullSliceModel();
+    const halfVars = Math.floor(m.vars.length / 2);
+    const halfTransitions = Math.floor(m.transitions.length / 2);
+    const props = [
+      always(
+        m,
+        orExpr(
+          neq(readVar("printerStatus"), lit("connected")),
+          enabled(m, "setDensity1"),
+        ),
+        {
+          name: "densityOneRequiresConnectedPrinter",
+          reads: ["printerStatus"],
+        },
+      ),
+      always(
+        m,
+        orExpr(
+          eq(readVar("printerStatus"), lit("connected")),
+          notExpr(enabled(m, "setDensity7")),
+        ),
+        {
+          name: "densitySevenDisabledWhenPrinterDisconnected",
+          reads: ["printerStatus"],
+        },
+      ),
+      always(m, enabled(m, "loadMoreOrders"), {
+        name: "loadMoreOrdersEnabledOnlyWithCursorAndIdleDialog",
+        reads: ["orderHistoryCursor", "orderHistoryDialog"],
+      }),
+    ];
+    const unsliced = checkModel(m, props);
+    const sliced = checkModel(m, props, { slicing: true });
+    expect(
+      sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual(
+      unsliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    );
+
+    const densityOne = sliceModelForCheckProperty(m, props[0]!);
+    const densitySeven = sliceModelForCheckProperty(m, props[1]!);
+    const loadMore = sliceModelForCheckProperty(m, props[2]!);
+
+    for (const { model: slicedModel } of [densityOne, densitySeven]) {
+      expect(slicedModel.vars.length).toBeLessThan(halfVars);
+      expect(slicedModel.transitions.length).toBeLessThan(halfTransitions);
+      const varIds = slicedModel.vars.map((decl) => decl.id);
+      expect(varIds).not.toContain("sys:pending");
+      expect(varIds).not.toContain("orderHistoryPayload");
+      expect(varIds).not.toContain("printerStatusData");
+      expect(varIds).not.toContain("sys:history");
+      expect(varIds).not.toEqual(
+        expect.arrayContaining([
+          "local:home.autoPrint",
+          "local:home.printerSettingsOpen",
+          "local:home.orderHistoryOpen",
+          "optimisticDensity1",
+          "optimisticDensity7",
+        ]),
+      );
+    }
+
+    const loadMoreVarIds = loadMore.model.vars.map((decl) => decl.id);
+    expect(loadMoreVarIds).toEqual(
+      expect.arrayContaining(["orderHistoryCursor", "orderHistoryDialog"]),
+    );
+    expect(loadMoreVarIds).not.toEqual(
+      expect.arrayContaining([
+        "sys:pending",
+        "sys:history",
+        "printerStatusData",
+        "orderHistoryPayload",
+        "local:home.autoPrint",
+        "optimisticDensity1",
+      ]),
+    );
+    expect(
+      loadMore.model.transitions.map((transition) => transition.id),
+    ).toEqual(["loadMoreOrders"]);
+    expect(loadMore.model.transitions[0]?.writes).toEqual([]);
+    expect(loadMore.model.transitions[0]?.effect).toEqual({
+      kind: "seq",
+      effects: [],
+    });
+
+    const summaries = sliced.diagnostics?.slicing?.sliceSummaries ?? [];
+    for (const name of [
+      "densityOneRequiresConnectedPrinter",
+      "densitySevenDisabledWhenPrinterDisconnected",
+      "loadMoreOrdersEnabledOnlyWithCursorAndIdleDialog",
+    ]) {
+      const summary = summaries.find((entry) =>
+        entry.properties.includes(name),
+      );
+      expect(summary?.vars).toBeLessThan(halfVars);
+      expect(summary?.transitions).toBeLessThan(halfTransitions);
+      if (name.startsWith("density")) {
+        expect(summary?.retainedSystemVars).not.toContain("sys:pending");
+        expect(summary?.prunedSystemVars).toContain("sys:pending");
+      }
+    }
+  });
+
   function coffeeDirectionalModel(): Model {
     const phaseDomain = {
       kind: "enum" as const,
