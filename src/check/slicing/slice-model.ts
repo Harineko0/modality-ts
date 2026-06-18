@@ -1,8 +1,4 @@
-import {
-  effectReadsForModel,
-  exprReads,
-  mountGuardForScope,
-} from "modality-ts/core";
+import { exprReads } from "modality-ts/core";
 import type {
   EffectIR,
   ExprIR,
@@ -14,6 +10,12 @@ import type {
   Transition,
 } from "modality-ts/core";
 import type { MountScopeDependency, PendingQueueDependency } from "../types.js";
+import {
+  buildModelDependencyGraph,
+  computeStateSliceClosure,
+  computeTargetedStepSliceClosure,
+  enabledTransitionSeedVars,
+} from "./dependency-graph.js";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
 
@@ -102,73 +104,12 @@ export function sliceModelForProperty(
   model: Model,
   property: Pick<Property, "reads" | "enabledTransitions">,
 ): { model: Model; diagnostics?: SliceDiagnostics } {
-  const pendingQueues = pendingQueueVarIds(model);
-  const forcedTransitions = new Set(property.enabledTransitions ?? []);
-  const neededVars = new Set([
-    ...(property.reads ?? []),
-    ...enabledTransitionVars(model, forcedTransitions),
-  ]);
-  const neededTransitions = new Set<string>();
-  const mountAcc = createMountScopeAccumulator();
-  const seedVars = new Set(neededVars);
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    if (
-      addMountGuardVarsForNeededMountLocals(
-        model,
-        neededVars,
-        mountAcc,
-        seedVars,
-      )
-    ) {
-      changed = true;
-    }
-    for (const transition of model.transitions) {
-      if (!transition.writes.some((write) => neededVars.has(write))) continue;
-      if (!neededTransitions.has(transition.id)) {
-        neededTransitions.add(transition.id);
-        changed = true;
-      }
-      for (const id of transition.reads) {
-        if (!neededVars.has(id)) {
-          neededVars.add(id);
-          changed = true;
-        }
-      }
-      for (const id of transition.writes) {
-        if (pendingQueues.has(id)) continue;
-        if (!neededVars.has(id)) {
-          neededVars.add(id);
-          changed = true;
-        }
-      }
-    }
-  }
-
-  for (const id of forcedTransitions) {
-    neededTransitions.add(id);
-    const transition = model.transitions.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!transition) continue;
-    for (const varId of transition.reads) {
-      neededVars.add(varId);
-    }
-    for (const varId of transition.writes) {
-      if (pendingQueues.has(varId)) continue;
-      neededVars.add(varId);
-    }
-    for (const varId of effectReadsForModel(
-      model,
-      transition.effect,
-      transition.id,
-    )) {
-      neededVars.add(varId);
-    }
-  }
-
+  const graph = buildModelDependencyGraph(model);
+  const { neededVars, neededTransitions, mountScopeDependencies } =
+    computeStateSliceClosure(graph, {
+      propertyReads: property.reads ?? [],
+      enabledTransitionIds: property.enabledTransitions ?? [],
+    });
   const vars = model.vars.filter((decl) => neededVars.has(decl.id));
   const transitions = finalizeSlicedTransitions(
     model,
@@ -176,10 +117,6 @@ export function sliceModelForProperty(
     model.transitions.filter((transition) =>
       neededTransitions.has(transition.id),
     ),
-  );
-  const mountScopeDependencies = finalizeMountScopeDependencies(
-    mountAcc,
-    neededVars,
   );
   return {
     model: { ...model, vars, transitions },
@@ -198,122 +135,15 @@ export function sliceModelForTargetedStepProperty(
     "stateReads" | "enabledTransitions" | "stepFactVars"
   > = collectPropertyDependencyRequest(model, property),
 ): { model: Model; diagnostics?: SliceDiagnostics } {
-  const pendingQueues = pendingQueueVarIds(model);
+  const graph = buildModelDependencyGraph(model);
   const targetIds = targetedAlwaysStepTransitionIds(property);
-  const targetIdSet = new Set(targetIds);
-  const dependencyVars = new Set([...deps.stateReads, ...deps.stepFactVars]);
-  const neededTransitions = new Set<string>();
-  const mountAcc = createMountScopeAccumulator();
-  const seedVars = new Set(dependencyVars);
-
-  for (const id of targetIds) {
-    const transition = model.transitions.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!transition) continue;
-    for (const read of transition.reads) dependencyVars.add(read);
-  }
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    if (
-      addMountGuardVarsForNeededMountLocals(
-        model,
-        dependencyVars,
-        mountAcc,
-        seedVars,
-      )
-    ) {
-      changed = true;
-    }
-    for (const transition of model.transitions) {
-      if (!transition.writes.some((write) => dependencyVars.has(write))) {
-        continue;
-      }
-      if (!neededTransitions.has(transition.id)) {
-        neededTransitions.add(transition.id);
-        changed = true;
-      }
-      for (const id of transition.reads) {
-        if (!dependencyVars.has(id)) {
-          dependencyVars.add(id);
-          changed = true;
-        }
-      }
-      for (const id of transition.writes) {
-        if (pendingQueues.has(id)) continue;
-        if (!dependencyVars.has(id)) {
-          dependencyVars.add(id);
-          changed = true;
-        }
-      }
-    }
-  }
-
-  const executionVars = new Set(dependencyVars);
-  for (const varId of deps.stepFactVars) {
-    executionVars.add(varId);
-  }
-  for (const id of targetIds) {
-    neededTransitions.add(id);
-    const transition = model.transitions.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!transition) continue;
-    for (const varId of transition.reads) {
-      executionVars.add(varId);
-    }
-    for (const varId of transition.writes) {
-      if (pendingQueues.has(varId)) continue;
-      executionVars.add(varId);
-    }
-    for (const varId of effectReadsForModel(
-      model,
-      transition.effect,
-      transition.id,
-    )) {
-      executionVars.add(varId);
-    }
-  }
-  for (const id of deps.enabledTransitions) {
-    if (!targetIdSet.has(id)) neededTransitions.add(id);
-    const transition = model.transitions.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!transition) continue;
-    for (const varId of transition.reads) {
-      executionVars.add(varId);
-    }
-    for (const varId of transition.writes) {
-      if (pendingQueues.has(varId)) continue;
-      executionVars.add(varId);
-    }
-    for (const varId of effectReadsForModel(
-      model,
-      transition.effect,
-      transition.id,
-    )) {
-      executionVars.add(varId);
-    }
-  }
-
-  for (const transition of model.transitions) {
-    if (transition.cls !== "internal") continue;
-    if (!transition.triggeredBy?.some((varId) => executionVars.has(varId))) {
-      continue;
-    }
-    if (!transition.writes.some((write) => executionVars.has(write))) continue;
-    neededTransitions.add(transition.id);
-    for (const varId of transition.reads) {
-      executionVars.add(varId);
-    }
-    for (const varId of transition.writes) {
-      if (pendingQueues.has(varId)) continue;
-      executionVars.add(varId);
-    }
-  }
-
+  const { executionVars, neededTransitions, mountScopeDependencies } =
+    computeTargetedStepSliceClosure(graph, {
+      stateReads: deps.stateReads,
+      stepFactVars: deps.stepFactVars,
+      enabledTransitionIds: deps.enabledTransitions,
+      targetTransitionIds: targetIds,
+    });
   const vars = model.vars.filter((decl) => executionVars.has(decl.id));
   const transitions = finalizeSlicedTransitions(
     model,
@@ -321,10 +151,6 @@ export function sliceModelForTargetedStepProperty(
     model.transitions.filter((transition) =>
       neededTransitions.has(transition.id),
     ),
-  );
-  const mountScopeDependencies = finalizeMountScopeDependencies(
-    mountAcc,
-    executionVars,
   );
   return {
     model: { ...model, vars, transitions },
@@ -970,102 +796,18 @@ function stripEnqueueDequeueEffects(effect: EffectIR): EffectIR {
 }
 
 function solePendingQueueVarId(model: Model): string | undefined {
-  const queues = model.vars.filter(
-    (decl) => decl.role?.kind === "pending-queue",
-  );
-  if (queues.length === 1) return queues[0]?.id;
-  return undefined;
+  const graph = buildModelDependencyGraph(model);
+  return graph.solePendingQueueVarId;
 }
 
-function addMountGuardVarsForNeededMountLocals(
+export function enabledTransitionVars(
   model: Model,
-  neededVars: Set<string>,
-  mountAcc?: MountScopeAccumulator,
-  seedVars?: ReadonlySet<string>,
-): boolean {
-  let changed = false;
-  const seededMountLocals = seedVars ?? neededVars;
-  for (const decl of model.vars) {
-    if (!neededVars.has(decl.id)) continue;
-    if (decl.scope.kind === "mount-local") {
-      const guard = mountGuardForScope(decl.scope);
-      if (!guard) continue;
-      if (mountAcc && seededMountLocals.has(decl.id)) {
-        recordMountScopeDependency(mountAcc, decl.id, guard, "property-read");
-      }
-      for (const read of exprReads(guard)) {
-        if (!neededVars.has(read)) {
-          neededVars.add(read);
-          changed = true;
-        }
-      }
-    }
-  }
-  for (const decl of model.vars) {
-    if (decl.scope.kind !== "mount-local") continue;
-    const guard = mountGuardForScope(decl.scope);
-    if (!guard) continue;
-    for (const read of exprReads(guard)) {
-      if (!neededVars.has(read)) continue;
-      if (!seededMountLocals.has(read)) continue;
-      const mountLocalWasNeeded = neededVars.has(decl.id);
-      if (!mountLocalWasNeeded) {
-        neededVars.add(decl.id);
-        changed = true;
-      }
-      if (mountAcc && !seededMountLocals.has(decl.id)) {
-        recordMountScopeDependency(
-          mountAcc,
-          decl.id,
-          guard,
-          `guard-read:${read}`,
-        );
-      }
-    }
-  }
-  return changed;
-}
-
-interface MountScopeAccumulator {
-  entries: Map<
-    string,
-    { guardReads: readonly string[]; retainedBecause: Set<string> }
-  >;
-}
-
-function createMountScopeAccumulator(): MountScopeAccumulator {
-  return { entries: new Map() };
-}
-
-function recordMountScopeDependency(
-  acc: MountScopeAccumulator,
-  varId: string,
-  guard: ExprIR,
-  reason: string,
-): void {
-  const guardReads = [...exprReads(guard)].sort();
-  let entry = acc.entries.get(varId);
-  if (!entry) {
-    entry = { guardReads, retainedBecause: new Set() };
-    acc.entries.set(varId, entry);
-  }
-  entry.retainedBecause.add(reason);
-}
-
-function finalizeMountScopeDependencies(
-  acc: MountScopeAccumulator,
-  retainedVars: Set<string>,
-): readonly MountScopeDependency[] {
-  const results: MountScopeDependency[] = [];
-  for (const [varId, entry] of acc.entries) {
-    if (!retainedVars.has(varId)) continue;
-    results.push({
-      varId,
-      guardReads: entry.guardReads,
-      retainedBecause: [...entry.retainedBecause].sort(),
-    });
-  }
-  return results.sort((left, right) => left.varId.localeCompare(right.varId));
+  transitionIds: Set<string>,
+): string[] {
+  return enabledTransitionSeedVars(
+    buildModelDependencyGraph(model),
+    transitionIds,
+  );
 }
 
 export function mergeMountScopeDependencies(
@@ -1095,50 +837,6 @@ export function mergeMountScopeDependencies(
       guardReads: entry.guardReads,
       retainedBecause: [...entry.retainedBecause].sort(),
     }));
-}
-
-export function enabledTransitionVars(
-  model: Model,
-  transitionIds: Set<string>,
-): string[] {
-  const pendingQueues = pendingQueueVarIds(model);
-  const vars = new Set<string>();
-  for (const id of transitionIds) {
-    const transition = model.transitions.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!transition) continue;
-    for (const read of exprReads(transition.guard)) vars.add(read);
-    for (const read of effectReadsForModel(
-      model,
-      transition.effect,
-      transition.id,
-    )) {
-      vars.add(read);
-    }
-    for (const read of transition.reads) vars.add(read);
-    for (const write of transition.writes) {
-      if (pendingQueues.has(write)) continue;
-      vars.add(write);
-    }
-  }
-  for (const decl of model.vars) {
-    if (!vars.has(decl.id)) continue;
-    if (decl.scope.kind === "mount-local") {
-      const guard = mountGuardForScope(decl.scope);
-      if (!guard) continue;
-      for (const read of exprReads(guard)) vars.add(read);
-    }
-  }
-  for (const decl of model.vars) {
-    if (decl.scope.kind !== "mount-local") continue;
-    const guard = mountGuardForScope(decl.scope);
-    if (!guard) continue;
-    for (const read of exprReads(guard)) {
-      if (vars.has(read)) vars.add(decl.id);
-    }
-  }
-  return [...vars].sort();
 }
 
 export function canSliceProperty(model: Model, property: Property): boolean {
