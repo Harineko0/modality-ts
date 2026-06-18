@@ -4052,6 +4052,126 @@ describe("checker", () => {
     expect(summary?.prunedSystemVars).toContain("irrelevantNoise");
   });
 
+  it("prunes route-local wide siblings and pending queue under slice economics gates", () => {
+    const productValues = Array.from({ length: 32 }, (_, index) => `sku${index}`);
+    const siblingIds = ["local:home.flag", "local:home.noise", "local:home.cart"];
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-economy",
+      bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/customer/home", "/other"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: "/customer/home",
+        },
+        {
+          id: "domain:product.catalog",
+          domain: { kind: "enum", values: productValues },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "sku0",
+        },
+        {
+          id: "local:home.focus",
+          domain: bool,
+          origin: "system",
+          scope: routeMountScope("/customer/home"),
+          initial: false,
+        },
+        ...siblingIds.map((id) => ({
+          id,
+          domain: bool,
+          origin: "system" as const,
+          scope: routeMountScope("/customer/home"),
+          initial: false,
+        })),
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "setFocus",
+          cls: "user",
+          label: { kind: "click", text: "Set focus" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "local:home.focus", expr: lit(true) },
+          reads: ["local:home.focus"],
+          writes: ["local:home.focus"],
+          confidence: "exact",
+        },
+        ...siblingIds.map((id) => ({
+          id: `set:${id}`,
+          cls: "user" as const,
+          label: { kind: "click" as const, text: `Set ${id}` },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign" as const, var: id, expr: lit(true) },
+          reads: [id],
+          writes: [id],
+          confidence: "exact" as const,
+        })),
+        {
+          id: "submit",
+          cls: "user",
+          label: { kind: "submit", text: "Submit" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "enqueue",
+            queue: "sys:pending",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
+          reads: [],
+          writes: ["sys:pending"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(m, eq(readVar("local:home.focus"), lit(true)), {
+      name: "focusSet",
+      reads: ["local:home.focus"],
+    });
+    const result = checkModel(m, [property], { slicing: true });
+    const summary = result.diagnostics?.slicing?.sliceSummaries?.[0];
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    const varIds = sliced.vars.map((decl) => decl.id);
+
+    expect(varIds).toEqual(
+      expect.arrayContaining(["local:home.focus", "sys:route"]),
+    );
+    expect(varIds).not.toEqual(
+      expect.arrayContaining([
+        ...siblingIds,
+        "domain:product.catalog",
+        "sys:pending",
+      ]),
+    );
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "setFocus",
+    ]);
+    expect(summary?.vars).toBeLessThanOrEqual(3);
+    expect(summary?.transitions).toBeLessThanOrEqual(1);
+    expect(summary?.prunedBits).toBeGreaterThan(0);
+    expect(
+      summary?.prunedTopContributors?.map((entry) => entry.varId),
+    ).toContain("domain:product.catalog");
+    expect(summary?.prunedSystemVars).toContain("sys:pending");
+    expect(summary?.retainedSystemVars).not.toContain("sys:pending");
+  });
+
   it("keeps positive targeted alwaysStep on the full model under slicing", () => {
     const m = focusedAlwaysStepNoiseModel(2);
     const property = alwaysStep(m, stepTransitionId("submit"), {
