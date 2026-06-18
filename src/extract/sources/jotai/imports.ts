@@ -1,4 +1,6 @@
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import { collectSemanticNamedImports } from "modality-ts/extract/engine/spi";
 
 export const JOTAI_CORE_MODULES = new Set([
   "jotai",
@@ -49,7 +51,73 @@ export interface JotaiResolvedImports {
   providerTag: string | undefined;
 }
 
+const JOTAI_ALLOWED_EXPORTS = new Set([
+  ...ATOM_CREATOR_SYMBOLS,
+  ...HOOK_SYMBOLS,
+  ...STORE_SYMBOLS,
+  "createJSONStorage",
+  "RESET",
+  "Provider",
+]);
+
 export function resolveJotaiImports(
+  source: ts.SourceFile,
+  types?: SemanticTypeContext,
+): JotaiResolvedImports {
+  if (types?.checker) {
+    return resolveJotaiImportsSemantic(source, types);
+  }
+  return resolveJotaiImportsSyntax(source);
+}
+
+function resolveJotaiImportsSemantic(
+  source: ts.SourceFile,
+  types: SemanticTypeContext,
+): JotaiResolvedImports {
+  const atomCreators = new Map<string, string>();
+  const hooks = new Map<string, string>();
+  const storeCreators = new Map<string, string>();
+  const utils = new Map<string, string>();
+  let resetSymbol: string | undefined;
+  let providerTag: string | undefined;
+
+  for (const resolved of collectSemanticNamedImports(
+    source,
+    JOTAI_MODULES,
+    JOTAI_ALLOWED_EXPORTS,
+    types,
+  )) {
+    const { localName, exportedName } = resolved;
+    if (ATOM_CREATOR_SYMBOLS.has(exportedName)) {
+      atomCreators.set(localName, exportedName);
+    }
+    if (HOOK_SYMBOLS.has(exportedName)) {
+      hooks.set(localName, exportedName);
+    }
+    if (STORE_SYMBOLS.has(exportedName)) {
+      storeCreators.set(localName, exportedName);
+    }
+    if (
+      exportedName === "createJSONStorage" ||
+      exportedName === "RESET" ||
+      exportedName === "Provider"
+    ) {
+      utils.set(localName, exportedName);
+    }
+    if (exportedName === "RESET") resetSymbol = localName;
+    if (exportedName === "Provider") providerTag = localName;
+  }
+  return {
+    atomCreators,
+    hooks,
+    storeCreators,
+    utils,
+    resetSymbol,
+    providerTag,
+  };
+}
+
+function resolveJotaiImportsSyntax(
   source: ts.SourceFile,
 ): JotaiResolvedImports {
   const atomCreators = new Map<string, string>();

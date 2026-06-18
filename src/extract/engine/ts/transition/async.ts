@@ -542,12 +542,19 @@ function rewriteMissingOutcomeReads(
           rewriteMissingOutcomeReads(child, op, enqueueArgKeys),
         ),
       };
-    case "if":
-      return {
+    case "if": {
+      const rewritten = {
         ...effect,
-        then: rewriteMissingOutcomeReads(effect.then, op, enqueueArgKeys),
         else: rewriteMissingOutcomeReads(effect.else, op, enqueueArgKeys),
       };
+      // biome-ignore lint/suspicious/noThenProperty: EffectIR intentionally names if-branch effects `then`.
+      rewritten["then"] = rewriteMissingOutcomeReads(
+        effect.then,
+        op,
+        enqueueArgKeys,
+      );
+      return rewritten;
+    }
     default:
       return effect;
   }
@@ -654,7 +661,12 @@ export function transitionsFromSequentialAwait(
   if (secondIndex < 0) return [];
   const secondAwait = successStatements[secondIndex];
   if (!secondAwait) return [];
-  const secondOp = awaitedOp(secondAwait, effectApis, fileName, effectOpAliases);
+  const secondOp = awaitedOp(
+    secondAwait,
+    effectApis,
+    fileName,
+    effectOpAliases,
+  );
   const promiseAllOps = secondOp
     ? undefined
     : promiseAllAwaitOps(secondAwait, effectApis, fileName, effectOpAliases);
@@ -868,7 +880,9 @@ export function statementHasAwaitedEffect(
 ): boolean {
   return (
     Boolean(awaitedEffect(statement, effectApis, fileName, effectOpAliases)) ||
-    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
+    Boolean(
+      promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases),
+    )
   );
 }
 
@@ -879,8 +893,15 @@ export function expressionStatementAwait(
   effectOpAliases: EffectOpAliases = new Map(),
 ): boolean {
   return (
-    statementHasAwaitedEffect(statement, effectApis, fileName, effectOpAliases) ||
-    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
+    statementHasAwaitedEffect(
+      statement,
+      effectApis,
+      fileName,
+      effectOpAliases,
+    ) ||
+    Boolean(
+      promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases),
+    )
   );
 }
 
@@ -954,7 +975,12 @@ export function awaitedCall(
   fileName: string,
   effectOpAliases: EffectOpAliases = new Map(),
 ): { op: string; call: ts.CallExpression } | undefined {
-  const awaited = awaitedEffect(statement, effectApis, fileName, effectOpAliases);
+  const awaited = awaitedEffect(
+    statement,
+    effectApis,
+    fileName,
+    effectOpAliases,
+  );
   return awaited ? { op: awaited.op, call: awaited.call } : undefined;
 }
 

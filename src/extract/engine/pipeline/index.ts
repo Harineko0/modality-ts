@@ -22,11 +22,9 @@ import {
   type EffectOpAliases,
 } from "../ts/effect-op-aliases.js";
 import type { ExtractionWarning } from "../ts/types.js";
-import { typeAliasDeclarations } from "../ts/domains.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
 import type { SemanticProject } from "../ts/semantic-project.js";
-import * as ts from "typescript";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -221,18 +219,6 @@ export function runExtractionPipeline(
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const supplementalTypeText = allDiscoveryFragments
-    .map((fragment) => fragment.sourceText)
-    .join("\n");
-  const supplementalTypes = typeAliasDeclarations(
-    ts.createSourceFile(
-      "__types__.ts",
-      supplementalTypeText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    ),
-  );
   const genericExtraction = extractReactSourceTransitions(options.sourceText, {
     route: options.route,
     fileName: options.fileName,
@@ -241,10 +227,7 @@ export function runExtractionPipeline(
     stateVars: extractionCtx.stateVars,
     writeChannels,
     sourcePlugins,
-    additionalTypeAliases: supplementalTypes,
-    additionalComponentSources: allDiscoveryFragments
-      .filter((fragment) => fragment.fileName !== options.fileName)
-      .map((fragment) => fragment.sourceText),
+    relatedFragments,
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
@@ -345,6 +328,13 @@ function semanticTypeContextForFile(
     checker: semanticProject.checker,
     ...(sourceFile ? { sourceFile } : {}),
     getSourceFile: (name) => semanticProject.getSourceFile(name),
+    canonicalFileName: (name) => semanticProject.canonicalFileName(name),
+    resolveModuleName: (specifier, containingFile) =>
+      semanticProject.resolveModuleName(specifier, containingFile),
+    symbolAt: (node) => semanticProject.symbolAt(node),
+    aliasedSymbolAt: (node) => semanticProject.aliasedSymbolAt(node),
+    symbolKey: (symbol) => semanticProject.symbolKey(symbol),
+    localSymbolKey: (node) => semanticProject.localSymbolKey(node),
   };
 }
 

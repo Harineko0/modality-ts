@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import * as ts from "typescript";
 import type { AbstractDomain, StateVarDecl, Value } from "modality-ts/core";
 import {
@@ -11,6 +12,7 @@ import {
 import {
   domainInferenceWarnings,
   inferUseStateDomainSemanticDetailed,
+  useStateCallForSemanticInference,
   initialValueForUseStateDetailed,
 } from "./domains.js";
 import type {
@@ -26,6 +28,359 @@ import type {
   SetterBinding,
 } from "./types.js";
 
+export interface ComponentRegistryEntry {
+  symbolKey?: string;
+  displayName: string;
+  decl: ComponentDecl;
+  sourceFile?: string;
+}
+
+export interface ComponentRegistry {
+  bySymbolKey: Map<string, ComponentRegistryEntry>;
+  byDisplayName: Map<string, ComponentRegistryEntry>;
+}
+
+export interface CustomHookRegistryEntry {
+  symbolKey?: string;
+  displayName: string;
+  decl: CustomHookDecl;
+  sourceFile?: string;
+}
+
+export interface CustomHookRegistry {
+  bySymbolKey: Map<string, CustomHookRegistryEntry>;
+  byDisplayName: Map<string, CustomHookRegistryEntry>;
+}
+
+export interface RegistryBuildOptions {
+  types?: SemanticTypeContext;
+  primaryFileName?: string;
+  relatedSourceFiles?: readonly ts.SourceFile[];
+  supplementalSources?: readonly { sourceText: string; fileName?: string }[];
+}
+
+export function emptyComponentRegistry(): ComponentRegistry {
+  return { bySymbolKey: new Map(), byDisplayName: new Map() };
+}
+
+export function emptyCustomHookRegistry(): CustomHookRegistry {
+  return { bySymbolKey: new Map(), byDisplayName: new Map() };
+}
+
+export function componentRegistryDisplayMap(
+  registry: ComponentRegistry,
+): Map<string, ComponentDecl> {
+  return new Map(
+    [...registry.byDisplayName].map(([name, entry]) => [name, entry.decl]),
+  );
+}
+
+export function customHookRegistryDisplayNames(
+  registry: CustomHookRegistry,
+): Set<string> {
+  return new Set(registry.byDisplayName.keys());
+}
+
+function canonicalRegistryFileName(
+  fileName: string,
+  types?: SemanticTypeContext,
+): string {
+  return types?.canonicalFileName?.(fileName) ?? resolve(fileName);
+}
+
+function isPrimaryRegistrySource(
+  source: ts.SourceFile,
+  primaryFileName: string | undefined,
+  types?: SemanticTypeContext,
+): boolean {
+  if (!primaryFileName) return true;
+  return (
+    canonicalRegistryFileName(source.fileName, types) ===
+    canonicalRegistryFileName(primaryFileName, types)
+  );
+}
+
+function addComponentRegistryEntry(
+  registry: ComponentRegistry,
+  displayName: string,
+  decl: ComponentDecl,
+  source: ts.SourceFile,
+  nameIdentifier: ts.Identifier,
+  options: {
+    types?: SemanticTypeContext;
+    primaryFileName?: string;
+    syntaxOnlyMerge?: boolean;
+  },
+): void {
+  const symbolKey = options.types?.localSymbolKey?.(nameIdentifier);
+  const entry: ComponentRegistryEntry = {
+    ...(symbolKey ? { symbolKey } : {}),
+    displayName,
+    decl,
+    sourceFile: canonicalRegistryFileName(source.fileName, options.types),
+  };
+  if (symbolKey) registry.bySymbolKey.set(symbolKey, entry);
+  const primary = isPrimaryRegistrySource(
+    source,
+    options.primaryFileName,
+    options.types,
+  );
+  if (primary || options.syntaxOnlyMerge) {
+    if (options.syntaxOnlyMerge && registry.byDisplayName.has(displayName))
+      return;
+    registry.byDisplayName.set(displayName, entry);
+  }
+}
+
+function addCustomHookRegistryEntry(
+  registry: CustomHookRegistry,
+  displayName: string,
+  decl: CustomHookDecl,
+  source: ts.SourceFile,
+  nameIdentifier: ts.Identifier,
+  options: {
+    types?: SemanticTypeContext;
+    primaryFileName?: string;
+    syntaxOnlyMerge?: boolean;
+  },
+): void {
+  const symbolKey = options.types?.localSymbolKey?.(nameIdentifier);
+  const entry: CustomHookRegistryEntry = {
+    ...(symbolKey ? { symbolKey } : {}),
+    displayName,
+    decl,
+    sourceFile: canonicalRegistryFileName(source.fileName, options.types),
+  };
+  if (symbolKey) registry.bySymbolKey.set(symbolKey, entry);
+  const primary = isPrimaryRegistrySource(
+    source,
+    options.primaryFileName,
+    options.types,
+  );
+  if (primary || options.syntaxOnlyMerge) {
+    if (options.syntaxOnlyMerge && registry.byDisplayName.has(displayName))
+      return;
+    registry.byDisplayName.set(displayName, entry);
+  }
+}
+
+function populateComponentRegistryFromSource(
+  registry: ComponentRegistry,
+  source: ts.SourceFile,
+  options: {
+    types?: SemanticTypeContext;
+    primaryFileName?: string;
+    syntaxOnlyMerge?: boolean;
+  },
+): void {
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name &&
+      startsUppercase(node.name.text)
+    ) {
+      addComponentRegistryEntry(
+        registry,
+        node.name.text,
+        node,
+        source,
+        node.name,
+        options,
+      );
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      startsUppercase(node.name.text) &&
+      node.initializer &&
+      isExtractableHandler(node.initializer)
+    ) {
+      addComponentRegistryEntry(
+        registry,
+        node.name.text,
+        node.initializer,
+        source,
+        node.name,
+        options,
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+
+function populateCustomHookRegistryFromSource(
+  registry: CustomHookRegistry,
+  source: ts.SourceFile,
+  options: {
+    types?: SemanticTypeContext;
+    primaryFileName?: string;
+    syntaxOnlyMerge?: boolean;
+  },
+): void {
+  const visit = (node: ts.Node): void => {
+    const name = customHookDeclarationName(node);
+    if (!name) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const nameIdentifier = customHookNameIdentifier(node);
+    if (!nameIdentifier) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    if (ts.isFunctionDeclaration(node)) {
+      addCustomHookRegistryEntry(
+        registry,
+        name,
+        node,
+        source,
+        nameIdentifier,
+        options,
+      );
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      isExtractableHandler(node.initializer)
+    ) {
+      addCustomHookRegistryEntry(
+        registry,
+        name,
+        node.initializer,
+        source,
+        nameIdentifier,
+        options,
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+
+function collectRelatedSourceFiles(
+  primary: ts.SourceFile,
+  options: RegistryBuildOptions,
+): ts.SourceFile[] {
+  if (options.relatedSourceFiles && options.relatedSourceFiles.length > 0) {
+    if (!options.types?.getSourceFile) {
+      return options.relatedSourceFiles.filter((file) => file !== primary);
+    }
+  } else if (!options.types?.getSourceFile) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const files: ts.SourceFile[] = [];
+  const addFile = (fileName: string): void => {
+    const key = canonicalRegistryFileName(fileName, options.types);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const sourceFile = options.types?.getSourceFile(fileName);
+    if (!sourceFile || sourceFile === primary) return;
+    files.push(sourceFile);
+  };
+  addFile(primary.fileName);
+  for (const sourceFile of options.relatedSourceFiles ?? []) {
+    addFile(sourceFile.fileName);
+  }
+  return files;
+}
+
+export function buildComponentRegistry(
+  primary: ts.SourceFile,
+  options: RegistryBuildOptions = {},
+): ComponentRegistry {
+  const registry = emptyComponentRegistry();
+  const populateOptions = {
+    types: options.types,
+    primaryFileName: options.primaryFileName ?? primary.fileName,
+  };
+  populateComponentRegistryFromSource(registry, primary, populateOptions);
+  for (const sourceFile of collectRelatedSourceFiles(primary, options)) {
+    populateComponentRegistryFromSource(registry, sourceFile, {
+      ...populateOptions,
+      syntaxOnlyMerge: !options.types,
+    });
+  }
+  for (const supplemental of options.supplementalSources ?? []) {
+    const supplementalSource = ts.createSourceFile(
+      supplemental.fileName ?? primary.fileName,
+      supplemental.sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    populateComponentRegistryFromSource(registry, supplementalSource, {
+      primaryFileName: populateOptions.primaryFileName,
+      syntaxOnlyMerge: true,
+    });
+  }
+  return registry;
+}
+
+export function buildCustomHookRegistry(
+  primary: ts.SourceFile,
+  options: RegistryBuildOptions = {},
+): CustomHookRegistry {
+  const registry = emptyCustomHookRegistry();
+  const populateOptions = {
+    types: options.types,
+    primaryFileName: options.primaryFileName ?? primary.fileName,
+  };
+  populateCustomHookRegistryFromSource(registry, primary, populateOptions);
+  for (const sourceFile of collectRelatedSourceFiles(primary, options)) {
+    populateCustomHookRegistryFromSource(registry, sourceFile, {
+      ...populateOptions,
+      syntaxOnlyMerge: !options.types,
+    });
+  }
+  for (const supplemental of options.supplementalSources ?? []) {
+    const supplementalSource = ts.createSourceFile(
+      supplemental.fileName ?? primary.fileName,
+      supplemental.sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    populateCustomHookRegistryFromSource(registry, supplementalSource, {
+      primaryFileName: populateOptions.primaryFileName,
+      syntaxOnlyMerge: true,
+    });
+  }
+  return registry;
+}
+
+export function resolveComponentEntry(
+  registry: ComponentRegistry,
+  tag: string | ts.Identifier,
+  types?: SemanticTypeContext,
+): ComponentRegistryEntry | undefined {
+  if (typeof tag !== "string" && types?.localSymbolKey) {
+    const symbolKey = types.localSymbolKey(tag);
+    if (symbolKey) {
+      const bySymbol = registry.bySymbolKey.get(symbolKey);
+      if (bySymbol) return bySymbol;
+    }
+  }
+  const displayName = typeof tag === "string" ? tag : tag.text;
+  return registry.byDisplayName.get(displayName);
+}
+
+export function resolveCustomHookEntry(
+  registry: CustomHookRegistry,
+  callee: string | ts.Identifier,
+  types?: SemanticTypeContext,
+): CustomHookRegistryEntry | undefined {
+  if (typeof callee !== "string" && types?.localSymbolKey) {
+    const symbolKey = types.localSymbolKey(callee);
+    if (symbolKey) {
+      const bySymbol = registry.bySymbolKey.get(symbolKey);
+      if (bySymbol) return bySymbol;
+    }
+  }
+  const displayName = typeof callee === "string" ? callee : callee.text;
+  return registry.byDisplayName.get(displayName);
+}
+
 export function handlerExpression(
   expression: ts.Expression | undefined,
   handlers: Map<string, ExtractableHandler>,
@@ -38,50 +393,31 @@ export function handlerExpression(
 
 export function componentDeclarations(
   source: ts.SourceFile,
+  types?: SemanticTypeContext,
+  relatedSourceFiles?: readonly ts.SourceFile[],
 ): Map<string, ComponentDecl> {
-  const components = new Map<string, ComponentDecl>();
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isFunctionDeclaration(node) &&
-      node.name &&
-      startsUppercase(node.name.text)
-    ) {
-      components.set(node.name.text, node);
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      startsUppercase(node.name.text) &&
-      node.initializer &&
-      isExtractableHandler(node.initializer)
-    ) {
-      components.set(node.name.text, node.initializer);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return components;
+  return componentRegistryDisplayMap(
+    buildComponentRegistry(source, {
+      ...(types ? { types } : {}),
+      primaryFileName: source.fileName,
+      ...(relatedSourceFiles ? { relatedSourceFiles } : {}),
+    }),
+  );
 }
 
 export function customHookDeclarations(
   source: ts.SourceFile,
+  types?: SemanticTypeContext,
+  relatedSourceFiles?: readonly ts.SourceFile[],
 ): Map<string, CustomHookDecl> {
-  const hooks = new Map<string, CustomHookDecl>();
-  const visit = (node: ts.Node): void => {
-    const name = customHookDeclarationName(node);
-    if (name) {
-      if (ts.isFunctionDeclaration(node)) hooks.set(name, node);
-      else if (
-        ts.isVariableDeclaration(node) &&
-        node.initializer &&
-        isExtractableHandler(node.initializer)
-      )
-        hooks.set(name, node.initializer);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return hooks;
+  const registry = buildCustomHookRegistry(source, {
+    ...(types ? { types } : {}),
+    primaryFileName: source.fileName,
+    ...(relatedSourceFiles ? { relatedSourceFiles } : {}),
+  });
+  return new Map(
+    [...registry.byDisplayName].map(([name, entry]) => [name, entry.decl]),
+  );
 }
 
 export function isCustomHookDeclaration(node: ts.Node): boolean {
@@ -92,7 +428,7 @@ export function inlineCustomHookState(
   source: ts.SourceFile,
   fileName: string,
   node: ts.VariableDeclaration,
-  customHooks: Map<string, CustomHookDecl>,
+  customHooks: CustomHookRegistry,
   vars: StateVarDecl[],
   setters: Map<string, SetterBinding>,
   component: string,
@@ -110,8 +446,13 @@ export function inlineCustomHookState(
     !ts.isIdentifier(node.initializer.expression)
   )
     return false;
-  const hook = customHooks.get(node.initializer.expression.text);
-  if (!hook) return false;
+  const hookEntry = resolveCustomHookEntry(
+    customHooks,
+    node.initializer.expression,
+    types,
+  );
+  if (!hookEntry) return false;
+  const hook = hookEntry.decl;
   const stateName = node.name.elements[0];
   const setterName = node.name.elements[1];
   if (
@@ -153,18 +494,18 @@ export function inlineCustomHookState(
 
 export function calledCustomHook(
   node: ts.Node,
-  customHooks: Set<string>,
-): string | undefined {
+  customHooks: CustomHookRegistry,
+  types?: SemanticTypeContext,
+): CustomHookRegistryEntry | undefined {
   if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression))
     return undefined;
-  return customHooks.has(node.expression.text)
-    ? node.expression.text
-    : undefined;
+  return resolveCustomHookEntry(customHooks, node.expression, types);
 }
 
 export function detectStatefulListComponents(
   source: ts.SourceFile,
-  components: Map<string, ComponentDecl>,
+  registry: ComponentRegistry,
+  types?: SemanticTypeContext,
 ): Set<string> {
   const listComponents = new Set<string>();
   const visit = (node: ts.Node): void => {
@@ -173,10 +514,10 @@ export function detectStatefulListComponents(
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "map"
     ) {
-      for (const rendered of jsxComponentTags(node)) {
-        const component = components.get(rendered);
-        if (component && componentHasUseState(component))
-          listComponents.add(rendered);
+      for (const tag of jsxComponentTagIdentifiers(node)) {
+        const entry = resolveComponentEntry(registry, tag, types);
+        if (entry && componentHasUseState(entry.decl))
+          listComponents.add(entry.displayName);
       }
     }
     ts.forEachChild(node, visit);
@@ -284,12 +625,19 @@ export function isIntrinsicJsxAttribute(attribute: ts.JsxAttribute): boolean {
 }
 
 export function jsxTagName(attribute: ts.JsxAttribute): string | undefined {
+  const identifier = jsxTagIdentifier(attribute);
+  return identifier?.text;
+}
+
+export function jsxTagIdentifier(
+  attribute: ts.JsxAttribute,
+): ts.Identifier | undefined {
   const attrs = attribute.parent;
   if (!ts.isJsxAttributes(attrs)) return undefined;
   const parent = attrs.parent;
   if (!ts.isJsxOpeningElement(parent) && !ts.isJsxSelfClosingElement(parent))
     return undefined;
-  return ts.isIdentifier(parent.tagName) ? parent.tagName.text : undefined;
+  return ts.isIdentifier(parent.tagName) ? parent.tagName : undefined;
 }
 
 export function componentName(component: ComponentDecl): string | undefined {
@@ -348,8 +696,14 @@ function hookStateReturn(
     elements[1].text !== setterName
   )
     return undefined;
-  const inferred = inferUseStateDomainSemanticDetailed(
+  const callForInference = useStateCallForSemanticInference(
     stateCall,
+    source,
+    types,
+    varId,
+  );
+  const inferred = inferUseStateDomainSemanticDetailed(
+    callForInference,
     typeAliases,
     source,
     varId,
@@ -359,7 +713,7 @@ function hookStateReturn(
   const domain = inferred.domain;
   const hookWarnings = [...domainInferenceWarnings(inferred, anchor)];
   const initialResult = initialValueForUseStateDetailed(
-    stateCall,
+    callForInference,
     domain,
     source,
     varId,
@@ -387,6 +741,13 @@ function returnedArrayElements(
     ts.isParenthesizedExpression(expression)
   )
     return returnedArrayElements(expression.expression);
+  return undefined;
+}
+
+function customHookNameIdentifier(node: ts.Node): ts.Identifier | undefined {
+  if (ts.isFunctionDeclaration(node) && node.name) return node.name;
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name))
+    return node.name;
   return undefined;
 }
 
@@ -440,20 +801,20 @@ function stateVarInfoForName(
   return decl ? { varId: decl.id, domain: decl.domain } : undefined;
 }
 
-function jsxComponentTags(node: ts.Node): string[] {
-  const tags = new Set<string>();
+function jsxComponentTagIdentifiers(node: ts.Node): ts.Identifier[] {
+  const tags: ts.Identifier[] = [];
   const visit = (candidate: ts.Node): void => {
-    const tag = jsxElementTag(candidate);
-    if (tag && startsUppercase(tag)) tags.add(tag);
+    const tag = jsxElementTagIdentifier(candidate);
+    if (tag && startsUppercase(tag.text)) tags.push(tag);
     ts.forEachChild(candidate, visit);
   };
   visit(node);
-  return [...tags].sort();
+  return tags;
 }
 
-function jsxElementTag(node: ts.Node): string | undefined {
+function jsxElementTagIdentifier(node: ts.Node): ts.Identifier | undefined {
   if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
-    return ts.isIdentifier(node.tagName) ? node.tagName.text : undefined;
+    return ts.isIdentifier(node.tagName) ? node.tagName : undefined;
   }
   return undefined;
 }

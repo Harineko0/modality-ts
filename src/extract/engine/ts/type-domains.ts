@@ -15,10 +15,74 @@ export interface TypeDomainInferenceContext {
   checker: ts.TypeChecker;
   sourceFile?: ts.SourceFile;
   varId?: string;
-  typeAliases?: ReadonlyMap<string, ts.TypeNode>;
   initializer?: ts.Expression;
   declaration?: ts.VariableDeclaration;
   domainRefinements?: readonly DomainRefinementProvider[];
+}
+
+export interface SemanticDomainInferenceContext {
+  checker?: ts.TypeChecker;
+  sourceFile?: ts.SourceFile;
+  varId?: string;
+  initializer?: ts.Expression;
+  declaration?: ts.VariableDeclaration;
+  domainRefinements?: readonly DomainRefinementProvider[];
+  broadTypeNode?: ts.TypeNode;
+  /** Syntax fallback only when checker or sourceFile is absent. */
+  typeAliases?: ReadonlyMap<string, ts.TypeNode>;
+  visited?: ReadonlySet<string>;
+}
+
+export function inferDomainSemantic(
+  input: ts.TypeNode | ts.Expression | ts.Type,
+  ctx: SemanticDomainInferenceContext,
+): DomainInferenceResult {
+  const visited = ctx.visited ?? new Set<string>();
+  const astContext: DomainInferenceContext = {
+    initializer: ctx.initializer,
+    declaration: ctx.declaration,
+    sourceFile: ctx.sourceFile,
+    varId: ctx.varId,
+    domainRefinements: ctx.domainRefinements,
+  };
+  if (isTypeScriptType(input)) {
+    if (!ctx.checker) {
+      return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+    }
+    return inferDomainFromTypeDetailed(input, {
+      checker: ctx.checker,
+      sourceFile: ctx.sourceFile,
+      varId: ctx.varId,
+      initializer: ctx.initializer,
+      declaration: ctx.declaration,
+      domainRefinements: ctx.domainRefinements,
+    });
+  }
+  if (ts.isTypeNode(input)) {
+    if (!ctx.checker || !ctx.sourceFile) {
+      return inferDomainFromTypeNodeDetailed(
+        input,
+        ctx.typeAliases ?? new Map(),
+        visited,
+        astContext,
+      );
+    }
+    return inferTypeNodeSemanticDetailed(input, ctx, visited, astContext);
+  }
+  if (!ctx.checker || !ctx.sourceFile) {
+    return inferDomainFromTypeNodeDetailed(
+      undefined,
+      ctx.typeAliases ?? new Map(),
+      new Set(),
+      {
+        initializer: input,
+        sourceFile: ctx.sourceFile,
+        varId: ctx.varId,
+        domainRefinements: ctx.domainRefinements,
+      },
+    );
+  }
+  return inferExpressionSemanticDetailed(input, ctx, astContext);
 }
 
 export function inferDomainFromType(
@@ -119,34 +183,78 @@ export function inferDomainFromTypeNodeSemanticDetailed(
   astContext: DomainInferenceContext = {},
 ): DomainInferenceResult {
   if (!ctx.checker || !ctx.sourceFile) {
-    return inferDomainFromTypeNodeDetailed(
-      typeNode,
-      ctx.typeAliases ?? new Map(),
+    return inferDomainSemantic(typeNode, {
+      sourceFile: ctx.sourceFile,
+      varId: ctx.varId,
+      initializer: astContext.initializer ?? ctx.initializer,
+      declaration: astContext.declaration ?? ctx.declaration,
+      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
       visited,
-      astContext,
-    );
+    });
   }
+  return inferDomainSemantic(typeNode, {
+    checker: ctx.checker,
+    sourceFile: ctx.sourceFile,
+    varId: ctx.varId ?? astContext.varId,
+    initializer: astContext.initializer ?? ctx.initializer,
+    declaration: astContext.declaration ?? ctx.declaration,
+    domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+    visited,
+  });
+}
 
-  const declaredType = ctx.checker.getTypeFromTypeNode(typeNode);
+export function inferDomainFromExpressionSemanticDetailed(
+  expression: ts.Expression,
+  ctx: TypeDomainInferenceContext,
+  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  broadTypeNode?: ts.TypeNode,
+): DomainInferenceResult {
+  return inferDomainSemantic(expression, {
+    checker: ctx.checker,
+    sourceFile: ctx.sourceFile,
+    varId: ctx.varId,
+    initializer: ctx.initializer,
+    declaration: ctx.declaration,
+    domainRefinements: ctx.domainRefinements,
+    broadTypeNode,
+    typeAliases,
+  });
+}
+
+function inferTypeNodeSemanticDetailed(
+  typeNode: ts.TypeNode,
+  ctx: SemanticDomainInferenceContext,
+  visited: ReadonlySet<string>,
+  astContext: DomainInferenceContext,
+): DomainInferenceResult {
+  const checker = ctx.checker!;
+  const sourceFile = ctx.sourceFile!;
+
+  const refinementTypeNode = resolveTypeNodeThroughChecker(
+    typeNode,
+    checker,
+    visited,
+  );
+  const declaredType = checker.getTypeFromTypeNode(refinementTypeNode);
   if (isBroadNumber(declaredType)) {
-    return broadNumberResult({ ...ctx, varId: ctx.varId ?? astContext.varId });
+    return broadNumberResult({
+      checker,
+      sourceFile,
+      varId: ctx.varId ?? astContext.varId,
+      initializer: astContext.initializer ?? ctx.initializer,
+    });
   }
-  if (isBroadString(declaredType, ctx.checker)) {
+  if (isBroadString(declaredType, checker)) {
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
 
-  // Inference order for typed nodes: (1) schema/native numeric refinement adapters
-  // for erased bounds, (2) TypeScript semantic structural mapping, (3) AST fallback.
-  // Schema adapters (Zod, ArkType, native Bounded/Wrapping/Uint8) are refinement
-  // providers only — non-numerical schema shapes flow through semantic mapping when
-  // `z.infer` / `typeof schema.infer` preserves finite structure in the checker.
   const numeric = resolveDomainRefinements(
     {
-      typeNode,
+      typeNode: refinementTypeNode,
       initializer: astContext.initializer ?? ctx.initializer,
       declaration: astContext.declaration ?? ctx.declaration,
-      sourceFile: ctx.sourceFile,
-      typeAliases: ctx.typeAliases ?? new Map(),
+      sourceFile,
+      typeAliases: new Map(),
       visited,
       varId: ctx.varId ?? astContext.varId,
     },
@@ -163,13 +271,21 @@ export function inferDomainFromTypeNodeSemanticDetailed(
     return { domain: { kind: "tokens", count: 1 }, caveats: numeric.caveats };
   }
 
-  const type = ctx.checker.getTypeFromTypeNode(typeNode);
-  const semantic = inferDomainFromTypeDetailed(type, ctx);
+  const typeCtx: TypeDomainInferenceContext = {
+    checker,
+    sourceFile,
+    varId: ctx.varId ?? astContext.varId,
+    initializer: astContext.initializer ?? ctx.initializer,
+    declaration: astContext.declaration ?? ctx.declaration,
+    domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+  };
+  const type = checker.getTypeFromTypeNode(typeNode);
+  const semantic = inferDomainFromTypeDetailed(type, typeCtx);
   if (semantic.domain.kind === "tokens" && semantic.caveats.length === 0) {
     if ((ctx.domainRefinements ?? astContext.domainRefinements)?.length) {
       const declaredAlias = inferFromResolvedAliasDeclaration(
         typeNode,
-        ctx,
+        typeCtx,
         visited,
         astContext,
       );
@@ -193,25 +309,27 @@ export function inferDomainFromTypeNodeSemanticDetailed(
   return semantic;
 }
 
-export function inferDomainFromExpressionSemanticDetailed(
+function inferExpressionSemanticDetailed(
   expression: ts.Expression,
-  ctx: TypeDomainInferenceContext,
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
-  broadTypeNode?: ts.TypeNode,
+  ctx: SemanticDomainInferenceContext,
+  astContext: DomainInferenceContext,
 ): DomainInferenceResult {
-  if (!ctx.checker || !ctx.sourceFile) {
-    return inferDomainFromTypeNodeDetailed(undefined, typeAliases, new Set(), {
-      initializer: expression,
-      sourceFile: ctx.sourceFile,
-      varId: ctx.varId,
-    });
-  }
+  const checker = ctx.checker!;
+  const sourceFile = ctx.sourceFile!;
+  const typeCtx: TypeDomainInferenceContext = {
+    checker,
+    sourceFile,
+    varId: ctx.varId,
+    initializer: ctx.initializer,
+    declaration: ctx.declaration,
+    domainRefinements: ctx.domainRefinements,
+  };
 
   const numeric = resolveDomainRefinements(
     {
       initializer: expression,
-      sourceFile: ctx.sourceFile,
-      typeAliases,
+      sourceFile,
+      typeAliases: new Map(),
       visited: new Set(),
       varId: ctx.varId,
     },
@@ -228,22 +346,28 @@ export function inferDomainFromExpressionSemanticDetailed(
     return { domain: { kind: "tokens", count: 1 }, caveats: numeric.caveats };
   }
 
-  if (broadTypeNode) {
-    const declared = ctx.checker.getTypeFromTypeNode(broadTypeNode);
-    if (isBroadString(declared, ctx.checker) || isBroadNumber(declared)) {
-      return broadTypeResult(declared, ctx);
+  if (ctx.broadTypeNode) {
+    const declared = checker.getTypeFromTypeNode(ctx.broadTypeNode);
+    if (isBroadString(declared, checker) || isBroadNumber(declared)) {
+      return broadTypeResult(declared, typeCtx);
     }
   }
 
-  const expressionType = ctx.checker.getTypeAtLocation(expression);
-  if (
-    isBroadString(expressionType, ctx.checker) ||
-    isBroadNumber(expressionType)
-  ) {
-    return broadTypeResult(expressionType, ctx);
+  const expressionType = checker.getTypeAtLocation(expression);
+  if (isBroadString(expressionType, checker) || isBroadNumber(expressionType)) {
+    return broadTypeResult(expressionType, typeCtx);
   }
 
-  return inferDomainFromTypeDetailed(expressionType, ctx);
+  return inferDomainFromTypeDetailed(expressionType, typeCtx);
+}
+
+function isTypeScriptType(
+  input: ts.TypeNode | ts.Expression | ts.Type,
+): input is ts.Type {
+  return (
+    typeof (input as ts.Type).getFlags === "function" ||
+    (input as ts.Node).kind === undefined
+  );
 }
 
 function inferFromResolvedAliasDeclaration(
@@ -260,10 +384,16 @@ function inferFromResolvedAliasDeclaration(
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   }
   const sourceFile = declaration.getSourceFile();
-  const typeAliases = typeAliasDeclarationsFromSource(sourceFile);
-  return inferDomainFromTypeNodeDetailed(
+  return inferTypeNodeSemanticDetailed(
     declaration.type,
-    typeAliases,
+    {
+      checker: ctx.checker,
+      sourceFile,
+      varId: ctx.varId ?? astContext.varId,
+      initializer: astContext.initializer ?? ctx.initializer,
+      declaration: astContext.declaration ?? ctx.declaration,
+      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+    },
     new Set([...visited, name]),
     {
       ...astContext,
@@ -295,18 +425,25 @@ function typeSymbolNode(typeNode: ts.TypeNode): ts.Node | undefined {
   return undefined;
 }
 
-function typeAliasDeclarationsFromSource(
-  source: ts.SourceFile,
-): Map<string, ts.TypeNode> {
-  const aliases = new Map<string, ts.TypeNode>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) {
-      aliases.set(node.name.text, node.type);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return aliases;
+function resolveTypeNodeThroughChecker(
+  typeNode: ts.TypeNode,
+  checker: ts.TypeChecker,
+  visited: ReadonlySet<string>,
+): ts.TypeNode {
+  const declaration = resolvedTypeAliasDeclaration(typeNode, checker);
+  if (!declaration) return typeNode;
+  const name = typeReferenceName(typeNode);
+  if (!name || visited.has(name)) return typeNode;
+  return resolveTypeNodeThroughChecker(
+    declaration.type,
+    checker,
+    new Set([...visited, name]),
+  );
+}
+
+function typeReferenceName(typeNode: ts.TypeNode): string | undefined {
+  if (ts.isTypeReferenceNode(typeNode)) return typeNode.typeName.getText();
+  return undefined;
 }
 
 function stringLiteralFromTypeString(typeString: string): string | undefined {

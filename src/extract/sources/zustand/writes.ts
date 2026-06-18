@@ -4,8 +4,10 @@ import type {
   ExtractionWarning,
   M0Ctx,
   WriteChannel,
+  SemanticTypeContext,
 } from "modality-ts/extract/engine/spi";
 import type { EffectIR, Value } from "modality-ts/core";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { propertyName } from "../../engine/ts/ast.js";
 import { isStoreCreatorCall, resolveZustandImports } from "./imports.js";
@@ -24,23 +26,24 @@ export interface ZustandWriteDiscovery {
 export function discoverZustandWriteChannels(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverZustandWritesDetailed(sourceText, fileName).channels;
+  return discoverZustandWritesDetailed(sourceText, fileName, types).channels;
 }
 
 export function discoverZustandWritesDetailed(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): ZustandWriteDiscovery {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const imports = resolveZustandImports(source);
-  const discovery = discoverZustandStoresDetailed(sourceText, fileName);
+  const imports = resolveZustandImports(source, types);
+  const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];
   const warnings: ExtractionWarning[] = [
     ...discovery.warnings,
@@ -365,18 +368,22 @@ type ExprIR = import("modality-ts/core").ExprIR;
 export function discoverZustandSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): ExtractionWarning[] {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
   const warnings: ExtractionWarning[] = [];
-  const discovery = discoverZustandStoresDetailed(sourceText, fileName);
+  const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   warnings.push(...discovery.warnings);
-  const writeDiscovery = discoverZustandWritesDetailed(sourceText, fileName);
+  const writeDiscovery = discoverZustandWritesDetailed(
+    sourceText,
+    fileName,
+    types,
+  );
   warnings.push(...writeDiscovery.warnings);
 
   for (const decl of discovery.decls) {

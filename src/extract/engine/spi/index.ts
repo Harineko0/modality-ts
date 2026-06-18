@@ -43,22 +43,47 @@ export interface DomainRefinementProvider extends ModalityAdapterBase {
   ): DomainRefinementResolution | undefined;
 }
 
+export interface ResolvedModuleName {
+  fileName: string;
+  sourceFile?: ts.SourceFile;
+  isExternal: boolean;
+}
+
 export interface SemanticTypeContext {
   program: ts.Program;
   checker: ts.TypeChecker;
   sourceFile?: ts.SourceFile;
   getSourceFile(fileName: string): ts.SourceFile | undefined;
+  canonicalFileName?(fileName: string): string;
+  resolveModuleName?(
+    specifier: string,
+    containingFile: string,
+  ): ResolvedModuleName | undefined;
+  symbolAt?(node: ts.Node): ts.Symbol | undefined;
+  aliasedSymbolAt?(node: ts.Node): ts.Symbol | undefined;
+  symbolKey?(symbol: ts.Symbol): string;
+  localSymbolKey?(node: ts.Node): string | undefined;
 }
 
 export {
+  compilerBackedTypeAliases,
   firstValue,
   inferDomainFromTypeNode,
+  inferDomainSemantic,
   inferUseStateDomain,
   inferUseStateDomainDetailed,
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "../ts/domains.js";
+
+export {
+  collectSemanticNamedImports,
+  resolveSemanticNamedExport,
+  type ResolvedSemanticImport,
+  type SemanticImportContext,
+} from "../ts/semantic-imports.js";
 
 export interface SourceDecl {
   id: string;
@@ -71,7 +96,10 @@ export interface SourceDecl {
 export interface WriteChannel {
   id: string;
   varId: string;
+  /** Local display / syntax-only fallback identity for the setter. */
   symbolName: string;
+  /** Stable checker symbol identity when semantic extraction is available. */
+  symbolKey?: string;
   source: SourceAnchor;
 }
 

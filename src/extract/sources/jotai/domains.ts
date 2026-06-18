@@ -3,16 +3,12 @@ import type { AbstractDomain, Value } from "modality-ts/core";
 import {
   firstValue,
   inferDomainFromTypeNode,
-  typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
 import type {
   SemanticTypeContext,
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
-import {
-  inferDomainFromExpressionSemanticDetailed,
-  inferDomainFromTypeNodeSemanticDetailed,
-} from "../../engine/ts/type-domains.js";
+import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import {
   validateValue,
@@ -25,8 +21,6 @@ import {
   isReadFunction,
 } from "./derived-writes.js";
 import type { AtomConfigKind, JotaiAtomMetadata } from "./types.js";
-
-export { typeAliasDeclarations };
 
 export interface AtomClassification {
   configKind: AtomConfigKind;
@@ -592,22 +586,13 @@ export function inferAtomDomain(
   const typeArg = call.typeArguments?.[0];
   const semanticSource = types?.sourceFile ?? sourceFile;
   if (typeArg && types?.checker) {
-    return inferDomainFromTypeNodeSemanticDetailed(
-      typeArg,
-      {
-        checker: types.checker,
-        sourceFile: semanticSource,
-        typeAliases,
-        initializer: call.arguments[0],
-        domainRefinements,
-      },
-      new Set(),
-      {
-        initializer: call.arguments[0],
-        sourceFile: semanticSource,
-        domainRefinements,
-      },
-    ).domain;
+    return inferDomainSemantic(typeArg, {
+      checker: types.checker,
+      sourceFile: semanticSource,
+      initializer: call.arguments[0],
+      domainRefinements,
+      typeAliases,
+    }).domain;
   }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   const initial = call.arguments[0];
@@ -640,32 +625,22 @@ function domainFromExpression(
   domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
   if (typeArg && types?.checker) {
-    return inferDomainFromTypeNodeSemanticDetailed(
-      typeArg,
-      {
-        checker: types.checker,
-        sourceFile: types.sourceFile ?? sourceFile,
-        typeAliases,
-        initializer: expr,
-        domainRefinements,
-      },
-      new Set(),
-      { initializer: expr, sourceFile, domainRefinements },
-    ).domain;
+    return inferDomainSemantic(typeArg, {
+      checker: types.checker,
+      sourceFile: types.sourceFile ?? sourceFile,
+      initializer: expr,
+      domainRefinements,
+    }).domain;
   }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
   if (types?.checker && (types.sourceFile ?? sourceFile)) {
-    return inferDomainFromExpressionSemanticDetailed(
-      expr,
-      {
-        checker: types.checker,
-        sourceFile: types.sourceFile ?? sourceFile,
-        typeAliases,
-        domainRefinements,
-      },
+    return inferDomainSemantic(expr, {
+      checker: types.checker,
+      sourceFile: types.sourceFile ?? sourceFile,
+      domainRefinements,
       typeAliases,
-      typeArg,
-    ).domain;
+      broadTypeNode: typeArg,
+    }).domain;
   }
   if (
     expr.kind === ts.SyntaxKind.TrueKeyword ||

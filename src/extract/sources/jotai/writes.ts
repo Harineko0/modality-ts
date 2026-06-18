@@ -1,5 +1,10 @@
 import * as ts from "typescript";
-import type { WriteChannel, ExtractionWarning } from "modality-ts/extract/engine/spi";
+import type {
+  ExtractionWarning,
+  WriteChannel,
+  SemanticTypeContext,
+} from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
 import {
   caveatMessage,
@@ -22,11 +27,8 @@ import {
 import { atomVarId, familyVarId } from "./ids.js";
 import { discoverHydrationOverrides } from "./hydration.js";
 import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
-import {
-  classifyAtomCall,
-  staticFamilyParam,
-  typeAliasDeclarations,
-} from "./domains.js";
+import { classifyAtomCall, staticFamilyParam } from "./domains.js";
+import { typeAliasDeclarations } from "modality-ts/extract/engine/spi";
 import { isResettableKind, metadataFromRecord } from "./types.js";
 import { atomCreatorName, isAtomCreatorCall } from "./imports.js";
 
@@ -43,15 +45,15 @@ export interface JotaiWriteDiscovery {
 export function discoverJotaiSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): ExtractionWarning[] {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const imports = resolveJotaiImports(source);
+  const imports = resolveJotaiImports(source, types);
   const warnings: ExtractionWarning[] = [];
   const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
   warnings.push(...discovery.warnings);
@@ -184,23 +186,24 @@ export function discoverJotaiSafetyWarnings(
 export function discoverJotaiWriteChannels(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverJotaiWritesDetailed(sourceText, fileName).channels;
+  return discoverJotaiWritesDetailed(sourceText, fileName, types).channels;
 }
 
 export function discoverJotaiWritesDetailed(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): JotaiWriteDiscovery {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const imports = resolveJotaiImports(source);
-  const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
+  const imports = resolveJotaiImports(source, types);
+  const discovery = discoverJotaiAtomsDetailed(sourceText, fileName, types);
   const atomNames = new Set(discovery.atomNames);
   for (const [name] of discovery.atomMetadata) atomNames.add(name);
 

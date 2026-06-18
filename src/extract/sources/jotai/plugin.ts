@@ -25,9 +25,9 @@ export function jotaiSource(): StateSourcePlugin {
         ctx.relatedFragments,
       ).decls,
     writeChannels: (ctx) =>
-      discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName),
+      discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
     safetyWarnings: (ctx) =>
-      discoverJotaiSafetyWarnings(ctx.sourceText, ctx.fileName),
+      discoverJotaiSafetyWarnings(ctx.sourceText, ctx.fileName, ctx.types),
     summarizeWrite: summarizeJotaiWrite,
     harness,
     conformance: {
