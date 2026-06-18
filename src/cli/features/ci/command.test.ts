@@ -7,8 +7,6 @@ import type { Model } from "modality-ts/core";
 import { runCiCommand } from "./index.js";
 import { renderHumanCiResult } from "./output.js";
 
-const route = { kind: "enum", values: ["/"] } as const;
-
 const flagAlwaysFalseProps = `export const properties = [{ kind: "always", name: "flagAlwaysFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
 const flagTrueProps = `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }, reads: ["flag"] }];`;
 const flagFalseReachableProps = `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
@@ -19,38 +17,6 @@ function model(): Model {
     id: "ci-fixture",
     bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
     vars: [
-      {
-        id: "sys:route",
-        domain: route,
-        origin: "system",
-        scope: { kind: "global" },
-        initial: "/",
-      },
-      {
-        id: "sys:history",
-        domain: { kind: "boundedList", inner: route, maxLen: 1 },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
-      {
-        id: "sys:pending",
-        domain: {
-          kind: "boundedList",
-          inner: {
-            kind: "record",
-            fields: {
-              opId: { kind: "enum", values: ["noop"] },
-              continuation: { kind: "enum", values: ["noop"] },
-              args: { kind: "record", fields: {} },
-            },
-          },
-          maxLen: 1,
-        },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
       {
         id: "flag",
         domain: { kind: "bool" },
@@ -80,12 +46,7 @@ function model(): Model {
 }
 
 function baselineDomains() {
-  return [
-    { varId: "flag", domainKind: "bool", provenance: "system" },
-    { varId: "sys:history", domainKind: "boundedList", provenance: "system" },
-    { varId: "sys:pending", domainKind: "boundedList", provenance: "system" },
-    { varId: "sys:route", domainKind: "enum", provenance: "system" },
-  ];
+  return [{ varId: "flag", domainKind: "bool", provenance: "system" }];
 }
 
 function baselineTrustLedger() {
@@ -310,7 +271,7 @@ describe("runCiCommand", () => {
     });
     expect(result.exitCode).toBe(3);
     expect(result.lines).toContain(
-      "trust-regression: domains 4->5 new=local:App.payload:tokens:default-token",
+      "trust-regression: domains 1->2 new=local:App.payload:tokens:default-token",
     );
   });
 
@@ -589,15 +550,9 @@ describe("runCiCommand", () => {
                   transitionId: "setFlag",
                   label: { kind: "click", text: "Set flag" },
                   pre: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: false,
                   },
                   post: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: true,
                   },
                   diff: { flag: { before: false, after: true } },
@@ -606,15 +561,9 @@ describe("runCiCommand", () => {
             },
             states: [
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: false,
               },
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: false,
               },
             ],
@@ -660,15 +609,9 @@ describe("runCiCommand", () => {
                   transitionId: "setFlag",
                   label: { kind: "click", text: "Set flag" },
                   pre: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: false,
                   },
                   post: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: true,
                   },
                   diff: { flag: { before: false, after: true } },
@@ -677,15 +620,9 @@ describe("runCiCommand", () => {
             },
             states: [
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: false,
               },
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: true,
               },
             ],
@@ -698,15 +635,9 @@ describe("runCiCommand", () => {
                   transitionId: "other",
                   label: { kind: "internal", text: "Other" },
                   pre: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: true,
                   },
                   post: {
-                    "sys:route": "/",
-                    "sys:history": [],
-                    "sys:pending": [],
                     flag: false,
                   },
                   diff: { flag: { before: true, after: false } },
@@ -715,15 +646,9 @@ describe("runCiCommand", () => {
             },
             states: [
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: true,
               },
               {
-                "sys:route": "/",
-                "sys:history": [],
-                "sys:pending": [],
                 flag: true,
               },
             ],

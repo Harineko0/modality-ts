@@ -11,8 +11,6 @@ import {
   symbolForStatus,
 } from "./output.js";
 
-const route = { kind: "enum", values: ["/"] } as const;
-
 const flagFalseIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }`;
 const flagTrueIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }`;
 
@@ -48,38 +46,6 @@ function model(): Model {
     id: "cli-fixture",
     bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
     vars: [
-      {
-        id: "sys:route",
-        domain: route,
-        origin: "system",
-        scope: { kind: "global" },
-        initial: "/",
-      },
-      {
-        id: "sys:history",
-        domain: { kind: "boundedList", inner: route, maxLen: 1 },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
-      {
-        id: "sys:pending",
-        domain: {
-          kind: "boundedList",
-          inner: {
-            kind: "record",
-            fields: {
-              opId: { kind: "enum", values: ["op"] },
-              continuation: { kind: "enum", values: ["cont"] },
-              args: { kind: "record", fields: {} },
-            },
-          },
-          maxLen: 1,
-        },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
       {
         id: "flag",
         domain: { kind: "bool" },
@@ -207,17 +173,6 @@ describe("runCheckCommand", () => {
         domains: [
           { varId: "flag", domainKind: "bool", provenance: "system" },
           { varId: "payload", domainKind: "tokens", provenance: "system" },
-          {
-            varId: "sys:history",
-            domainKind: "boundedList",
-            provenance: "system",
-          },
-          {
-            varId: "sys:pending",
-            domainKind: "boundedList",
-            provenance: "system",
-          },
-          { varId: "sys:route", domainKind: "enum", provenance: "system" },
         ],
         overApproxTransitions: ["setFlag"],
         boundHits: [],
@@ -381,7 +336,67 @@ describe("runCheckCommand", () => {
           domainKind: "lengthCat",
           provenance: "template",
         },
-        { varId: "sys:route", domainKind: "enum", provenance: "system" },
+      ]),
+    );
+  });
+
+  it("checks models with role-based location vars", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const locationRoute = { kind: "enum", values: ["/", "/home"] } as const;
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "role-location-fixture",
+        bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+        vars: [
+          {
+            id: "app:location",
+            domain: locationRoute,
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-current", group: "default" },
+            initial: "/",
+          },
+          {
+            id: "app:history",
+            domain: {
+              kind: "boundedList",
+              inner: locationRoute,
+              maxLen: 2,
+            },
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-history", group: "default" },
+            initial: [],
+          },
+          {
+            id: "flag",
+            domain: { kind: "bool" },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: false,
+          },
+        ],
+        transitions: [],
+      }),
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.report.trustLedger.domains).toEqual(
+      expect.arrayContaining([
+        { varId: "app:location", domainKind: "enum", provenance: "system" },
+        {
+          varId: "app:history",
+          domainKind: "boundedList",
+          provenance: "system",
+        },
       ]),
     );
   });

@@ -22,6 +22,7 @@ import {
   exceedsWideCardinalityThreshold,
   exceedsWideNumericThreshold,
   initialValues,
+  locationCurrentVar,
   parseModelArtifact,
   type EffectIR,
   type ExtractionCaveat,
@@ -1309,7 +1310,7 @@ function buildRouteCoverage(
   model: Model,
 ): RouteCoverage | undefined {
   if (!inventory || inventory.routes.length === 0) return undefined;
-  const routeVar = model.vars.find((decl) => decl.id === "sys:route");
+  const routeVar = locationCurrentVar(model);
   const modeledValues = new Set(
     routeVar?.domain.kind === "enum" ? routeVar.domain.values : [],
   );
@@ -1402,19 +1403,23 @@ function buildLocationLowering(
 
 function collectPushReplaceNavigations(
   effect: EffectIR,
+  locationIds: { currentId: string; historyId: string } = {
+    currentId: "sys:route",
+    historyId: "sys:history",
+  },
 ): Array<{ mode: "push" | "replace"; to?: string }> {
   const routeTargets: string[] = [];
   let touchesHistory = false;
   const visit = (current: EffectIR): void => {
     if (
       (current.kind === "assign" || current.kind === "havoc") &&
-      current.var === "sys:history"
+      current.var === locationIds.historyId
     ) {
       touchesHistory = true;
     }
     if (
       current.kind === "assign" &&
-      current.var === "sys:route" &&
+      current.var === locationIds.currentId &&
       current.expr.kind === "lit" &&
       typeof current.expr.value === "string"
     ) {

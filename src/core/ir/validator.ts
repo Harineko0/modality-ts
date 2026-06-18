@@ -3,6 +3,7 @@ import {
   enumerateDomain,
   validateValue,
 } from "./domains.js";
+import { effectiveRoleGroup } from "./roles.js";
 import type {
   AbstractDomain,
   EffectIR,
@@ -196,36 +197,128 @@ function validateBounds(errors: string[], model: Model): void {
 
 function validateSystemVars(
   errors: string[],
-  varsById: Map<string, StateVarDecl>,
+  _varsById: Map<string, StateVarDecl>,
   model: Model,
 ): void {
-  const route = varsById.get("sys:route");
-  const history = varsById.get("sys:history");
-
-  validateSystemDecl(errors, "sys:route", route);
-  validateSystemDecl(errors, "sys:history", history);
-
-  validateSystemVarShapes(errors, route, history, model);
-  validatePendingQueueRoles(errors, model);
+  validateRoleVars(errors, model);
 }
 
 function validatePresentSystemVars(
   errors: string[],
-  varsById: Map<string, StateVarDecl>,
+  _varsById: Map<string, StateVarDecl>,
   model: Model,
 ): void {
-  const route = varsById.get("sys:route");
-  const history = varsById.get("sys:history");
-  if (route) validateSystemDecl(errors, "sys:route", route);
-  if (history) validateSystemDecl(errors, "sys:history", history);
-  validateSystemVarShapes(errors, route, history, model);
-  validatePendingQueueRoles(errors, model);
+  validateRoleVars(errors, model);
 }
 
-function validatePendingQueueRoles(errors: string[], model: Model): void {
+function validateRoleVars(errors: string[], model: Model): void {
+  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
+  const locationCurrentByGroup = new Map<string, StateVarDecl[]>();
+
   for (const decl of model.vars) {
-    if (decl.role?.kind !== "pending-queue") continue;
-    validatePendingQueueDecl(errors, decl, model);
+    if (!decl.role) continue;
+    switch (decl.role.kind) {
+      case "pending-queue":
+        validatePendingQueueDecl(errors, decl, model);
+        break;
+      case "location-current":
+        validateLocationCurrentDecl(errors, decl);
+        trackLocationCurrentGroup(locationCurrentByGroup, decl);
+        break;
+      case "location-history":
+        validateLocationHistoryDecl(errors, decl, varsById);
+        break;
+      case "tree-slot":
+      case "boundary-phase":
+      case "cache-entry":
+      case "environment":
+        validateEnumerableRoleDecl(errors, decl);
+        break;
+    }
+  }
+
+  validateLocationCurrentGroupConflicts(errors, locationCurrentByGroup);
+}
+
+function trackLocationCurrentGroup(
+  byGroup: Map<string, StateVarDecl[]>,
+  decl: StateVarDecl,
+): void {
+  const group = effectiveRoleGroup(decl.role?.group);
+  const existing = byGroup.get(group) ?? [];
+  existing.push(decl);
+  byGroup.set(group, existing);
+}
+
+function validateLocationCurrentGroupConflicts(
+  errors: string[],
+  byGroup: Map<string, StateVarDecl[]>,
+): void {
+  for (const [group, decls] of byGroup) {
+    if (decls.length <= 1) continue;
+    errors.push(
+      `Multiple location-current vars in group ${group}: ${decls.map((decl) => decl.id).join(", ")}`,
+    );
+  }
+}
+
+function validateLocationCurrentDecl(
+  errors: string[],
+  decl: StateVarDecl,
+): void {
+  if (decl.scope.kind !== "global") {
+    errors.push(`${decl.id} must have global scope`);
+  }
+  if (decl.origin !== "system" && decl.origin !== "library-template") {
+    errors.push(`${decl.id} must have system or library-template origin`);
+  }
+  if (decl.domain.kind !== "enum") {
+    errors.push(`${decl.id} must use an enum domain`);
+  }
+}
+
+function validateLocationHistoryDecl(
+  errors: string[],
+  decl: StateVarDecl,
+  varsById: Map<string, StateVarDecl>,
+): void {
+  if (decl.scope.kind !== "global") {
+    errors.push(`${decl.id} must have global scope`);
+  }
+  if (decl.domain.kind !== "boundedList") {
+    errors.push(`${decl.id} must use a boundedList domain`);
+    return;
+  }
+  const group = effectiveRoleGroup(decl.role?.group);
+  const current = [...varsById.values()].find(
+    (candidate) =>
+      candidate.role?.kind === "location-current" &&
+      effectiveRoleGroup(candidate.role.group) === group,
+  );
+  if (!current) return;
+  const inner = decl.domain.inner;
+  const currentDomain = current.domain;
+  const within =
+    inner.kind === "enum" && currentDomain.kind === "enum"
+      ? inner.values.every((value) => currentDomain.values.includes(value))
+      : domainFingerprint(inner) === domainFingerprint(currentDomain);
+  if (!within) {
+    errors.push(
+      `${decl.id} inner domain must be compatible with ${current.id} domain`,
+    );
+  }
+}
+
+function validateEnumerableRoleDecl(
+  errors: string[],
+  decl: StateVarDecl,
+): void {
+  try {
+    enumerateDomain(decl.domain);
+  } catch (error) {
+    errors.push(
+      `${decl.id}: ${decl.role?.kind} domain cannot enumerate: ${(error as Error).message}`,
+    );
   }
 }
 
@@ -248,46 +341,6 @@ function validatePendingQueueDecl(
     errors.push(`${decl.id} maxLen must match bounds.maxPending`);
   }
   validatePendingOpDomain(errors, decl.id, decl.domain.inner);
-}
-
-function validateSystemVarShapes(
-  errors: string[],
-  route: StateVarDecl | undefined,
-  history: StateVarDecl | undefined,
-  model: Model,
-): void {
-  if (route && route.domain.kind !== "enum") {
-    errors.push("sys:route must use an enum domain");
-  }
-  if (history) {
-    if (history.domain.kind !== "boundedList") {
-      errors.push("sys:history must use a boundedList domain");
-    } else if (route) {
-      const inner = history.domain.inner;
-      const routeDomain = route.domain;
-      const within =
-        inner.kind === "enum" && routeDomain.kind === "enum"
-          ? inner.values.every((v) => routeDomain.values.includes(v))
-          : domainFingerprint(inner) === domainFingerprint(routeDomain);
-      if (!within)
-        errors.push(
-          "sys:history inner domain must be a subset of sys:route domain",
-        );
-    }
-  }
-}
-
-function validateSystemDecl(
-  errors: string[],
-  id: string,
-  decl: StateVarDecl | undefined,
-): void {
-  if (!decl) {
-    errors.push(`Missing required system var ${id}`);
-    return;
-  }
-  if (decl.origin !== "system") errors.push(`${id} must have system origin`);
-  if (decl.scope.kind !== "global") errors.push(`${id} must have global scope`);
 }
 
 function validatePendingOpDomain(

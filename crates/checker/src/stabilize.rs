@@ -95,12 +95,12 @@ pub(crate) fn stabilizing_sequences(compiled: &CompiledModel, internal: &[usize]
         return vec![internal.to_vec()];
     }
     let sequences = permutations(internal);
-    if !spans_multiple_phase_tiers(compiled, internal) {
+    if !spans_multiple_commit_ordinal_tiers(compiled, internal) {
         return sequences;
     }
     sequences
         .into_iter()
-        .filter(|sequence| is_non_decreasing_phase(compiled, sequence))
+        .filter(|sequence| is_non_decreasing_commit_ordinal(compiled, sequence))
         .collect()
 }
 
@@ -196,32 +196,41 @@ fn intersects(left: &[usize], right: &[usize]) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum PhaseTier {
+enum CommitOrdinalTier {
     Ordinal(u32),
     Default,
 }
 
-fn transition_phase_tier(compiled: &CompiledModel, transition_idx: usize) -> PhaseTier {
+fn transition_commit_ordinal_tier(
+    compiled: &CompiledModel,
+    transition_idx: usize,
+) -> CommitOrdinalTier {
     match compiled.sorted_transitions[transition_idx].phase {
-        Some(phase) => PhaseTier::Ordinal(phase),
-        None => PhaseTier::Default,
+        Some(ordinal) => CommitOrdinalTier::Ordinal(ordinal),
+        None => CommitOrdinalTier::Default,
     }
 }
 
-fn spans_multiple_phase_tiers(compiled: &CompiledModel, transitions: &[usize]) -> bool {
+fn spans_multiple_commit_ordinal_tiers(
+    compiled: &CompiledModel,
+    transitions: &[usize],
+) -> bool {
     let mut tiers = transitions
         .iter()
-        .map(|&idx| transition_phase_tier(compiled, idx))
+        .map(|&idx| transition_commit_ordinal_tier(compiled, idx))
         .collect::<Vec<_>>();
     tiers.sort();
     tiers.dedup();
     tiers.len() > 1
 }
 
-fn is_non_decreasing_phase(compiled: &CompiledModel, sequence: &[usize]) -> bool {
+fn is_non_decreasing_commit_ordinal(
+    compiled: &CompiledModel,
+    sequence: &[usize],
+) -> bool {
     let mut last = None;
     for &idx in sequence {
-        let tier = transition_phase_tier(compiled, idx);
+        let tier = transition_commit_ordinal_tier(compiled, idx);
         if let Some(prev) = last {
             if tier < prev {
                 return false;
@@ -411,7 +420,7 @@ mod tests {
         assert_ne!(sequences[0], sequences[1]);
     }
 
-    fn phase_conflict_model() -> CompiledModel {
+    fn commit_ordinal_conflict_model() -> CompiledModel {
         let mut model = conflict_model().model;
         model.transitions[0].phase = Some(0);
         model.transitions[1].phase = Some(1);
@@ -419,8 +428,8 @@ mod tests {
     }
 
     #[test]
-    fn cross_tier_internal_ordering_is_phase_monotonic() {
-        let compiled = phase_conflict_model();
+    fn cross_tier_internal_ordering_is_commit_ordinal_monotonic() {
+        let compiled = commit_ordinal_conflict_model();
         let internal: Vec<usize> = compiled.internal.clone();
         let sequences = stabilizing_sequences(&compiled, &internal);
         assert_eq!(sequences.len(), 1);

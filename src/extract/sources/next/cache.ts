@@ -403,6 +403,7 @@ export function nextCacheVarDecls(
     domain: { kind: "enum", values: [...NEXT_CACHE_DOMAIN] },
     origin: "system",
     scope: { kind: "global" },
+    role: { kind: "cache-entry" },
     initial: key.kind === "directive" ? "fresh" : "empty",
   }));
 }

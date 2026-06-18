@@ -88,6 +88,7 @@ export function locationVars(
       domain: routeDomain,
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "location-current", group: "default" },
       initial: options.route,
     },
     {
@@ -99,6 +100,7 @@ export function locationVars(
       },
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "location-history", group: "default" },
       initial: [],
     },
   ];
@@ -169,6 +171,7 @@ export function routeTreeVars(
       domain: { kind: "enum", values },
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "tree-slot" },
       initial: initialAssignments.get(slotKey) ?? NEXT_SLOT_NONE,
     });
   }
@@ -179,6 +182,7 @@ export function routeTreeVars(
       domain: { kind: "enum", values: [...NEXT_PHASE_DOMAIN] },
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "boundary-phase" },
       initial: "ready",
     });
   }

@@ -66,6 +66,7 @@ export function environmentStateVarDecl(varId: string): StateVarDecl {
     domain: WEBSOCKET_DOMAIN,
     origin: "system",
     scope: { kind: "global" },
+    role: { kind: "environment" },
     initial: "idle",
   };
 }

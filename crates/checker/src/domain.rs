@@ -1,11 +1,11 @@
 use crate::model::{
     AbstractDomain, CompiledModel, InitialValue, Model, NumericOverflowPolicy, StateVarDecl,
-    SystemVarRoleKind, UNMOUNTED,
+    SystemVarRole, SystemVarRoleKind, UNMOUNTED,
 };
 use crate::mount;
 use crate::state::ModelState;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub struct ValidationResult {
     pub ok: bool,
@@ -261,38 +261,145 @@ fn resolve_pending_queue_var<'a>(
 
 fn validate_system_vars(
     errors: &mut Vec<String>,
-    vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
+    _vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
     model: &Model,
 ) {
-    for id in ["sys:route", "sys:history"] {
-        if vars_by_id.get(id).is_none() {
-            errors.push(format!("Missing required system var {id}"));
-        }
-    }
-    validate_system_shapes(errors, vars_by_id, model);
-    validate_pending_queue_roles(errors, model);
+    validate_role_vars(errors, model);
 }
 
 fn validate_present_system_vars(
     errors: &mut Vec<String>,
-    vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
+    _vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
     model: &Model,
 ) {
-    validate_system_shapes(errors, vars_by_id, model);
-    validate_pending_queue_roles(errors, model);
+    validate_role_vars(errors, model);
 }
 
-fn validate_pending_queue_roles(errors: &mut Vec<String>, model: &Model) {
+const DEFAULT_LOCATION_GROUP: &str = "default";
+
+fn effective_role_group(group: Option<&str>) -> &str {
+    group.unwrap_or(DEFAULT_LOCATION_GROUP)
+}
+
+fn validate_role_vars(errors: &mut Vec<String>, model: &Model) {
+    let vars_by_id: HashMap<&str, &StateVarDecl> =
+        model.vars.iter().map(|decl| (decl.id.as_str(), decl)).collect();
+    let mut location_current_by_group: HashMap<String, Vec<&StateVarDecl>> = HashMap::new();
+
     for decl in &model.vars {
-        if !decl
-            .role
-            .as_ref()
-            .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
-        {
+        let Some(role) = &decl.role else {
+            continue;
+        };
+        match role.kind {
+            SystemVarRoleKind::PendingQueue => validate_pending_queue_decl(errors, decl, model),
+            SystemVarRoleKind::LocationCurrent => {
+                validate_location_current_decl(errors, decl);
+                let group = effective_role_group(role.group.as_deref()).to_string();
+                location_current_by_group
+                    .entry(group)
+                    .or_default()
+                    .push(decl);
+            }
+            SystemVarRoleKind::LocationHistory => {
+                validate_location_history_decl(errors, decl, &vars_by_id);
+            }
+            SystemVarRoleKind::TreeSlot
+            | SystemVarRoleKind::BoundaryPhase
+            | SystemVarRoleKind::CacheEntry
+            | SystemVarRoleKind::Environment => validate_enumerable_role_decl(errors, decl, role),
+        }
+    }
+
+    validate_location_current_group_conflicts(errors, &location_current_by_group);
+}
+
+fn validate_location_current_group_conflicts(
+    errors: &mut Vec<String>,
+    by_group: &HashMap<String, Vec<&StateVarDecl>>,
+) {
+    for (group, decls) in by_group {
+        if decls.len() <= 1 {
             continue;
         }
-        validate_pending_queue_decl(errors, decl, model);
+        let ids = decls
+            .iter()
+            .map(|decl| decl.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        errors.push(format!(
+            "Multiple location-current vars in group {group}: {ids}"
+        ));
     }
+}
+
+fn validate_location_current_decl(errors: &mut Vec<String>, decl: &StateVarDecl) {
+    if !matches!(decl.scope, crate::model::Scope::Global) {
+        errors.push(format!("{} must have global scope", decl.id));
+    }
+    if decl.origin != json!("system") && decl.origin != json!("library-template") {
+        errors.push(format!(
+            "{} must have system or library-template origin",
+            decl.id
+        ));
+    }
+    if !matches!(decl.domain, AbstractDomain::Enum { .. }) {
+        errors.push(format!("{} must use an enum domain", decl.id));
+    }
+}
+
+fn validate_location_history_decl(
+    errors: &mut Vec<String>,
+    decl: &StateVarDecl,
+    vars_by_id: &HashMap<&str, &StateVarDecl>,
+) {
+    if !matches!(decl.scope, crate::model::Scope::Global) {
+        errors.push(format!("{} must have global scope", decl.id));
+    }
+    let AbstractDomain::BoundedList { inner, .. } = &decl.domain else {
+        errors.push(format!("{} must use a boundedList domain", decl.id));
+        return;
+    };
+    let group = effective_role_group(decl.role.as_ref().and_then(|role| role.group.as_deref()));
+    let current = vars_by_id.values().find(|candidate| {
+        candidate.role.as_ref().is_some_and(|role| {
+            role.kind == SystemVarRoleKind::LocationCurrent
+                && effective_role_group(role.group.as_deref()) == group
+        })
+    });
+    let Some(current) = current else {
+        return;
+    };
+    if !domain_compatible(inner, &current.domain) {
+        errors.push(format!(
+            "{} inner domain must be compatible with {} domain",
+            decl.id, current.id
+        ));
+    }
+}
+
+fn domain_compatible(inner: &AbstractDomain, outer: &AbstractDomain) -> bool {
+    match (inner, outer) {
+        (
+            AbstractDomain::Enum { values: inner_values },
+            AbstractDomain::Enum { values: outer_values },
+        ) => inner_values.iter().all(|value| outer_values.contains(value)),
+        _ => format!("{inner:?}") == format!("{outer:?}"),
+    }
+}
+
+fn validate_enumerable_role_decl(
+    errors: &mut Vec<String>,
+    decl: &StateVarDecl,
+    role: &SystemVarRole,
+) {
+    if matches!(decl.domain, AbstractDomain::BoundedList { .. }) {
+        errors.push(format!(
+            "{}: {:?} domain must be finitely enumerable",
+            decl.id, role.kind
+        ));
+        return;
+    }
+    let _ = enumerate_domain(&decl.domain);
 }
 
 fn validate_pending_queue_decl(
@@ -346,18 +453,6 @@ fn validate_pending_op_domain(
         errors.push(format!("{var_id} item domain missing args"));
     } else if !matches!(args, Some(AbstractDomain::Record { .. })) {
         errors.push(format!("{var_id} args must use a record domain"));
-    }
-}
-
-fn validate_system_shapes(
-    errors: &mut Vec<String>,
-    vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
-    _model: &Model,
-) {
-    if let Some(route) = vars_by_id.get("sys:route") {
-        if !matches!(route.domain, AbstractDomain::Enum { .. }) {
-            errors.push("sys:route must use an enum domain".into());
-        }
     }
 }
 
@@ -885,5 +980,89 @@ mod tests {
             apply_numeric_assign(&saturated, 5),
             NumericAssignOutcome::Value(3)
         ));
+    }
+
+    #[test]
+    fn validate_accepts_model_with_only_bool_var() {
+        let model = minimal_model(vec![minimal_decl("x", AbstractDomain::Bool, json!(false))]);
+        let result = validate_model_full(&model, false);
+        assert!(result.ok, "{:?}", result.errors);
+    }
+
+    #[test]
+    fn validate_accepts_location_role_pair() {
+        let model = minimal_model(vec![
+            StateVarDecl {
+                id: "app:location".into(),
+                domain: AbstractDomain::Enum {
+                    values: vec!["/".into(), "/home".into()],
+                },
+                origin: json!("system"),
+                scope: Scope::Global,
+                initial: InitialValue::Single(json!("/")),
+                role: Some(crate::model::SystemVarRole {
+                    kind: SystemVarRoleKind::LocationCurrent,
+                    group: Some("default".into()),
+                }),
+            },
+            StateVarDecl {
+                id: "app:history".into(),
+                domain: AbstractDomain::BoundedList {
+                    inner: Box::new(AbstractDomain::Enum {
+                        values: vec!["/".into()],
+                    }),
+                    max_len: 2,
+                },
+                origin: json!("system"),
+                scope: Scope::Global,
+                initial: InitialValue::Single(json!([])),
+                role: Some(crate::model::SystemVarRole {
+                    kind: SystemVarRoleKind::LocationHistory,
+                    group: Some("default".into()),
+                }),
+            },
+        ]);
+        let result = validate_model_full(&model, false);
+        assert!(result.ok, "{:?}", result.errors);
+    }
+
+    #[test]
+    fn validate_rejects_incompatible_location_history_domain() {
+        let model = minimal_model(vec![
+            StateVarDecl {
+                id: "app:location".into(),
+                domain: AbstractDomain::Enum {
+                    values: vec!["/".into()],
+                },
+                origin: json!("system"),
+                scope: Scope::Global,
+                initial: InitialValue::Single(json!("/")),
+                role: Some(crate::model::SystemVarRole {
+                    kind: SystemVarRoleKind::LocationCurrent,
+                    group: Some("default".into()),
+                }),
+            },
+            StateVarDecl {
+                id: "app:history".into(),
+                domain: AbstractDomain::BoundedList {
+                    inner: Box::new(AbstractDomain::Enum {
+                        values: vec!["/".into(), "/ghost".into()],
+                    }),
+                    max_len: 2,
+                },
+                origin: json!("system"),
+                scope: Scope::Global,
+                initial: InitialValue::Single(json!([])),
+                role: Some(crate::model::SystemVarRole {
+                    kind: SystemVarRoleKind::LocationHistory,
+                    group: Some("default".into()),
+                }),
+            },
+        ]);
+        let result = validate_model_full(&model, false);
+        assert!(!result.ok);
+        assert!(result.errors.iter().any(|error| {
+            error.contains("app:history inner domain must be compatible with app:location domain")
+        }));
     }
 }

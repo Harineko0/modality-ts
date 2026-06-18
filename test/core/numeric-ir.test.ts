@@ -6,42 +6,11 @@ function baseModel(
   guard: ExprIR,
   assignExpr: ExprIR,
 ): Model {
-  const route = { kind: "enum", values: ["/"] } as const;
-  const pendingOp = {
-    kind: "record",
-    fields: {
-      opId: { kind: "enum", values: ["noop"] },
-      continuation: { kind: "enum", values: ["noop"] },
-      args: { kind: "record", fields: {} },
-    },
-  } as const;
   return {
     schemaVersion: 1,
     id: "numeric-fixture",
     bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
     vars: [
-      {
-        id: "sys:route",
-        domain: route,
-        origin: "system",
-        scope: { kind: "global" },
-        initial: "/",
-      },
-      {
-        id: "sys:history",
-        domain: { kind: "boundedList", inner: route, maxLen: 0 },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
-      {
-        id: "sys:pending",
-        domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
-        origin: "system",
-        scope: { kind: "global" },
-        role: { kind: "pending-queue" },
-        initial: [],
-      },
       {
         id: "count",
         domain: countDomain,

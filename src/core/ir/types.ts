@@ -131,7 +131,7 @@ export interface Transition {
   writes: readonly string[];
   confidence: "exact" | "over-approx" | "manual";
   triggeredBy?: readonly string[];
-  /** Commit tier ordinal; stabilization runs lower tiers before higher. */
+  /** Commit ordinal for internal stabilization transitions; lower ordinals run before higher ordinals when write conflicts exist. */
   phase?: number;
 }
 

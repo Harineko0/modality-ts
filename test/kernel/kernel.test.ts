@@ -37,6 +37,7 @@ function baseModel(): Model {
         domain: route,
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-current", group: "default" },
         initial: "/",
       },
       {
@@ -44,6 +45,7 @@ function baseModel(): Model {
         domain: { kind: "boundedList", inner: route, maxLen: 1 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-history", group: "default" },
         initial: [],
       },
       {
@@ -383,7 +385,7 @@ describe("validator", () => {
     );
   });
 
-  it("rejects malformed bounds and required system variables", () => {
+  it("rejects malformed bounds and invalid role-bearing system variables", () => {
     const model = baseModel();
     const badBounds: Model = {
       ...model,
@@ -400,13 +402,22 @@ describe("validator", () => {
       "bounds.maxInternalSteps must be a positive integer",
     );
 
-    const missingSystem: Model = {
-      ...model,
-      vars: model.vars.filter((decl) => decl.id !== "sys:route"),
+    const boolOnly: Model = {
+      schemaVersion: 1,
+      id: "bool-only",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 1 },
+      vars: [
+        {
+          id: "x",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [],
     };
-    expect(validateModel(missingSystem).errors.join("\n")).toContain(
-      "Missing required system var sys:route",
-    );
+    expect(validateModel(boolOnly)).toEqual({ ok: true, errors: [] });
 
     const badSystem: Model = {
       ...model,
@@ -414,7 +425,14 @@ describe("validator", () => {
       vars: model.vars.map((decl) => {
         if (decl.id === "sys:route") return { ...decl, domain: bool };
         if (decl.id === "sys:history")
-          return { ...decl, origin: "library-template" as const };
+          return {
+            ...decl,
+            domain: {
+              kind: "boundedList" as const,
+              inner: { kind: "enum" as const, values: ["/", "/ghost"] },
+              maxLen: 1,
+            },
+          };
         if (decl.id === "sys:pending")
           return { ...decl, domain: { ...decl.domain, maxLen: 1 } };
         return decl;
@@ -422,9 +440,8 @@ describe("validator", () => {
     };
     const systemErrors = validateModel(badSystem).errors.join("\n");
     expect(systemErrors).toContain("sys:route must use an enum domain");
-    expect(systemErrors).toContain("sys:history must have system origin");
     expect(systemErrors).toContain(
-      "sys:history inner domain must be a subset of sys:route domain",
+      "sys:history inner domain must be compatible with sys:route domain",
     );
     expect(systemErrors).toContain(
       "sys:pending maxLen must match bounds.maxPending",
@@ -477,7 +494,119 @@ describe("validator", () => {
       }),
     };
     expect(validateModel(foreignHistory).errors).toContain(
-      "sys:history inner domain must be a subset of sys:route domain",
+      "sys:history inner domain must be compatible with sys:route domain",
+    );
+  });
+
+  it("accepts app:location and app:history role pair without sys:* names", () => {
+    const locationRoute = {
+      kind: "enum" as const,
+      values: ["/", "/signin"],
+    };
+    const roleModel: Model = {
+      schemaVersion: 1,
+      id: "role-location",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 1 },
+      vars: [
+        {
+          id: "app:location",
+          domain: locationRoute,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current", group: "default" },
+          initial: "/",
+        },
+        {
+          id: "app:history",
+          domain: {
+            kind: "boundedList" as const,
+            inner: { kind: "enum" as const, values: ["/"] },
+            maxLen: 2,
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-history", group: "default" },
+          initial: [],
+        },
+      ],
+      transitions: [],
+    };
+    expect(validateModel(roleModel).ok).toBe(true);
+  });
+
+  it("does not apply role validation to sys:next ids without role metadata", () => {
+    const nextTreeModel: Model = {
+      schemaVersion: 1,
+      id: "next-tree",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 1 },
+      vars: [
+        {
+          id: "sys:next:slot:children",
+          domain: { kind: "enum", values: ["__none", "page-a"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "__none",
+        },
+        {
+          id: "sys:next:phase:layout",
+          domain: { kind: "enum", values: ["ready", "loading"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "ready",
+        },
+      ],
+      transitions: [],
+    };
+    expect(validateModel(nextTreeModel).ok).toBe(true);
+  });
+
+  it("rejects invalid location-current domain and duplicate group location-current vars", () => {
+    const invalidCurrent: Model = {
+      schemaVersion: 1,
+      id: "bad-location",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 1 },
+      vars: [
+        {
+          id: "app:location",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current", group: "default" },
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    expect(validateModel(invalidCurrent).errors).toContain(
+      "app:location must use an enum domain",
+    );
+
+    const duplicateGroup: Model = {
+      schemaVersion: 1,
+      id: "dup-location",
+      bounds: { maxDepth: 1, maxPending: 0, maxInternalSteps: 1 },
+      vars: [
+        {
+          id: "app:a",
+          domain: { kind: "enum", values: ["/"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current", group: "default" },
+          initial: "/",
+        },
+        {
+          id: "app:b",
+          domain: { kind: "enum", values: ["/home"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current", group: "default" },
+          initial: "/home",
+        },
+      ],
+      transitions: [],
+    };
+    expect(validateModel(duplicateGroup).errors.join("\n")).toContain(
+      "Multiple location-current vars in group default",
     );
   });
 
