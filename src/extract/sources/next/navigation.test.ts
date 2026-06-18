@@ -165,6 +165,7 @@ describe("routeTreeVars", () => {
       origin: "system",
       scope: { kind: "global" },
       initial: "app:root",
+      role: { kind: "tree-slot" },
     });
     expect(vars.find((decl) => decl.id === nextSlotVarId("@modal"))).toEqual({
       id: "sys:next:slot:@modal",
@@ -175,6 +176,7 @@ describe("routeTreeVars", () => {
       origin: "system",
       scope: { kind: "global" },
       initial: "__none",
+      role: { kind: "tree-slot" },
     });
     expect(vars.find((decl) => decl.id === nextPhaseVarId("app:root"))).toEqual(
       {
@@ -193,6 +195,7 @@ describe("routeTreeVars", () => {
         origin: "system",
         scope: { kind: "global" },
         initial: "ready",
+        role: { kind: "boundary-phase" },
       },
     );
   });

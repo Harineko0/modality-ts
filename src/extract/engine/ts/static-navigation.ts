@@ -17,6 +17,7 @@ import {
   isNavigationJsxTag,
   navigationRouteJsxAttribute,
   applyLowerNavigation,
+  historyRouteValuesForNavigation,
   locationEffect,
 } from "./transition/navigation.js";
 import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
@@ -218,6 +219,10 @@ function staticNavigationJsxTransitions(
             mode: "push",
             to: { kind: "lit", value: target.to },
             routeValues: routePatterns,
+            historyRouteValues: historyRouteValuesForNavigation(routePatterns, {
+              mountRoute: routePattern,
+              pushTo: target.to,
+            }),
           }),
           confidence: target.confidence,
         },

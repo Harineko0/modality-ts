@@ -103,8 +103,8 @@ write the object literal:
 | --- | --- |
 | `transitionClass` | edges whose transition class is one of `user`, `nav`, `env`, `internal`, `library` |
 | `labelKind` | edges whose event label kind matches (e.g. `click`, `submit`, `input`, `navigate`, `resolve`) |
-| `navigated` | any navigation edge (when `true`) |
-| `navigatedTo` | a navigation edge targeting a specific route |
+| `changed` | any edge that assigns the given var |
+| `changedTo` | an edge that assigns the var to a specific value |
 | `opId` | an edge whose pending op has this id |
 | `continuation` | an edge resolving to a specific continuation |
 | `opArgs` | an edge whose op `args` snapshot matches these values |

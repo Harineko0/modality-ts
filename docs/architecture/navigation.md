@@ -16,24 +16,24 @@ flowchart LR
   manifest["route manifest"] -->|discoverRoutes| inv["RouteInventory<br/>(classified RouteNodes)"]
   inv --> dom["sys:route enum<br/>(page + index routes)"]
   src["navigate()/&lt;Link&gt;/redirect"] -->|adapter classifies| intent["NavIntent<br/>push / replace / back"]
-  intent --> nav["navigate effect → sys:route / sys:history"]
+  intent --> nav["assign effects → location role vars"]
 ```
 
 - **Nodes = the route manifest.** The route domain is driven by the manifest (a
   classified `RouteInventory`), not scavenged from literal `navigate()`/`<Link>` targets.
   This fixes the old failure where low-traffic routes that nothing navigated to *by
-  literal* were simply missing from `sys:route`.
+  literal* were simply missing from the location-current enum.
 - **Edges = navigation intents** (`push` / `replace` / `back`), classified by the
   adapter from navigation calls and JSX.
-- **`sys:route` / `sys:history`** remain the fixed lowering target — the checker's
-  location state. A single navigation-lowering step produces them; they are not
-  hand-wired across the codebase.
+- **Location vars** are adapter-owned ids (commonly `sys:route` / `sys:history`) stamped
+  with `location-current` / `location-history` roles. A single navigation-lowering step
+  produces ordinary `assign`/`if`/`seq` effects over them.
 - **Optional route-tree vars** (`sys:next:slot:*`, `sys:next:phase:*`, …) extend
   mountedness for frameworks with layout trees, parallel routes, and intercepting
   routes. Adapters expose them through `routeTreeVars` and may lower navigation
   with `lowerNavigation` into `seq` effects that update both flat route state and
-  slots. `sys:route` stays the compatibility leaf-route enum for `route-local` scopes
-  and properties that only care about the active URL pattern.
+  slots. Properties that only care about the active URL pattern read the
+  `location-current` role var — not a hard-coded `sys:route` id in trusted code.
 
 ## The engine is framework-blind
 
@@ -78,10 +78,9 @@ page *is* modeled, with an automatic edge (below).
 ## Redirects lower to existing IR
 
 A loader/route `redirect(T)` becomes an automatic route-bound `replace` transition —
-`{ kind: "navigate", mode: "replace", to: lit(T) }`. There is **no** new `EffectIR` or
-label kind; redirects reuse the existing `navigate` effect, so the IR validator, the
-checker, and the TLA+ export need no navigation-specific changes. (`forward`/`go` are
-out of scope until the IR is extended.)
+a `seq` of ordinary assignments over the grouped location-current/history vars (and
+optional route-tree vars). Event labels may still use `{ kind: "navigate", mode: "replace", to: T }`
+for replay; there is **no** `navigate` effect kind in the trusted IR.
 
 ## History domain reduction (sound)
 

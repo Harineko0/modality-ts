@@ -24,6 +24,7 @@ export function demoHandModel(): Model {
         domain: { kind: "enum", values: ["/", "/admin"] },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-current" },
         initial: "/",
       },
       {
@@ -35,6 +36,7 @@ export function demoHandModel(): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-history" },
         initial: [],
       },
       {
@@ -64,6 +66,7 @@ export function demoHandModel(): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

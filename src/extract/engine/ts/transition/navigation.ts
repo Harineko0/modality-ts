@@ -150,11 +150,18 @@ function historyOverflowAssign(
   cap: number,
   routeValues: readonly string[],
 ): EffectIR {
-  const filler = routeValues[0] ?? "/";
-  return assignEffect(
-    historyVar,
-    litValue(Array.from({ length: cap + 1 }, () => filler)),
-  );
+  const tuples = cartesianTuples(routeValues, cap);
+  if (tuples.length === 0) {
+    return assignEffect(historyVar, litValue([]));
+  }
+  if (tuples.length === 1) {
+    return assignEffect(historyVar, litValue(tuples[0]!));
+  }
+  return {
+    kind: "choose",
+    var: historyVar,
+    among: tuples.map((tuple) => litValue(tuple)),
+  };
 }
 
 function canUnrollHistory(
@@ -173,13 +180,13 @@ function canUnrollHistory(
 function buildPushHistoryEffect(
   historyVar: string,
   currentVar: string,
-  routeValues: readonly string[],
+  historyRouteValues: readonly string[],
   historyCap: number,
 ): EffectIR {
   let effect: EffectIR = identityAssign(historyVar);
   for (let length = historyCap - 1; length >= 0; length--) {
-    for (const tuple of cartesianTuples(routeValues, length)) {
-      for (const current of routeValues) {
+    for (const tuple of cartesianTuples(historyRouteValues, length)) {
+      for (const current of historyRouteValues) {
         const guard = andExpr(
           historyTupleGuard(historyVar, tuple, historyCap),
           eqExpr(readPreVar(currentVar), litValue(current)),
@@ -198,7 +205,7 @@ function buildPushHistoryEffect(
 function buildBackHistoryEffect(
   historyVar: string,
   currentVar: string,
-  routeValues: readonly string[],
+  historyRouteValues: readonly string[],
   historyCap: number,
 ): EffectIR {
   let effect: EffectIR = seqEffects([
@@ -206,7 +213,7 @@ function buildBackHistoryEffect(
     identityAssign(historyVar),
   ]);
   for (let length = 1; length <= historyCap; length++) {
-    for (const tuple of cartesianTuples(routeValues, length)) {
+    for (const tuple of cartesianTuples(historyRouteValues, length)) {
       const previous = tuple.at(-1);
       if (!previous) continue;
       const guard = historyTupleGuard(historyVar, tuple, historyCap);
@@ -224,6 +231,18 @@ function buildBackHistoryEffect(
   return effect;
 }
 
+export function historyRouteValuesForNavigation(
+  routePatterns: readonly string[],
+  options: { mountRoute?: string; pushTo?: string } = {},
+): readonly string[] {
+  const values = uniqueStrings(
+    [options.mountRoute, options.pushTo].filter(
+      (route): route is string => typeof route === "string",
+    ),
+  );
+  return values.length > 0 ? values : routePatterns;
+}
+
 export function locationEffect(args: {
   currentVar: string;
   historyVar?: string;
@@ -231,6 +250,7 @@ export function locationEffect(args: {
   to?: ExprIR;
   historyCap?: number;
   routeValues?: readonly string[];
+  historyRouteValues?: readonly string[];
 }): {
   effect: EffectIR;
   reads: readonly string[];
@@ -239,6 +259,8 @@ export function locationEffect(args: {
   const historyVar = args.historyVar ?? "sys:history";
   const historyCap = args.historyCap ?? DEFAULT_HISTORY_CAP;
   const currentVar = args.currentVar;
+  const routeValues = args.routeValues ?? ["/"];
+  const historyRouteValues = args.historyRouteValues ?? routeValues;
 
   if (args.mode === "replace") {
     if (!args.to) {
@@ -253,11 +275,11 @@ export function locationEffect(args: {
   }
 
   if (args.mode === "back") {
-    const effect = canUnrollHistory(args.routeValues, historyCap)
+    const effect = canUnrollHistory(historyRouteValues, historyCap)
       ? buildBackHistoryEffect(
           historyVar,
           currentVar,
-          args.routeValues,
+          historyRouteValues,
           historyCap,
         )
       : seqEffects([
@@ -266,7 +288,7 @@ export function locationEffect(args: {
         ]);
     return {
       effect,
-      reads: [historyVar],
+      reads: [currentVar, historyVar],
       writes: [currentVar, historyVar],
     };
   }
@@ -275,12 +297,12 @@ export function locationEffect(args: {
     throw new Error("locationEffect push requires `to`");
   }
 
-  const pushBody = canUnrollHistory(args.routeValues, historyCap)
+  const pushBody = canUnrollHistory(historyRouteValues, historyCap)
     ? seqEffects([
         buildPushHistoryEffect(
           historyVar,
           currentVar,
-          args.routeValues,
+          historyRouteValues,
           historyCap,
         ),
         assignEffect(currentVar, args.to),
@@ -293,7 +315,7 @@ export function locationEffect(args: {
   const effect = ifEffect(
     historyShorterThanCap(historyVar, historyCap),
     pushBody,
-    historyOverflowAssign(historyVar, historyCap, args.routeValues ?? ["/"]),
+    historyOverflowAssign(historyVar, historyCap, historyRouteValues),
   );
 
   return {
@@ -334,6 +356,9 @@ export function navigationTransition(
         mode: navigation.mode,
         to: navigation.to ? { kind: "lit", value: navigation.to } : undefined,
         routeValues: routePatterns,
+        historyRouteValues: historyRouteValuesForNavigation(routePatterns, {
+          pushTo: navigation.to,
+        }),
       }),
       confidence: "exact",
     },
@@ -415,6 +440,10 @@ export function navigationJsxTransition(
         mode: classified.mode,
         to: to ? { kind: "lit", value: to } : undefined,
         routeValues: routePatterns,
+        historyRouteValues: historyRouteValuesForNavigation(routePatterns, {
+          mountRoute: routePattern,
+          pushTo: to,
+        }),
       }),
       confidence: "exact",
     },

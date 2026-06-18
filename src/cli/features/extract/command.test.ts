@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
-import { routeMountScope } from "../../extract/engine/ts/routes.js";
+import { routeMountScope } from "../../../extract/engine/ts/routes.js";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -906,11 +906,30 @@ describe("runExtractCommand", () => {
             .values
         : [];
     for (const transition of result.model.transitions) {
-      if (
-        transition.effect.kind === "navigate" &&
-        transition.effect.to?.kind === "lit"
-      ) {
-        expect(routeValues).toContain(transition.effect.to.value);
+      if (transition.cls !== "nav") continue;
+      const assignsRoute = (
+        effect: typeof transition.effect,
+      ): string | undefined => {
+        if (effect.kind === "assign" && effect.var === "sys:route") {
+          return effect.expr.kind === "lit" &&
+            typeof effect.expr.value === "string"
+            ? effect.expr.value
+            : undefined;
+        }
+        if (effect.kind === "seq") {
+          for (const child of effect.effects) {
+            const route = assignsRoute(child);
+            if (route) return route;
+          }
+        }
+        if (effect.kind === "if") {
+          return assignsRoute(effect.then) ?? assignsRoute(effect.else);
+        }
+        return undefined;
+      };
+      const pushedTo = assignsRoute(transition.effect);
+      if (pushedTo) {
+        expect(routeValues).toContain(pushedTo);
       }
     }
   });
@@ -4989,8 +5008,14 @@ describe("compiler-backed project surface", () => {
 });
 
 function navigatesTo(effect: EffectIR, route: string): boolean {
-  if (effect.kind === "navigate")
-    return effect.to?.kind === "lit" && effect.to.value === route;
+  if (
+    effect.kind === "assign" &&
+    effect.var === "sys:route" &&
+    effect.expr.kind === "lit" &&
+    effect.expr.value === route
+  ) {
+    return true;
+  }
   if (effect.kind === "seq")
     return effect.effects.some((child) => navigatesTo(child, route));
   if (effect.kind === "if")

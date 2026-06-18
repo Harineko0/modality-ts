@@ -107,8 +107,8 @@ describe("demo app acceptance fixture", () => {
     });
     expect(checked.exitCode).toBe(2);
     expectSlicedStats(checked.check, {
-      states: 2143,
-      edges: 9719,
+      states: 2486,
+      edges: 11366,
       depth: 12,
     });
     expect(

@@ -613,6 +613,51 @@ describe("extraction architecture surface", () => {
   });
 });
 
+describe("trusted-layer vocabulary guards", () => {
+  const repoRoot = resolve(testDir, "../..");
+  const trustedRoots = [
+    resolve(repoRoot, "src/core"),
+    resolve(repoRoot, "src/check"),
+    resolve(repoRoot, "crates/checker/src"),
+  ];
+  const forbiddenPatterns: {
+    label: string;
+    pattern: RegExp;
+    skip?: (file: string) => boolean;
+  }[] = [
+    { label: "route-local", pattern: /route-local/ },
+    { label: "EffectIR::Navigate", pattern: /EffectIR::Navigate/ },
+    {
+      label: "navigate effect kind",
+      pattern: /\|\s*\{\s*kind:\s*["']navigate["']/,
+      skip: (file) => file.endsWith("src/core/ir/types.ts"),
+    },
+    { label: "navigatedTo", pattern: /\bnavigatedTo\b/ },
+    { label: "navigated()", pattern: /\bnavigated\s*\(/ },
+    { label: "sys_route_index", pattern: /sys_route_index/ },
+    { label: "sys_history_index", pattern: /sys_history_index/ },
+    { label: "sys_pending_index", pattern: /sys_pending_index/ },
+  ];
+
+  it("does not reintroduce removed framework semantics in trusted layers", async () => {
+    const violations: string[] = [];
+    for (const root of trustedRoots) {
+      const files = await sourceFiles(root);
+      for (const file of files) {
+        const text = await readFile(file, "utf8");
+        const relative = file.slice(repoRoot.length + 1);
+        for (const { label, pattern, skip } of forbiddenPatterns) {
+          if (skip?.(relative)) continue;
+          if (pattern.test(text)) {
+            violations.push(`${relative}: ${label}`);
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("conformance and canary runner boundaries", () => {
   const repoRoot = resolve(testDir, "../..");
   const runnerRoots = [

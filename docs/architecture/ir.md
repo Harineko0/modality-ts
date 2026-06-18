@@ -41,13 +41,15 @@ artifact for "did this refactor change behaviour?"
 ## State variables and domains
 
 A `StateVarDecl` binds an `id` to an `AbstractDomain`, an `origin`, a `scope`
-(`global` or `route-local`), and one or more `initial` values (multiple ⇒
+(`global` or `mount-local`), optional `role` metadata for adapter-owned system vars,
+and one or more `initial` values (multiple ⇒
 nondeterministic initial value). Domains are covered in
 [State & domains](../concepts/state-and-domains.md).
 
-System variables present in every model: `sys:route`, `sys:history`, `sys:pending`,
-and the synthesized `sys:timer:*` / `sys:suspense:*` state machines for timers and
-Suspense. Route-local variables hold `⊥` while unmounted — the IR-level encoding of
+Adapters may emit vars such as `sys:route`, `sys:history`, and `sys:pending`, but the
+checker treats them as ordinary state when unstamped; when stamped with
+`location-current`, `location-history`, or `pending-queue` roles they participate in
+shape validation and harness discovery. Mount-local variables hold `⊥` while unmounted — the IR-level encoding of
 "local state resets on remount".
 
 ## Transitions and the effect language
@@ -91,7 +93,7 @@ checks:
   domain;
 - `reads`/`writes` over-approximate the structured effect's actual footprint;
 - guards read only declared reads;
-- route-local vars are written only by their route's transitions or mount machinery;
+- mount-local vars are written only by transitions that declare them or by mount machinery;
 - enum/tagged values referenced in expressions exist in the domain;
 - initial states are valid and stabilized.
 

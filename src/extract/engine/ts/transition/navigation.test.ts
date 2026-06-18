@@ -49,7 +49,7 @@ describe("locationEffect", () => {
       historyCap: 2,
     });
     expect(lowered.effect.kind).toBe("if");
-    expect(lowered.reads).toEqual(["sys:history"]);
+    expect(lowered.reads).toEqual(["sys:route", "sys:history"]);
     expect(lowered.writes).toEqual(
       expect.arrayContaining(["sys:route", "sys:history"]),
     );

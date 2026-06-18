@@ -37,6 +37,7 @@ export function locationVars(
       domain: routeDomain,
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "location-current", group: "default" },
       initial: options.route,
     },
     {
@@ -48,6 +49,7 @@ export function locationVars(
       },
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "location-history", group: "default" },
       initial: [],
     },
   ];

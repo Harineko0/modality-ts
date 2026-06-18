@@ -464,8 +464,6 @@ pub struct CompiledModel {
     pub internal: Vec<usize>,
     pub internal_by_triggered_var: HashMap<usize, Vec<usize>>,
     pub always_triggered_internal: Vec<usize>,
-    pub sys_route_index: Option<usize>,
-    pub sys_history_index: Option<usize>,
 }
 
 impl CompiledModel {
@@ -477,8 +475,6 @@ impl CompiledModel {
             .enumerate()
             .map(|(i, v)| (v.id.clone(), i))
             .collect();
-        let sys_route_index = var_index.get("sys:route").copied();
-        let sys_history_index = var_index.get("sys:history").copied();
 
         let vars: Vec<CompiledVar> = model
             .vars
@@ -572,8 +568,47 @@ impl CompiledModel {
             internal,
             internal_by_triggered_var,
             always_triggered_internal,
-            sys_route_index,
-            sys_history_index,
+        })
+    }
+
+    pub fn location_current_var_indexes(&self) -> Vec<usize> {
+        self.model
+            .vars
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, decl)| {
+                if decl.role.as_ref().is_some_and(|role| {
+                    role.kind == SystemVarRoleKind::LocationCurrent
+                }) {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn default_location_current_idx(&self) -> Option<usize> {
+        const DEFAULT_GROUP: &str = "default";
+        let currents = self.location_current_var_indexes();
+        if currents.is_empty() {
+            return None;
+        }
+        currents.into_iter().find(|idx| {
+            self.model.vars[*idx]
+                .role
+                .as_ref()
+                .map(|role| role.group.as_deref().unwrap_or(DEFAULT_GROUP) == DEFAULT_GROUP)
+                .unwrap_or(false)
+        }).or_else(|| {
+            self.model
+                .vars
+                .iter()
+                .position(|decl| {
+                    decl.role
+                        .as_ref()
+                        .is_some_and(|role| role.kind == SystemVarRoleKind::LocationCurrent)
+                })
         })
     }
 
@@ -801,7 +836,7 @@ mod tests {
             metadata: None,
         };
         let compiled = CompiledModel::compile(model, false).unwrap();
-        let route_idx = compiled.sys_route_index.unwrap();
+        let route_idx = compiled.var_idx("sys:route").unwrap();
         let panel_idx = compiled.var_idx("local:panel").unwrap();
         let mut on_a = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
         on_a.values[route_idx] = json!("/a");

@@ -41,18 +41,18 @@ sources, and the ID prefix tells you which:
 | `atom:<name>` | a Jotai atom (`@store` qualifier when scoped) |
 | `store:<name>.<field>` | a Zustand store field |
 | `swr:<key>` | an SWR cache entry for a key class |
-| `sys:route`, `sys:history` | router location + bounded back-stack |
-| `sys:pending` | bounded multiset of in-flight async operations |
+| `sys:route`, `sys:history` | adapter-owned location + bounded back-stack (`location-current` / `location-history` roles) |
+| `sys:pending` | adapter-owned bounded multiset of in-flight async operations (`pending-queue` role) |
 | `sys:timer:*`, `sys:suspense:*` | timer / Suspense state machines |
 
-System variables (`sys:*`) exist in **every** model; the rest depend on what
-extraction found. See [State & domains](./state-and-domains.md) for the full list.
+System variables are **optional** adapter-owned vars; when present they are stamped with
+`role` metadata for validation and harness discovery. See [State & domains](./state-and-domains.md).
 
-### Route-local variables and `⊥`
+### Mount-local variables and `⊥`
 
 A component's `useState` only exists while that component is mounted. The IR models
-this directly: a route-local variable is present in every state but holds the
-distinguished value `⊥` (**unmounted**) when its route is not current. Mounting
+this directly: a mount-local variable is present in every state but holds the
+distinguished value `⊥` (**unmounted**) when its mount predicate is false. Mounting
 initializes it; unmounting resets it to `⊥`.
 
 This makes "local state resets on remount" a **semantics of the model**, not a

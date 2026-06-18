@@ -53,6 +53,7 @@ describe("router source plugin", () => {
         domain: { kind: "enum", values: ["/", "/checkout"] },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-current", group: "default" },
         initial: "/",
       },
       {
@@ -64,6 +65,7 @@ describe("router source plugin", () => {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "location-history", group: "default" },
         initial: [],
       },
     ]);

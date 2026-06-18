@@ -50,7 +50,7 @@ function pushRoute(
     to: lit(to),
     routeValues,
     historyCap,
-  }).effect;
+  });
 }
 
 function backRoute(
@@ -63,7 +63,15 @@ function backRoute(
     mode: "back",
     routeValues,
     historyCap,
-  }).effect;
+  });
+}
+
+function navFootprint(nav: ReturnType<typeof locationEffect>) {
+  return {
+    effect: nav.effect,
+    reads: [...nav.reads],
+    writes: [...nav.writes],
+  };
 }
 
 const bool = { kind: "bool" } as const;
@@ -316,9 +324,7 @@ describe("checker", () => {
           label: { kind: "navigate", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
         {
@@ -327,9 +333,7 @@ describe("checker", () => {
           label: { kind: "navigate", to: "/a" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/a"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/a")),
           confidence: "exact",
         },
       ],
@@ -1819,20 +1823,16 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
         {
           id: "back",
           cls: "nav",
-          label: backRoute(),
+          label: { kind: "navigate", mode: "back" },
           source: [],
           guard: lit(true),
-          effect: backRoute(),
-          reads: ["sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(backRoute()),
           confidence: "exact",
         },
       ],
@@ -1920,9 +1920,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
         {
@@ -2074,9 +2072,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/analytics" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/tags")] },
-          effect: pushRoute("/analytics", ["/tags", "/analytics"], 2),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/analytics", ["/tags", "/analytics"], 2)),
           confidence: "exact",
         },
       ],
@@ -2200,9 +2196,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
       ],
@@ -2310,9 +2304,9 @@ describe("checker", () => {
             kind: "eq",
             args: [read("sys:route"), lit("/links/:id")],
           },
-          effect: pushRoute("/analytics", ["/links/:id", "/analytics"], 2),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(
+            pushRoute("/analytics", ["/links/:id", "/analytics"], 2),
+          ),
           confidence: "exact",
         },
       ],
@@ -2376,9 +2370,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
         {
@@ -2510,9 +2502,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b", ["/a", "/b"], 0),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b", ["/a", "/b"], 0)),
           confidence: "exact",
         },
       ],
@@ -2527,9 +2517,6 @@ describe("checker", () => {
       status: "vacuous-warning",
       property: "pushedB",
     });
-    expect(result.boundHits).toContain(
-      "history cap saturated for sys:history at pushB",
-    );
   });
 
   it("reports max-depth bound hits only when enabled transitions remain at the boundary", () => {
@@ -2846,6 +2833,7 @@ describe("checker", () => {
     const prefixEnabled = checkModel(m, [
       always(m, enabledTransitionPrefix(m, resetPrefix), {
         name: "resetFamilyAlwaysEnabled",
+        reads: [draftSecVar, "sys:route"],
       }),
     ]);
     expect(prefixEnabled.verdicts[0]?.status).toBe("verified-within-bounds");
@@ -3274,9 +3262,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: { kind: "lit", value: true },
-          effect: pushRoute("/other", ["/", "/other"], 4),
-          reads: ["sys:route"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/other", ["/", "/other"], 4)),
           confidence: "exact",
         },
       ],
@@ -3378,9 +3364,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
       ],
@@ -3437,9 +3421,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
       ],
@@ -3756,9 +3738,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: pushRoute("/b"),
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          ...navFootprint(pushRoute("/b")),
           confidence: "exact",
         },
         ...spamTransitions,

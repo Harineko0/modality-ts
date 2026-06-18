@@ -210,7 +210,7 @@ describe("navigation adapter interface fit", () => {
       confidence: "exact",
     };
     expect(ctx.routePatterns).toContain("/");
-    expect(result.effect.kind).toBe("navigate");
+    expect(result.effect.kind).toBe("assign");
   });
 
   it("discovers FS-style Next routes from fixture files", async () => {

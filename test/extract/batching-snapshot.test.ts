@@ -9,36 +9,6 @@ function countModel(effect: Model["transitions"][number]["effect"]): Model {
     bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
     vars: [
       {
-        id: "sys:route",
-        domain: { kind: "enum", values: ["/"] },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: "/",
-      },
-      {
-        id: "sys:history",
-        domain: {
-          kind: "boundedList",
-          inner: { kind: "enum", values: ["/"] },
-          maxLen: 0,
-        },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
-      {
-        id: "sys:pending",
-        domain: {
-          kind: "boundedList",
-          inner: { kind: "record", fields: {} },
-          maxLen: 0,
-        },
-        origin: "system",
-        scope: { kind: "global" },
-        role: { kind: "pending-queue" },
-        initial: [],
-      },
-      {
         id: "count",
         domain: { kind: "boundedInt", min: 0, max: 3 },
         origin: "system",

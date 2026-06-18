@@ -123,7 +123,7 @@ mod tests {
     }
 
     fn state_on_route(compiled: &CompiledModel, route: &str, panel: serde_json::Value) -> ModelState {
-        let route_idx = compiled.sys_route_index.unwrap();
+        let route_idx = compiled.var_idx("sys:route").unwrap();
         let panel_idx = compiled.var_idx("local:panel").unwrap();
         let mut state = ModelState::new(vec![serde_json::Value::Null; compiled.model.vars.len()]);
         state.values[route_idx] = json!(route);

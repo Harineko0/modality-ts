@@ -73,7 +73,7 @@ const analyticsInventory = {
 };
 
 describe("useState inventory", () => {
-  it("extracts route-local state declarations with stable ids", () => {
+  it("extracts mount-local state declarations with stable ids", () => {
     const result = extractUseStateVars(
       `
       import { useState } from 'react';
@@ -533,7 +533,7 @@ describe("useState inventory", () => {
           { kind: "lit", value: "/analytics" },
         ],
       },
-      reads: ["sys:history", "sys:route"],
+      reads: ["sys:route", "sys:history"],
     });
   });
 
@@ -3221,6 +3221,7 @@ describe("useState inventory", () => {
           },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         ...result.vars,

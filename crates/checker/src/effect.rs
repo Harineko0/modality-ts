@@ -799,7 +799,7 @@ mod tests {
     #[test]
     fn seq_location_assign_then_slot_assign_activates_mount_local() {
         let (compiled, state) = next_mount_local_compiled();
-        let route_idx = compiled.sys_route_index.unwrap();
+        let route_idx = compiled.var_idx("sys:route").unwrap();
         let slot_idx = compiled.var_idx("sys:next:slot:children").unwrap();
         let count_idx = compiled.var_idx("local:Dashboard.count").unwrap();
 
@@ -875,7 +875,7 @@ mod tests {
                 assert_eq!(post.get(count_idx), &json!(crate::model::UNMOUNTED));
             }
         }
-        let route_idx = compiled.sys_route_index.unwrap();
+        let route_idx = compiled.var_idx("sys:route").unwrap();
         let active = posts
             .iter()
             .find(|post| post.get(count_idx) == &json!(0))
