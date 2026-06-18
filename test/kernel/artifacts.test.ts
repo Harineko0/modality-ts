@@ -134,6 +134,55 @@ describe("artifact parsers", () => {
       ),
     ).toMatchObject({ kind: "extraction-report", sourceFiles: ["App.tsx"] });
     expect(
+      parseExtractionReportArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "extraction-report",
+          generatedAt: "2026-06-12T00:00:00.000Z",
+          sourceFiles: ["App.tsx"],
+          plugins: [],
+          handlers: [],
+          globalTaints: [],
+          staleReads: [],
+          unhandledRejections: [],
+          modelSlack: [],
+          domains: [],
+          coverage: {
+            handlersTotal: 0,
+            exactOrOverlay: 0,
+            unextractable: 0,
+            ignoredVars: 0,
+            percentExactOrOverlay: 1,
+          },
+          warnings: [],
+          diagnostics: {
+            phaseTimings: [
+              {
+                id: "project-surface",
+                label: "Build client project surface",
+                elapsedMs: 1,
+              },
+            ],
+            surface: {
+              rawEntries: 1,
+              reachableSources: 2,
+              includedSources: 2,
+              interactionSources: 2,
+              reportedSources: 2,
+            },
+            pipeline: {
+              discoveryFragments: 2,
+              relatedFragments: 3,
+              semanticProjectSourceFiles: 2,
+            },
+          },
+        }),
+      ).diagnostics,
+    ).toMatchObject({
+      surface: { rawEntries: 1, reportedSources: 2 },
+      pipeline: { discoveryFragments: 2 },
+    });
+    expect(
       parseReplayReportArtifact(
         JSON.stringify({
           schemaVersion: 1,

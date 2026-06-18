@@ -1,11 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { dirname, extname, join, parse } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import {
   canonicalJson,
   parseModelArtifact,
+  type ExtractionPhaseTiming,
   type ExtractionReport,
   type Model,
   type OverlaySpec,
@@ -118,42 +120,66 @@ export interface ExtractCommandResult {
 export async function runExtractCommand(
   options: ExtractCommandOptions,
 ): Promise<ExtractCommandResult> {
+  const diagnosticsClock = createExtractDiagnosticsClock();
   const sourcePaths = normalizedSourcePaths(options);
-  const projectBase = await loadExtractionProject(sourcePaths);
-  const config = await loadModalityConfig(
-    options.configPath ?? (await findNearestConfig(projectBase.configStartDir)),
+  const projectBase = await diagnosticsClock.measureAsync(
+    "load-project",
+    "Load extraction project",
+    () => loadExtractionProject(sourcePaths),
   );
+  const { config, registry, routerAdapter, dependencies } =
+    await diagnosticsClock.measureAsync(
+      "load-config-and-registry",
+      "Load config and plugin registry",
+      async () => {
+        const config = await loadModalityConfig(
+          options.configPath ??
+            (await findNearestConfig(projectBase.configStartDir)),
+        );
+        const packageJsonPath =
+          options.packageJsonPath ??
+          config.packageJsonPath ??
+          (await findNearestPackageJson(projectBase.configStartDir));
+        const dependencies = await readPackageDependencies(packageJsonPath);
+        const registry = createBuiltinModalityRegistry({
+          dependencies,
+          disabledPlugins: [
+            ...(config.disabledPlugins ?? []),
+            ...(options.disabledPlugins ?? []),
+          ],
+          extraSourcePlugins: [
+            ...(config.plugins ?? []),
+            ...(options.sourcePlugins ?? []),
+          ],
+          extraDomainRefinementProviders: [
+            ...(config.domainRefinements ?? []),
+            ...(options.domainRefinements ?? []),
+          ],
+          routerPlugin: options.routerPlugin ?? config.routerPlugin,
+        });
+        return {
+          config,
+          registry,
+          routerAdapter: registry.routerPlugin ?? reactRouterAdapter(),
+          dependencies,
+        };
+      },
+    );
   const appModelPath =
     options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
-  const packageJsonPath =
-    options.packageJsonPath ??
-    config.packageJsonPath ??
-    (await findNearestPackageJson(projectBase.configStartDir));
-  const dependencies = await readPackageDependencies(packageJsonPath);
-  const registry = createBuiltinModalityRegistry({
-    dependencies,
-    disabledPlugins: [
-      ...(config.disabledPlugins ?? []),
-      ...(options.disabledPlugins ?? []),
-    ],
-    extraSourcePlugins: [
-      ...(config.plugins ?? []),
-      ...(options.sourcePlugins ?? []),
-    ],
-    extraDomainRefinementProviders: [
-      ...(config.domainRefinements ?? []),
-      ...(options.domainRefinements ?? []),
-    ],
-    routerPlugin: options.routerPlugin ?? config.routerPlugin,
-  });
-  const routerAdapter = registry.routerPlugin ?? reactRouterAdapter();
-  const projectWithInventory = await attachRouteInventory(
-    projectBase,
-    routerAdapter,
+  const projectWithInventory = await diagnosticsClock.measureAsync(
+    "route-inventory",
+    "Discover route inventory",
+    () => attachRouteInventory(projectBase, routerAdapter),
   );
-  const nextConfig = registryIncludesNextConfig(registry)
-    ? await loadNextParsedConfig(projectWithInventory.configStartDir)
-    : undefined;
+  const nextConfig = await diagnosticsClock.measureAsync(
+    "next-config",
+    "Load Next.js config",
+    async () =>
+      registryIncludesNextConfig(registry)
+        ? loadNextParsedConfig(projectWithInventory.configStartDir)
+        : undefined,
+  );
   const inventory = nextConfig
     ? expandInventoryForI18n(projectWithInventory.inventory, nextConfig)
     : projectWithInventory.inventory;
@@ -161,144 +187,199 @@ export async function runExtractCommand(
     ...projectWithInventory,
     inventory,
   };
-  const project = await buildClientProjectSurface(projectWithNextConfig, {
-    navigation: routerAdapter,
-    moduleRoleAdapters: registry.adapters.moduleRoles,
-    effectApiProviders: registry.adapters.effectApis,
-    inventory: projectWithNextConfig.inventory,
-  });
-  const route = resolveExtractionRoute(project, config, options, sourcePaths);
-  const routePatterns = project.inventory.routes.map((node) => node.pattern);
-  const effectOpAliases = project.effectOpAliases;
-  const effectApis = uniqueStrings([
-    ...(config.effectApis ?? []),
-    ...(options.effectApis ?? []),
-    ...project.effectApis,
-  ]);
-  const canonicalEffectApis = uniqueStrings([
-    ...(config.effectApis ?? []),
-    ...(options.effectApis ?? []),
-    ...project.effectApis,
-  ]);
-  const bounds = {
-    maxDepth: 12,
-    maxPending: 3,
-    maxInternalSteps: 16,
-    ...(config.bounds ?? {}),
-    ...(options.bounds ?? {}),
-  };
-  const pipeline = runProjectExtractionPipeline(project, {
+  const project = await diagnosticsClock.measureAsync(
+    "project-surface",
+    "Build client project surface",
+    () =>
+      buildClientProjectSurface(projectWithNextConfig, {
+        navigation: routerAdapter,
+        moduleRoleAdapters: registry.adapters.moduleRoles,
+        effectApiProviders: registry.adapters.effectApis,
+        inventory: projectWithNextConfig.inventory,
+      }),
+  );
+  const {
     route,
     routePatterns,
-    effectApis,
     effectOpAliases,
-    environment: config.environment,
-    sourcePlugins: registry.sourcePlugins,
-    routerPlugin: routerAdapter,
-    domainRefinements: registry.domainRefinementProviders,
-    inventory: project.inventory,
-    bounds: { maxDepth: bounds.maxDepth },
-  });
-  const cacheStorageFragments = discoverCacheStorageFragments(
-    registry,
-    project,
-    route,
-    { maxHistory: 4 },
+    effectApis,
+    canonicalEffectApis,
+    bounds,
+  } = diagnosticsClock.measureSync(
+    "route-and-bounds",
+    "Resolve route and bounds",
+    () => {
+      const route = resolveExtractionRoute(
+        project,
+        config,
+        options,
+        sourcePaths,
+      );
+      const routePatterns = project.inventory.routes.map(
+        (node) => node.pattern,
+      );
+      const effectOpAliases = project.effectOpAliases;
+      const effectApis = uniqueStrings([
+        ...(config.effectApis ?? []),
+        ...(options.effectApis ?? []),
+        ...project.effectApis,
+      ]);
+      const canonicalEffectApis = uniqueStrings([
+        ...(config.effectApis ?? []),
+        ...(options.effectApis ?? []),
+        ...project.effectApis,
+      ]);
+      const bounds = {
+        maxDepth: 12,
+        maxPending: 3,
+        maxInternalSteps: 16,
+        ...(config.bounds ?? {}),
+        ...(options.bounds ?? {}),
+      };
+      return {
+        route,
+        routePatterns,
+        effectOpAliases,
+        effectApis,
+        canonicalEffectApis,
+        bounds,
+      };
+    },
   );
-  const configTransitions = nextConfig
-    ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
-    : [];
-  const transitions = [
-    ...pipeline.transitions,
-    ...cacheStorageFragments.transitions,
-    ...configTransitions,
-  ];
-  const lowering = buildLocationLowering(
-    transitions,
-    routerAdapter,
-    project.inventory,
+  const { pipeline, pipelineDiagnostics } = diagnosticsClock.measureSync(
+    "extraction-pipeline",
+    "Run extraction pipeline",
+    () =>
+      runProjectExtractionPipeline(project, {
+        route,
+        routePatterns,
+        effectApis,
+        effectOpAliases,
+        environment: config.environment,
+        sourcePlugins: registry.sourcePlugins,
+        routerPlugin: routerAdapter,
+        domainRefinements: registry.domainRefinementProviders,
+        inventory: project.inventory,
+        bounds: { maxDepth: bounds.maxDepth },
+      }),
   );
-  const routeVars = [
-    ...routerAdapter.locationVars(
-      project.inventory,
-      { route, bounds: { maxHistory: 4 } },
-      lowering,
-    ),
-    ...(routerAdapter.routeTreeVars?.(project.inventory, {
-      route,
-      bounds: { maxHistory: 4 },
-    }) ?? []),
-  ];
-  const templateVars = [
-    ...pipeline.templateFragments.flatMap((fragment) => fragment.vars),
-    ...cacheStorageFragments.vars,
-  ];
-  const stateVars = refineAssignedLiteralDomains(
-    [
-      ...applyMountScopesFromRouter(
-        pipeline.stateVars,
+  const cacheStorageFragments = diagnosticsClock.measureSync(
+    "cache-storage",
+    "Discover cache and storage fragments",
+    () =>
+      discoverCacheStorageFragments(registry, project, route, {
+        maxHistory: 4,
+      }),
+  );
+  const extractedModel: Model = diagnosticsClock.measureSync(
+    "model-assembly",
+    "Assemble extracted model",
+    () => {
+      const configTransitions = nextConfig
+        ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
+        : [];
+      const transitions = [
+        ...pipeline.transitions,
+        ...cacheStorageFragments.transitions,
+        ...configTransitions,
+      ];
+      const lowering = buildLocationLowering(
+        transitions,
         routerAdapter,
         project.inventory,
-      ),
-      ...templateVars,
-    ],
-    transitions,
-  );
-  const extractedModel: Model = {
-    schemaVersion: 1,
-    id: "extracted-model",
-    bounds,
-    metadata: {
-      sourceHashes: sourceHashes(project.sources),
-      plugins: pluginProvenance(registry),
-    },
-    vars: [
-      ...routeVars,
-      ...synthesizeSystemVars(
+      );
+      const routeVars = [
+        ...routerAdapter.locationVars(
+          project.inventory,
+          { route, bounds: { maxHistory: 4 } },
+          lowering,
+        ),
+        ...(routerAdapter.routeTreeVars?.(project.inventory, {
+          route,
+          bounds: { maxHistory: 4 },
+        }) ?? []),
+      ];
+      const templateVars = [
+        ...pipeline.templateFragments.flatMap((fragment) => fragment.vars),
+        ...cacheStorageFragments.vars,
+      ];
+      const stateVars = refineAssignedLiteralDomains(
+        [
+          ...applyMountScopesFromRouter(
+            pipeline.stateVars,
+            routerAdapter,
+            project.inventory,
+          ),
+          ...templateVars,
+        ],
         transitions,
-        canonicalEffectApis,
-        effectOpAliases,
-        [...routeVars, ...stateVars],
-        bounds.maxPending,
-      ),
-      ...stateVars,
-    ],
-    transitions,
-  };
-  const overlaySpec =
-    options.explainDrift && options.overlayPath
-      ? await readOverlaySpec(extractedModel, options.overlayPath)
-      : undefined;
-  const driftLines = overlaySpec
-    ? explainOverlayDrift(extractedModel, overlaySpec)
-    : [];
-  const overlay = await loadAndApplyOverlay(
-    extractedModel,
-    options.overlayPath,
+      );
+      return {
+        schemaVersion: 1 as const,
+        id: "extracted-model",
+        bounds,
+        metadata: {
+          sourceHashes: sourceHashes(project.sources),
+          plugins: pluginProvenance(registry),
+        },
+        vars: [
+          ...routeVars,
+          ...synthesizeSystemVars(
+            transitions,
+            canonicalEffectApis,
+            effectOpAliases,
+            [...routeVars, ...stateVars],
+            bounds.maxPending,
+          ),
+          ...stateVars,
+        ],
+        transitions,
+      };
+    },
   );
-  if (overlay.errors.length > 0) {
-    throw new Error(
-      [
-        `Overlay merge failed: ${overlay.errors.join("; ")}`,
-        ...driftLines,
-      ].join("\n"),
-    );
-  }
+  const overlay = await diagnosticsClock.measureAsync(
+    "overlay",
+    "Load and apply overlay",
+    async () => {
+      const overlaySpec =
+        options.explainDrift && options.overlayPath
+          ? await readOverlaySpec(extractedModel, options.overlayPath)
+          : undefined;
+      const driftLines = overlaySpec
+        ? explainOverlayDrift(extractedModel, overlaySpec)
+        : [];
+      const overlay = await loadAndApplyOverlay(
+        extractedModel,
+        options.overlayPath,
+      );
+      if (overlay.errors.length > 0) {
+        throw new Error(
+          [
+            `Overlay merge failed: ${overlay.errors.join("; ")}`,
+            ...driftLines,
+          ].join("\n"),
+        );
+      }
+      return { overlay, driftLines };
+    },
+  );
   const structuredWarnings: ExtractionWarning[] = [
     ...(nextConfig ? nextConfigExtractionWarnings(nextConfig) : []),
     ...project.surfaceWarnings.map((message) => ({ message })),
     ...cacheStorageFragments.warnings.map((message) => ({ message })),
     ...pipeline.warnings,
-    ...wideNumericReachabilityWarnings(overlay.model),
-    ...wideProductDomainReachabilityWarnings(overlay.model),
-    ...overlay.warnings.map((message) => ({ message })),
+    ...wideNumericReachabilityWarnings(overlay.overlay.model),
+    ...wideProductDomainReachabilityWarnings(overlay.overlay.model),
+    ...overlay.overlay.warnings.map((message) => ({ message })),
     ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
       (message) => ({ message }),
     ),
   ];
   const warnings = structuredWarnings.map((warning) => warning.message);
   const extractionCaveats = createExtractionCaveats(structuredWarnings);
-  const withInputClasses = applyInputClassToWideInputVars(overlay.model);
+  const withInputClasses = applyInputClassToWideInputVars(
+    overlay.overlay.model,
+  );
   const model: Model = attachFieldPruning(
     attachNumericReductions(
       {
@@ -314,33 +395,67 @@ export async function runExtractCommand(
       [...withInputClasses.reductions, ...cacheStorageFragments.reductions],
     ),
   );
-  const report = createExtractionReport(
-    project.sourceFiles,
-    model,
-    warnings,
-    structuredWarnings,
-    overlay.ignoredVars,
-    options.now ?? new Date(),
-    project.inventory,
-    buildEffectOperations(
-      project.effectApiProvenance,
-      config.effectApis,
-      options.effectApis,
-    ),
+  const extractionDiagnosticsBase = {
+    surface: project.surfaceDiagnostics ?? {
+      rawEntries: project.rawEntries.length,
+      reachableSources: project.sources.length,
+      includedSources: project.sources.length,
+      interactionSources: project.interactionSources.length,
+      reportedSources: project.sourceFiles.length,
+    },
+    ...(pipelineDiagnostics ? { pipeline: pipelineDiagnostics } : {}),
+  };
+  const report = diagnosticsClock.measureSync(
+    "report",
+    "Create extraction report",
+    () =>
+      createExtractionReport(
+        project.sourceFiles,
+        model,
+        warnings,
+        structuredWarnings,
+        overlay.overlay.ignoredVars,
+        options.now ?? new Date(),
+        project.inventory,
+        buildEffectOperations(
+          project.effectApiProvenance,
+          config.effectApis,
+          options.effectApis,
+        ),
+      ),
   );
-  await mkdir(dirname(options.modelPath), { recursive: true });
-  await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
-  await mkdir(dirname(appModelPath), { recursive: true });
-  await writeFile(appModelPath, emitAppModel(model), "utf8");
+  let reportWithDiagnostics: ExtractionReport = report;
+  await diagnosticsClock.measureAsync(
+    "write-artifacts",
+    "Write extraction artifacts",
+    async () => {
+      await mkdir(dirname(options.modelPath), { recursive: true });
+      await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
+      await mkdir(dirname(appModelPath), { recursive: true });
+      await writeFile(appModelPath, emitAppModel(model), "utf8");
+      if (options.expectModelPath) {
+        await assertMatchesExpectedModel(model, options.expectModelPath);
+      }
+    },
+  );
+  reportWithDiagnostics = {
+    ...report,
+    diagnostics: {
+      phaseTimings: diagnosticsClock.finish(),
+      ...extractionDiagnosticsBase,
+    },
+  };
   if (options.reportPath) {
     await mkdir(dirname(options.reportPath), { recursive: true });
-    await writeFile(options.reportPath, `${canonicalJson(report)}\n`, "utf8");
+    await writeFile(
+      options.reportPath,
+      `${canonicalJson(reportWithDiagnostics)}\n`,
+      "utf8",
+    );
   }
-  if (options.expectModelPath) {
-    await assertMatchesExpectedModel(model, options.expectModelPath);
-  }
+  const driftLines = overlay.driftLines;
   const stateSpaceLine = (() => {
-    const contributors = report.stateContributors;
+    const contributors = reportWithDiagnostics.stateContributors;
     if (!contributors) return undefined;
     const { totalBits, topVars } = contributors;
     const top = topVars
@@ -350,7 +465,7 @@ export async function runExtractCommand(
     return `state-space≈${totalBits.toFixed(1)}bits top:${top}`;
   })();
   const coarseDomainsLine = (() => {
-    const entries = report.coarseDomains ?? [];
+    const entries = reportWithDiagnostics.coarseDomains ?? [];
     if (entries.length === 0) return undefined;
     const count = entries.reduce((sum, entry) => sum + entry.paths.length, 0);
     const first = entries[0];
@@ -359,7 +474,7 @@ export async function runExtractCommand(
     return `coarse-domains=${count} e.g. ${first.varId}[${examplePath ?? ""}]`;
   })();
   const routeCoverageLine = (() => {
-    const coverage = report.routeCoverage;
+    const coverage = reportWithDiagnostics.routeCoverage;
     if (!coverage || coverage.configured === 0) return undefined;
     return formatRouteCoverageLine(coverage);
   })();
@@ -367,6 +482,7 @@ export async function runExtractCommand(
     pipeline.stateVars.length +
     pipeline.templateFragments.flatMap((fragment) => fragment.vars).length +
     cacheStorageFragments.vars.length;
+  const transitionCount = model.transitions.length;
   const pluginLabels = registry.plugins.map(
     (plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`,
   );
@@ -380,17 +496,17 @@ export async function runExtractCommand(
   }
   return {
     model,
-    report,
+    report: reportWithDiagnostics,
     targetLabel,
     appModelPath,
     varCount,
-    transitionCount: transitions.length,
+    transitionCount,
     pluginLabels,
     stateSpaceLine,
     coarseDomainsLine,
     artifacts,
     lines: [
-      `extracted vars=${varCount} transitions=${transitions.length}`,
+      `extracted vars=${varCount} transitions=${transitionCount}`,
       `route=${route}`,
       ...(stateSpaceLine ? [stateSpaceLine] : []),
       ...(routeCoverageLine ? [routeCoverageLine] : []),
@@ -538,6 +654,42 @@ async function readPackageDependencies(
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+interface ExtractDiagnosticsClock {
+  measureSync<T>(id: string, label: string, fn: () => T): T;
+  measureAsync<T>(id: string, label: string, fn: () => Promise<T>): Promise<T>;
+  finish(): readonly ExtractionPhaseTiming[];
+}
+
+function createExtractDiagnosticsClock(): ExtractDiagnosticsClock {
+  const timings: ExtractionPhaseTiming[] = [];
+  const record = (id: string, label: string, elapsedMs: number): void => {
+    timings.push({ id, label, elapsedMs });
+  };
+  return {
+    measureSync(id, label, fn) {
+      const start = performance.now();
+      try {
+        return fn();
+      } finally {
+        record(id, label, performance.now() - start);
+      }
+    },
+    async measureAsync(id, label, fn) {
+      const start = performance.now();
+      try {
+        return await fn();
+      } finally {
+        record(id, label, performance.now() - start);
+      }
+    },
+    finish() {
+      return [...timings].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+    },
+  };
 }
 
 async function assertMatchesExpectedModel(

@@ -156,6 +156,9 @@ describe("runExtractCommand", () => {
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(
       ["App.onClick.status"],
     );
+    expect(result.report.diagnostics?.pipeline?.discoveryFragments).toBe(2);
+    expect(result.report.diagnostics?.surface?.rawEntries).toBe(1);
+    expect(result.report.diagnostics?.surface?.interactionSources).toBe(2);
   }, 15_000);
 
   it("extracts imported multi-hop component callback interactions", async () => {

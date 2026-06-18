@@ -9,10 +9,52 @@ import {
 } from "../../../extract/engine/ts/semantic-project.js";
 
 describe("compiler-backed project surface", () => {
+  it("reuses parsed source files across reachability passes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-parse-cache-"));
+    const parseCounter = { creates: 0 };
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: { "~/*": ["./src/*"] },
+          },
+        }),
+        "src/ui/Button.tsx": `
+          export function Button(props: { onClick: () => void }) {
+            return <button onClick={props.onClick}>Tap</button>;
+          }
+        `,
+        "src/App.tsx": `
+          import { useState } from 'react';
+          import { Button } from '~/ui/Button';
+          import type { Phase } from '~/lib/phase';
+          export function App() {
+            const [open, setOpen] = useState<Phase>('alpha');
+            return <Button onClick={() => setOpen('beta')} />;
+          }
+        `,
+        "src/lib/phase.ts": `
+          export type Phase = 'alpha' | 'beta';
+        `,
+      },
+      "src/App.tsx",
+      { testParseCounter: parseCounter },
+    );
+    const button = result.sources.find((entry) =>
+      entry.path.endsWith("ui/Button.tsx"),
+    );
+    expect(button?.included).toBe(true);
+    expect(button?.interactionText).toContain("onClick");
+    expect(parseCounter.creates).toBeLessThanOrEqual(3);
+  });
+
   async function surfaceWithResolver(
     dir: string,
     files: Record<string, string>,
     entryPath: string,
+    options: { testParseCounter?: { creates: number } } = {},
   ) {
     for (const [relativePath, text] of Object.entries(files)) {
       const absolutePath = join(dir, relativePath);
@@ -29,6 +71,7 @@ describe("compiler-backed project surface", () => {
     return sourceWithReachableImports(
       [{ path: resolvedEntry, text: entryText }],
       resolver,
+      options,
     );
   }
 

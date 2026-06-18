@@ -10,6 +10,8 @@ import {
 import type { Bounds } from "modality-ts/core";
 import type {
   ExtractionCaveat,
+  ExtractionPipelineDiagnostics,
+  ExtractionSurfaceDiagnostics,
   NumericReduction,
   StateVarDecl,
   Transition,
@@ -60,6 +62,12 @@ export interface ExtractionProject {
   /** Transitional reduced path shape for project-surface reachability. */
   tsconfig: TsConfigResolution;
   semanticProject?: SemanticProject;
+  surfaceDiagnostics?: ExtractionSurfaceDiagnostics;
+}
+
+export interface ProjectExtractionPipelineOutput {
+  pipeline: ExtractionPipelineResult;
+  pipelineDiagnostics?: ExtractionPipelineDiagnostics;
 }
 
 export function normalizedSourcePaths(
@@ -184,6 +192,20 @@ export async function buildClientProjectSurface(
       interactionSourcePaths.has(entry.path) ||
       entry.path.endsWith("routes.ts"),
   );
+  const expandedSourceFiles =
+    includedSources.length > project.rawEntries.length
+      ? includedSources
+          .map((entry) => entry.path)
+          .sort((left, right) => left.localeCompare(right))
+      : undefined;
+  const surfaceDiagnostics: ExtractionSurfaceDiagnostics = {
+    rawEntries: project.rawEntries.length,
+    reachableSources: reachable.sources.length,
+    includedSources: includedSources.length,
+    interactionSources: interactionSources.length,
+    reportedSources: reportSources.length,
+    ...(expandedSourceFiles ? { expandedSourceFiles } : {}),
+  };
   const semanticProject = createSemanticProject(
     includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
     project.semanticConfig,
@@ -204,6 +226,7 @@ export async function buildClientProjectSurface(
     effectOpAliases: reachable.effectOpAliases,
     effectApiProvenance: reachable.effectApiProvenance,
     surfaceWarnings: reachable.warnings,
+    surfaceDiagnostics,
   };
 }
 
@@ -221,7 +244,7 @@ export function runProjectExtractionPipeline(
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;
   },
-): ExtractionPipelineResult {
+): ProjectExtractionPipelineOutput {
   const fragments =
     project.interactionSources.length > 0
       ? project.interactionSources
@@ -229,27 +252,19 @@ export function runProjectExtractionPipeline(
         ? [{ path: project.entryFile, text: project.sourceText }]
         : [];
   if (fragments.length === 0) {
-    return runExtractionPipeline({
-      sourceText: "",
-      fileName: project.entryFile,
-      semanticProject: project.semanticProject,
-      ...options,
-    });
+    return {
+      pipeline: runExtractionPipeline({
+        sourceText: "",
+        fileName: project.entryFile,
+        semanticProject: project.semanticProject,
+        ...options,
+      }),
+    };
   }
   const discoverFragments = fragments.map((entry) => ({
     sourceText: entry.text,
     fileName: entry.path,
   }));
-  if (fragments.length === 1) {
-    const fragment = fragments[0]!;
-    return runExtractionPipeline({
-      sourceText: fragment.text,
-      fileName: fragment.path,
-      discoverFragments,
-      semanticProject: project.semanticProject,
-      ...options,
-    });
-  }
   const pipelineOptions = {
     sourceText: "",
     fileName: project.entryFile,
@@ -272,9 +287,15 @@ export function runProjectExtractionPipeline(
     route: options.route,
   });
   const sharedDiscovery = runPluginDiscoveryPhase(pipelineOptions);
-  return mergeExtractionPipelineResults(
-    fragments.map((fragment) =>
-      runExtractionPipeline({
+  const pipelineDiagnostics: ExtractionPipelineDiagnostics = {
+    discoveryFragments: discoverFragments.length,
+    relatedFragments: relatedFragments.length,
+    semanticProjectSourceFiles: project.semanticProject?.sourceFiles.size ?? 0,
+  };
+  if (fragments.length === 1) {
+    const fragment = fragments[0]!;
+    return {
+      pipeline: runExtractionPipeline({
         sourceText: fragment.text,
         fileName: fragment.path,
         discoverFragments,
@@ -283,15 +304,32 @@ export function runProjectExtractionPipeline(
         projectSummary,
         ...options,
       }),
+      pipelineDiagnostics,
+    };
+  }
+  return {
+    pipeline: mergeExtractionPipelineResults(
+      fragments.map((fragment) =>
+        runExtractionPipeline({
+          sourceText: fragment.text,
+          fileName: fragment.path,
+          discoverFragments,
+          semanticProject: project.semanticProject,
+          sharedDiscovery,
+          projectSummary,
+          ...options,
+        }),
+      ),
+      runExtractionPipeline({
+        sourceText: "",
+        fileName: project.entryFile,
+        semanticProject: project.semanticProject,
+        sharedDiscovery,
+        ...options,
+      }),
     ),
-    runExtractionPipeline({
-      sourceText: "",
-      fileName: project.entryFile,
-      semanticProject: project.semanticProject,
-      sharedDiscovery,
-      ...options,
-    }),
-  );
+    pipelineDiagnostics,
+  };
 }
 
 function mergeExtractionPipelineResults(

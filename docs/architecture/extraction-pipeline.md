@@ -119,6 +119,14 @@ overlay author must re-confirm (`modality extract --explain-drift` helps).
 Writes `model.json`, the generated state-type module, and the **extraction report** —
 the trust ledger of everything the verification claim is conditional on.
 
+Optional `diagnostics` on the extraction report make project-surface cost transparent:
+
+- `phaseTimings` — stable phase ids (`load-project`, `project-surface`, `extraction-pipeline`, …) with `elapsedMs` for CLI orchestration hotspots.
+- `surface` — counts that distinguish the requested entry files (`rawEntries`) from reachable, included, interaction, and reported source files; `expandedSourceFiles` lists included paths when the surface grew beyond the request.
+- `pipeline` — discovery fragment counts and semantic-project source-file totals that explain why plugin discovery and React project-summary work may span more than the interaction fragments alone.
+
+These fields are diagnostic only; they do not change `sourceFiles` semantics or handler classifications.
+
 ## Where extraction quality is won or lost
 
 P5 is deliberately conservative; P4's M0 subset is deliberately small. Together they

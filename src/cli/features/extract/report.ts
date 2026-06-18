@@ -8,6 +8,7 @@ import {
   locationCurrentVar,
   type EffectIR,
   type ExtractionCaveat,
+  type ExtractionDiagnostics,
   type ExtractionReport,
   type Model,
   type RouteCoverage,
@@ -37,6 +38,7 @@ export function createExtractionReport(
   now: Date,
   inventory?: RouteInventory,
   effectOperations?: ExtractionReport["effectOperations"],
+  diagnostics?: ExtractionDiagnostics,
 ): ExtractionReport {
   const caveats = model.metadata?.extractionCaveats ?? emptyExtractionCaveats();
   const partitioned = partitionCaveats(caveats.entries);
@@ -127,6 +129,7 @@ export function createExtractionReport(
     ...(effectOperations && effectOperations.length > 0
       ? { effectOperations }
       : {}),
+    ...(diagnostics ? { diagnostics } : {}),
   };
 }
 

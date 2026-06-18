@@ -182,6 +182,7 @@ Emitted on every extract; embedded in check reports:
 - domain table with abstraction provenance (type-derived / default-token / overlay-refined);
 - parallel `warnings: string[]` for terminal display — **not** parsed to recover caveat identity in production code;
 - coverage: % of discovered handlers exact+overlay, count of ignored vars;
+- optional `diagnostics` with `phaseTimings` (CLI phase ids and `elapsedMs`), `surface` counts (`rawEntries`, `reachableSources`, `includedSources`, `interactionSources`, `reportedSources`, optional `expandedSourceFiles`), and `pipeline` counts (`discoveryFragments`, `relatedFragments`, `semanticProjectSourceFiles`) that explain project-surface expansion without changing `sourceFiles`;
 - everything the verification claim is conditional on, in one place.
 
 ## 11. Known hard cases and their verdicts (v1)

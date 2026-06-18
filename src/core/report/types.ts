@@ -191,6 +191,33 @@ export interface RouteCoverage {
   routes: readonly RouteCoverageEntry[];
 }
 
+export interface ExtractionPhaseTiming {
+  id: string;
+  label: string;
+  elapsedMs: number;
+}
+
+export interface ExtractionSurfaceDiagnostics {
+  rawEntries: number;
+  reachableSources: number;
+  includedSources: number;
+  interactionSources: number;
+  reportedSources: number;
+  expandedSourceFiles?: readonly string[];
+}
+
+export interface ExtractionPipelineDiagnostics {
+  discoveryFragments: number;
+  relatedFragments: number;
+  semanticProjectSourceFiles: number;
+}
+
+export interface ExtractionDiagnostics {
+  phaseTimings: readonly ExtractionPhaseTiming[];
+  surface: ExtractionSurfaceDiagnostics;
+  pipeline?: ExtractionPipelineDiagnostics;
+}
+
 export interface ExtractionReport {
   schemaVersion: 1;
   kind: "extraction-report";
@@ -228,6 +255,7 @@ export interface ExtractionReport {
     column?: number;
     origin: "source" | "config" | "option";
   }[];
+  diagnostics?: ExtractionDiagnostics;
 }
 
 export type CanaryFailureCategory =

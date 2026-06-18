@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { routeMountScope } from "../../../extract/engine/ts/routes.js";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -128,6 +128,85 @@ describe("runExtractCommand", () => {
       }),
     ]);
     expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(report.diagnostics?.phaseTimings?.length).toBeGreaterThan(0);
+    for (const timing of report.diagnostics?.phaseTimings ?? []) {
+      expect(timing.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(timing.elapsedMs)).toBe(true);
+    }
+    expect(report.diagnostics?.surface).toMatchObject({
+      rawEntries: 1,
+      reachableSources: 1,
+      includedSources: 1,
+      interactionSources: 1,
+      reportedSources: 1,
+    });
+  });
+
+  it("reports surface expansion for imported client components", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-surface-"));
+    await mkdir(join(dir, "ui"), { recursive: true });
+    const sourcePath = join(dir, "App.tsx");
+    const buttonPath = join(dir, "ui", "Button.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    await writeFile(
+      buttonPath,
+      `
+      export function Button(props: { onClick: () => void }) {
+        return <button onClick={props.onClick}>Save</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      import { Button } from './ui/Button';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'saved'>('idle');
+        return <Button onClick={() => setStatus('saved')} />;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(result.report.sourceFiles).toEqual(
+      expect.arrayContaining([sourcePath, buttonPath]),
+    );
+    expect(report.sourceFiles).toEqual(result.report.sourceFiles);
+    expect(report.diagnostics?.surface).toMatchObject({
+      rawEntries: 1,
+      reachableSources: 2,
+      includedSources: 2,
+      interactionSources: 2,
+      reportedSources: 2,
+    });
+    expect(report.diagnostics?.surface?.expandedSourceFiles).toEqual(
+      [buttonPath, sourcePath].sort((left, right) => left.localeCompare(right)),
+    );
+    expect(report.diagnostics?.pipeline).toMatchObject({
+      discoveryFragments: 2,
+      relatedFragments: expect.any(Number),
+      semanticProjectSourceFiles: expect.any(Number),
+    });
+    expect(
+      report.diagnostics?.phaseTimings?.some(
+        (timing: { id: string }) => timing.id === "project-surface",
+      ),
+    ).toBe(true);
+    expect(
+      report.diagnostics?.phaseTimings?.some(
+        (timing: { id: string }) => timing.id === "extraction-pipeline",
+      ),
+    ).toBe(true);
   });
 
   it("surfaces unextractable handlers in the extraction report", async () => {
