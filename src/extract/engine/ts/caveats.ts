@@ -139,11 +139,13 @@ export function partitionCaveats(entries: readonly ExtractionCaveat[]): {
   staleReads: ExtractionCaveat[];
   unhandledRejections: ExtractionCaveat[];
   unextractableHandlers: ExtractionCaveat[];
+  modelSlack: ExtractionCaveat[];
 } {
   const globalTaints: ExtractionCaveat[] = [];
   const staleReads: ExtractionCaveat[] = [];
   const unhandledRejections: ExtractionCaveat[] = [];
   const unextractableHandlers: ExtractionCaveat[] = [];
+  const modelSlack: ExtractionCaveat[] = [];
   for (const entry of entries) {
     switch (entry.kind) {
       case "global-taint":
@@ -159,6 +161,7 @@ export function partitionCaveats(entries: readonly ExtractionCaveat[]): {
         unextractableHandlers.push(entry);
         break;
       case "model-slack":
+        modelSlack.push(entry);
         break;
     }
   }
@@ -167,6 +170,7 @@ export function partitionCaveats(entries: readonly ExtractionCaveat[]): {
     staleReads,
     unhandledRejections,
     unextractableHandlers,
+    modelSlack,
   };
 }
 

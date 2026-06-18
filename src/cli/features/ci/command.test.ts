@@ -59,6 +59,7 @@ function baselineTrustLedger() {
     staleReads: [],
     unhandledRejections: [],
     unextractableHandlers: [],
+    modelSlack: [],
     domains: baselineDomains(),
     manualTransitions: [],
     overApproxTransitions: [],
@@ -403,6 +404,60 @@ describe("runCiCommand", () => {
     expect(result.exitCode).toBe(3);
     expect(result.lines).toContain(
       "trust-regression: unhandledRejections 0->1 new=App.onClick.api.save:Unhandled rejection App.onClick.api.save",
+    );
+  });
+
+  it("fails when model slack caveats grow against a baseline report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-ci-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const baselinePath = join(dir, "baseline-report.json");
+    const artifactDir = join(dir, ".modality");
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        metadata: {
+          extractionCaveats: {
+            entries: [
+              {
+                kind: "model-slack",
+                id: "local:App.payload",
+                reason: "Wide product domain (257 values) may enlarge search",
+                severity: "over-approx",
+              },
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(propsPath, flagFalseReachableProps, "utf8");
+    await writeFile(
+      baselinePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: "check-report",
+        modelId: "ci-fixture",
+        generatedAt: "2026-06-11T00:00:00.000Z",
+        verdicts: [],
+        stats: { states: 0, edges: 0, depth: 0 },
+        vacuityWarnings: [],
+        trustLedger: baselineTrustLedger(),
+      }),
+      "utf8",
+    );
+
+    const result = await runCiCommand({
+      modelPath,
+      propsPath,
+      artifactDir,
+      baselinePath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.exitCode).toBe(3);
+    expect(result.lines).toContain(
+      "trust-regression: modelSlack 0->1 new=local:App.payload:Wide product domain (257 values) may enlarge search",
     );
   });
 

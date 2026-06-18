@@ -15,6 +15,7 @@ export interface ReportTrustLedger {
   staleReads: readonly ExtractionCaveat[];
   unhandledRejections: readonly ExtractionCaveat[];
   unextractableHandlers: readonly ExtractionCaveat[];
+  modelSlack: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
   manualTransitions: readonly string[];
   overApproxTransitions: readonly string[];
@@ -166,6 +167,7 @@ export interface ExtractionReport {
   globalTaints: readonly ExtractionCaveat[];
   staleReads: readonly ExtractionCaveat[];
   unhandledRejections: readonly ExtractionCaveat[];
+  modelSlack: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
   coarseDomains?: readonly { varId: string; paths: readonly string[] }[];
   stateContributors?: StateSpaceContributors;

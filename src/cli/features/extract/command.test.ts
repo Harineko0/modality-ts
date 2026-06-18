@@ -216,6 +216,7 @@ describe("runExtractCommand", () => {
       globalTaints: [],
       staleReads: [],
       unhandledRejections: [],
+      modelSlack: [],
       coverage: {
         handlersTotal: 1,
         exactOrOverlay: 1,
@@ -604,6 +605,67 @@ describe("runExtractCommand", () => {
     expect(report.warnings).toContain("global-taint:local:App.saveStatus");
     expect(report.globalTaints).toEqual([caveat]);
     expect(result.model.metadata?.extractionCaveats?.entries).toEqual([caveat]);
+  });
+
+  it("reports wide product domains as typed model slack", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-wide-product-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    const reportPath = join(dir, "extraction-report.json");
+    const overlayPath = join(dir, "overlay.json");
+    const wideEnumValues = Array.from(
+      { length: 257 },
+      (_, index) => `v${index}`,
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [payload, setPayload] = useState({ tag: 'v0' });
+        return <button onClick={() => setPayload({ tag: 'v1' })}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      overlayPath,
+      JSON.stringify({
+        domains: [
+          {
+            var: "local:App.payload",
+            domain: {
+              kind: "record",
+              fields: {
+                tag: { kind: "enum", values: wideEnumValues },
+              },
+            },
+            initial: { tag: "v0" },
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      reportPath,
+      overlayPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const caveat = {
+      kind: "model-slack" as const,
+      id: "local:App.payload",
+      reason: "Wide product domain (257 values) may enlarge search",
+      severity: "over-approx" as const,
+    };
+    expect(report.warnings).toContain(caveat.reason);
+    expect(report.modelSlack).toEqual([caveat]);
+    expect(result.model.metadata?.extractionCaveats?.entries).toContainEqual(
+      caveat,
+    );
   });
 
   it("reports M0 timer callbacks as extracted timer handlers", async () => {

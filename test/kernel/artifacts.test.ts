@@ -28,6 +28,7 @@ describe("artifact parsers", () => {
       staleReads: [],
       unhandledRejections: [],
       unextractableHandlers: [],
+      modelSlack: [],
       domains: [],
       manualTransitions: [],
       overApproxTransitions: [],
@@ -97,6 +98,7 @@ describe("artifact parsers", () => {
           globalTaints: [],
           staleReads: [],
           unhandledRejections: [],
+          modelSlack: [],
           domains: [],
           coverage: {
             handlersTotal: 0,
@@ -197,6 +199,16 @@ describe("artifact parsers", () => {
     expect(() =>
       parseCheckReportArtifact(JSON.stringify(missingCaveats)),
     ).toThrow("check report trustLedger missing globalTaints");
+    const missingModelSlack = {
+      ...checkReport,
+      trustLedger: {
+        ...checkReport.trustLedger,
+        modelSlack: undefined,
+      },
+    };
+    expect(() =>
+      parseCheckReportArtifact(JSON.stringify(missingModelSlack)),
+    ).toThrow("check report trustLedger missing modelSlack");
   });
 
   it("rejects malformed phase-6 report artifacts", () => {
@@ -219,6 +231,30 @@ describe("artifact parsers", () => {
         }),
       ),
     ).toThrow("extraction report artifact missing plugins");
+    expect(() =>
+      parseExtractionReportArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "extraction-report",
+          generatedAt: "2026-06-12T00:00:00.000Z",
+          sourceFiles: ["App.tsx"],
+          plugins: [],
+          handlers: [],
+          globalTaints: [],
+          staleReads: [],
+          unhandledRejections: [],
+          domains: [],
+          coverage: {
+            handlersTotal: 0,
+            exactOrOverlay: 0,
+            unextractable: 0,
+            ignoredVars: 0,
+            percentExactOrOverlay: 1,
+          },
+          warnings: [],
+        }),
+      ),
+    ).toThrow("extraction report artifact missing modelSlack");
     expect(() =>
       parseReplayReportArtifact(
         JSON.stringify({

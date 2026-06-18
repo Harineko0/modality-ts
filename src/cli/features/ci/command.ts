@@ -329,6 +329,11 @@ async function compareTrustLedger(
       caveatKeys(current.trustLedger.unextractableHandlers),
     ),
     ...increases(
+      "modelSlack",
+      caveatKeys(baseline.trustLedger.modelSlack),
+      caveatKeys(current.trustLedger.modelSlack),
+    ),
+    ...increases(
       "boundHits",
       baseline.trustLedger.boundHits,
       current.trustLedger.boundHits,
