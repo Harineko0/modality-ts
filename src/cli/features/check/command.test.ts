@@ -784,6 +784,30 @@ describe("runCheckCommand", () => {
     ).toBe(true);
   });
 
+  it("uses slicing by default for serializable properties without explicit reads", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr} }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.check.diagnostics?.slicing?.enabled).toBe(true);
+    expect(
+      result.lines.some((line) => line.startsWith("slicing=slices:")),
+    ).toBe(true);
+  });
+
   it("reports search-limit diagnostics when configured", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");

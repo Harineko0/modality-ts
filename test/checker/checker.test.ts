@@ -3776,10 +3776,10 @@ describe("checker", () => {
       enabledTransitions: ["submit"],
     });
     expect(targetedAlwaysStepTransitionIds(targeted)).toEqual(["submit"]);
-    expect(propertySliceMode(targeted)).toBe("targetedStep");
-    expect(propertySliceMode(enabledOnly)).toBe("full");
+    expect(propertySliceMode(m, targeted)).toBe("targetedStep");
+    expect(propertySliceMode(m, enabledOnly)).toBe("state");
     expect(targetedAlwaysStepTransitionIds(positiveTarget)).toEqual(["submit"]);
-    expect(propertySliceMode(positiveTarget)).toBe("full");
+    expect(propertySliceMode(m, positiveTarget)).toBe("full");
   });
 
   it("slices targeted alwaysStep without unrelated pending and navigation transitions", () => {
@@ -4005,7 +4005,7 @@ describe("checker", () => {
     });
     const full = checkModel(m, [property]);
     const sliced = checkModel(m, [property], { slicing: true });
-    expect(propertySliceMode(property)).toBe("full");
+    expect(propertySliceMode(m, property)).toBe("full");
     expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe("full");
     expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
       m.transitions.length,
@@ -4071,18 +4071,166 @@ describe("checker", () => {
     expect(sliced.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
-  it("keeps untargeted alwaysStep on the full model when slicing", () => {
+  it("slices untargeted alwaysStep using structured pre and post dependencies", () => {
     const m = focusedAlwaysStepNoiseModel(4);
     const property = alwaysStep(m, stepAny(), {
       name: "allEdgesOk",
       reads: ["draft"],
     });
     const result = checkModel(m, [property], { slicing: true });
-    expect(propertySliceMode(property)).toBe("full");
-    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
-      m.transitions.length,
+    expect(propertySliceMode(m, property)).toBe("state");
+    expect(
+      result.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions,
+    ).toBeLessThan(m.transitions.length);
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe(
+      "state",
     );
-    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe("full");
+  });
+
+  it("enables slicing for serializable always properties without explicit reads", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "always-without-reads",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "toggle",
+          cls: "user",
+          label: { kind: "click", text: "Toggle" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "flag", expr: lit(true) },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+        {
+          id: "noise",
+          cls: "user",
+          label: { kind: "click", text: "Noise" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const props: Property[] = [
+      {
+        kind: "always",
+        name: "flagStartsFalse",
+        predicate: eq(readVar("flag"), lit(false)),
+      },
+    ];
+    const result = checkModel(m, props, { slicing: true });
+    expect(result.diagnostics?.slicing).toMatchObject({ enabled: true });
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe(
+      "state",
+    );
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.vars).toBe(1);
+  });
+
+  it("uses state slicing for leadsToWithin with a transition trigger", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "leads-to-state-slice",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "done",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "fire",
+          cls: "user",
+          label: { kind: "click", text: "Fire" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "done", expr: lit(true) },
+          reads: [],
+          writes: ["done"],
+          confidence: "exact",
+        },
+        {
+          id: "noise",
+          cls: "user",
+          label: { kind: "click", text: "Noise" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property: Property = {
+      kind: "leadsToWithin",
+      name: "fireEventuallyDone",
+      trigger: stepTransitionId("fire"),
+      goal: eq(readVar("done"), lit(true)),
+      budget: { environment: 0 },
+    };
+    const result = checkModel(m, [property], { slicing: true });
+    expect(propertySliceMode(m, property)).toBe("state");
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe(
+      "state",
+    );
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
+      1,
+    );
+  });
+
+  it("slices non-targeted alwaysStep using structured pre and post reads", () => {
+    const m = focusedAlwaysStepNoiseModel(4);
+    const property: Property = {
+      kind: "alwaysStep",
+      name: "draftStep",
+      predicate: {
+        negate: true,
+        step: stepAny(),
+        pre: eq(readVar("draft"), lit("nonEmpty")),
+        post: eq(readVar("draft"), lit("empty")),
+      },
+    };
+    expect(propertySliceMode(m, property)).toBe("state");
+    const result = checkModel(m, [property], { slicing: true });
+    expect(result.diagnostics?.slicing?.sliceSummaries?.[0]?.mode).toBe(
+      "state",
+    );
+    expect(
+      result.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions,
+    ).toBeLessThan(m.transitions.length);
   });
 
   it("groups targeted alwaysStep slices by transition set, not vars alone", () => {

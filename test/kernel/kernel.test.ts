@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canSliceProperty } from "modality-ts/check";
 import {
   always,
   alwaysStep,
@@ -1310,6 +1311,17 @@ describe("property DSL", () => {
         reads: ["mode"],
       }).reads,
     ).toEqual(["mode"]);
+  });
+
+  it("allows slicing eligibility without explicit reads when predicate is walkable", () => {
+    const model = baseModel();
+    expect(
+      canSliceProperty(model, {
+        kind: "always",
+        name: "flagFalse",
+        predicate: eq(readVar("flag"), lit(false)),
+      }),
+    ).toBe(true);
   });
 
   it("records literal enabled transition references for slicing", () => {

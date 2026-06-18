@@ -29,7 +29,10 @@ import {
   ScriptTarget,
   transpileModule,
 } from "typescript";
-import { sliceModelForProperty } from "../../../check/slicing/slice-model.js";
+import {
+  canSliceAllProperties,
+  sliceModelForProperty,
+} from "../../../check/slicing/slice-model.js";
 import { partitionCaveats } from "../../../extract/engine/ts/caveats.js";
 import {
   downgradeVerdictForReductions,
@@ -103,9 +106,7 @@ export async function runCheckCommand(
     ...(options.propsPaths ?? []),
     ...(options.propsPath ? [options.propsPath] : []),
   ]);
-  const canSlice =
-    properties.length > 0 &&
-    properties.every((property) => property.reads !== undefined);
+  const canSlice = canSliceAllProperties(model, properties);
   const check = checkModel(model, properties, {
     slicing: canSlice,
     ...resolveCheckSearchLimits(options.searchLimits),
