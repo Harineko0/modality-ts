@@ -17,6 +17,7 @@ import type {
   DomainRefinementProvider,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
+import type { ReactExtractionProjectSummary } from "../ts/react-extraction-project-summary.js";
 import {
   isEffectOpAliasesPopulated,
   type EffectOpAliases,
@@ -42,6 +43,14 @@ export interface HandlerExtractorOptions {
   routerPlugin?: NavigationAdapter;
 }
 
+export interface SharedPluginDiscovery {
+  stateVars: readonly StateVarDecl[];
+  writeChannels: readonly WriteChannel[];
+  pluginWarnings: readonly ExtractionWarning[];
+  templateFragments: readonly TemplateFragment[];
+  numericSeedVarIds: ReadonlySet<string>;
+}
+
 export interface ExtractionPipelineOptions {
   sourceText: string;
   fileName: string;
@@ -58,6 +67,8 @@ export interface ExtractionPipelineOptions {
   bounds?: Pick<Bounds, "maxDepth">;
   semanticProject?: SemanticProject;
   effectOpAliases?: EffectOpAliases;
+  sharedDiscovery?: SharedPluginDiscovery;
+  projectSummary?: ReactExtractionProjectSummary;
 }
 
 export interface ExtractionPipelineResult {
@@ -113,16 +124,11 @@ export function createPluginRegistry(
   };
 }
 
-export function runExtractionPipeline(
+export function runPluginDiscoveryPhase(
   options: ExtractionPipelineOptions,
-): ExtractionPipelineResult {
+): SharedPluginDiscovery {
   const sourcePlugins = options.sourcePlugins ?? [];
   const domainRefinements = options.domainRefinements ?? [];
-  const plugins = createPluginRegistry(
-    sourcePlugins,
-    options.routerPlugin,
-    domainRefinements,
-  );
   const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
@@ -198,6 +204,48 @@ export function runExtractionPipeline(
       plugin.template ? [plugin.template(decl, { route: options.route })] : [],
     ),
   );
+  const numericSeedVarIds = new Set(
+    discoveries
+      .flatMap((discovery) => discovery.decls)
+      .filter((decl) => decl.metadata?.numericSeed === true)
+      .map((decl) => decl.id),
+  );
+  return {
+    stateVars,
+    writeChannels,
+    pluginWarnings,
+    templateFragments,
+    numericSeedVarIds,
+  };
+}
+
+export function runExtractionPipeline(
+  options: ExtractionPipelineOptions,
+): ExtractionPipelineResult {
+  const sourcePlugins = options.sourcePlugins ?? [];
+  const domainRefinements = options.domainRefinements ?? [];
+  const plugins = createPluginRegistry(
+    sourcePlugins,
+    options.routerPlugin,
+    domainRefinements,
+  );
+  const allDiscoveryFragments = options.discoverFragments ?? [
+    { sourceText: options.sourceText, fileName: options.fileName },
+  ];
+  const relatedFragments = discoveryRelatedFragments(
+    options,
+    allDiscoveryFragments,
+  );
+  const sharedDiscovery =
+    options.sharedDiscovery ??
+    runPluginDiscoveryPhase({
+      ...options,
+      discoverFragments: allDiscoveryFragments,
+    });
+  const stateVars = sharedDiscovery.stateVars;
+  const writeChannels = sharedDiscovery.writeChannels;
+  const pluginWarnings = sharedDiscovery.pluginWarnings;
+  const templateFragments = sharedDiscovery.templateFragments;
   const fragmentTypes = semanticTypeContextForFile(
     options.semanticProject,
     options.fileName,
@@ -236,6 +284,7 @@ export function runExtractionPipeline(
     ...(isEffectOpAliasesPopulated(options.effectOpAliases)
       ? { effectOpAliases: options.effectOpAliases }
       : {}),
+    ...(options.projectSummary ? { projectSummary: options.projectSummary } : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>
@@ -268,12 +317,7 @@ export function runExtractionPipeline(
           options.lowering,
         )
       : [];
-  const numericSeedVarIds = new Set(
-    discoveries
-      .flatMap((discovery) => discovery.decls)
-      .filter((decl) => decl.metadata?.numericSeed === true)
-      .map((decl) => decl.id),
-  );
+  const numericSeedVarIds = sharedDiscovery.numericSeedVarIds;
   const mergedStateVars = [...stateVars, ...additionalVars];
   const widenedStateVars = widenNumericDomainsFromTransitions({
     vars: mergedStateVars,
@@ -296,7 +340,7 @@ export function runExtractionPipeline(
   };
 }
 
-function discoveryRelatedFragments(
+export function discoveryRelatedFragments(
   options: ExtractionPipelineOptions,
   discoveryFragments: readonly { sourceText: string; fileName: string }[],
 ): readonly { sourceText: string; fileName: string }[] {
@@ -317,7 +361,7 @@ function discoveryRelatedFragments(
   return [...byPath.values()];
 }
 
-function semanticTypeContextForFile(
+export function semanticTypeContextForFile(
   semanticProject: SemanticProject | undefined,
   fileName: string,
 ): SemanticTypeContext | undefined {
