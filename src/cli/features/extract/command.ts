@@ -285,7 +285,7 @@ export async function runExtractCommand(
     bounds,
     metadata: {
       sourceHashes: sourceHashes(project.sources),
-      plugins: pluginProvenance(pipeline.plugins, registry),
+      plugins: pluginProvenance(registry),
     },
     vars: [
       ...routeVars,
@@ -1649,24 +1649,9 @@ function mergeExtractionCaveats(
 }
 
 function pluginProvenance(
-  plugins: ReturnType<typeof runExtractionPipeline>["plugins"],
   registry: RegistrySummary,
 ): NonNullable<Model["metadata"]>["plugins"] {
-  const cacheStorage = registry.adapters.cacheStorage.map((provider) => ({
-    id: provider.id,
-    version: provider.version ?? "unknown",
-    kind: "cache-storage" as const,
-    packageNames: [...provider.packageNames].sort(),
-  }));
-  return [
-    ...plugins.sources,
-    ...(plugins.router ? [plugins.router] : []),
-    ...(plugins.domainRefinements ?? []),
-    ...cacheStorage,
-  ].sort(
-    (left, right) =>
-      left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
-  );
+  return registry.plugins;
 }
 
 function overApproxReasons(
@@ -1854,32 +1839,6 @@ function dedupeUnextractableHandlers(
     if (existingIsGeneric && !incomingIsGeneric) byId.set(handler.id, handler);
   }
   return [...byId.values()].sort(compareCaveats);
-}
-
-function unextractableHandlerFromWarning(
-  warning: string,
-):
-  | { id: string; reason: string; source?: string; category: string }
-  | undefined {
-  const rich = /^Unextractable handler (\S+) \[([^\]]+)\] \((.+)\)$/.exec(
-    warning,
-  );
-  if (rich) {
-    const id = rich[1];
-    const category = rich[2];
-    const source = rich[3];
-    if (!id || !category || !source) return undefined;
-    return {
-      id,
-      category,
-      reason: `${category} at ${source}`,
-      source,
-    };
-  }
-  const bare = /^Unextractable handler (\S+)$/.exec(warning);
-  return bare?.[1]
-    ? { id: bare[1], category: "unextractable", reason: bare[0] }
-    : undefined;
 }
 
 function pendingVars(

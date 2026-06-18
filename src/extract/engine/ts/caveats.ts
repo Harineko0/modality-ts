@@ -116,6 +116,18 @@ export function unprovableNumericDomainCaveat(
   );
 }
 
+export function cacheDynamicRequestCaveat(
+  routePattern: string,
+  source?: SourceAnchor,
+): ExtractionCaveat {
+  return modelSlackCaveat(
+    `next-cache:${routePattern}`,
+    `Dynamic request marker (no-store/connection) on route ${routePattern} skips cache vars`,
+    source,
+    "over-approx",
+  );
+}
+
 export function formatSource(source: SourceAnchor): string {
   const line = source.line ?? 0;
   const column = source.column ?? 0;

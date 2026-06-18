@@ -295,6 +295,29 @@ describe("builtin module-role and effect API registration", () => {
     expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual([
       "router-effect-api",
     ]);
+    expect(registry.plugins.map((plugin) => plugin.kind).sort()).toEqual(
+      expect.arrayContaining(["navigation", "module-roles", "effect-api"]),
+    );
+    expect(
+      registry.plugins.some(
+        (plugin) => plugin.kind === "navigation" && plugin.id === "router",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "module-roles" && plugin.id === "router-module-roles",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "effect-api" && plugin.id === "router-effect-api",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.every((plugin) => plugin.kind !== "router"),
+    ).toBe(true);
   });
 });
 

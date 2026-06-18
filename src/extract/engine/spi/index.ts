@@ -6,9 +6,11 @@ import type {
   Locator,
   ModelState,
   NumericReduction,
+  PluginProvenance,
   SourceAnchor,
   StateVarDecl,
   TemplateFragment,
+  Transition,
   Value,
 } from "modality-ts/core";
 import type * as ts from "typescript";
@@ -77,8 +79,8 @@ export interface ExtractionWarning {
   message: string;
   source?: SourceAnchor;
   caveat?: ExtractionCaveat;
-  confidence?: "exact" | "over-approx" | "manual";
-  producer?: { kind: string; id: string };
+  confidence?: Transition["confidence"];
+  producer?: { kind: PluginProvenance["kind"]; id: string };
 }
 
 export interface CallSite {
@@ -281,6 +283,9 @@ export interface DiscoveredEffectApi {
   opId: string;
   source: { file: string; line: number; column: number };
   warning?: string;
+  caveats?: readonly ExtractionCaveat[];
+  confidence?: Transition["confidence"];
+  producer?: { kind: PluginProvenance["kind"]; id: string };
 }
 
 export interface ModuleRoleAdapter extends ModalityAdapterBase {
@@ -331,7 +336,7 @@ export interface NavigationLoweringResult {
   effect: EffectIR;
   reads: readonly string[];
   writes: readonly string[];
-  confidence?: "exact" | "over-approx";
+  confidence: Transition["confidence"];
 }
 
 export interface NavigationAdapter extends ModalityAdapterBase {

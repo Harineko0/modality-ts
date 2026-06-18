@@ -24,7 +24,7 @@ export function nextCacheStorageProvider(
       return {
         vars: result.vars,
         transitions: result.transitions,
-        caveats: [],
+        caveats: result.caveats,
         warnings: result.warnings,
       };
     },

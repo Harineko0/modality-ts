@@ -245,7 +245,7 @@ export function createModalityRegistry(
             {
               id: options.routerPlugin.id,
               version: options.routerPlugin.version ?? "unknown",
-              kind: "router" as const,
+              kind: "navigation" as const,
               packageNames: [...options.routerPlugin.packageNames].sort(),
             },
           ]
@@ -253,7 +253,7 @@ export function createModalityRegistry(
       ...moduleRoleAdapters.map((adapter) => ({
         id: adapter.id,
         version: adapter.version ?? "unknown",
-        kind: "module-role" as const,
+        kind: "module-roles" as const,
         packageNames: [...adapter.packageNames].sort(),
       })),
       ...effectApiProviders.map((provider) => ({

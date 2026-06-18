@@ -133,12 +133,13 @@ export interface PluginProvenance {
   id: string;
   version: string;
   kind:
-    | "state-source"
-    | "router"
-    | "domain-refinement"
-    | "module-role"
+    | "navigation"
+    | "module-roles"
     | "effect-api"
-    | "cache-storage";
+    | "cache-storage"
+    | "observation"
+    | "state-source"
+    | "domain-refinement";
   packageNames: readonly string[];
 }
 

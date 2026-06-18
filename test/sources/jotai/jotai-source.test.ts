@@ -188,6 +188,15 @@ describe("Jotai source plugin", () => {
       {
         message: "Global taint jotai:getDefaultStore",
         source: { file: "state.ts", line: 2, column: 16 },
+        caveat: {
+          kind: "global-taint",
+          id: "jotai:getDefaultStore",
+          reason: "Global taint jotai:getDefaultStore",
+          source: { file: "state.ts", line: 2, column: 16 },
+          severity: "unsound-risk",
+        },
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       },
     ]);
   });

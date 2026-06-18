@@ -1,10 +1,12 @@
 import * as ts from "typescript";
 import type {
   CallSite,
+  ExtractionWarning,
   M0Ctx,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
-import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
+import type { EffectIR, Value } from "modality-ts/core";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { propertyName } from "../../engine/ts/ast.js";
 import { isStoreCreatorCall, resolveZustandImports } from "./imports.js";
 import { anchor, discoverZustandStoresDetailed } from "./discover.js";
@@ -14,7 +16,7 @@ import { metadataFromRecord } from "./types.js";
 
 export interface ZustandWriteDiscovery {
   channels: WriteChannel[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: ExtractionWarning[];
   setterFixedEffects: Map<string, EffectIR>;
   resettableVarIds: Set<string>;
 }
@@ -40,7 +42,7 @@ export function discoverZustandWritesDetailed(
   const imports = resolveZustandImports(source);
   const discovery = discoverZustandStoresDetailed(sourceText, fileName);
   const channels: WriteChannel[] = [];
-  const warnings: { message: string; source?: SourceAnchor }[] = [
+  const warnings: ExtractionWarning[] = [
     ...discovery.warnings,
   ];
   const setterFixedEffects = new Map<string, EffectIR>();
@@ -363,7 +365,7 @@ type ExprIR = import("modality-ts/core").ExprIR;
 export function discoverZustandSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
-): { message: string; source?: SourceAnchor }[] {
+): ExtractionWarning[] {
   const source = ts.createSourceFile(
     fileName,
     sourceText,
@@ -371,7 +373,7 @@ export function discoverZustandSafetyWarnings(
     true,
     ts.ScriptKind.TSX,
   );
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: ExtractionWarning[] = [];
   const discovery = discoverZustandStoresDetailed(sourceText, fileName);
   warnings.push(...discovery.warnings);
   const writeDiscovery = discoverZustandWritesDetailed(sourceText, fileName);
@@ -380,12 +382,22 @@ export function discoverZustandSafetyWarnings(
   for (const decl of discovery.decls) {
     const metadata = metadataFromRecord(decl.metadata);
     if (metadata?.storageKind === "localStorage" && !hasWindowGuard(source)) {
+      const src =
+        decl.origin === "system" || decl.origin === "library-template"
+          ? undefined
+          : decl.origin;
+      const caveat = modelSlackCaveat(
+        `zustand:${metadata.storeName}.${metadata.field}.${metadata.storageKind}`,
+        `Zustand SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.storeName}.${metadata.field}`,
+        src,
+        "unsound-risk",
+      );
       warnings.push({
-        message: `Zustand SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.storeName}.${metadata.field}`,
-        source:
-          decl.origin === "system" || decl.origin === "library-template"
-            ? undefined
-            : decl.origin,
+        message: caveat.reason,
+        ...(src ? { source: src } : {}),
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "zustand" },
       });
     }
   }
@@ -410,11 +422,9 @@ function hasWindowGuard(source: ts.SourceFile): boolean {
   return found;
 }
 
-function dedupeWarnings(
-  warnings: { message: string; source?: SourceAnchor }[],
-): { message: string; source?: SourceAnchor }[] {
+function dedupeWarnings(warnings: ExtractionWarning[]): ExtractionWarning[] {
   const seen = new Set<string>();
-  const result: { message: string; source?: SourceAnchor }[] = [];
+  const result: ExtractionWarning[] = [];
   for (const warning of warnings) {
     const key = `${warning.message}:${warning.source?.line ?? ""}`;
     if (seen.has(key)) continue;

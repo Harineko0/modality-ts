@@ -202,7 +202,7 @@ describe("extraction architecture surface", () => {
       router: {
         id: "router",
         version: "unknown",
-        kind: "router",
+        kind: "navigation",
         packageNames: ["router"],
       },
     });
@@ -531,6 +531,26 @@ describe("extraction architecture surface", () => {
         (transition) => transition.id === "LaneTimer.onClick.draftSec",
       ),
     ).toBe(false);
+  });
+
+  it("does not parse warning message prefixes to recover caveats", async () => {
+    const files = await sourceFiles(srcDir);
+    const forbidden = [
+      /pluginSafetyWarning/,
+      /unextractableHandlerFromWarning/,
+      /startsWith\(\s*["']Global taint /,
+      /\^Unextractable handler /,
+    ];
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const pattern of forbidden) {
+        if (pattern.test(text)) {
+          violations.push(`${relativeToSrc(file)}: ${pattern}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 });
 

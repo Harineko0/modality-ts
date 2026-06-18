@@ -179,7 +179,7 @@ describe("nextCacheStorageProvider", () => {
     expect(fragment.caveats).toEqual([]);
   });
 
-  it("preserves warning strings pending structured caveat cleanup", () => {
+  it("preserves structured caveats for dynamic request markers", () => {
     const provider = nextCacheStorageProvider();
     const fragment = provider.discoverCacheStorage({
       files: [
@@ -204,6 +204,49 @@ describe("nextCacheStorageProvider", () => {
         "Dynamic request marker (no-store/connection) on route / skips cache vars",
       ]),
     );
-    expect(fragment.caveats).toEqual([]);
+    expect(fragment.caveats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "model-slack",
+          id: "next-cache:/",
+          reason:
+            "Dynamic request marker (no-store/connection) on route / skips cache vars",
+          severity: "over-approx",
+        }),
+      ]),
+    );
+    expect(
+      fragment.transitions.every((transition) => transition.confidence),
+    ).toBe(true);
+  });
+
+  it("returns transition confidence for cache revalidation", () => {
+    const provider = nextCacheStorageProvider();
+    const fragment = provider.discoverCacheStorage({
+      files: [
+        {
+          path: "/proj/app/profile/actions.ts",
+          text: `
+            "use server";
+            import { revalidatePath } from "next/cache";
+            export async function saveProfile() {
+              revalidatePath("/profile");
+            }
+          `,
+        },
+      ],
+      inventory: {
+        routes: [{ pattern: "/profile", kind: "page" }],
+      },
+      options: { route: "/profile" },
+    });
+    const pathTransition = fragment.transitions.find((transition) =>
+      transition.id.includes("revalidatePath"),
+    );
+    expect(pathTransition?.confidence).toBe("over-approx");
+    const tagTransition = fragment.transitions.find((transition) =>
+      transition.id.includes("updateTag"),
+    );
+    if (tagTransition) expect(tagTransition.confidence).toBe("exact");
   });
 });

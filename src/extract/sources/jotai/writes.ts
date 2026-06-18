@@ -1,6 +1,11 @@
 import * as ts from "typescript";
-import type { WriteChannel } from "modality-ts/extract/engine/spi";
+import type { WriteChannel, ExtractionWarning } from "modality-ts/extract/engine/spi";
 import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
+import {
+  caveatMessage,
+  globalTaintCaveat,
+  modelSlackCaveat,
+} from "../../engine/ts/caveats.js";
 import { propertyName, componentNameFor } from "../../engine/ts/ast.js";
 import { discoverComponentStoreScopes } from "./stores.js";
 import { providerScopeFromJsx } from "./jsx.js";
@@ -27,7 +32,7 @@ import { atomCreatorName, isAtomCreatorCall } from "./imports.js";
 
 export interface JotaiWriteDiscovery {
   channels: WriteChannel[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: ExtractionWarning[];
   resetSymbol?: string;
   resettableVarIds: Set<string>;
   derivedWriteEffects: Map<string, EffectIR>;
@@ -38,7 +43,7 @@ export interface JotaiWriteDiscovery {
 export function discoverJotaiSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
-): { message: string; source?: SourceAnchor }[] {
+): ExtractionWarning[] {
   const source = ts.createSourceFile(
     fileName,
     sourceText,
@@ -47,7 +52,7 @@ export function discoverJotaiSafetyWarnings(
     ts.ScriptKind.TSX,
   );
   const imports = resolveJotaiImports(source);
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: ExtractionWarning[] = [];
   const discovery = discoverJotaiAtomsDetailed(sourceText, fileName);
   warnings.push(...discovery.warnings);
 
@@ -62,9 +67,14 @@ export function discoverJotaiSafetyWarnings(
     for (const specifier of bindings.elements) {
       const imported = specifier.propertyName?.text ?? specifier.name.text;
       if (imported !== "getDefaultStore") continue;
+      const src = anchor(source, fileName, specifier);
+      const caveat = globalTaintCaveat("jotai:getDefaultStore", src);
       warnings.push({
-        message: "Global taint jotai:getDefaultStore",
-        source: anchor(source, fileName, specifier),
+        message: caveatMessage(caveat),
+        source: src,
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       });
     }
   }
@@ -84,9 +94,19 @@ export function discoverJotaiSafetyWarnings(
           tag === "Provider" ||
           tag.endsWith(".Provider")
         ) {
+          const src = anchor(source, fileName, node);
+          const caveat = modelSlackCaveat(
+            "jotai:dynamic-provider",
+            "Jotai dynamic Provider store unsupported",
+            src,
+            "over-approx",
+          );
           warnings.push({
-            message: "Jotai dynamic Provider store unsupported",
-            source: anchor(source, fileName, node),
+            message: caveat.reason,
+            source: src,
+            caveat,
+            confidence: "over-approx",
+            producer: { kind: "state-source", id: "jotai" },
           });
         }
       }
@@ -96,9 +116,19 @@ export function discoverJotaiSafetyWarnings(
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "setShouldRemove"
     ) {
+      const src = anchor(source, fileName, node);
+      const caveat = modelSlackCaveat(
+        "jotai:atomFamily.setShouldRemove",
+        "Jotai atomFamily.setShouldRemove cache lifecycle not modeled",
+        src,
+        "over-approx",
+      );
       warnings.push({
-        message: "Jotai atomFamily.setShouldRemove cache lifecycle not modeled",
-        source: anchor(source, fileName, node),
+        message: caveat.reason,
+        source: src,
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       });
     }
     if (
@@ -106,9 +136,19 @@ export function discoverJotaiSafetyWarnings(
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "unstable_listen"
     ) {
+      const src = anchor(source, fileName, node);
+      const caveat = modelSlackCaveat(
+        "jotai:atomFamily.unstable_listen",
+        "Jotai atomFamily.unstable_listen cache lifecycle not modeled",
+        src,
+        "over-approx",
+      );
       warnings.push({
-        message: "Jotai atomFamily.unstable_listen cache lifecycle not modeled",
-        source: anchor(source, fileName, node),
+        message: caveat.reason,
+        source: src,
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       });
     }
     ts.forEachChild(node, visit);
@@ -118,12 +158,22 @@ export function discoverJotaiSafetyWarnings(
   for (const decl of discovery.decls) {
     const metadata = metadataFromRecord(decl.metadata);
     if (metadata?.storageKind === "localStorage" && !hasWindowGuard(source)) {
+      const src =
+        decl.origin === "system" || decl.origin === "library-template"
+          ? undefined
+          : decl.origin;
+      const caveat = modelSlackCaveat(
+        `jotai:${metadata.atomName}.${metadata.storageKind}`,
+        `Jotai SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.atomName}`,
+        src,
+        "unsound-risk",
+      );
       warnings.push({
-        message: `Jotai SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.atomName}`,
-        source:
-          decl.origin === "system" || decl.origin === "library-template"
-            ? undefined
-            : decl.origin,
+        message: caveat.reason,
+        ...(src ? { source: src } : {}),
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       });
     }
   }
@@ -195,7 +245,7 @@ export function discoverJotaiWritesDetailed(
   }
 
   const channels: WriteChannel[] = [];
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: ExtractionWarning[] = [];
   const storeNames = new Set<string>();
   const defaultStoreNames = new Set<string>();
   const storeScopedDecls: import("modality-ts/extract/engine/spi").SourceDecl[] =
@@ -450,7 +500,7 @@ function resolveAtomVarId(
   storeScope: string | undefined,
   source: ts.SourceFile,
   imports: ReturnType<typeof resolveJotaiImports>,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ExtractionWarning[],
   fileName: string,
   defaultStoreNames: ReadonlySet<string> = new Set(),
 ): string | undefined {

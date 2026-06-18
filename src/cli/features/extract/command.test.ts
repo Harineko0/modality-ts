@@ -186,7 +186,9 @@ describe("runExtractCommand", () => {
     ).toEqual([
       ["domain-refinement", "arktype", "0.1.0"],
       ["domain-refinement", "zod", "0.1.0"],
-      ["router", "router", "0.1.0"],
+      ["effect-api", "router-effect-api", "0.1.0"],
+      ["module-roles", "router-module-roles", "0.1.0"],
+      ["navigation", "router", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "swr", "0.1.0"],
       ["state-source", "use-state", "0.1.0"],
@@ -1183,7 +1185,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
-      "plugins=effect-api:router-effect-api@0.1.0,module-role:router-module-roles@0.1.0,router:router@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect-api:router-effect-api@0.1.0,module-roles:router-module-roles@0.1.0,navigation:router@0.1.0,state-source:use-state@0.1.0",
     );
   });
 

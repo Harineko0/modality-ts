@@ -104,13 +104,13 @@ describe("modality plugin registry", () => {
         },
         {
           id: "router-module-roles",
-          kind: "module-role",
+          kind: "module-roles",
           version: "0.1.0",
           packageNames: ["react-router", "react-router-dom"],
         },
         {
           id: "router",
-          kind: "router",
+          kind: "navigation",
           version: "0.1.0",
           packageNames: ["react-router", "react-router-dom"],
         },
@@ -147,12 +147,12 @@ describe("modality plugin registry", () => {
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
-          kind: "router",
+          kind: "navigation",
           packageNames: ["next"],
         }),
         expect.objectContaining({
           id: "next-module-roles",
-          kind: "module-role",
+          kind: "module-roles",
         }),
         expect.objectContaining({
           id: "next-effect-api",
