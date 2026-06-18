@@ -1,6 +1,6 @@
 import type { StateVarDecl } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  NavigationAdapter,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
@@ -23,7 +23,7 @@ export interface JotaiExtractionOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
 }
 
 export function extractJotaiSkeleton(
@@ -48,12 +48,7 @@ export function extractJotaiSkeleton(
     ...(options.writeChannels ?? []),
   ];
   const sourcePlugins = [jotaiSource(), ...(options.sourcePlugins ?? [])];
-  const safetyWarnings = discoverJotaiSafetyWarnings(sourceText, fileName).map(
-    (warning) => ({
-      message: warning.message,
-      ...(warning.source ? { line: warning.source.line } : {}),
-    }),
-  );
+  const safetyWarnings = discoverJotaiSafetyWarnings(sourceText, fileName);
   const discoveryWarnings = discovery.warnings.map((warning) => ({
     message: warning.message,
     ...(warning.source ? { line: warning.source.line } : {}),

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type {
   LocationLowering,
   NavigationAdapter,
+  NavigationLoweringCtx,
+  NavigationLoweringResult,
   ResolvedOptions,
   RouteDiscoveryCtx,
   RouteInventory,
@@ -201,6 +203,25 @@ describe("navigation adapter interface fit", () => {
     ).toBe(true);
   });
 
+  it("NavigationLoweringCtx and NavigationLoweringResult type-check", () => {
+    const ctx: NavigationLoweringCtx = {
+      inventory,
+      routePatterns: ["/", "/settings"],
+    };
+    const result: NavigationLoweringResult = {
+      effect: {
+        kind: "navigate",
+        mode: "push",
+        to: { kind: "lit", value: "/" },
+      },
+      reads: [],
+      writes: ["sys:route", "sys:history"],
+      confidence: "exact",
+    };
+    expect(ctx.routePatterns).toContain("/");
+    expect(result.effect.kind).toBe("navigate");
+  });
+
   it("discovers FS-style Next routes from fixture files", async () => {
     const adapter = nextStyleAdapter();
     const inventoryFromFiles = await adapter.discoverRoutes({
@@ -219,58 +240,74 @@ describe("navigation adapter interface fit", () => {
     ]);
   });
 
-  it("accepts optional module-context methods on a Next-style adapter", () => {
-    const adapter: NavigationAdapter = {
-      ...nextStyleAdapter(),
-      classifyModule(ctx) {
-        const directives: ("use client" | "use server")[] = [];
-        if (ctx.sourceText.includes('"use client"'))
-          directives.push("use client");
-        if (ctx.sourceText.includes('"use server"'))
-          directives.push("use server");
-        if (directives.includes("use client"))
-          return { defaultContext: "client", directives };
-        if (ctx.fileName.endsWith("/route.ts"))
-          return { defaultContext: "server", serverOnly: true };
-        return { defaultContext: "shared" };
-      },
-      moduleEntryExports(ctx) {
-        if (!ctx.fileName.endsWith("/page.tsx")) return [];
-        return [
-          {
-            name: "default",
-            context: "shared",
-            reason: "server page render root",
-          },
-          {
-            name: "generateMetadata",
-            context: "server",
-            reason: "metadata export",
-          },
-        ];
-      },
-      classifyImportEdge(ctx) {
-        return ctx.isTypeOnly ? "type" : "unknown";
-      },
-      isServerOnlyModule(fileName) {
-        return (
-          fileName.endsWith(".server.ts") || fileName.endsWith(".server.tsx")
-        );
-      },
+  it("accepts a navigation-only adapter without module-role methods", () => {
+    const adapter = nextStyleAdapter();
+    expect(adapter.classifyModule).toBeUndefined();
+    expect(adapter.discoverEffectApis).toBeUndefined();
+  });
+
+  it("accepts separate fake module-role and effect API providers", () => {
+    const moduleRoleAdapter = {
+      id: "fake-module-roles",
+      kind: "module-roles" as const,
+      packageNames: ["fake"],
+      classifyModule: () => ({ defaultContext: "server" as const }),
+      moduleEntryExports: () => [],
+      classifyImportEdge: () => "unknown" as const,
+      isServerOnlyModule: () => false,
     };
-    expect(
-      adapter.classifyModule?.({
-        fileName: "app/dashboard/page.tsx",
-        sourceText: '"use client";\nexport default function Dashboard() {}',
+    const effectApiProvider = {
+      id: "fake-effect-api",
+      kind: "effect-api" as const,
+      packageNames: ["fake"],
+      discoverEffectApis: () => [],
+    };
+    expect(moduleRoleAdapter.classifyModule({ fileName: "x.ts", sourceText: "" }))
+      .toEqual({ defaultContext: "server" });
+    expect(effectApiProvider.discoverEffectApis({ fileName: "x.ts", sourceText: "" }))
+      .toEqual([]);
+  });
+
+  it("uses separate fake cache/storage and observation providers", () => {
+    const cacheStorageProvider = {
+      id: "fake-cache-storage",
+      kind: "cache-storage" as const,
+      packageNames: ["fake"],
+      discoverCacheStorage: () => ({
+        vars: [
+          {
+            id: "cache:demo",
+            domain: { kind: "enum" as const, values: ["empty", "ready"] },
+            origin: "system" as const,
+            scope: { kind: "global" as const },
+            initial: "empty",
+          },
+        ],
+        transitions: [],
+        caveats: [],
       }),
-    ).toEqual({ defaultContext: "client", directives: ["use client"] });
+    };
+    const observationProvider = {
+      id: "fake-observation",
+      kind: "observation" as const,
+      packageNames: ["fake"],
+      setup: () => ({ cache: "ready" }),
+      observe: (varId: string, handles: { cache: string }) =>
+        varId === "cache:demo" ? { value: handles.cache } : "unobservable",
+    };
+
+    expect(cacheStorageProvider.discoverCacheStorage({
+      files: [],
+      options: { route: "/" },
+    }).vars.map((decl) => decl.id)).toEqual(["cache:demo"]);
     expect(
-      adapter
-        .moduleEntryExports?.({
-          fileName: "app/settings/page.tsx",
-          sourceText: "export default function Settings() {}",
-        })
-        .map((entry) => entry.name),
-    ).toEqual(["default", "generateMetadata"]);
+      observationProvider.observe("cache:demo", observationProvider.setup({})),
+    ).toEqual({ value: "ready" });
+    expect(
+      observationProvider.observe("cache:demo", observationProvider.setup({})),
+    ).not.toBe("unobservable");
+    expect(
+      observationProvider.observe("local:missing", observationProvider.setup({})),
+    ).toBe("unobservable");
   });
 });

@@ -7,8 +7,7 @@ sidebar_label: Navigation
 Routing is owned by a **framework-agnostic adapter**, not hardcoded into the extraction
 engine. Exactly one router is active per app (unlike state sources, which compose), so
 it is a sibling contract to the [state-source SPI](./state-sources.md): the
-`NavigationAdapter` (the older name `RouterPlugin` remains as a `@deprecated` alias; the
-react-router factory is `reactRouterAdapter()`).
+`NavigationAdapter` (the react-router factory is `reactRouterAdapter()`).
 
 ## The model: nodes are routes, edges are intents
 
@@ -46,12 +45,16 @@ asks the adapter:
 | `discoverRoutes` | parse the manifest into a `RouteInventory` |
 | `classifyNavigationCall` | is this call a `push`/`replace`/`back`? to where? |
 | `classifyNavigationJsx` | is this JSX element a navigation (e.g. `<Link>`)? |
-| `routeForFile` | which route does this module belong to? |
+| `routeForComponent` | which route does this component belong to? |
 | `locationVars` | the location state variables |
 | `routeTreeVars` | optional layout/slot/phase system vars (Next.js) |
 | `lowerNavigation` | optional adapter-specific navigation lowering |
 | `mountScopeForComponent` | optional mount boundary for local state |
-| `classifyModule` / `moduleEntryExports` / `classifyImportEdge` / `isServerOnlyModule` | optional server/client module-boundary hints (used by P0) |
+| `harness` | replay navigation setup, observation, and `navigate` |
+
+Module roles, effect APIs, cache/storage, and observation are **separate adapter
+capabilities** registered alongside navigation — see
+[state sources & SPI](./state-sources.md#adapter-capabilities-beyond-state-sources).
 
 The same engine has been driven by a second, fake Next.js-style adapter in tests —
 proving the abstraction is real and not react-router in disguise. Production Next.js

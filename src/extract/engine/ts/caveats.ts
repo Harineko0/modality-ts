@@ -3,7 +3,7 @@ import type { ExtractionCaveat, SourceAnchor } from "modality-ts/core";
 export function caveatMessage(caveat: ExtractionCaveat): string {
   switch (caveat.kind) {
     case "global-taint":
-      return `Global taint ${caveat.id}`;
+      return `global-taint:${caveat.id}`;
     case "stale-read":
       return `Stale-read risk ${caveat.id}`;
     case "unhandled-rejection":
@@ -24,7 +24,7 @@ export function globalTaintCaveat(
   return {
     kind: "global-taint",
     id: varId,
-    reason: `Global taint ${varId}`,
+    reason: `global-taint:${varId}`,
     source,
     severity: "unsound-risk",
   };
@@ -111,6 +111,18 @@ export function unprovableNumericDomainCaveat(
   return modelSlackCaveat(
     id,
     `Unprovable numeric domain: ${reason}`,
+    source,
+    "over-approx",
+  );
+}
+
+export function cacheDynamicRequestCaveat(
+  routePattern: string,
+  source?: SourceAnchor,
+): ExtractionCaveat {
+  return modelSlackCaveat(
+    `next-cache:${routePattern}`,
+    `Dynamic request marker (no-store/connection) on route ${routePattern} skips cache vars`,
     source,
     "over-approx",
   );

@@ -9,7 +9,7 @@ import type {
 import { resolve } from "node:path";
 import type {
   StateSourcePlugin,
-  RouterPlugin,
+  NavigationAdapter,
   WriteChannel,
   RouteInventory,
   LocationLowering,
@@ -21,7 +21,6 @@ import {
   isEffectOpAliasesPopulated,
   type EffectOpAliases,
 } from "../ts/effect-op-aliases.js";
-import { globalTaintCaveat } from "../ts/caveats.js";
 import type { ExtractionWarning } from "../ts/types.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
@@ -40,7 +39,7 @@ export interface HandlerExtractorOptions {
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
   sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
 }
 
 export interface ExtractionPipelineOptions {
@@ -51,7 +50,7 @@ export interface ExtractionPipelineOptions {
   effectApis?: readonly string[];
   environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
   sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
   domainRefinements?: readonly DomainRefinementProvider[];
   inventory?: RouteInventory;
   lowering?: LocationLowering;
@@ -94,7 +93,7 @@ export const extractionPipelinePhases: readonly PipelinePhase[] = [
 
 export function createPluginRegistry(
   sourcePlugins: readonly StateSourcePlugin[] = [],
-  routerPlugin?: RouterPlugin,
+  routerPlugin?: NavigationAdapter,
   domainRefinementProviders: readonly DomainRefinementProvider[] = [],
 ): ExtractionPipelineResult["plugins"] {
   validateUniquePlugins(sourcePlugins);
@@ -287,7 +286,7 @@ export function runExtractionPipeline(
     warnings: [
       ...extractedWarnings,
       ...genericExtraction.warnings,
-      ...pluginWarnings.map((warning) => pluginSafetyWarning(warning)),
+      ...pluginWarnings,
     ],
     stateVars: widenedStateVars,
     templateFragments,
@@ -359,11 +358,11 @@ function provenanceForDomainRefinement(
   };
 }
 
-function provenanceForRouter(plugin: RouterPlugin): PluginProvenance {
+function provenanceForRouter(plugin: NavigationAdapter): PluginProvenance {
   return {
     id: plugin.id,
     version: plugin.version ?? "unknown",
-    kind: "router",
+    kind: "navigation",
     packageNames: [...plugin.packageNames].sort(),
   };
 }
@@ -372,37 +371,7 @@ function comparePluginProvenance(
   left: PluginProvenance,
   right: PluginProvenance,
 ): number {
-  return left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind);
-}
-
-function pluginSafetyWarning(warning: {
-  message: string;
-  source?: import("modality-ts/core").SourceAnchor;
-}): ExtractionWarning {
-  const globalTaintPrefix = "Global taint ";
-  if (warning.message.startsWith(globalTaintPrefix)) {
-    const id = warning.message.slice(globalTaintPrefix.length);
-    const caveat = globalTaintCaveat(id, warning.source);
-    return {
-      message: warning.message,
-      ...(warning.source?.line !== undefined
-        ? { line: warning.source.line }
-        : {}),
-      ...(warning.source?.column !== undefined
-        ? { column: warning.source.column }
-        : {}),
-      caveat,
-    };
-  }
-  return {
-    message: warning.message,
-    ...(warning.source?.line !== undefined
-      ? { line: warning.source.line }
-      : {}),
-    ...(warning.source?.column !== undefined
-      ? { column: warning.source.column }
-      : {}),
-  };
+  return left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
 }
 
 function validateUniqueDomainRefinementProviders(

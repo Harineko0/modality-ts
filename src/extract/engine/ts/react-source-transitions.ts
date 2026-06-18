@@ -74,7 +74,6 @@ import type {
 import type {
   NavigationAdapter,
   RouteInventory,
-  RouterPlugin,
   StateSourcePlugin,
   WriteChannel,
   SemanticTypeContext,
@@ -150,7 +149,7 @@ export interface ReactSourceTransitionOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
   inventory?: RouteInventory;
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;

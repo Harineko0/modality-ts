@@ -2,11 +2,13 @@ import * as ts from "typescript";
 import type {
   EffectIR,
   ExprIR,
+  ExtractionCaveat,
   StateVarDecl,
   TemplateFragment,
   Transition,
 } from "modality-ts/core";
 import type { RouteInventory, RouteNode } from "modality-ts/extract/engine/spi";
+import { cacheDynamicRequestCaveat } from "../../engine/ts/caveats.js";
 import { NEXT_CACHE_DOMAIN, nextCacheVarId, nextTreeNodes } from "./routes.js";
 
 export type NextCacheKeyKind =
@@ -40,12 +42,14 @@ export interface NextCacheDiscovery {
   revalidations: NextCacheRevalidation[];
   dynamicRequest: boolean;
   warnings: string[];
+  caveats: ExtractionCaveat[];
 }
 
 export interface NextCacheModelFragments {
   vars: StateVarDecl[];
   transitions: Transition[];
   warnings: string[];
+  caveats: ExtractionCaveat[];
 }
 
 const CACHE_DIRECTIVES = new Set([
@@ -356,6 +360,7 @@ export function discoverNextCacheUsage(ctx: {
   const keys = new Map<string, NextCacheKey>();
   const revalidations: NextCacheRevalidation[] = [];
   const warnings: string[] = [];
+  const caveats: ExtractionCaveat[] = [];
 
   discoverCacheDirectives(sourceFile, ctx.fileName, keys, routePattern);
   const { dynamicRequest } = discoverCacheCalls(
@@ -367,9 +372,13 @@ export function discoverNextCacheUsage(ctx: {
   );
 
   if (dynamicRequest && routePattern) {
-    warnings.push(
-      `Dynamic request marker (no-store/connection) on route ${routePattern} skips cache vars`,
-    );
+    const caveat = cacheDynamicRequestCaveat(routePattern, {
+      file: ctx.fileName,
+      line: 1,
+      column: 1,
+    });
+    warnings.push(caveat.reason);
+    caveats.push(caveat);
   }
 
   return {
@@ -379,6 +388,7 @@ export function discoverNextCacheUsage(ctx: {
     revalidations,
     dynamicRequest,
     warnings,
+    caveats,
   };
 }
 
@@ -628,10 +638,12 @@ export function aggregateNextCacheDiscoveries(
   const keyMap = new Map<string, NextCacheKey>();
   const revalidations: NextCacheRevalidation[] = [];
   const warnings: string[] = [];
+  const caveats: ExtractionCaveat[] = [];
   let skipCacheVars = false;
 
   for (const discovery of discoveries) {
     warnings.push(...discovery.warnings);
+    caveats.push(...discovery.caveats);
     if (discovery.dynamicRequest) skipCacheVars = true;
     for (const key of discovery.keys) keyMap.set(key.id, key);
     revalidations.push(...discovery.revalidations);
@@ -655,7 +667,19 @@ export function aggregateNextCacheDiscoveries(
     vars: [...fragment.vars],
     transitions: [...fragment.transitions],
     warnings: [...new Set(warnings)].sort(),
+    caveats: [...caveats].sort(compareCacheCaveats),
   };
+}
+
+function compareCacheCaveats(
+  left: ExtractionCaveat,
+  right: ExtractionCaveat,
+): number {
+  return (
+    left.kind.localeCompare(right.kind) ||
+    left.id.localeCompare(right.id) ||
+    left.reason.localeCompare(right.reason)
+  );
 }
 
 export function discoverNextCacheFromSources(
