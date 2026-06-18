@@ -2858,6 +2858,346 @@ describe("checker", () => {
     expect(summary?.prunedSystemVars).toContain("sys:pending");
   });
 
+  function coffeeDirectionalModel(): Model {
+    const phaseDomain = {
+      kind: "enum" as const,
+      values: ["menu", "confirm", "complete"],
+    };
+    return {
+      schemaVersion: 1,
+      id: "coffee-directional",
+      bounds: { maxDepth: 4, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "phase",
+          domain: phaseDomain,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "menu",
+        },
+        {
+          id: "isFree",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "cartEmpty",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: true,
+        },
+        {
+          id: "receiptNumber",
+          domain: { kind: "enum", values: ["none", "42", "99"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "none",
+        },
+        {
+          id: "receiptTotal",
+          domain: { kind: "boundedInt", min: 0, max: 100, overflow: "forbid" },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: 0,
+        },
+        {
+          id: "router:actionData",
+          domain: { kind: "enum", values: ["unset", "payload"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "unset",
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "choosePaid",
+          cls: "user",
+          label: { kind: "click", text: "Choose paid" },
+          source: [],
+          guard: eq(read("phase"), lit("menu")),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "assign", var: "phase", expr: lit("confirm") },
+              { kind: "assign", var: "isFree", expr: lit(false) },
+            ],
+          },
+          reads: ["phase"],
+          writes: ["phase", "isFree"],
+          confidence: "exact",
+        },
+        {
+          id: "chooseFree",
+          cls: "user",
+          label: { kind: "click", text: "Choose free" },
+          source: [],
+          guard: eq(read("phase"), lit("menu")),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "assign", var: "phase", expr: lit("confirm") },
+              { kind: "assign", var: "isFree", expr: lit(true) },
+            ],
+          },
+          reads: ["phase"],
+          writes: ["phase", "isFree"],
+          confidence: "exact",
+        },
+        {
+          id: "submit",
+          cls: "user",
+          label: { kind: "submit", text: "Submit order" },
+          source: [],
+          guard: eq(read("phase"), lit("confirm")),
+          effect: {
+            kind: "enqueue",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
+          reads: ["phase"],
+          writes: ["sys:pending"],
+          confidence: "exact",
+        },
+        {
+          id: "resolve",
+          cls: "env",
+          label: { kind: "resolve", op: "POST", outcome: "success" },
+          source: [],
+          guard: eq(read("sys:pending", ["0", "opId"]), lit("POST")),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "dequeue", index: 0 },
+              {
+                kind: "assign",
+                var: "router:actionData",
+                expr: lit("payload"),
+              },
+            ],
+          },
+          reads: ["sys:pending"],
+          writes: ["sys:pending", "router:actionData"],
+          confidence: "exact",
+        },
+        {
+          id: "orderEffect",
+          cls: "internal",
+          label: { kind: "internal", text: "Apply order receipt" },
+          source: [],
+          triggeredBy: ["router:actionData"],
+          guard: eq(read("router:actionData"), lit("payload")),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "assign", var: "receiptNumber", expr: lit("42") },
+              { kind: "assign", var: "receiptTotal", expr: lit(5) },
+              { kind: "assign", var: "phase", expr: lit("complete") },
+            ],
+          },
+          reads: ["router:actionData", "phase"],
+          writes: ["receiptNumber", "receiptTotal", "phase"],
+          confidence: "exact",
+        },
+        {
+          id: "acknowledge",
+          cls: "user",
+          label: { kind: "click", text: "Acknowledge" },
+          source: [],
+          guard: eq(read("phase"), lit("complete")),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "assign", var: "receiptNumber", expr: lit("none") },
+              { kind: "assign", var: "receiptTotal", expr: lit(0) },
+              { kind: "assign", var: "phase", expr: lit("menu") },
+            ],
+          },
+          reads: ["phase"],
+          writes: ["receiptNumber", "receiptTotal", "phase"],
+          confidence: "exact",
+        },
+      ],
+    };
+  }
+
+  describe("directional reachability and step slicing", () => {
+    it("prunes async submit/resolve/receipt state from reachable confirm slice", () => {
+      const m = coffeeDirectionalModel();
+      const property = reachable(m, eq(readVar("phase"), lit("confirm")), {
+        name: "customerCanReachConfirmPhase",
+        reads: ["phase"],
+      });
+      const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+        m,
+        property,
+      );
+      expect(propertySliceMode(m, property)).toBe("state");
+      expect(diagnostics?.closureFallback).toBeUndefined();
+      expect(
+        sliced.transitions.map((transition) => transition.id).sort(),
+      ).toEqual(["chooseFree", "choosePaid"]);
+      expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
+        "isFree",
+        "phase",
+      ]);
+      expect(sliced.vars.map((decl) => decl.id)).not.toEqual(
+        expect.arrayContaining([
+          "receiptNumber",
+          "receiptTotal",
+          "router:actionData",
+          "sys:pending",
+        ]),
+      );
+    });
+
+    it("short-circuits reachable properties satisfied in the initial state", () => {
+      const m = coffeeDirectionalModel();
+      const property = reachable(m, eq(readVar("cartEmpty"), lit(true)), {
+        name: "customerInitialCartIsEmpty",
+        reads: ["cartEmpty"],
+      });
+      const sliced = checkModel(m, [property], { slicing: true });
+      expect(sliced.verdicts[0]).toEqual({
+        status: "reachable",
+        property: "customerInitialCartIsEmpty",
+        trace: { steps: [] },
+      });
+      expect(sliced.stats).toEqual({ states: 0, edges: 0, depth: 0 });
+    });
+
+    it("prunes async receipt state from targeted choose-step slices", () => {
+      const m = coffeeDirectionalModel();
+      const choosePaid = alwaysStep(
+        m,
+        {
+          negate: true,
+          step: stepTransitionId("choosePaid"),
+          post: eq(readVar("isFree"), lit(false)),
+        },
+        {
+          name: "choosePaidSetsPaidFlag",
+          reads: ["isFree"],
+        },
+      );
+      const chooseFree = alwaysStep(
+        m,
+        {
+          negate: true,
+          step: stepTransitionId("chooseFree"),
+          post: eq(readVar("isFree"), lit(true)),
+        },
+        {
+          name: "chooseFreeSetsFreeFlag",
+          reads: ["isFree"],
+        },
+      );
+      expect(propertySliceMode(m, choosePaid)).toBe("targetedStep");
+      const slicedPaid = sliceModelForCheckProperty(m, choosePaid).model;
+      expect(slicedPaid.transitions.map((transition) => transition.id)).toEqual(
+        ["choosePaid"],
+      );
+      expect(slicedPaid.vars.map((decl) => decl.id).sort()).toEqual([
+        "isFree",
+        "phase",
+      ]);
+      const slicedFree = sliceModelForCheckProperty(m, chooseFree).model;
+      expect(slicedFree.transitions.map((transition) => transition.id)).toEqual(
+        ["chooseFree"],
+      );
+      expect(slicedFree.vars.map((decl) => decl.id)).not.toContain(
+        "sys:pending",
+      );
+    });
+
+    it("keeps sliced and unsliced verdict parity for coffee directional properties", () => {
+      const m = coffeeDirectionalModel();
+      const props = [
+        reachable(m, eq(readVar("phase"), lit("confirm")), {
+          name: "customerCanReachConfirmPhase",
+          reads: ["phase"],
+        }),
+        reachable(m, eq(readVar("cartEmpty"), lit(true)), {
+          name: "customerInitialCartIsEmpty",
+          reads: ["cartEmpty"],
+        }),
+        alwaysStep(
+          m,
+          {
+            negate: true,
+            step: stepTransitionId("choosePaid"),
+            post: eq(readVar("isFree"), lit(false)),
+          },
+          {
+            name: "choosePaidSetsPaidFlag",
+            reads: ["isFree"],
+          },
+        ),
+      ];
+      const unsliced = checkModel(m, props);
+      const sliced = checkModel(m, props, { slicing: true });
+      expect(
+        sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+      ).toEqual(
+        unsliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+      );
+    });
+
+    it("falls back to broad closure for unsupported directional predicates", () => {
+      const m = coffeeDirectionalModel();
+      const property = reachable(
+        m,
+        {
+          kind: "not",
+          args: [eq(readVar("phase"), lit("confirm"))],
+        },
+        { name: "notConfirm", reads: ["phase"] },
+      );
+      const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+        m,
+        property,
+      );
+      expect(diagnostics?.closureFallback).toBe(
+        "directional predicate shape unsupported",
+      );
+      expect(
+        sliced.transitions.map((transition) => transition.id).sort(),
+      ).toEqual([
+        "acknowledge",
+        "chooseFree",
+        "choosePaid",
+        "orderEffect",
+        "resolve",
+        "submit",
+      ]);
+    });
+  });
+
   it("enabledTransitionPrefix matches suffixed transition ids when exact id is absent", () => {
     const draftSecVar = "local:LaneTimer.draftSec";
     const resetPrefix = "LaneTimer.onClick.draftSec";
@@ -4391,7 +4731,7 @@ describe("checker", () => {
         : "",
     ).toContain("search limit exceeded");
     expect(sliced.diagnostics?.slicing?.sliceSummaries?.[0]?.transitions).toBe(
-      3,
+      2,
     );
     expect(sliced.stats.edges).toBeLessThan(maxEdges);
     expect(sliced.verdicts[0]?.status).toBe("verified-within-bounds");

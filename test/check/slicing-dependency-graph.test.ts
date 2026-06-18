@@ -163,7 +163,10 @@ describe("dependency graph slicing", () => {
     const model = routeLocalEconomyModel();
     const graph = buildModelDependencyGraph(model);
     const closure = computeTargetedStepSliceClosure(graph, {
-      stateReads: ["local:home.focus"],
+      propertyReads: ["local:home.focus"],
+      preconditionReads: [],
+      postconditionReads: [],
+      postMentionedVars: [],
       stepFactVars: [],
       enabledTransitionIds: ["setFocus"],
       targetTransitionIds: ["setFocus"],

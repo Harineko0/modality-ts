@@ -22,6 +22,7 @@ export type PropertySliceMode = "state" | "targetedStep" | "full";
 export interface SliceDiagnostics {
   mountScopeDependencies?: readonly MountScopeDependency[];
   pendingQueueDependencies?: readonly PendingQueueDependency[];
+  closureFallback?: string;
 }
 
 interface PropertyDependencyRequest {
@@ -32,6 +33,10 @@ interface PropertyDependencyRequest {
   pendingQueueDependencies: readonly PendingQueueDependency[];
   mode: PropertySliceMode;
   unsliceableReason?: string;
+  directionalPredicate?: ExprIR;
+  preconditionReads?: readonly string[];
+  postconditionReads?: readonly string[];
+  postMentionedVars?: readonly string[];
 }
 
 export function sliceModel(
@@ -66,7 +71,9 @@ export function sliceModelForCheckProperty(
   const deps = collectPropertyDependencyRequest(model, property);
   switch (deps.mode) {
     case "state": {
-      const sliced = sliceModelForProperty(model, dependencySliceInput(deps));
+      const sliced = sliceModelForProperty(model, dependencySliceInput(deps), {
+        directionalPredicate: deps.directionalPredicate,
+      });
       return {
         model: sliced.model,
         mode: deps.mode,
@@ -103,13 +110,21 @@ export function sliceModelForCheckProperty(
 export function sliceModelForProperty(
   model: Model,
   property: Pick<Property, "reads" | "enabledTransitions">,
+  options: {
+    directionalPredicate?: ExprIR;
+  } = {},
 ): { model: Model; diagnostics?: SliceDiagnostics } {
   const graph = buildModelDependencyGraph(model);
-  const { neededVars, neededTransitions, mountScopeDependencies } =
-    computeStateSliceClosure(graph, {
-      propertyReads: property.reads ?? [],
-      enabledTransitionIds: property.enabledTransitions ?? [],
-    });
+  const {
+    neededVars,
+    neededTransitions,
+    mountScopeDependencies,
+    closureFallback,
+  } = computeStateSliceClosure(graph, {
+    propertyReads: property.reads ?? [],
+    enabledTransitionIds: property.enabledTransitions ?? [],
+    directionalPredicate: options.directionalPredicate,
+  });
   const vars = model.vars.filter((decl) => neededVars.has(decl.id));
   const transitions = finalizeSlicedTransitions(
     model,
@@ -120,10 +135,12 @@ export function sliceModelForProperty(
   );
   return {
     model: { ...model, vars, transitions },
-    diagnostics:
+    diagnostics: mergeSliceDiagnostics(
       mountScopeDependencies.length > 0
         ? { mountScopeDependencies }
         : undefined,
+      closureFallback ? { closureFallback } : undefined,
+    ),
   };
 }
 
@@ -132,14 +149,33 @@ export function sliceModelForTargetedStepProperty(
   property: Extract<Property, { kind: "alwaysStep" }>,
   deps: Pick<
     PropertyDependencyRequest,
-    "stateReads" | "enabledTransitions" | "stepFactVars"
+    | "stateReads"
+    | "enabledTransitions"
+    | "stepFactVars"
+    | "preconditionReads"
+    | "postconditionReads"
+    | "postMentionedVars"
   > = collectPropertyDependencyRequest(model, property),
 ): { model: Model; diagnostics?: SliceDiagnostics } {
   const graph = buildModelDependencyGraph(model);
   const targetIds = targetedAlwaysStepTransitionIds(property);
+  const targetTransitions = targetIds
+    .map((id) => graph.transitionsById.get(id))
+    .filter((transition): transition is Transition => transition !== undefined);
+  const postMentionedVars = unionSorted(
+    deps.postMentionedVars,
+    targetPostMentionedVars(
+      property,
+      targetTransitions,
+      graph.pendingQueueVarIds,
+    ),
+  );
   const { executionVars, neededTransitions, mountScopeDependencies } =
     computeTargetedStepSliceClosure(graph, {
-      stateReads: deps.stateReads,
+      propertyReads: deps.stateReads,
+      preconditionReads: deps.preconditionReads ?? [],
+      postconditionReads: deps.postconditionReads ?? [],
+      postMentionedVars,
       stepFactVars: deps.stepFactVars,
       enabledTransitionIds: deps.enabledTransitions,
       targetTransitionIds: targetIds,
@@ -194,6 +230,10 @@ function collectPropertyDependencyRequest(
         targetTransitionIds: [],
         stepFactVars: [],
         pendingQueueDependencies: [],
+        directionalPredicate:
+          property.kind === "reachable" && isExprIR(property.predicate)
+            ? property.predicate
+            : undefined,
       });
     case "reachableFrom":
       return finalizePropertyDependencyRequest(model, property, {
@@ -257,12 +297,22 @@ function collectAlwaysStepDependencyRequest(
   );
   const stepFacts = stepFactVars(model, predicate);
   const targetTransitionIds = stepPredicateFlatTransitionIds(flat);
+  const preconditionReads =
+    "step" in predicate && predicate.pre
+      ? collectExprStateReads(predicate.pre)
+      : [];
+  const postconditionReads =
+    "step" in predicate && predicate.post
+      ? collectExprStateReads(predicate.post)
+      : [];
   const base = {
     stateReads,
     enabledTransitions,
     targetTransitionIds,
     stepFactVars: stepFacts,
     pendingQueueDependencies: collectPendingQueueDependencies(model, predicate),
+    preconditionReads,
+    postconditionReads,
   };
 
   if (isPositiveTargetedAlwaysStep(property)) {
@@ -306,9 +356,13 @@ function mergeSliceDiagnostics(
   const pendingQueueDependencies = mergePendingQueueDependencies(
     ...groups.map((group) => group?.pendingQueueDependencies),
   );
+  const closureFallback = groups
+    .map((group) => group?.closureFallback)
+    .find((reason) => reason !== undefined);
   if (
     mountScopeDependencies.length === 0 &&
-    pendingQueueDependencies.length === 0
+    pendingQueueDependencies.length === 0 &&
+    closureFallback === undefined
   ) {
     return undefined;
   }
@@ -317,7 +371,26 @@ function mergeSliceDiagnostics(
     ...(pendingQueueDependencies.length > 0
       ? { pendingQueueDependencies }
       : {}),
+    ...(closureFallback ? { closureFallback } : {}),
   };
+}
+
+function targetPostMentionedVars(
+  property: Extract<Property, { kind: "alwaysStep" }>,
+  targetTransitions: readonly Transition[],
+  pendingQueues: ReadonlySet<string>,
+): readonly string[] {
+  const predicate = property.predicate;
+  if (!("step" in predicate) || !predicate.post) return [];
+  const postReads = new Set(collectExprStateReads(predicate.post));
+  const mentioned = new Set<string>();
+  for (const transition of targetTransitions) {
+    for (const write of transition.writes) {
+      if (pendingQueues.has(write)) continue;
+      if (postReads.has(write)) mentioned.add(write);
+    }
+  }
+  return [...mentioned].sort();
 }
 
 function hasKnownAlwaysStepDependencies(

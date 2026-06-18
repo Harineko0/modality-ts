@@ -7,6 +7,7 @@ import {
   propertySlicingSkipReason,
   sliceModelForCheckProperty,
 } from "./slicing/slice-model.js";
+import { initialStateReachableVerdict } from "./initial-state-reachable.js";
 import { runRustCheck } from "./native.js";
 import type {
   CheckDiagnostics,
@@ -14,6 +15,7 @@ import type {
   CheckResult,
   MountScopeDependency,
   PendingQueueDependency,
+  PropertyVerdict,
   SliceSummary,
 } from "./types.js";
 
@@ -148,11 +150,32 @@ function checkModelSliced(
   for (const group of [...groups.values()].sort(
     (left, right) => left.index - right.index,
   )) {
-    const result = runRustCheck(group.model, group.properties, {
-      ...options,
-      slicing: false,
-      slicedModel: true,
-    });
+    const shortCircuited: PropertyVerdict[] = [];
+    const rustProperties: Property[] = [];
+    for (const property of group.properties) {
+      const verdict = initialStateReachableVerdict(group.model, property);
+      if (verdict) shortCircuited.push(verdict);
+      else rustProperties.push(property);
+    }
+
+    let result: CheckResult = {
+      verdicts: shortCircuited,
+      stats: { states: 0, edges: 0, depth: 0 },
+      vacuityWarnings: [],
+      boundHits: [],
+    };
+    if (rustProperties.length > 0) {
+      result = runRustCheck(group.model, rustProperties, {
+        ...options,
+        slicing: false,
+        slicedModel: true,
+      });
+      result = {
+        ...result,
+        verdicts: [...shortCircuited, ...result.verdicts],
+      };
+    }
+
     for (const property of group.properties) {
       const verdict = result.verdicts.find(
         (candidate) => candidate.property === property.name,

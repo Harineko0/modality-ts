@@ -4,7 +4,14 @@ import {
   mountGuardForScope,
 } from "modality-ts/core";
 import type { ExprIR, Model, StateVarDecl, Transition } from "modality-ts/core";
+import { evalStatePredicate, StatePredicateEvalError } from "modality-ts/core";
 import type { MountScopeDependency } from "../types.js";
+import { modelInitialStates } from "../model-api.js";
+import {
+  analyzeDirectionalPredicate,
+  type DirectionalPredicateAnalysis,
+  isTransitionDirectionallyRelevant,
+} from "./predicate-relevance.js";
 
 export type DependencyEdgeKind =
   | "property-read"
@@ -29,16 +36,21 @@ export interface ModelDependencyGraph {
 export interface StateSliceClosureInput {
   propertyReads: readonly string[];
   enabledTransitionIds: readonly string[];
+  directionalPredicate?: ExprIR;
 }
 
 export interface StateSliceClosureResult {
   neededVars: Set<string>;
   neededTransitions: Set<string>;
   mountScopeDependencies: readonly MountScopeDependency[];
+  closureFallback?: string;
 }
 
 export interface TargetedStepSliceClosureInput {
-  stateReads: readonly string[];
+  propertyReads: readonly string[];
+  preconditionReads: readonly string[];
+  postconditionReads: readonly string[];
+  postMentionedVars: readonly string[];
   stepFactVars: readonly string[];
   enabledTransitionIds: readonly string[];
   targetTransitionIds: readonly string[];
@@ -48,6 +60,7 @@ export interface TargetedStepSliceClosureResult {
   executionVars: Set<string>;
   neededTransitions: Set<string>;
   mountScopeDependencies: readonly MountScopeDependency[];
+  closureFallback?: string;
 }
 
 interface MountScopeAccumulator {
@@ -104,9 +117,17 @@ export function computeStateSliceClosure(
   const neededTransitions = new Set<string>();
   const mountAcc = createMountScopeAccumulator();
   const seedVars = new Set(neededVars);
+  const directionalAnalysis = input.directionalPredicate
+    ? analyzeDirectionalPredicate(input.directionalPredicate)
+    : undefined;
+  const closureFallback =
+    input.directionalPredicate && directionalAnalysis === undefined
+      ? "directional predicate shape unsupported"
+      : undefined;
 
   reachVarsThroughTransitions(graph, neededVars, neededTransitions, mountAcc, {
     seedVars,
+    directionalAnalysis,
   });
 
   for (const id of forcedTransitions) {
@@ -121,6 +142,7 @@ export function computeStateSliceClosure(
       mountAcc,
       neededVars,
     ),
+    ...(closureFallback ? { closureFallback } : {}),
   };
 }
 
@@ -129,42 +151,85 @@ export function computeTargetedStepSliceClosure(
   input: TargetedStepSliceClosureInput,
 ): TargetedStepSliceClosureResult {
   const targetIdSet = new Set(input.targetTransitionIds);
-  const dependencyVars = new Set([...input.stateReads, ...input.stepFactVars]);
+  const stepFactVarSet = new Set(input.stepFactVars);
+  const postMentionedVarSet = new Set(input.postMentionedVars);
+  const executionVars = new Set([
+    ...input.propertyReads,
+    ...input.preconditionReads,
+    ...input.postconditionReads,
+    ...input.stepFactVars,
+    ...input.postMentionedVars,
+  ]);
   const neededTransitions = new Set<string>();
   const mountAcc = createMountScopeAccumulator();
-  const seedVars = new Set(dependencyVars);
+  const seedVars = new Set(executionVars);
+  const targetEffectReads = new Set<string>();
 
-  for (const id of input.targetTransitionIds) {
-    addTransitionReadVars(graph, dependencyVars, id);
-  }
-
-  reachVarsThroughTransitions(
-    graph,
-    dependencyVars,
-    neededTransitions,
-    mountAcc,
-    { seedVars },
-  );
-
-  const executionVars = new Set(dependencyVars);
-  for (const varId of input.stepFactVars) {
-    executionVars.add(varId);
-  }
   for (const id of input.targetTransitionIds) {
     neededTransitions.add(id);
-    addTransitionSemanticVars(graph, executionVars, id);
+    seedTargetTransitionVars(
+      graph,
+      executionVars,
+      targetEffectReads,
+      id,
+      postMentionedVarSet,
+      stepFactVarSet,
+    );
   }
+
+  for (const id of input.targetTransitionIds) {
+    const transition = graph.transitionsById.get(id);
+    if (!transition || targetGuardEnabledAtInitial(graph.model, transition)) {
+      continue;
+    }
+    const guardAnalysis = analyzeDirectionalPredicate(transition.guard);
+    if (!guardAnalysis) continue;
+    reachVarsThroughTransitions(
+      graph,
+      executionVars,
+      neededTransitions,
+      mountAcc,
+      {
+        seedVars,
+        directionalAnalysis: guardAnalysis,
+        directionalWriteVars: new Set(
+          guardAnalysis.clauses.map((clause) => clause.var),
+        ),
+      },
+    );
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = expandMountGuardDependencies(
+      graph,
+      executionVars,
+      mountAcc,
+      seedVars,
+    );
+  }
+
   for (const id of input.enabledTransitionIds) {
     if (!targetIdSet.has(id)) neededTransitions.add(id);
-    addTransitionSemanticVars(graph, executionVars, id);
+    addEnabledObservationMountLocals(graph, executionVars, id);
+    addTransitionGuardReads(graph, executionVars, id);
   }
+
+  const internalWriteObsVars = new Set([
+    ...input.propertyReads,
+    ...input.preconditionReads,
+    ...input.postconditionReads,
+    ...targetEffectReads,
+  ]);
 
   for (const transition of graph.model.transitions) {
     if (transition.cls !== "internal") continue;
     if (!transition.triggeredBy?.some((varId) => executionVars.has(varId))) {
       continue;
     }
-    if (!transition.writes.some((write) => executionVars.has(write))) continue;
+    if (!transition.writes.some((write) => internalWriteObsVars.has(write))) {
+      continue;
+    }
     neededTransitions.add(transition.id);
     addTransitionSemanticVars(graph, executionVars, transition.id);
   }
@@ -205,7 +270,11 @@ function reachVarsThroughTransitions(
   neededVars: Set<string>,
   neededTransitions: Set<string>,
   mountAcc: MountScopeAccumulator,
-  options: { seedVars: ReadonlySet<string> },
+  options: {
+    seedVars: ReadonlySet<string>;
+    directionalAnalysis?: DirectionalPredicateAnalysis;
+    directionalWriteVars?: ReadonlySet<string>;
+  },
 ): void {
   let changed = true;
   while (changed) {
@@ -221,7 +290,25 @@ function reachVarsThroughTransitions(
       changed = true;
     }
     for (const transition of graph.model.transitions) {
-      if (!transition.writes.some((write) => neededVars.has(write))) continue;
+      const neededWrites = transition.writes.filter((write) => {
+        if (!neededVars.has(write)) return false;
+        if (
+          options.directionalWriteVars &&
+          !options.directionalWriteVars.has(write)
+        ) {
+          return false;
+        }
+        return true;
+      });
+      if (neededWrites.length === 0) continue;
+      if (options.directionalAnalysis) {
+        const relevant = isTransitionDirectionallyRelevant(
+          transition,
+          neededWrites,
+          options.directionalAnalysis,
+        );
+        if (!relevant) continue;
+      }
       if (!neededTransitions.has(transition.id)) {
         neededTransitions.add(transition.id);
         changed = true;
@@ -318,14 +405,56 @@ function addEnabledObservationMountLocals(
   expandMountGuardReads(graph, vars);
 }
 
-function addTransitionReadVars(
+function targetGuardEnabledAtInitial(
+  model: Model,
+  transition: Transition,
+): boolean {
+  try {
+    return modelInitialStates(model).some((state) =>
+      evalStatePredicate(transition.guard, state),
+    );
+  } catch (error) {
+    if (error instanceof StatePredicateEvalError) return false;
+    throw error;
+  }
+}
+
+function addTransitionGuardReads(
   graph: ModelDependencyGraph,
   vars: Set<string>,
   transitionId: string,
 ): void {
   const transition = graph.transitionsById.get(transitionId);
   if (!transition) return;
-  for (const read of transition.reads) vars.add(read);
+  for (const read of exprReads(transition.guard)) vars.add(read);
+}
+
+function seedTargetTransitionVars(
+  graph: ModelDependencyGraph,
+  executionVars: Set<string>,
+  targetEffectReads: Set<string>,
+  transitionId: string,
+  postMentionedVars: ReadonlySet<string>,
+  stepFactVars: ReadonlySet<string>,
+): void {
+  const transition = graph.transitionsById.get(transitionId);
+  if (!transition) return;
+  addTransitionGuardReads(graph, executionVars, transitionId);
+  for (const read of transition.reads) executionVars.add(read);
+  for (const varId of effectReadsForModel(
+    graph.model,
+    transition.effect,
+    transition.id,
+  )) {
+    executionVars.add(varId);
+    targetEffectReads.add(varId);
+  }
+  for (const write of transition.writes) {
+    if (graph.pendingQueueVarIds.has(write)) continue;
+    if (postMentionedVars.has(write) || stepFactVars.has(write)) {
+      executionVars.add(write);
+    }
+  }
 }
 
 function addTransitionSemanticVars(
