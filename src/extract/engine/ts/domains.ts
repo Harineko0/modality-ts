@@ -198,20 +198,17 @@ export function inferUseStateDomainSemanticDetailed(
   domainRefinements: readonly DomainRefinementProvider[] = [],
 ): DomainInferenceResult {
   const semanticSource = types?.sourceFile;
-  const callForSemantic =
-    semanticSource && sourceFile && semanticSource !== sourceFile
-      ? findMatchingUseStateCall(semanticSource, call, varId)
-      : call;
+  const inferenceSourceFile = semanticSource ?? sourceFile;
   const aliasesForSemantic =
     semanticSource && sourceFile && semanticSource !== sourceFile
       ? typeAliasDeclarations(semanticSource)
       : typeAliases;
-  const typeArg = callForSemantic.typeArguments?.[0];
-  const initializer = callForSemantic.arguments[0];
+  const typeArg = call.typeArguments?.[0];
+  const initializer = call.arguments[0];
   if (typeArg && types?.checker) {
     const inferenceCtx = {
       checker: types.checker,
-      sourceFile: semanticSource ?? sourceFile,
+      sourceFile: inferenceSourceFile,
       varId,
       typeAliases: aliasesForSemantic,
       initializer,
@@ -250,10 +247,9 @@ export function inferUseStateDomainSemanticDetailed(
     return semantic;
   }
   if (initializer && types?.checker) {
-    const semanticFile = semanticSource ?? sourceFile;
     const inferenceCtx = {
       checker: types.checker,
-      sourceFile: semanticFile,
+      sourceFile: inferenceSourceFile,
       varId,
       typeAliases: aliasesForSemantic,
       initializer,
@@ -262,7 +258,7 @@ export function inferUseStateDomainSemanticDetailed(
     const schemaResolved = resolveDomainRefinements(
       {
         initializer,
-        sourceFile: semanticFile,
+        sourceFile: inferenceSourceFile,
         typeAliases: aliasesForSemantic,
         visited: new Set(),
         varId,
@@ -310,13 +306,6 @@ export function inferUseStateDomainSemanticDetailed(
   );
 }
 
-function sameEnumValues(left: AbstractDomain, right: AbstractDomain): boolean {
-  if (left.kind !== "enum" || right.kind !== "enum") return false;
-  if (left.values.length !== right.values.length) return false;
-  const rightValues = new Set(right.values);
-  return left.values.every((value) => rightValues.has(value));
-}
-
 function parseLocalStateVarId(
   varId?: string,
 ): { component: string; stateName: string } | undefined {
@@ -327,13 +316,12 @@ function parseLocalStateVarId(
   return { component: rest.slice(0, dot), stateName: rest.slice(dot + 1) };
 }
 
-function findMatchingUseStateCall(
+function useStateCallByVarId(
   semanticSource: ts.SourceFile,
-  fragmentCall: ts.CallExpression,
   varId?: string,
-): ts.CallExpression {
+): ts.CallExpression | undefined {
   const parsed = parseLocalStateVarId(varId);
-  if (!parsed) return fragmentCall;
+  if (!parsed) return undefined;
   let found: ts.CallExpression | undefined;
   const visit = (node: ts.Node, currentComponent: string | undefined): void => {
     if (found) return;
@@ -362,7 +350,26 @@ function findMatchingUseStateCall(
     ts.forEachChild(node, (child) => visit(child, comp));
   };
   visit(semanticSource, undefined);
-  return found ?? fragmentCall;
+  return found;
+}
+
+/** Resolve a useState call on the project `SourceFile` when inference runs on a slice. */
+export function useStateCallForSemanticInference(
+  call: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+  types?: UseStateSemanticTypeContext,
+  varId?: string,
+): ts.CallExpression {
+  const semanticSource = types?.sourceFile;
+  if (!semanticSource || semanticSource === sourceFile) return call;
+  return useStateCallByVarId(semanticSource, varId) ?? call;
+}
+
+function sameEnumValues(left: AbstractDomain, right: AbstractDomain): boolean {
+  if (left.kind !== "enum" || right.kind !== "enum") return false;
+  if (left.values.length !== right.values.length) return false;
+  const rightValues = new Set(right.values);
+  return left.values.every((value) => rightValues.has(value));
 }
 
 export function domainInferenceWarnings(

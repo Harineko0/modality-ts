@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
   createSemanticProject,
@@ -570,5 +571,146 @@ describe("runExtractionPipeline semantic context", () => {
     expect(result.stateVars.some((decl) => decl.id.includes("count"))).toBe(
       true,
     );
+  });
+
+  it("ties fragment extraction to the project SourceFile when semanticProject is provided", () => {
+    const appPath = resolve(projectRoot, "App.tsx");
+    const sourceText = `export function App() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: appPath, text: sourceText },
+    ]);
+    let observedSourceFile: ts.SourceFile | undefined;
+    const plugin: StateSourcePlugin = {
+      id: "semantic-source-probe",
+      packageNames: ["semantic-source-probe"],
+      discover(ctx) {
+        observedSourceFile = ctx.types?.sourceFile;
+        return [];
+      },
+      writeChannels: () => [],
+      harness: {
+        setup: () => ({}),
+        observe: () => "unobservable",
+      },
+    };
+
+    runExtractionPipeline({
+      sourceText,
+      fileName: appPath,
+      route: "/",
+      sourcePlugins: [plugin],
+      semanticProject,
+    });
+
+    expect(observedSourceFile).toBe(semanticProject.getSourceFile(appPath));
+  });
+
+  it("infers imported useState domains from the project SourceFile without rematching", () => {
+    const typesPath = resolve(projectRoot, "types.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const typesText = `export type Status = "idle" | "loading" | "done";`;
+    const appText = `import type { Status } from "./types.js";
+export function App() {
+  const [status, setStatus] = useState<Status>("idle");
+  return <button onClick={() => setStatus("loading")}>{status}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: typesPath, text: typesText },
+      { path: appPath, text: appText },
+    ]);
+
+    const result = runExtractionPipeline({
+      sourceText: appText,
+      fileName: appPath,
+      route: "/",
+      sourcePlugins: [useStateSource()],
+      semanticProject,
+      discoverFragments: [
+        { sourceText: typesText, fileName: typesPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    const statusVar = result.stateVars.find((decl) => decl.id === "local:App.status");
+    expect(statusVar?.domain).toEqual({
+      kind: "enum",
+      values: ["done", "idle", "loading"],
+    });
+  });
+
+  it("discovers components through related project files with transitional supplemental sources", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child } from "./Child.js";
+export function App() {
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const fragmentTypes = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile: semanticProject.getSourceFile(appPath),
+      getSourceFile: (fileName: string) => semanticProject.getSourceFile(fileName),
+      canonicalFileName: (fileName: string) =>
+        semanticProject.canonicalFileName(fileName),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      symbolAt: (node: ts.Node) => semanticProject.symbolAt(node),
+      aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
+    };
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types: fragmentTypes,
+      relatedFragments: [
+        { sourceText: childText, fileName: childPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+      additionalComponentSources: [childText],
+    });
+
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") ||
+          transition.id.includes("onDone"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps syntax-only extractReactSourceTransitions fallback without a semantic program", () => {
+    const helperText = `export type Mode = "on" | "off";`;
+    const appText = `import type { Mode } from "./types.js";
+export function App() {
+  const [mode, setMode] = useState<Mode>("on");
+  return <button onClick={() => setMode("off")}>{mode}</button>;
+}`;
+    const result = extractReactSourceTransitions(appText, {
+      fileName: "App.tsx",
+      route: "/",
+      additionalTypeAliases: new Map([
+        ["Mode", ts.factory.createUnionTypeNode([
+          ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral("on")),
+          ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral("off")),
+        ])],
+      ]),
+    });
+    expect(result.vars.some((decl) => decl.id === "local:App.mode")).toBe(true);
+    expect(
+      result.transitions.some((transition) => transition.id.includes("onClick")),
+    ).toBe(true);
   });
 });

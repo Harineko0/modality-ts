@@ -68,6 +68,7 @@ export {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "../ts/domains.js";
 
 export interface SourceDecl {

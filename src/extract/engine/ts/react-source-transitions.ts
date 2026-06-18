@@ -58,6 +58,7 @@ import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "./domains.js";
 import type {
   StateVarDecl,
@@ -80,6 +81,7 @@ import type {
   SemanticTypeContext,
   DomainRefinementProvider,
 } from "../spi/index.js";
+import { resolve } from "node:path";
 import {
   timerSetterTaints,
   refSetterTaint,
@@ -154,6 +156,7 @@ export interface ReactSourceTransitionOptions {
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
+  relatedFragments?: readonly { sourceText: string; fileName: string }[];
   additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
   additionalComponentSources?: readonly string[];
   types?: SemanticTypeContext;
@@ -178,10 +181,7 @@ export function extractReactSourceTransitions(
     true,
     ts.ScriptKind.TSX,
   );
-  const typeAliases = typeAliasDeclarations(source);
-  for (const [name, typeNode] of options.additionalTypeAliases ?? []) {
-    if (!typeAliases.has(name)) typeAliases.set(name, typeNode);
-  }
+  const typeAliases = collectProjectTypeAliases(source, options);
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
@@ -417,8 +417,14 @@ export function extractReactSourceTransitions(
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
         const anchor = lineAndColumn(source, node);
-        const inferred = inferUseStateDomainSemanticDetailed(
+        const callForInference = useStateCallForSemanticInference(
           node.initializer,
+          source,
+          options.types,
+          varId,
+        );
+        const inferred = inferUseStateDomainSemanticDetailed(
+          callForInference,
           typeAliases,
           source,
           varId,
@@ -428,7 +434,7 @@ export function extractReactSourceTransitions(
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));
         const initialResult = initialValueForUseStateDetailed(
-          node.initializer,
+          callForInference,
           domain,
           source,
           varId,
@@ -1072,6 +1078,37 @@ export function extractReactSourceTransitions(
     transitions: withStableTransitionIds(transitions),
     warnings,
   };
+}
+
+function collectProjectTypeAliases(
+  primary: ts.SourceFile,
+  options: ReactSourceTransitionOptions,
+): Map<string, ts.TypeNode> {
+  const aliases = typeAliasDeclarations(primary);
+  if (options.types?.getSourceFile) {
+    const seen = new Set<string>();
+    const mergeFrom = (fragmentFileName: string): void => {
+      const key =
+        options.types?.canonicalFileName?.(fragmentFileName) ??
+        resolve(fragmentFileName);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const sourceFile = options.types?.getSourceFile(fragmentFileName);
+      if (!sourceFile) return;
+      for (const [name, node] of typeAliasDeclarations(sourceFile)) {
+        if (!aliases.has(name)) aliases.set(name, node);
+      }
+    };
+    mergeFrom(primary.fileName);
+    for (const fragment of options.relatedFragments ?? []) {
+      mergeFrom(fragment.fileName);
+    }
+    return aliases;
+  }
+  for (const [name, typeNode] of options.additionalTypeAliases ?? []) {
+    if (!aliases.has(name)) aliases.set(name, typeNode);
+  }
+  return aliases;
 }
 
 function mergeContextBindings(

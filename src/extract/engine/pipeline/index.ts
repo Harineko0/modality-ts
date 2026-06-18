@@ -29,6 +29,20 @@ import { synthesizeRedirectTransitions } from "./redirects.js";
 import type { SemanticProject } from "../ts/semantic-project.js";
 import * as ts from "typescript";
 
+function supplementalTypeAliases(
+  fragments: readonly { sourceText: string; fileName: string }[],
+): Map<string, ts.TypeNode> {
+  return typeAliasDeclarations(
+    ts.createSourceFile(
+      "__types__.ts",
+      fragments.map((fragment) => fragment.sourceText).join("\n"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    ),
+  );
+}
+
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
   warnings: readonly ExtractionWarning[];
@@ -222,18 +236,14 @@ export function runExtractionPipeline(
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const supplementalTypeText = allDiscoveryFragments
-    .map((fragment) => fragment.sourceText)
-    .join("\n");
-  const supplementalTypes = typeAliasDeclarations(
-    ts.createSourceFile(
-      "__types__.ts",
-      supplementalTypeText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    ),
-  );
+  const syntaxOnlyDiscovery =
+    !options.semanticProject &&
+    allDiscoveryFragments.some(
+      (fragment) => fragment.fileName !== options.fileName,
+    );
+  const supplementalComponentSources = allDiscoveryFragments
+    .filter((fragment) => fragment.fileName !== options.fileName)
+    .map((fragment) => fragment.sourceText);
   const genericExtraction = extractReactSourceTransitions(options.sourceText, {
     route: options.route,
     fileName: options.fileName,
@@ -242,10 +252,17 @@ export function runExtractionPipeline(
     stateVars: extractionCtx.stateVars,
     writeChannels,
     sourcePlugins,
-    additionalTypeAliases: supplementalTypes,
-    additionalComponentSources: allDiscoveryFragments
-      .filter((fragment) => fragment.fileName !== options.fileName)
-      .map((fragment) => fragment.sourceText),
+    relatedFragments,
+    ...(syntaxOnlyDiscovery || !options.semanticProject
+      ? {
+          additionalTypeAliases: supplementalTypeAliases(allDiscoveryFragments),
+          ...(syntaxOnlyDiscovery
+            ? { additionalComponentSources: supplementalComponentSources }
+            : {}),
+        }
+      : supplementalComponentSources.length > 0
+        ? { additionalComponentSources: supplementalComponentSources }
+        : {}),
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),

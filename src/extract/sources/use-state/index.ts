@@ -10,6 +10,7 @@ import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import * as harness from "./harness.js";
@@ -83,8 +84,14 @@ function discoverUseState(
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const componentId = component ?? "Anonymous";
         const varId = `local:${componentId}.${stateName.name.text}`;
-        const domain = inferUseStateDomainSemanticDetailed(
+        const callForInference = useStateCallForSemanticInference(
           node.initializer,
+          source,
+          types,
+          varId,
+        );
+        const domain = inferUseStateDomainSemanticDetailed(
+          callForInference,
           typeAliases,
           source,
           varId,
@@ -100,7 +107,7 @@ function discoverUseState(
             ? { kind: "global" }
             : { kind: "route-local", route },
           initial: initialValueForUseState(
-            node.initializer,
+            callForInference,
             domain,
             source,
             varId,

@@ -11,6 +11,7 @@ import {
 import {
   domainInferenceWarnings,
   inferUseStateDomainSemanticDetailed,
+  useStateCallForSemanticInference,
   initialValueForUseStateDetailed,
 } from "./domains.js";
 import type {
@@ -348,8 +349,14 @@ function hookStateReturn(
     elements[1].text !== setterName
   )
     return undefined;
-  const inferred = inferUseStateDomainSemanticDetailed(
+  const callForInference = useStateCallForSemanticInference(
     stateCall,
+    source,
+    types,
+    varId,
+  );
+  const inferred = inferUseStateDomainSemanticDetailed(
+    callForInference,
     typeAliases,
     source,
     varId,
@@ -359,7 +366,7 @@ function hookStateReturn(
   const domain = inferred.domain;
   const hookWarnings = [...domainInferenceWarnings(inferred, anchor)];
   const initialResult = initialValueForUseStateDetailed(
-    stateCall,
+    callForInference,
     domain,
     source,
     varId,
