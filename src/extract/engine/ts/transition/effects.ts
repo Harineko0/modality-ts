@@ -11,6 +11,7 @@ import { finalizeImplicitWebSocketOpens } from "./environment-callbacks.js";
 import type { EnvironmentEventConfig } from "../environment-config.js";
 import type { ExtractionWarning } from "../types.js";
 import type { StatementSummaryOptions } from "./statement-summary.js";
+import type { SemanticTypeContext } from "../../spi/index.js";
 import { timerClearSummaryFromCall } from "./timers.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
@@ -65,6 +66,7 @@ export interface EffectExtractionContext {
   webSocketIndex?: { value: number };
   environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
+  types?: SemanticTypeContext;
 }
 
 export function transitionsFromUseEffect(
@@ -260,6 +262,7 @@ function effectSummaryOptions(
     warnings: effectContext.warnings,
     fileName,
     source,
+    types: effectContext.types,
   };
 }
 

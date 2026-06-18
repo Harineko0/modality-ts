@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
 import * as ts from "typescript";
 import {
   inferDomainFromTypeNode,
   inferDomainFromTypeNodeDetailed,
+  inferDomainSemantic,
   inferUseStateDomainDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine";
+import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
 
 function typeNode(source: string): ts.TypeNode {
   const file = ts.createSourceFile(
@@ -217,6 +220,52 @@ describe("numeric domain resolver", () => {
     );
     const result = inferUseStateDomainDetailed(call, new Map(), sourceFile);
     expect(result.domain).toEqual({ kind: "tokens", count: 1 });
+    expect(result.caveats).toEqual([]);
+  });
+
+  it("resolves cross-file Bounded aliases through semantic inference", () => {
+    const typesPath = resolve("/project", "types.ts");
+    const appPath = resolve("/project", "App.tsx");
+    const semanticProject = createSemanticProjectForTest([
+      {
+        path: typesPath,
+        text: `export type Count = Bounded<0, 3>;`,
+      },
+      {
+        path: appPath,
+        text: `import type { Count } from "./types.js";
+import { useState } from "react";
+export function App() {
+  const [n] = useState<Count>(0);
+  return null;
+}`,
+      },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath)!;
+    let typeArg: ts.TypeNode | undefined;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(sourceFile) === "useState"
+      ) {
+        typeArg = node.typeArguments?.[0];
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    expect(typeArg).toBeDefined();
+    const result = inferDomainSemantic(typeArg!, {
+      checker: semanticProject.checker,
+      sourceFile,
+      varId: "local:App.n",
+    });
+    expect(result.domain).toEqual({
+      kind: "boundedInt",
+      min: 0,
+      max: 3,
+      overflow: "forbid",
+    });
     expect(result.caveats).toEqual([]);
   });
 });

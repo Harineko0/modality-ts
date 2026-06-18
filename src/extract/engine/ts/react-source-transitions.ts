@@ -1,6 +1,4 @@
-import type {
-  EffectOpAliases,
-} from "./effect-op-aliases.js";
+import type { EffectOpAliases } from "./effect-op-aliases.js";
 import * as ts from "typescript";
 import {
   componentNameFor,
@@ -32,9 +30,10 @@ function unextractableHandlerAlreadyReported(
   );
 }
 import {
-  componentDeclarations,
+  buildComponentRegistry,
+  buildCustomHookRegistry,
   calledCustomHook,
-  customHookDeclarations,
+  componentRegistryDisplayMap,
   detectStatefulListComponents,
   inlineCustomHookState,
   isCustomHookDeclaration,
@@ -58,6 +57,7 @@ import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "./domains.js";
 import type {
   StateVarDecl,
@@ -80,6 +80,7 @@ import type {
   SemanticTypeContext,
   DomainRefinementProvider,
 } from "../spi/index.js";
+import { resolve } from "node:path";
 import {
   timerSetterTaints,
   refSetterTaint,
@@ -154,8 +155,7 @@ export interface ReactSourceTransitionOptions {
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
-  additionalTypeAliases?: ReadonlyMap<string, ts.TypeNode>;
-  additionalComponentSources?: readonly string[];
+  relatedFragments?: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
   domainRefinements?: readonly DomainRefinementProvider[];
 }
@@ -171,17 +171,19 @@ export function extractReactSourceTransitions(
   options: ReactSourceTransitionOptions = {},
 ): ReactSourceTransitionResult {
   const fileName = options.fileName ?? "App.tsx";
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const typeAliases = typeAliasDeclarations(source);
-  for (const [name, typeNode] of options.additionalTypeAliases ?? []) {
-    if (!typeAliases.has(name)) typeAliases.set(name, typeNode);
-  }
+  const source =
+    options.types?.sourceFile &&
+    options.types.sourceFile.fileName === fileName &&
+    options.types.sourceFile.text === sourceText
+      ? options.types.sourceFile
+      : ts.createSourceFile(
+          fileName,
+          sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX,
+        );
+  const typeAliases = collectProjectTypeAliases(source, options);
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
@@ -199,17 +201,15 @@ export function extractReactSourceTransitions(
     route,
     typeAliases,
   );
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
+  for (const relatedSource of relatedDiscoverySourceFiles(source, options)) {
     mergeContextBindings(
       contextBindings,
-      discoverContextBindings(supplemental, fileName, route, typeAliases),
+      discoverContextBindings(
+        relatedSource,
+        relatedSource.fileName,
+        route,
+        typeAliases,
+      ),
     );
   }
   const globalTaints = new Set<string>();
@@ -231,38 +231,33 @@ export function extractReactSourceTransitions(
     submitBindings,
     modeledSubmitHandlers,
   });
-  const components = componentDeclarations(source);
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    for (const [name, decl] of componentDeclarations(supplemental)) {
-      if (!components.has(name)) components.set(name, decl);
-    }
-  }
-  const providerComponents = providerComponentNames(source);
-  const customHooks = customHookDeclarations(source);
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    for (const [name, decl] of customHookDeclarations(supplemental)) {
-      if (!customHooks.has(name)) customHooks.set(name, decl);
-    }
-  }
+  const relatedSourceFiles = relatedDiscoverySourceFiles(source, options);
+  const supplementalSources = (options.relatedFragments ?? [])
+    .filter((fragment) => fragment.fileName !== fileName)
+    .map((fragment) => ({
+      sourceText: fragment.sourceText,
+      fileName: fragment.fileName,
+    }));
+  const components = buildComponentRegistry(source, {
+    ...(options.types ? { types: options.types } : {}),
+    primaryFileName: fileName,
+    relatedSourceFiles,
+    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
+  });
+  const componentDisplayMap = componentRegistryDisplayMap(components);
+  const customHooks = buildCustomHookRegistry(source, {
+    ...(options.types ? { types: options.types } : {}),
+    primaryFileName: fileName,
+    relatedSourceFiles,
+    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
+  });
   const statefulListComponents = detectStatefulListComponents(
     source,
     components,
+    options.types,
   );
   const reportedStatefulListComponents = new Set<string>();
+  const providerComponents = providerComponentNames(source);
   const reportedCustomHooks = new Set<string>();
   for (const decl of contextBindings.vars) {
     if (!vars.some((candidate) => candidate.id === decl.id)) vars.push(decl);
@@ -280,6 +275,7 @@ export function extractReactSourceTransitions(
     }
     const fixedEffect = options.setterFixedEffects?.get(channel.symbolName);
     if (fixedEffect) binding.fixedEffect = fixedEffect;
+    if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
     bindSetter(setters, channel.symbolName, binding);
   }
   for (const [symbolName, setter] of contextBindings.setters)
@@ -287,7 +283,7 @@ export function extractReactSourceTransitions(
   const handlers = new Map<string, ExtractableHandler>();
   const renderBoundaries = discoverComponentRenderBoundaries(
     source,
-    components,
+    componentDisplayMap,
   );
   const registerTimerVars = (
     registrations: readonly TimerRegistration[],
@@ -350,7 +346,13 @@ export function extractReactSourceTransitions(
         ...lineAndColumn(source, node),
       });
     }
-    bindContextHookObjectDeclaration(node, contextBindings, setters);
+    bindContextHookObjectDeclaration(
+      node,
+      contextBindings,
+      setters,
+      customHooks,
+      options.types,
+    );
     if (
       ts.isVariableDeclaration(node) &&
       nextComponent &&
@@ -378,11 +380,11 @@ export function extractReactSourceTransitions(
     ) {
       return;
     }
-    const customHook = calledCustomHook(node, new Set(customHooks.keys()));
+    const customHook = calledCustomHook(node, customHooks, options.types);
     if (customHook && nextComponent) {
-      const key = `${nextComponent}.${customHook}`;
+      const key = `${nextComponent}.${customHook.displayName}`;
       if (
-        !contextBindings.hookReturns.has(customHook) &&
+        !contextBindings.hookReturns.has(customHook.displayName) &&
         !reportedCustomHooks.has(key)
       ) {
         reportedCustomHooks.add(key);
@@ -417,8 +419,14 @@ export function extractReactSourceTransitions(
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
         const anchor = lineAndColumn(source, node);
-        const inferred = inferUseStateDomainSemanticDetailed(
+        const callForInference = useStateCallForSemanticInference(
           node.initializer,
+          source,
+          options.types,
+          varId,
+        );
+        const inferred = inferUseStateDomainSemanticDetailed(
+          callForInference,
           typeAliases,
           source,
           varId,
@@ -428,7 +436,7 @@ export function extractReactSourceTransitions(
         const domain = inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));
         const initialResult = initialValueForUseStateDetailed(
-          node.initializer,
+          callForInference,
           domain,
           source,
           varId,
@@ -460,6 +468,11 @@ export function extractReactSourceTransitions(
               component,
               stateName: stateName.name.text,
               domain,
+              ...(options.types?.localSymbolKey?.(setterName.name)
+                ? {
+                    symbolKey: options.types.localSymbolKey(setterName.name),
+                  }
+                : {}),
             });
         }
       } else {
@@ -593,6 +606,7 @@ export function extractReactSourceTransitions(
               ]),
               valueSuffix: safeId(String(value)),
             },
+            options.types,
           ),
         );
         if (extracted.length > 0) {
@@ -635,6 +649,7 @@ export function extractReactSourceTransitions(
             contextBindings,
             resetSymbols,
             componentPropHandlerContext,
+            options.types,
           );
           if (extracted.length > 0) {
             transitions.push(
@@ -673,6 +688,7 @@ export function extractReactSourceTransitions(
         contextBindings,
         resetSymbols,
         componentPropHandlerContext,
+        options.types,
       );
       transitions.push(
         ...extracted,
@@ -687,6 +703,7 @@ export function extractReactSourceTransitions(
           components,
           scopedSetters,
           warnings,
+          options.types,
         ) &&
         !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
@@ -789,6 +806,7 @@ export function extractReactSourceTransitions(
               domain: listInfo.domain,
               itemName: listInfo.itemName,
             },
+            options.types,
           );
           if (extracted.length > 0) {
             transitions.push(...tagStableIdKey(extracted, node));
@@ -854,6 +872,7 @@ export function extractReactSourceTransitions(
             nextComponent ?? "Anonymous",
           ),
           effectOpAliases,
+          types: options.types,
         },
       );
       registerTimerVars(timerRegistrations);
@@ -865,11 +884,12 @@ export function extractReactSourceTransitions(
         !forwardsComponentProp(
           node,
           handlers,
-          components.get(nextComponent ?? ""),
+          componentDisplayMap.get(nextComponent ?? ""),
           components,
           scopedSetters,
           source,
           warnings,
+          options.types,
         ) &&
         !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
         !modeledSubmitHandlers.has(handlerId) &&
@@ -1027,6 +1047,7 @@ export function extractReactSourceTransitions(
           webSocketIndex: { value: webSocketCounter },
           environment: options.environment,
           transitionBindings,
+          types: options.types,
         },
       );
       registerTimerVars(timerRegistrations);
@@ -1062,7 +1083,7 @@ export function extractReactSourceTransitions(
       source,
       fileName,
       routePatterns,
-      components,
+      componentDisplayMap,
       routerPlugin,
       inventory,
     ),
@@ -1072,6 +1093,97 @@ export function extractReactSourceTransitions(
     transitions: withStableTransitionIds(transitions),
     warnings,
   };
+}
+
+function relatedDiscoverySourceFiles(
+  primary: ts.SourceFile,
+  options: ReactSourceTransitionOptions,
+): ts.SourceFile[] {
+  if (!options.types?.getSourceFile) {
+    const seen = new Set<string>();
+    const files: ts.SourceFile[] = [];
+    for (const fragment of options.relatedFragments ?? []) {
+      const key = resolve(fragment.fileName);
+      if (seen.has(key) || fragment.fileName === primary.fileName) continue;
+      seen.add(key);
+      files.push(
+        ts.createSourceFile(
+          fragment.fileName,
+          fragment.sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX,
+        ),
+      );
+    }
+    return files;
+  }
+  const seen = new Set<string>();
+  const files: ts.SourceFile[] = [];
+  const addFile = (fileName: string): void => {
+    const key =
+      options.types?.canonicalFileName?.(fileName) ?? resolve(fileName);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const sourceFile = options.types?.getSourceFile(fileName);
+    if (!sourceFile || sourceFile === primary) return;
+    files.push(sourceFile);
+  };
+  for (const fragment of options.relatedFragments ?? []) {
+    addFile(fragment.fileName);
+  }
+  return files;
+}
+
+function collectProjectTypeAliases(
+  primary: ts.SourceFile,
+  options: ReactSourceTransitionOptions,
+): Map<string, ts.TypeNode> {
+  const aliases = typeAliasDeclarations(primary);
+  if (options.types?.getSourceFile) {
+    const seen = new Set<string>();
+    const mergeFrom = (fragment: {
+      sourceText: string;
+      fileName: string;
+    }): void => {
+      const key =
+        options.types?.canonicalFileName?.(fragment.fileName) ??
+        resolve(fragment.fileName);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const sourceFile =
+        options.types?.getSourceFile(fragment.fileName) ??
+        ts.createSourceFile(
+          fragment.fileName,
+          fragment.sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TS,
+        );
+      for (const [name, node] of typeAliasDeclarations(sourceFile)) {
+        if (!aliases.has(name)) aliases.set(name, node);
+      }
+    };
+    mergeFrom({ sourceText: primary.text, fileName: primary.fileName });
+    for (const fragment of options.relatedFragments ?? []) {
+      mergeFrom(fragment);
+    }
+    return aliases;
+  }
+  for (const fragment of options.relatedFragments ?? []) {
+    if (fragment.fileName === primary.fileName) continue;
+    const sourceFile = ts.createSourceFile(
+      fragment.fileName,
+      fragment.sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    for (const [name, node] of typeAliasDeclarations(sourceFile)) {
+      if (!aliases.has(name)) aliases.set(name, node);
+    }
+  }
+  return aliases;
 }
 
 function mergeContextBindings(

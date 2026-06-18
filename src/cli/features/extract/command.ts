@@ -85,7 +85,10 @@ import {
 } from "./project.js";
 import {
   createSemanticProject,
+  loadSemanticProjectConfig,
+  tsConfigResolutionFromSemanticConfig,
   type SemanticProject,
+  type SemanticProjectConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
 
 export interface ModalityConfig {
@@ -455,6 +458,8 @@ interface ExtractionProject {
   surfaceWarnings: string[];
   configStartDir: string;
   rawEntries: Array<{ path: string; text: string }>;
+  semanticConfig: SemanticProjectConfig;
+  /** Transitional reduced path shape for project-surface reachability. */
   tsconfig: TsConfigResolution;
   semanticProject?: SemanticProject;
 }
@@ -477,15 +482,16 @@ async function loadExtractionProject(
   const resolved = sourcePaths[0];
   if (!resolved) throw new Error("extract requires at least one source path");
   const info = await stat(resolved);
-  const tsconfig = await readTsConfigResolution(
-    info.isDirectory() ? resolved : dirname(resolved),
-  );
+  const configStartDir = info.isDirectory() ? resolved : dirname(resolved);
+  const semanticConfig = loadSemanticProjectConfig(configStartDir);
+  const tsconfig = tsConfigResolutionFromSemanticConfig(semanticConfig);
   if (!info.isDirectory()) {
     const source = await readFile(resolved, "utf8");
     const rawEntries = [{ path: resolved, text: source }];
     return emptySurfaceProject({
       entryFile: resolved,
       rawEntries,
+      semanticConfig,
       tsconfig,
       configStartDir: dirname(resolved),
     });
@@ -511,6 +517,7 @@ async function loadExtractionProject(
   return emptySurfaceProject({
     entryFile: routesPath,
     rawEntries,
+    semanticConfig,
     tsconfig,
     configStartDir: resolved,
   });
@@ -519,6 +526,7 @@ async function loadExtractionProject(
 function emptySurfaceProject(input: {
   entryFile: string;
   rawEntries: Array<{ path: string; text: string }>;
+  semanticConfig: SemanticProjectConfig;
   tsconfig: TsConfigResolution;
   configStartDir: string;
 }): ExtractionProject {
@@ -535,6 +543,7 @@ function emptySurfaceProject(input: {
     surfaceWarnings: [],
     configStartDir: input.configStartDir,
     rawEntries: input.rawEntries,
+    semanticConfig: input.semanticConfig,
     tsconfig: input.tsconfig,
   };
 }
@@ -551,9 +560,13 @@ async function buildClientProjectSurface(
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
   const resolvedAdapter = withServerEffectDiscovery(adapter);
+  const moduleResolver = createSemanticProject(
+    project.rawEntries,
+    project.semanticConfig,
+  );
   const reachable = await sourceWithReachableImports(
     project.rawEntries,
-    project.tsconfig,
+    moduleResolver,
     resolvedAdapter,
     project.inventory,
   );
@@ -572,7 +585,7 @@ async function buildClientProjectSurface(
   );
   const semanticProject = createSemanticProject(
     includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
-    project.tsconfig,
+    project.semanticConfig,
   );
   return {
     ...project,
@@ -725,6 +738,11 @@ async function loadMultiFileExtractionProject(
     rawEntries: [...rawEntriesByPath.values()].sort((left, right) =>
       left.path.localeCompare(right.path),
     ),
+    semanticConfig:
+      projects[0]?.semanticConfig ??
+      loadSemanticProjectConfig(
+        commonAncestor(projects.map((project) => project.configStartDir)),
+      ),
     tsconfig: projects[0]?.tsconfig ?? { paths: [] },
     configStartDir: commonAncestor(
       projects.map((project) => project.configStartDir),
@@ -911,53 +929,9 @@ async function findNearestRoutesManifest(
 async function readTsConfigResolution(
   startDir: string,
 ): Promise<TsConfigResolution> {
-  const tsconfigPath = await findNearestTsConfig(startDir);
-  if (!tsconfigPath) return { paths: [] };
-  const sourceText = await readFile(tsconfigPath, "utf8");
-  const parseResult = ts.parseConfigFileTextToJson(tsconfigPath, sourceText);
-  if (parseResult.error) {
-    throw new Error(
-      ts.flattenDiagnosticMessageText(parseResult.error.messageText, "\n"),
-    );
-  }
-  const parsed = parseResult.config as {
-    compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
-  };
-  const configDir = dirname(tsconfigPath);
-  const baseUrl = parsed.compilerOptions?.baseUrl
-    ? resolve(configDir, parsed.compilerOptions.baseUrl)
-    : configDir;
-  const paths = Object.entries(parsed.compilerOptions?.paths ?? {}).map(
-    ([key, targets]) => {
-      const star = key.indexOf("*");
-      const prefix = star >= 0 ? key.slice(0, star) : key;
-      const suffix = star >= 0 ? key.slice(star + 1) : "";
-      return {
-        prefix,
-        suffix,
-        targets: targets.map((target) => resolve(baseUrl, target)),
-      };
-    },
+  return tsConfigResolutionFromSemanticConfig(
+    loadSemanticProjectConfig(startDir),
   );
-  return { baseUrl, paths };
-}
-
-async function findNearestTsConfig(
-  startDir: string,
-): Promise<string | undefined> {
-  let dir = startDir;
-  while (true) {
-    const candidate = join(dir, "tsconfig.json");
-    try {
-      await readFile(candidate, "utf8");
-      return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    const parent = dirname(dir);
-    if (parent === dir || dir === parse(dir).root) return undefined;
-    dir = parent;
-  }
 }
 
 async function existingFiles(paths: readonly string[]): Promise<string[]> {

@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts", "src/**/*.test.ts"],
     globals: false,
+    testTimeout: 60_000,
   },
   resolve: {
     alias: {

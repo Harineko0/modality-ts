@@ -1,4 +1,8 @@
-import type { WriteChannel } from "modality-ts/extract/engine/spi";
+import type {
+  WriteChannel,
+  SemanticTypeContext,
+} from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import * as ts from "typescript";
 import {
   keyFromExpression,
@@ -10,15 +14,15 @@ import { swrVarId } from "./template.js";
 export function discoverSwrReadChannels(
   sourceText: string,
   fileName = "App.tsx",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const useSwrNames = useSwrImportNames(source);
+  const useSwrNames = useSwrImportNames(source, types);
   const channels: WriteChannel[] = [];
   const visit = (node: ts.Node): void => {
     if (
