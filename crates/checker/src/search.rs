@@ -5,7 +5,7 @@ use crate::effect::{apply_effect, effect_contains_enqueue};
 use crate::frontier::{chunk_frontier, sort_frontier_by_canon};
 use crate::graph::{resolve_edge_mode, GraphRecording};
 use crate::model::{CheckOptionsIR, CheckRequest, CompiledModel, Model};
-use crate::property::{finalize_properties, observe_edge, observe_states};
+use crate::property::{all_properties_terminal, finalize_properties, observe_edge, observe_states};
 use crate::report::{build_check_result, invalid_model_result};
 use crate::stabilize::{sort_states_by_canon, stabilize};
 use crate::state::ModelState;
@@ -16,6 +16,7 @@ use crate::visited::{sort_merge_candidates, MergeCandidate, StateId, VisitedSet}
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Instant;
 
 pub fn check_model_request(request: CheckRequest) -> Result<Value, String> {
@@ -101,7 +102,14 @@ pub fn check_model_compiled(
     let mut depth = 0u32;
     let mut edge_count = 0u32;
 
-    while !frontier.is_empty() && depth < compiled.model.bounds.max_depth && limit_hit.is_none() {
+    if all_properties_terminal(properties, &verdicts) {
+        // All properties already have decisive verdicts; skip search.
+    } else {
+        while !frontier.is_empty()
+            && depth < compiled.model.bounds.max_depth
+            && limit_hit.is_none()
+            && !all_properties_terminal(properties, &verdicts)
+        {
         max_frontier = max_frontier.max(frontier.len() as u32);
         final_frontier = frontier.len() as u32;
 
@@ -110,6 +118,7 @@ pub fn check_model_compiled(
             visited.len() as u32,
             edge_count,
             frontier.len() as u32,
+            "frontier",
         )
         .or_else(|| check_memory_guard(&options))
         {
@@ -134,8 +143,11 @@ pub fn check_model_compiled(
         if let Some(limit) = explore.limit_hit {
             limit_hit = Some(limit);
         }
-
-        frontier = explore.next;
+        if explore.all_terminal {
+            frontier.clear();
+        } else {
+            frontier = explore.next;
+        }
         edge_count += explore.edges;
 
         let trace_ctx = trace_context(compiled, &visited);
@@ -160,11 +172,13 @@ pub fn check_model_compiled(
                 visited.len() as u32,
                 edge_count,
                 frontier.len() as u32,
+                "frontier",
             )
             .or_else(|| check_memory_guard(&options))
             {
                 limit_hit = Some(limit);
             }
+        }
         }
     }
 
@@ -269,6 +283,97 @@ struct ExploreResult {
     next: Vec<StateId>,
     edges: u32,
     limit_hit: Option<Value>,
+    all_terminal: bool,
+}
+
+#[derive(Debug)]
+struct ExpansionBudget<'a> {
+    options: &'a CheckOptionsIR,
+    starting_edge_count: u32,
+    starting_state_count: u32,
+    generated_edges: AtomicU32,
+    generated_new_states: AtomicU32,
+    stop: AtomicBool,
+}
+
+impl<'a> ExpansionBudget<'a> {
+    fn new(
+        options: &'a CheckOptionsIR,
+        starting_edge_count: u32,
+        starting_state_count: u32,
+    ) -> Self {
+        Self {
+            options,
+            starting_edge_count,
+            starting_state_count,
+            generated_edges: AtomicU32::new(0),
+            generated_new_states: AtomicU32::new(0),
+            stop: AtomicBool::new(false),
+        }
+    }
+
+    fn should_stop(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+
+    fn note_generated_edge(&self) {
+        if self.should_stop() {
+            return;
+        }
+        let generated = self.generated_edges.fetch_add(1, Ordering::Relaxed) + 1;
+        if check_search_limits(
+            self.options,
+            self.starting_state_count
+                + self.generated_new_states.load(Ordering::Relaxed),
+            self.starting_edge_count + generated,
+            0,
+            "generation",
+        )
+        .is_some()
+        {
+            self.stop.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn note_new_state_candidate(&self) {
+        if self.should_stop() {
+            return;
+        }
+        let generated = self.generated_new_states.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(max) = self.options.max_states {
+            if self.starting_state_count + generated >= max {
+                self.stop.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn limit_hit(&self) -> Option<Value> {
+        if !self.should_stop() {
+            return None;
+        }
+        let generated_edges = self.generated_edges.load(Ordering::Relaxed);
+        let generated_states = self.generated_new_states.load(Ordering::Relaxed);
+        check_search_limits(
+            self.options,
+            self.starting_state_count + generated_states,
+            self.starting_edge_count + generated_edges,
+            0,
+            "generation",
+        )
+        .or_else(|| {
+            self.options.max_states.and_then(|max| {
+                if self.starting_state_count + generated_states >= max {
+                    Some(json!({
+                        "reason": format!("search limit exceeded: maxStates={max}"),
+                        "maxStates": max,
+                        "phase": "generation",
+                    }))
+                } else {
+                    None
+                }
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -333,11 +438,25 @@ fn explore_depth_parallel(
         .collect();
     let chunks = chunk_frontier(frontier, worker_count);
 
+    let budget = ExpansionBudget::new(
+        options,
+        starting_edge_count,
+        visited.len() as u32,
+    );
     let worker_outputs: Vec<WorkerOutput> = {
         let visited_ref: &VisitedSet = &*visited;
+        let budget_ref = &budget;
         chunks
             .par_iter()
-            .map(|chunk| expand_chunk(compiled, chunk, &frontier_positions, visited_ref))
+            .map(|chunk| {
+                expand_chunk(
+                    compiled,
+                    chunk,
+                    &frontier_positions,
+                    visited_ref,
+                    Some(budget_ref),
+                )
+            })
             .collect::<Result<Vec<_>, String>>()?
     };
 
@@ -353,11 +472,12 @@ fn explore_depth_parallel(
     all_edges.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
 
     let mut edge_count = 0u32;
-    let mut limit_hit = None;
+    let mut limit_hit = budget.limit_hit();
+    let mut all_terminal = false;
     let trace_ctx = trace_context(compiled, visited);
 
     for edge in &all_edges {
-        if limit_hit.is_some() {
+        if limit_hit.is_some() || all_terminal {
             break;
         }
         edge_count += 1;
@@ -389,18 +509,23 @@ fn explore_depth_parallel(
             &trace_ctx,
             verdicts,
         );
+        if all_properties_terminal(properties, verdicts) {
+            all_terminal = true;
+            break;
+        }
         if let Some(limit) = check_search_limits(
             options,
             visited.len() as u32,
             starting_edge_count + edge_count,
             0,
+            "edge-recording",
         ) {
             limit_hit = Some(limit);
         }
     }
 
     let mut next = Vec::new();
-    if limit_hit.is_none() {
+    if limit_hit.is_none() && !all_terminal {
         let sorted = sort_merge_candidates(visited, all_candidates);
         for candidate in sorted {
             if visited.contains_canon(&candidate.post_canon) {
@@ -411,6 +536,7 @@ fn explore_depth_parallel(
                 visited.len() as u32,
                 starting_edge_count + edge_count,
                 next.len() as u32,
+                "candidate-merge",
             ) {
                 limit_hit = Some(limit);
                 break;
@@ -431,6 +557,7 @@ fn explore_depth_parallel(
         next,
         edges: edge_count,
         limit_hit,
+        all_terminal,
     })
 }
 
@@ -439,6 +566,7 @@ fn expand_chunk(
     chunk: &[StateId],
     frontier_positions: &HashMap<StateId, u32>,
     visited: &VisitedSet,
+    budget: Option<&ExpansionBudget<'_>>,
 ) -> Result<WorkerOutput, String> {
     let mut edges = Vec::new();
     let mut candidates = Vec::new();
@@ -453,11 +581,17 @@ fn expand_chunk(
         identity.bytes
     };
 
-    for &pre_id in chunk {
+    'chunk: for &pre_id in chunk {
+        if budget.is_some_and(|budget| budget.should_stop()) {
+            break;
+        }
         let parent_frontier_position = frontier_positions.get(&pre_id).copied().unwrap_or(u32::MAX);
         let pre = visited.arena.state(pre_id);
         let pre_canon = visited.arena.canon(pre_id).to_vec();
         for transition_id in enabled_non_internal(compiled, pre) {
+            if budget.is_some_and(|budget| budget.should_stop()) {
+                break 'chunk;
+            }
             let transition = compiled.transition(transition_id);
             enabled_transition_ids.insert(transition.id.clone());
             let mut bound_callback = |hit: &str| {
@@ -483,12 +617,24 @@ fn expand_chunk(
                 bound_hits.insert(format!("pending cap saturated at {}", transition.id));
             }
             for (raw_post_branch, raw_post) in posts.into_iter().enumerate() {
+                if budget.is_some_and(|budget| budget.should_stop()) {
+                    break 'chunk;
+                }
                 let changed = crate::state::changed_var_indexes(pre, &raw_post);
                 let stabilized =
                     stabilize(compiled, raw_post, changed, &mut canon).unwrap_or_default();
                 for (stabilization_branch, post) in stabilized.into_iter().enumerate() {
+                    if budget.is_some_and(|budget| budget.should_stop()) {
+                        break 'chunk;
+                    }
                     let post_canon = canon(&post);
                     let sort_key = (pre_canon.clone(), transition_id, post_canon.clone());
+                    if let Some(budget) = budget {
+                        budget.note_generated_edge();
+                        if budget.should_stop() {
+                            break 'chunk;
+                        }
+                    }
                     edges.push(GeneratedEdge {
                         pre_id,
                         post_canon: post_canon.clone(),
@@ -497,6 +643,9 @@ fn expand_chunk(
                         sort_key,
                     });
                     if !visited.contains_canon(&post_canon) {
+                        if let Some(budget) = budget {
+                            budget.note_new_state_candidate();
+                        }
                         candidates.push(MergeCandidate {
                             parent_id: pre_id,
                             parent_frontier_position,
@@ -552,12 +701,14 @@ fn check_search_limits(
     states: u32,
     edges: u32,
     frontier: u32,
+    phase: &str,
 ) -> Option<Value> {
     if let Some(max) = options.max_states {
         if states >= max {
             return Some(json!({
                 "reason": format!("search limit exceeded: maxStates={max}"),
                 "maxStates": max,
+                "phase": phase,
             }));
         }
     }
@@ -566,6 +717,7 @@ fn check_search_limits(
             return Some(json!({
                 "reason": format!("search limit exceeded: maxEdges={max}"),
                 "maxEdges": max,
+                "phase": phase,
             }));
         }
     }
@@ -574,6 +726,7 @@ fn check_search_limits(
             return Some(json!({
                 "reason": format!("search limit exceeded: maxFrontier={max}"),
                 "maxFrontier": max,
+                "phase": phase,
             }));
         }
     }
@@ -1244,5 +1397,174 @@ mod tests {
             .pointer("/diagnostics/limits/memoryGuardBytes")
             .and_then(|v| v.as_u64());
         assert_eq!(memory_guard, Some(1));
+    }
+
+    fn wide_havoc_model(branch_count: usize) -> CompiledModel {
+        let values: Vec<String> = (0..branch_count).map(|i| format!("v{i}")).collect();
+        CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "wide-havoc".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "sys:pending".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::new(),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "wide".into(),
+                        domain: AbstractDomain::Enum {
+                            values: values.clone(),
+                        },
+                        origin: json!("test"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!(values[0])),
+
+                        role: None,
+                    },
+                ],
+                transitions: vec![Transition {
+                    id: "havoc-wide".into(),
+                    cls: "user".into(),
+                    label: json!({"kind": "click"}),
+                    source: vec![],
+                    guard: ExprIR::Lit { value: json!(true) },
+                    effect: EffectIR::Havoc { var: "wide".into() },
+                    reads: vec![],
+                    writes: vec!["wide".into()],
+                    confidence: "exact".into(),
+                    triggered_by: None,
+                    phase: None,
+                }],
+                bounds: Bounds {
+                    max_depth: 4,
+                    max_pending: 0,
+                    max_internal_steps: 1,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn wide_havoc_respects_max_edges_during_generation() {
+        let compiled = wide_havoc_model(500);
+        let properties = vec![PropertyIR::Always {
+            name: "p".into(),
+            predicate: ExprIR::Lit { value: json!(true) },
+            reads: None,
+            enabled_transitions: None,
+            include_unmounted: None,
+        }];
+        let started = Instant::now();
+        let result = check_model_compiled(
+            &compiled,
+            &properties,
+            Some(&CheckOptionsIR {
+                slicing: None,
+                sliced_model: None,
+                max_states: None,
+                max_edges: Some(8),
+                max_frontier: None,
+                track_elapsed: None,
+                memory_guard_bytes: None,
+            }),
+        )
+        .unwrap();
+        assert!(
+            started.elapsed().as_millis() < 5_000,
+            "wide havoc should stop quickly under maxEdges"
+        );
+        let limits = result.pointer("/diagnostics/limits").unwrap();
+        assert!(limits
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("maxEdges=8"));
+        assert_eq!(
+            limits.get("phase").and_then(|v| v.as_str()),
+            Some("generation")
+        );
+        let edges = result.pointer("/stats/edges").and_then(|v| v.as_u64());
+        assert!(edges.unwrap_or(0) <= 8);
+    }
+
+    #[test]
+    fn all_terminal_properties_stop_before_max_depth() {
+        let compiled = toggle_model();
+        let properties = vec![
+            PropertyIR::Always {
+                name: "alwaysFalse".into(),
+                predicate: ExprIR::Lit { value: json!(false) },
+                reads: None,
+                enabled_transitions: None,
+                include_unmounted: None,
+            },
+            PropertyIR::Reachable {
+                name: "reachableTrue".into(),
+                predicate: ExprIR::Lit { value: json!(true) },
+                reads: None,
+                enabled_transitions: None,
+                include_unmounted: None,
+            },
+        ];
+        let result = check_model_compiled(
+            &compiled,
+            &properties,
+            Some(&CheckOptionsIR {
+                slicing: None,
+                sliced_model: None,
+                max_states: None,
+                max_edges: None,
+                max_frontier: None,
+                track_elapsed: None,
+                memory_guard_bytes: None,
+            }),
+        )
+        .unwrap();
+        let depth = result.pointer("/stats/depth").and_then(|v| v.as_u64());
+        assert_eq!(depth, Some(0));
+        let edges = result.pointer("/stats/edges").and_then(|v| v.as_u64());
+        assert_eq!(edges, Some(0));
+        let expanded = result
+            .pointer("/diagnostics/search/expandedDepths")
+            .and_then(|v| v.as_u64());
+        assert_eq!(expanded, Some(0));
     }
 }

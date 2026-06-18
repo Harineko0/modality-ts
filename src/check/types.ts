@@ -105,6 +105,7 @@ export interface CheckDiagnostics {
     maxEdges?: number;
     maxFrontier?: number;
     memoryGuardBytes?: number;
+    phase?: string;
   };
   dominantVars?: readonly { varId: string; distinctValues: number }[];
   storage?: StorageDiagnostics;

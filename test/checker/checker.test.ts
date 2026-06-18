@@ -2458,11 +2458,7 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(
-        m,
-        eq({ kind: "lenCat", arg: readVar("sys:pending") }, lit("1")),
-        { name: "onePendingReachable" },
-      ),
+      always(m, lit(true), { name: "keepSearching" }),
     ]);
     expect(result.boundHits).toContain("pending cap saturated at spam");
   });
@@ -2606,10 +2602,7 @@ describe("checker", () => {
       ],
     };
     const result = checkModel(m, [
-      reachable(m, eq(readVar("next"), lit("tok1")), {
-        name: "onlyInitialReachable",
-        reads: ["next"],
-      }),
+      always(m, lit(true), { name: "keepSearching", reads: ["next"] }),
     ]);
     expect(result.stats.edges).toBe(0);
     expect(result.boundHits).toContain("token cap exhausted at allocate");
@@ -5174,6 +5167,85 @@ describe("checker", () => {
     expect(result.stats.states).toBeLessThanOrEqual(3);
   });
 
+  it("interrupts wide havoc expansion promptly under maxEdges", () => {
+    const branchValues = Array.from({ length: 200 }, (_, index) => `v${index}`);
+    const m: Model = {
+      schemaVersion: 1,
+      id: "wide-havoc-limit",
+      bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        {
+          id: "wide",
+          domain: { kind: "enum", values: branchValues },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: branchValues[0],
+        },
+      ],
+      transitions: [
+        {
+          id: "havocWide",
+          cls: "user",
+          label: { kind: "click", text: "Havoc" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "havoc", var: "wide" },
+          reads: [],
+          writes: ["wide"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const started = performance.now();
+    const result = checkModel(m, [always(m, lit(true), { name: "ok" })], {
+      maxEdges: 12,
+    });
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(result.diagnostics?.limits?.reason).toContain("maxEdges=12");
+    expect(result.diagnostics?.limits?.phase).toBe("generation");
+    expect(result.stats.edges).toBeLessThanOrEqual(12);
+    expect(result.verdicts[0]?.status).toBe("error");
+  });
+
+  it("stops search when all properties have terminal verdicts at initial state", () => {
+    const m = model();
+    const props: Property[] = [
+      always(m, lit(false), { name: "alwaysFalse" }),
+      reachable(m, lit(true), { name: "reachableTrue" }),
+    ];
+    const result = checkModel(m, props);
+    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 0 });
+    expect(result.diagnostics?.search?.expandedDepths).toBe(0);
+    expect(
+      result.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual([
+      ["alwaysFalse", "violated"],
+      ["reachableTrue", "reachable"],
+    ]);
+  });
+
   it("pins deterministic state and edge counts for many independent toggles", () => {
     const toggleCount = 8;
     const toggleIds = Array.from(
@@ -5384,7 +5456,7 @@ describe("checker", () => {
         reads: ["stamped"],
       }),
     ]);
-    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 1 });
+    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 0 });
     expect(result.verdicts[0]?.status).toBe("reachable");
     expect(result.diagnostics?.hotPath?.internalTransitionIndex).toBe(true);
   });

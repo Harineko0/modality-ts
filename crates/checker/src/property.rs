@@ -532,6 +532,38 @@ fn property_name(property: &PropertyIR) -> String {
     }
 }
 
+pub fn property_verdict_terminal(property: &PropertyIR, verdict: &Value) -> bool {
+    let status = verdict.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    match property {
+        PropertyIR::Always { .. } | PropertyIR::AlwaysStep { .. } => {
+            matches!(status, "violated" | "error" | "verified-within-bounds")
+        }
+        PropertyIR::Reachable { .. } => {
+            matches!(
+                status,
+                "reachable" | "error" | "vacuous-warning"
+            )
+        }
+        PropertyIR::ReachableFrom { .. } | PropertyIR::LeadsToWithin { .. } => matches!(
+            status,
+            "violated" | "error" | "vacuous-warning" | "verified-within-bounds"
+        ),
+    }
+}
+
+pub fn all_properties_terminal(
+    properties: &[PropertyIR],
+    verdicts: &HashMap<String, Value>,
+) -> bool {
+    !properties.is_empty()
+        && properties.iter().all(|property| {
+            let name = property_name(property);
+            verdicts
+                .get(&name)
+                .is_some_and(|verdict| property_verdict_terminal(property, verdict))
+        })
+}
+
 fn error_verdict(property: &str, message: &str) -> Value {
     json!({
         "status": "error",
