@@ -6,11 +6,9 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import {
   firstValue,
-  typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
 import {
-  inferDomainFromExpressionSemanticDetailed,
-  inferDomainFromTypeNodeSemanticDetailed,
+  inferDomainSemantic,
 } from "../../engine/ts/type-domains.js";
 import {
   inferDomainFromTypeNodeDetailed,
@@ -18,8 +16,6 @@ import {
 } from "../../engine/ts/domains.js";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import { validateValue } from "modality-ts/core";
-
-export { typeAliasDeclarations };
 
 export interface FieldDomainResult extends DomainInferenceResult {
   initial: Value;
@@ -37,24 +33,14 @@ export function inferFieldDomain(
   const unwrappedInitializer = unwrapExpression(initializer);
   const semanticSource = types?.sourceFile ?? sourceFile;
   if (typeNode && types?.checker) {
-    const inferred = inferDomainFromTypeNodeSemanticDetailed(
-      typeNode,
-      {
-        checker: types.checker,
-        sourceFile: semanticSource,
-        typeAliases,
-        varId,
-        initializer: unwrappedInitializer,
-        domainRefinements,
-      },
-      new Set(),
-      {
-        initializer: unwrappedInitializer,
-        sourceFile: semanticSource,
-        varId,
-        domainRefinements,
-      },
-    );
+    const inferred = inferDomainSemantic(typeNode, {
+      checker: types.checker,
+      sourceFile: semanticSource,
+      varId,
+      initializer: unwrappedInitializer,
+      domainRefinements,
+      typeAliases,
+    });
     const initial = unwrappedInitializer
       ? valueFromExpression(unwrappedInitializer, inferred.domain)
       : firstValue(inferred.domain);
@@ -79,19 +65,15 @@ export function inferFieldDomain(
   }
   if (unwrappedInitializer) {
     if (types?.checker && semanticSource) {
-      const inferred = inferDomainFromExpressionSemanticDetailed(
-        unwrappedInitializer,
-        {
-          checker: types.checker,
-          sourceFile: semanticSource,
-          typeAliases,
-          varId,
-          initializer: unwrappedInitializer,
-          domainRefinements,
-        },
+      const inferred = inferDomainSemantic(unwrappedInitializer, {
+        checker: types.checker,
+        sourceFile: semanticSource,
+        varId,
+        initializer: unwrappedInitializer,
+        domainRefinements,
         typeAliases,
-        typeNode,
-      );
+        broadTypeNode: typeNode,
+      });
       return {
         ...inferred,
         initial: valueFromExpression(unwrappedInitializer, inferred.domain),

@@ -16,9 +16,12 @@ import {
 } from "./numeric/abstraction.js";
 import { componentNameFor } from "./ast.js";
 import {
-  inferDomainFromExpressionSemanticDetailed,
-  inferDomainFromTypeNodeSemanticDetailed,
+  inferDomainSemantic,
+  type SemanticDomainInferenceContext,
 } from "./type-domains.js";
+
+export type { SemanticDomainInferenceContext };
+export { inferDomainSemantic };
 
 export interface DomainInferenceResult {
   domain: AbstractDomain;
@@ -185,7 +188,7 @@ export interface UseStateSemanticTypeContext {
 /**
  * Semantic useState domain inference order when a `TypeChecker` is available:
  * 1. schema/native numeric refinement adapters when they prove finite numeric bounds
- * 2. TypeScript semantic type mapper (`inferDomainFromTypeNodeSemanticDetailed`) for
+ * 2. TypeScript semantic type mapper (`inferDomainSemantic`) for
  *    structural finite domains (records, enums, bool, tagged unions, …)
  * 3. conservative AST initializer / token fallback
  */
@@ -197,34 +200,24 @@ export function inferUseStateDomainSemanticDetailed(
   types?: UseStateSemanticTypeContext,
   domainRefinements: readonly DomainRefinementProvider[] = [],
 ): DomainInferenceResult {
-  const semanticSource = types?.sourceFile;
-  const inferenceSourceFile = semanticSource ?? sourceFile;
-  const aliasesForSemantic =
-    semanticSource && sourceFile && semanticSource !== sourceFile
-      ? typeAliasDeclarations(semanticSource)
-      : typeAliases;
+  const inferenceSourceFile = types?.sourceFile ?? sourceFile;
+  const aliasSource =
+    sourceFile ??
+    types?.sourceFile ??
+    ts.createSourceFile("unknown.tsx", "", ts.ScriptTarget.Latest, true);
+  const semanticAliases = compilerBackedTypeAliases(aliasSource, types);
   const typeArg = call.typeArguments?.[0];
   const initializer = call.arguments[0];
+  const semanticCtx: SemanticDomainInferenceContext = {
+    checker: types?.checker,
+    sourceFile: inferenceSourceFile,
+    varId,
+    initializer,
+    domainRefinements,
+    typeAliases: semanticAliases,
+  };
   if (typeArg && types?.checker) {
-    const inferenceCtx = {
-      checker: types.checker,
-      sourceFile: inferenceSourceFile,
-      varId,
-      typeAliases: aliasesForSemantic,
-      initializer,
-      domainRefinements,
-    };
-    const semantic = inferDomainFromTypeNodeSemanticDetailed(
-      typeArg,
-      inferenceCtx,
-      new Set(),
-      {
-        initializer,
-        sourceFile: inferenceCtx.sourceFile,
-        varId,
-        domainRefinements,
-      },
-    );
+    const semantic = inferDomainSemantic(typeArg, semanticCtx);
     const ast = inferUseStateDomainDetailed(
       call,
       typeAliases,
@@ -247,19 +240,11 @@ export function inferUseStateDomainSemanticDetailed(
     return semantic;
   }
   if (initializer && types?.checker) {
-    const inferenceCtx = {
-      checker: types.checker,
-      sourceFile: inferenceSourceFile,
-      varId,
-      typeAliases: aliasesForSemantic,
-      initializer,
-      domainRefinements,
-    };
     const schemaResolved = resolveDomainRefinements(
       {
         initializer,
         sourceFile: inferenceSourceFile,
-        typeAliases: aliasesForSemantic,
+        typeAliases: semanticAliases,
         visited: new Set(),
         varId,
       },
@@ -290,12 +275,10 @@ export function inferUseStateDomainSemanticDetailed(
         return ast;
       }
     }
-    return inferDomainFromExpressionSemanticDetailed(
-      initializer,
-      inferenceCtx,
-      aliasesForSemantic,
-      typeArg,
-    );
+    return inferDomainSemantic(initializer, {
+      ...semanticCtx,
+      broadTypeNode: typeArg,
+    });
   }
   return inferUseStateDomainDetailed(
     call,
@@ -453,6 +436,22 @@ export function firstValue(domain: AbstractDomain): Value {
     case "boundedList":
       return [];
   }
+}
+
+export function compilerBackedTypeAliases(
+  source: ts.SourceFile,
+  types?: Pick<UseStateSemanticTypeContext, "checker" | "sourceFile">,
+): Map<string, ts.TypeNode> {
+  if (!types?.checker) return typeAliasDeclarations(source);
+  const semanticSource = types.sourceFile;
+  if (
+    semanticSource &&
+    semanticSource.fileName === source.fileName &&
+    semanticSource.text === source.text
+  ) {
+    return new Map();
+  }
+  return typeAliasDeclarations(source);
 }
 
 export function typeAliasDeclarations(

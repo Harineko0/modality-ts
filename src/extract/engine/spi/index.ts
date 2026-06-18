@@ -61,8 +61,10 @@ export interface SemanticTypeContext {
 }
 
 export {
+  compilerBackedTypeAliases,
   firstValue,
   inferDomainFromTypeNode,
+  inferDomainSemantic,
   inferUseStateDomain,
   inferUseStateDomainDetailed,
   inferUseStateDomainSemanticDetailed,

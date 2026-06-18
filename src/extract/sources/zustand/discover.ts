@@ -16,8 +16,8 @@ import {
   isActionFunction,
   propertyNameFromMember,
   returnObjectLiteral,
-  typeAliasDeclarations,
 } from "./domains.js";
+import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
 import { storeVarId } from "./ids.js";
 import { metadataToRecord } from "./types.js";
 
@@ -84,7 +84,7 @@ export function discoverZustandStoresDetailed(
   const imports = resolveZustandImports(source);
   if (imports.storeCreators.size === 0) return emptyDiscoverResult();
 
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
   const storeNames = new Set<string>();
   const storeFields = new Map<string, Set<string>>();

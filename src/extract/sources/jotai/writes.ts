@@ -20,8 +20,8 @@ import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
 import {
   classifyAtomCall,
   staticFamilyParam,
-  typeAliasDeclarations,
 } from "./domains.js";
+import { typeAliasDeclarations } from "modality-ts/extract/engine/spi";
 import { isResettableKind, metadataFromRecord } from "./types.js";
 import { atomCreatorName, isAtomCreatorCall } from "./imports.js";
 

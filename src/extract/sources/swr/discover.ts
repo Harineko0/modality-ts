@@ -5,7 +5,8 @@ import type {
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
-import { inferPayloadDomain, typeAliasDeclarations } from "./domains.js";
+import { inferPayloadDomain } from "./domains.js";
+import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
 
 function sourceFileForDiscovery(
   sourceText: string,
@@ -33,7 +34,7 @@ export function discoverSwrHooks(
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const useSwrNames = useSwrImportNames(source);
   if (useSwrNames.size === 0) return [];
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
 
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node): void => {

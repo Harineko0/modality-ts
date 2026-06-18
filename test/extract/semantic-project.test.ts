@@ -10,6 +10,7 @@ import {
   buildComponentRegistry,
   buildCustomHookRegistry,
 } from "../../src/extract/engine/ts/components.js";
+import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
   createSemanticProject,
@@ -1046,5 +1047,146 @@ export function App() {
         transition.id.includes("onClick"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("inferDomainSemantic", () => {
+  it("resolves a local type alias through the checker", () => {
+    const appPath = resolve(projectRoot, "App.tsx");
+    const semanticProject = createSemanticProjectForTest([
+      {
+        path: appPath,
+        text: `import { useState } from "react";
+type Mode = "on" | "off";
+export function App() {
+  const [mode] = useState<Mode>("on");
+  return null;
+}`,
+      },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath)!;
+    let typeArg: ts.TypeNode | undefined;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(sourceFile) === "useState"
+      ) {
+        typeArg = node.typeArguments?.[0];
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    expect(typeArg).toBeDefined();
+    const result = inferDomainSemantic(typeArg!, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({
+      kind: "enum",
+      values: ["off", "on"],
+    });
+  });
+
+  it("resolves expression initializers through the checker", () => {
+    const appPath = resolve(projectRoot, "state.ts");
+    const semanticProject = createSemanticProjectForTest([
+      { path: appPath, text: `export const active = true;` },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath)!;
+    let literal: ts.Node | undefined;
+    const visit = (node: ts.Node): void => {
+      if (node.kind === ts.SyntaxKind.TrueKeyword) {
+        literal = node;
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    expect(literal).toBeDefined();
+    const result = inferDomainSemantic(literal as ts.Expression, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({ kind: "bool" });
+  });
+
+  it("resolves imported interface fields with optional properties", () => {
+    const typesPath = resolve(projectRoot, "types.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const semanticProject = createSemanticProjectForTest([
+      {
+        path: typesPath,
+        text: `export interface Profile {
+  name: string;
+  nickname?: string;
+}`,
+      },
+      {
+        path: appPath,
+        text: `import type { Profile } from "./types.js";
+import { useState } from "react";
+export function App() {
+  const [profile] = useState<Profile>({ name: "Ada" });
+  return null;
+}`,
+      },
+    ]);
+    const sourceFile = semanticProject.getSourceFile(appPath)!;
+    let typeArg: ts.TypeNode | undefined;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(sourceFile) === "useState"
+      ) {
+        typeArg = node.typeArguments?.[0];
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    expect(typeArg).toBeDefined();
+    const result = inferDomainSemantic(typeArg!, {
+      checker: semanticProject.checker,
+      sourceFile,
+    });
+    expect(result.domain).toEqual({
+      kind: "record",
+      fields: {
+        name: { kind: "tokens", count: 1 },
+        nickname: {
+          kind: "option",
+          inner: { kind: "tokens", count: 1 },
+        },
+      },
+    });
+  });
+
+  it("falls back to syntax alias maps without a checker", () => {
+    const sourceFile = ts.createSourceFile(
+      "fixture.ts",
+      `type Count = 0 | 1 | 2; type T = Count;`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const aliases = new Map<string, ts.TypeNode>();
+    const visit = (node: ts.Node): void => {
+      if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) {
+        aliases.set(node.name.text, node.type);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    const alias = sourceFile.statements.find(
+      (statement): statement is ts.TypeAliasDeclaration =>
+        ts.isTypeAliasDeclaration(statement) && statement.name.text === "T",
+    );
+    expect(alias).toBeDefined();
+    const result = inferDomainSemantic(alias!.type, {
+      sourceFile,
+      typeAliases: aliases,
+    });
+    expect(result.domain).toEqual({ kind: "boundedInt", min: 0, max: 2 });
   });
 });

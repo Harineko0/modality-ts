@@ -14,8 +14,8 @@ import {
   classifyAtomCall,
   classifyFamilyInstance,
   staticFamilyParam,
-  typeAliasDeclarations,
 } from "./domains.js";
+import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
 import { atomVarId, familyVarId } from "./ids.js";
 import { metadataToRecord } from "./types.js";
 import {
@@ -76,7 +76,7 @@ export function discoverJotaiAtomsDetailed(
     return emptyDiscoverResult();
   }
 
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
   const atomMetadata = new Map<
     string,

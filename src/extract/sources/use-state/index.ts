@@ -9,7 +9,7 @@ import type {
 import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
-  typeAliasDeclarations,
+  compilerBackedTypeAliases,
   useStateCallForSemanticInference,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
@@ -68,7 +68,7 @@ function discoverUseState(
   domainRefinements?: readonly DomainRefinementProvider[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
   const providerComponents = providerComponentNames(source);
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node, componentName: string | undefined): void => {
