@@ -1,6 +1,10 @@
 import type { Model, Property } from "modality-ts/core";
 import { compareModelEconomics } from "./slicing/contributors.js";
-import { sliceModelForCheckProperty } from "./slicing/slice-model.js";
+import {
+  canSliceAllProperties,
+  propertySlicingSkipReason,
+  sliceModelForCheckProperty,
+} from "./slicing/slice-model.js";
 import { runRustCheck } from "./native.js";
 import type {
   CheckDiagnostics,
@@ -15,14 +19,11 @@ export function checkModel(
   options: CheckOptions = {},
 ): CheckResult {
   const slicingDiagnostics = buildSlicingRequestDiagnostics(
+    model,
     properties,
     options.slicing === true,
   );
-  if (
-    options.slicing &&
-    properties.length > 0 &&
-    properties.every((property) => property.reads !== undefined)
-  ) {
+  if (options.slicing && canSliceAllProperties(model, properties)) {
     return checkModelSliced(model, properties, options);
   }
   const result = runRustCheck(model, properties, options);
@@ -35,6 +36,7 @@ export function checkModel(
 }
 
 function buildSlicingRequestDiagnostics(
+  model: Model,
   properties: readonly Property[],
   slicingRequested: boolean,
 ): CheckDiagnostics["slicing"] | undefined {
@@ -44,11 +46,21 @@ function buildSlicingRequestDiagnostics(
   if (properties.length === 0) {
     return { enabled: false, skipped: true, skipReason: "no properties" };
   }
-  if (!properties.every((property) => property.reads !== undefined)) {
+  const unsliceable = properties
+    .map((property) => ({
+      name: property.name,
+      reason: propertySlicingSkipReason(model, property),
+    }))
+    .filter((entry): entry is { name: string; reason: string } =>
+      Boolean(entry.reason),
+    );
+  if (unsliceable.length > 0) {
     return {
       enabled: false,
       skipped: true,
-      skipReason: "property missing reads",
+      skipReason: `unsupported property dependencies: ${unsliceable
+        .map((entry) => `${entry.name}: ${entry.reason}`)
+        .join("; ")}`,
     };
   }
   return { enabled: true };

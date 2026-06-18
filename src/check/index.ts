@@ -1,6 +1,8 @@
 import { checkModel } from "./check-model.js";
 import { modelInitialStates, modelSuccessors } from "./model-api.js";
 import {
+  canSliceAllProperties,
+  canSliceProperty,
   propertySliceMode,
   sliceModel,
   sliceModelForCheckProperty,
@@ -11,6 +13,8 @@ import {
 export { checkModel };
 export { modelInitialStates, modelSuccessors };
 export {
+  canSliceAllProperties,
+  canSliceProperty,
   propertySliceMode,
   sliceModel,
   sliceModelForCheckProperty,
