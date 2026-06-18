@@ -81,6 +81,10 @@ import {
   applyInputClassToWideInputVars,
   attachNumericReductions,
 } from "../../../extract/engine/ts/numeric/abstraction.js";
+import {
+  buildFieldPruningMetadata,
+  fieldPruningCollapseCaveats,
+} from "../../../extract/engine/ts/field-pruning.js";
 import type { ExtractArtifactEntry } from "./output.js";
 import {
   type EffectApiProvenanceEntry,
@@ -329,18 +333,20 @@ export async function runExtractCommand(
   const warnings = structuredWarnings.map((warning) => warning.message);
   const extractionCaveats = createExtractionCaveats(structuredWarnings);
   const withInputClasses = applyInputClassToWideInputVars(overlay.model);
-  const model: Model = attachNumericReductions(
-    {
-      ...withInputClasses.model,
-      metadata: {
-        ...withInputClasses.model.metadata,
-        extractionCaveats: mergeExtractionCaveats(
-          extractionCaveats,
-          cacheStorageFragments.caveats,
-        ),
+  const model: Model = attachFieldPruning(
+    attachNumericReductions(
+      {
+        ...withInputClasses.model,
+        metadata: {
+          ...withInputClasses.model.metadata,
+          extractionCaveats: mergeExtractionCaveats(
+            extractionCaveats,
+            cacheStorageFragments.caveats,
+          ),
+        },
       },
-    },
-    [...withInputClasses.reductions, ...cacheStorageFragments.reductions],
+      [...withInputClasses.reductions, ...cacheStorageFragments.reductions],
+    ),
   );
   const report = createExtractionReport(
     project.sourceFiles,
@@ -1212,6 +1218,9 @@ function createExtractionReport(
               : "type-derived"),
     })),
     ...(coarseDomains.length > 0 ? { coarseDomains } : {}),
+    ...(model.metadata?.fieldPruning?.entries.length
+      ? { fieldPruning: model.metadata.fieldPruning }
+      : {}),
     stateContributors: buildStateContributors(model),
     ...(routeCoverage ? { routeCoverage } : {}),
     coverage: {
@@ -1580,6 +1589,23 @@ function mergeExtractionCaveats(
   if (extra.length === 0) return base;
   return {
     entries: [...base.entries, ...extra].sort(compareCaveats),
+  };
+}
+
+function attachFieldPruning(model: Model): Model {
+  const fieldPruning = buildFieldPruningMetadata(model);
+  if (fieldPruning.entries.length === 0) return model;
+  const collapseCaveats = fieldPruningCollapseCaveats(model, fieldPruning);
+  return {
+    ...model,
+    metadata: {
+      ...model.metadata,
+      fieldPruning,
+      extractionCaveats: mergeExtractionCaveats(
+        model.metadata?.extractionCaveats ?? emptyExtractionCaveats(),
+        collapseCaveats,
+      ),
+    },
   };
 }
 

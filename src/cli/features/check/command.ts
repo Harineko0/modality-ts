@@ -518,7 +518,7 @@ function sliceVarIds(
 ): Set<string> {
   if (!property) return new Set(model.vars.map((decl) => decl.id));
   return new Set(
-    sliceModelForProperty(model, property).vars.map((decl) => decl.id),
+    sliceModelForProperty(model, property).model.vars.map((decl) => decl.id),
   );
 }
 
@@ -530,7 +530,7 @@ function sliceTransitionIds(
     return new Set(model.transitions.map((transition) => transition.id));
   }
   return new Set(
-    sliceModelForProperty(model, property).transitions.map(
+    sliceModelForProperty(model, property).model.transitions.map(
       (transition) => transition.id,
     ),
   );

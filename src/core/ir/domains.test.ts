@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AbstractDomain } from "./types.js";
 import {
+  collectRecordDomainFieldPaths,
   collectTokenDomainPaths,
   domainCardinality,
   domainFingerprint,
@@ -223,5 +224,27 @@ describe("collectTokenDomainPaths", () => {
         },
       }),
     ).toEqual(["a", "b", "z"]);
+  });
+});
+
+describe("collectRecordDomainFieldPaths", () => {
+  it("collects nested record leaf paths", () => {
+    expect(
+      collectRecordDomainFieldPaths({
+        kind: "record",
+        fields: {
+          user: {
+            kind: "record",
+            fields: {
+              id: { kind: "tokens", count: 1 },
+              avatarUrl: { kind: "tokens", count: 1 },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      ["user", "avatarUrl"],
+      ["user", "id"],
+    ]);
   });
 });

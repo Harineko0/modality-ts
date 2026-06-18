@@ -760,6 +760,101 @@ describe("runCheckCommand", () => {
     expect(summary?.mode).toBeDefined();
   });
 
+  it("includes pruned field paths in slice contributor diagnostics", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const sessionPredicate = `{ kind: "eq", args: [{ kind: "read", var: "session", path: ["user", "id"] }, { kind: "lit", value: "blocked" }] }`;
+
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "field-pruning-check",
+        bounds: { maxDepth: 4, maxPending: 2, maxInternalSteps: 4 },
+        vars: [
+          {
+            id: "session",
+            domain: {
+              kind: "record",
+              fields: {
+                user: {
+                  kind: "record",
+                  fields: {
+                    id: { kind: "tokens", count: 1 },
+                    avatarUrl: { kind: "tokens", count: 1 },
+                  },
+                },
+              },
+            },
+            origin: { file: "fixture.ts", line: 1 },
+            scope: { kind: "global" },
+            initial: { user: { id: "u1", avatarUrl: "" } },
+          },
+          {
+            id: "noise",
+            domain: { kind: "enum", values: ["a", "b"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "a",
+          },
+        ],
+        transitions: [
+          {
+            id: "noop",
+            cls: "internal",
+            label: { kind: "internal", text: "noop" },
+            source: [{ file: "fixture.ts", line: 2 }],
+            guard: { kind: "lit", value: true },
+            effect: {
+              kind: "assign",
+              var: "session",
+              expr: {
+                kind: "lit",
+                value: { user: { id: "u2", avatarUrl: "" } },
+              },
+            },
+            reads: [],
+            writes: ["session"],
+            confidence: "exact",
+          },
+        ],
+        metadata: {
+          fieldPruning: {
+            entries: [
+              {
+                varId: "session",
+                keptPaths: [["user", "id"]],
+                prunedPaths: [["user", "avatarUrl"]],
+                reason: "unread",
+                confidence: "exact",
+              },
+            ],
+          },
+        },
+      } satisfies Model),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "idNotBlocked", predicate: ${sessionPredicate}, reads: ["session"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const contributor =
+      result.report.diagnostics?.slicing?.sliceSummaries?.[0]?.topContributors?.find(
+        (entry) => entry.varId === "session",
+      );
+    expect(contributor?.prunedFieldPaths).toEqual([["user", "avatarUrl"]]);
+  });
+
   it("embeds mount-scope and route system var diagnostics in sliced check report", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");

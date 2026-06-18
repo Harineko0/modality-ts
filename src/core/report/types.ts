@@ -1,6 +1,8 @@
 import type {
   Bounds,
   ExtractionCaveat,
+  FieldPruningEntry,
+  FieldPruningMetadata,
   NumericReduction,
   PluginProvenance,
 } from "../ir/types.js";
@@ -35,7 +37,7 @@ export interface DomainReportEntry {
     | "system";
 }
 
-export type { ExtractionCaveat };
+export type { ExtractionCaveat, FieldPruningEntry, FieldPruningMetadata };
 
 export type ReportVerdictStatus =
   | "verified-within-bounds"
@@ -155,6 +157,7 @@ export interface StateSpaceContributor {
   bits: number;
   scope: string;
   origin: string;
+  prunedFieldPaths?: readonly string[][];
 }
 
 export interface StateSpaceContributors {
@@ -199,6 +202,7 @@ export interface ExtractionReport {
   modelSlack: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
   coarseDomains?: readonly { varId: string; paths: readonly string[] }[];
+  fieldPruning?: FieldPruningMetadata;
   stateContributors?: StateSpaceContributors;
   routeCoverage?: RouteCoverage;
   coverage: {
