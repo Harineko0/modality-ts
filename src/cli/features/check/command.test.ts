@@ -713,6 +713,53 @@ describe("runCheckCommand", () => {
     expect(report.trustLedger.ignoredVars).toEqual([]);
   });
 
+  it("embeds slice economics in sliced check report diagnostics", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        vars: [
+          ...model().vars,
+          {
+            id: "noise",
+            domain: {
+              kind: "enum",
+              values: Array.from({ length: 32 }, (_, index) => `n${index}`),
+            },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "n0",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const summary = result.report.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.retainedBits).toBeGreaterThan(0);
+    expect(summary?.prunedBits).toBeGreaterThan(0);
+    expect(summary?.topContributors?.length).toBeGreaterThan(0);
+    expect(
+      summary?.prunedTopContributors?.map((entry) => entry.varId),
+    ).toContain("noise");
+    expect(summary?.mode).toBeDefined();
+  });
+
   it("uses slicing by default when property reads are declared", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");

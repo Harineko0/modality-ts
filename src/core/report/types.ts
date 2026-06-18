@@ -67,6 +67,13 @@ export interface CheckReportDiagnostics {
       states: number;
       edges: number;
       depth: number;
+      mode?: "state" | "targetedStep" | "full";
+      retainedBits?: number;
+      prunedBits?: number;
+      topContributors?: readonly StateSpaceContributor[];
+      prunedTopContributors?: readonly StateSpaceContributor[];
+      retainedSystemVars?: readonly string[];
+      prunedSystemVars?: readonly string[];
     }[];
   };
   search?: {

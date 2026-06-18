@@ -3952,6 +3952,50 @@ describe("checker", () => {
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:pending");
   });
 
+  it("reports pruned high-cardinality vars in slice economics", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "slice-economics",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "irrelevantNoise",
+          domain: {
+            kind: "enum",
+            values: Array.from({ length: 64 }, (_, index) => `v${index}`),
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "v0",
+        },
+      ],
+      transitions: [],
+    };
+    const props = [
+      always(m, eq(readVar("flag"), lit(false)), {
+        name: "flagFalse",
+        reads: ["flag"],
+      }),
+    ];
+    const result = checkModel(m, props, { slicing: true });
+    const summary = result.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.prunedBits).toBeGreaterThan(0);
+    expect(
+      summary?.prunedTopContributors?.map((entry) => entry.varId),
+    ).toContain("irrelevantNoise");
+    expect(summary?.topContributors?.map((entry) => entry.varId)).toContain(
+      "flag",
+    );
+    expect(summary?.prunedSystemVars).toContain("irrelevantNoise");
+  });
+
   it("keeps positive targeted alwaysStep on the full model under slicing", () => {
     const m = focusedAlwaysStepNoiseModel(2);
     const property = alwaysStep(m, stepTransitionId("submit"), {
