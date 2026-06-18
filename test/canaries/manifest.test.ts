@@ -1,5 +1,19 @@
+
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseCanaryRunReportArtifact } from "modality-ts/core";
+import {
+  parseCanaryManifest,
+  readCanaryManifest,
+  selectActiveCanaries,
+  validateActiveCanaryPaths,
+} from "../../tools/canary/manifest.js";
+
+const manifestPath = join(
+  fileURLToPath(new URL(".", import.meta.url)),
+  "canaries.json",
+);
 
 describe("parseCanaryRunReportArtifact", () => {
   const validReport = {
@@ -133,5 +147,103 @@ describe("parseCanaryRunReportArtifact", () => {
         }),
       ),
     ).toThrow("budgetResults[0].maxEdges must be a positive integer");
+  });
+});
+
+describe("canary manifest", () => {
+  it("parses the repository manifest with active and planned canaries", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.manifestId).toBe("repo-canaries");
+    expect(manifest.canaries.map((canary) => canary.id)).toEqual(
+      expect.arrayContaining([
+        "examples-demo-app",
+        "examples-todo-app",
+        "examples-checkout-app",
+        "planned-react-router-app",
+      ]),
+    );
+  });
+
+  it("validates active canary roots and paths", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+    await validateActiveCanaryPaths(repoRoot, manifest);
+  });
+
+  it("rejects missing roots for active canaries", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+    const broken = {
+      ...manifest,
+      canaries: manifest.canaries.map((canary) =>
+        canary.id === "examples-todo-app"
+          ? { ...canary, root: "examples/missing-todo-app" }
+          : canary,
+      ),
+    };
+    await expect(validateActiveCanaryPaths(repoRoot, broken)).rejects.toThrow(
+      /missing active canary examples-todo-app root/,
+    );
+  });
+
+  it("rejects free-form accepted caveat matching", () => {
+    expect(() =>
+      parseCanaryManifest(
+        JSON.stringify({
+          schemaVersion: 1,
+          manifestId: "broken",
+          canaries: [
+            {
+              id: "broken-canary",
+              title: "Broken",
+              status: "active",
+              kind: "react-app",
+              root: "examples/demo-app",
+              dependencyFacts: [],
+              extract: { sourcePaths: ["App.tsx"] },
+              check: { propsPaths: ["app.props.ts"] },
+              thresholds: { minCoverageExactOrOverlay: 1 },
+              acceptedCaveats: [
+                { id: "stale-read", kind: "stale-read", message: "ignore me" },
+              ],
+              knownUnsupported: [],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/stable kind and id/);
+  });
+
+  it("excludes planned canaries from default selection", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    const selected = selectActiveCanaries(manifest);
+    expect(selected.map((canary) => canary.id)).toEqual([
+      "examples-demo-app",
+      "examples-todo-app",
+      "examples-checkout-app",
+    ]);
+    expect(selected.every((canary) => canary.status === "active")).toBe(true);
+  });
+
+  it("represents demo seeded-bug expectations in manifest data", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    const demo = manifest.canaries.find((canary) => canary.id === "examples-demo-app");
+    expect(demo?.expectations).toEqual({
+      violatedPropertyCount: 3,
+      violatedPropertyNames: [
+        "noDoubleSubmit",
+        "guestCannotReachAdmin",
+        "guestDoesNotSeeUserCache",
+      ],
+      minReproducedReplayCount: 2,
+      maxOverlayLines: 100,
+      expectedCiExitCode: 2,
+      ciOutputMustInclude: [
+        "violations=3 errors=0",
+        "determinism=passed",
+        "source-freshness=passed",
+      ],
+    });
   });
 });

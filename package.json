@@ -161,6 +161,7 @@
     "build:rust": "napi build --platform --release --cargo-cwd crates/checker native",
     "build": "pnpm build:rust && tsc -b",
     "clean": "rm -rf dist native tsconfig.tsbuildinfo && cargo clean --manifest-path crates/checker/Cargo.toml",
+    "ci:canaries": "tsx tools/canary-ci.ts",
     "ci:conformance": "tsx tools/conformance-ci.ts",
     "ci:examples": "tsx tools/examples-ci.ts",
     "demo": "vitest run test/modality/demo-acceptance.test.ts",
