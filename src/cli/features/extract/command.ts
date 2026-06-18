@@ -49,7 +49,7 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import {
   parseReactRouterRoutes,
-  routerSource,
+  reactRouterAdapter,
 } from "modality-ts/extract/sources/router";
 import type { CacheStorageFragment } from "modality-ts/extract/engine/spi";
 import {
@@ -58,7 +58,8 @@ import {
   nextConfigCandidates,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
-} from "../../../extract/sources/next/config.js";
+  type NextParsedConfig,
+} from "modality-ts/extract/sources/next";
 import { emitAppModel } from "../../codegen/model.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
@@ -171,15 +172,14 @@ export async function runExtractCommand(
     ],
     routerPlugin: options.routerPlugin ?? config.routerPlugin,
   });
-  const routerAdapter = registry.routerPlugin ?? routerSource();
+  const routerAdapter = registry.routerPlugin ?? reactRouterAdapter();
   const projectWithInventory = await attachRouteInventory(
     projectBase,
     routerAdapter,
   );
-  const nextConfig =
-    routerAdapter.id === "next"
-      ? await loadNextParsedConfig(projectWithInventory.configStartDir)
-      : undefined;
+  const nextConfig = registryIncludesNextConfig(registry)
+    ? await loadNextParsedConfig(projectWithInventory.configStartDir)
+    : undefined;
   const inventory = nextConfig
     ? expandInventoryForI18n(projectWithInventory.inventory, nextConfig)
     : projectWithInventory.inventory;
@@ -239,10 +239,9 @@ export async function runExtractCommand(
     route,
     { maxHistory: 4 },
   );
-  const configTransitions =
-    nextConfig && routerAdapter.id === "next"
-      ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
-      : [];
+  const configTransitions = nextConfig
+    ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
+    : [];
   const transitions = [
     ...pipeline.transitions,
     ...cacheStorageFragments.transitions,
@@ -1044,9 +1043,7 @@ async function importConfigModule(configPath: string): Promise<unknown> {
 
 async function loadNextParsedConfig(
   startDir: string,
-): Promise<
-  import("../../../extract/sources/next/config.js").NextParsedConfig | undefined
-> {
+): Promise<NextParsedConfig | undefined> {
   let dir = startDir;
   while (true) {
     for (const candidate of nextConfigCandidates(dir)) {
@@ -1581,6 +1578,12 @@ function parseTestedVersionRange(
 function firstSemverMajor(range: string): number | undefined {
   const match = /[0-9]+/.exec(range);
   return match ? Number(match[0]) : undefined;
+}
+
+function registryIncludesNextConfig(registry: RegistrySummary): boolean {
+  return registry.adapters.cacheStorage.some((provider) =>
+    provider.packageNames.includes("next"),
+  );
 }
 
 function discoverCacheStorageFragments(

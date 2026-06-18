@@ -4364,7 +4364,7 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Global taint local:App.saveStatus",
+      "global-taint:local:App.saveStatus",
     );
   });
 
@@ -4382,7 +4382,7 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Global taint local:App.saveStatus",
+      "global-taint:local:App.saveStatus",
     );
   });
 

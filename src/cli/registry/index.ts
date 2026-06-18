@@ -210,7 +210,7 @@ export function createModalityRegistry(
     validateEffectApiProvider(provider);
   for (const provider of cacheStorageProviders)
     validateCacheStorageProvider(provider);
-  if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
+  if (options.routerPlugin) validateNavigationAdapter(options.routerPlugin);
   const observations = buildObservationProviders(
     options.sourcePlugins,
     options.routerPlugin,
@@ -396,28 +396,28 @@ function validateCacheStorageProvider(provider: CacheStorageProvider): void {
     );
 }
 
-function validateRouterPlugin(plugin: NavigationAdapter): void {
-  validateCommonPluginShape(plugin, "router plugin");
-  if (typeof plugin.discoverRoutes !== "function")
+function validateNavigationAdapter(adapter: NavigationAdapter): void {
+  validateCommonPluginShape(adapter, "navigation adapter");
+  if (typeof adapter.discoverRoutes !== "function")
     throw new Error(
-      `Invalid router plugin ${plugin.id}: discoverRoutes must be a function`,
+      `Invalid navigation adapter ${adapter.id}: discoverRoutes must be a function`,
     );
-  if (typeof plugin.classifyNavigationCall !== "function")
+  if (typeof adapter.classifyNavigationCall !== "function")
     throw new Error(
-      `Invalid router plugin ${plugin.id}: classifyNavigationCall must be a function`,
+      `Invalid navigation adapter ${adapter.id}: classifyNavigationCall must be a function`,
     );
-  if (typeof plugin.locationVars !== "function")
+  if (typeof adapter.locationVars !== "function")
     throw new Error(
-      `Invalid router plugin ${plugin.id}: locationVars must be a function`,
+      `Invalid navigation adapter ${adapter.id}: locationVars must be a function`,
     );
   if (
-    !plugin.harness ||
-    typeof plugin.harness.setup !== "function" ||
-    typeof plugin.harness.observe !== "function" ||
-    typeof plugin.harness.navigate !== "function"
+    !adapter.harness ||
+    typeof adapter.harness.setup !== "function" ||
+    typeof adapter.harness.observe !== "function" ||
+    typeof adapter.harness.navigate !== "function"
   ) {
     throw new Error(
-      `Invalid router plugin ${plugin.id}: harness.setup, harness.observe, and harness.navigate are required`,
+      `Invalid navigation adapter ${adapter.id}: harness.setup, harness.observe, and harness.navigate are required`,
     );
   }
 }

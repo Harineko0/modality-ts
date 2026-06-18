@@ -1,6 +1,5 @@
 import { canonicalJson, type Trace } from "modality-ts/core";
 import type { ObservationProvider } from "modality-ts/extract/engine/spi";
-import { createBuiltinModalityRegistry } from "../registry/index.js";
 
 export interface ReplayTestArtifact {
   fileName: string;

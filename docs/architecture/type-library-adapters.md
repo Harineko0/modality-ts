@@ -64,7 +64,8 @@ dependencies. Disable them with `disabledPlugins` in `modality.config.json` (sam
 ids as state plugins). Custom providers can be passed via config `domainRefinements`.
 
 Model metadata `plugins` includes `kind: "domain-refinement"` entries alongside
-state sources and navigation adapters.
+state sources, navigation, module-role, effect-API, cache/storage, and
+observation providers. See [Adapter capabilities beyond state sources](../architecture/state-sources.md#adapter-capabilities-beyond-state-sources).
 
 ## Public entry points
 

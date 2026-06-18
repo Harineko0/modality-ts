@@ -96,4 +96,13 @@ export function nextAdapter(
 
 export const nextSource = nextAdapter;
 
+export {
+  configSecurityWarnings,
+  expandInventoryForI18n,
+  nextConfigCandidates,
+  parseNextConfig,
+  synthesizeConfigRedirectTransitions,
+  type NextParsedConfig,
+} from "./config.js";
+
 export default nextAdapter;

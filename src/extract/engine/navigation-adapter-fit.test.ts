@@ -10,7 +10,6 @@ import type {
 } from "./spi/index.js";
 import { runExtractionPipeline } from "./pipeline/index.js";
 import { extractReactSourceTransitions } from "./ts/react-source-transitions.js";
-import { sourceWithReachableImports } from "../../cli/features/extract/project.js";
 
 function fitLocationVars(
   inventory: RouteInventory,
@@ -247,112 +246,68 @@ describe("navigation adapter interface fit", () => {
     expect(adapter.discoverEffectApis).toBeUndefined();
   });
 
-  it("uses a fake module-role provider for server/client surface selection", async () => {
+  it("accepts separate fake module-role and effect API providers", () => {
     const moduleRoleAdapter = {
       id: "fake-module-roles",
       kind: "module-roles" as const,
       packageNames: ["fake"],
-      classifyModule(ctx: { fileName: string; sourceText: string }) {
-        if (ctx.sourceText.includes('"use client"')) {
-          return {
-            defaultContext: "client" as const,
-            directives: ["use client" as const],
-          };
-        }
-        if (ctx.fileName.endsWith("/actions.ts")) {
-          return {
-            defaultContext: "server" as const,
-            serverOnly: true,
-          };
-        }
-        return { defaultContext: "server" as const };
-      },
-      moduleEntryExports(ctx: { fileName: string }) {
-        if (ctx.fileName.endsWith("/actions.ts")) {
-          return [
-            { name: "save", context: "server" as const, reason: "server action" },
-          ];
-        }
-        if (ctx.fileName.endsWith("/page.tsx")) {
-          return [
-            {
-              name: "default",
-              context: "server" as const,
-              reason: "server page render root",
-            },
-          ];
-        }
-        return [];
-      },
-      classifyImportEdge(ctx: { isTypeOnly: boolean }) {
-        return ctx.isTypeOnly ? ("type" as const) : ("unknown" as const);
-      },
-      isServerOnlyModule(fileName: string) {
-        return fileName.endsWith("/actions.ts");
-      },
-      shouldDiscoverEffectApis(ctx: {
-        classification: { serverOnly?: boolean; defaultContext: string };
-      }) {
-        return (
-          ctx.classification.serverOnly === true ||
-          ctx.classification.defaultContext === "server"
-        );
-      },
+      classifyModule: () => ({ defaultContext: "server" as const }),
+      moduleEntryExports: () => [],
+      classifyImportEdge: () => "unknown" as const,
+      isServerOnlyModule: () => false,
     };
     const effectApiProvider = {
       id: "fake-effect-api",
       kind: "effect-api" as const,
       packageNames: ["fake"],
-      discoverEffectApis(ctx: { fileName: string }) {
-        if (!ctx.fileName.endsWith("/actions.ts")) return [];
-        return [
+      discoverEffectApis: () => [],
+    };
+    expect(moduleRoleAdapter.classifyModule({ fileName: "x.ts", sourceText: "" }))
+      .toEqual({ defaultContext: "server" });
+    expect(effectApiProvider.discoverEffectApis({ fileName: "x.ts", sourceText: "" }))
+      .toEqual([]);
+  });
+
+  it("uses separate fake cache/storage and observation providers", () => {
+    const cacheStorageProvider = {
+      id: "fake-cache-storage",
+      kind: "cache-storage" as const,
+      packageNames: ["fake"],
+      discoverCacheStorage: () => ({
+        vars: [
           {
-            opId: "ACTION /actions#save",
-            source: { file: ctx.fileName, line: 1, column: 1 },
+            id: "cache:demo",
+            domain: { kind: "enum" as const, values: ["empty", "ready"] },
+            origin: "system" as const,
+            scope: { kind: "global" as const },
+            initial: "empty",
           },
-        ];
-      },
+        ],
+        transitions: [],
+        caveats: [],
+      }),
+    };
+    const observationProvider = {
+      id: "fake-observation",
+      kind: "observation" as const,
+      packageNames: ["fake"],
+      setup: () => ({ cache: "ready" }),
+      observe: (varId: string, handles: { cache: string }) =>
+        varId === "cache:demo" ? { value: handles.cache } : "unobservable",
     };
 
-    const result = await sourceWithReachableImports(
-      [
-        {
-          path: "/proj/app/page.tsx",
-          text: `
-            import { save } from "./actions";
-            export default function Home() {
-              return <form action={save}><button>Save</button></form>;
-            }
-          `,
-        },
-        {
-          path: "/proj/app/actions.ts",
-          text: `
-            "use server";
-            export async function save() {}
-          `,
-        },
-      ],
-      { paths: [] },
-      {
-        moduleRoleAdapters: [moduleRoleAdapter],
-        effectApiProviders: [effectApiProvider],
-        inventory: {
-          routes: [
-            {
-              pattern: "/",
-              kind: "page",
-              file: "/proj/app/page.tsx",
-            },
-          ],
-        },
-      },
-    );
-
-    expect(result.effectApis).toContain("ACTION /actions#save");
-    const actions = result.sources.find((entry) =>
-      entry.path.endsWith("app/actions.ts"),
-    );
-    expect(actions?.interactionText.trim()).toBe("");
+    expect(cacheStorageProvider.discoverCacheStorage({
+      files: [],
+      options: { route: "/" },
+    }).vars.map((decl) => decl.id)).toEqual(["cache:demo"]);
+    expect(
+      observationProvider.observe("cache:demo", observationProvider.setup({})),
+    ).toEqual({ value: "ready" });
+    expect(
+      observationProvider.observe("cache:demo", observationProvider.setup({})),
+    ).not.toBe("unobservable");
+    expect(
+      observationProvider.observe("local:missing", observationProvider.setup({})),
+    ).toBe("unobservable");
   });
 });

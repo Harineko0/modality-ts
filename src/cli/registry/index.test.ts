@@ -34,7 +34,7 @@ function fakeNavigationAdapter(
   };
 }
 
-describe("validateRouterPlugin", () => {
+describe("validateNavigationAdapter", () => {
   it("accepts a NavigationAdapter with the required methods", () => {
     expect(() =>
       createModalityRegistry({
@@ -52,7 +52,7 @@ describe("validateRouterPlugin", () => {
         routerPlugin: incomplete as NavigationAdapter,
       }),
     ).toThrow(
-      "Invalid router plugin fake-router: discoverRoutes must be a function",
+      "Invalid navigation adapter fake-router: discoverRoutes must be a function",
     );
   });
 
@@ -65,7 +65,7 @@ describe("validateRouterPlugin", () => {
         routerPlugin: incomplete as NavigationAdapter,
       }),
     ).toThrow(
-      "Invalid router plugin fake-router: classifyNavigationCall must be a function",
+      "Invalid navigation adapter fake-router: classifyNavigationCall must be a function",
     );
   });
 
@@ -77,7 +77,7 @@ describe("validateRouterPlugin", () => {
         routerPlugin: incomplete as NavigationAdapter,
       }),
     ).toThrow(
-      "Invalid router plugin fake-router: locationVars must be a function",
+      "Invalid navigation adapter fake-router: locationVars must be a function",
     );
   });
 
@@ -93,7 +93,7 @@ describe("validateRouterPlugin", () => {
         }),
       }),
     ).toThrow(
-      "Invalid router plugin fake-router: harness.setup, harness.observe, and harness.navigate are required",
+      "Invalid navigation adapter fake-router: harness.setup, harness.observe, and harness.navigate are required",
     );
   });
 
@@ -112,7 +112,7 @@ describe("validateRouterPlugin", () => {
         } as NavigationAdapter,
       }),
     ).toThrow(
-      "Invalid router plugin legacy-router: discoverRoutes must be a function",
+      "Invalid navigation adapter legacy-router: discoverRoutes must be a function",
     );
   });
 });

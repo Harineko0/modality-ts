@@ -4,9 +4,10 @@ title: Next.js
 sidebar_label: Next.js
 ---
 
-Next.js is modeled through the built-in **`nextAdapter()`** navigation adapter. It
-auto-activates when `next` appears in your app dependencies (and takes priority over
-React Router). See [Navigation architecture](../architecture/navigation.md) for the
+Next.js is modeled through the built-in **`nextAdapter()`** navigation adapter
+and companion providers (`nextModuleRoleAdapter()`, `nextEffectApiProvider()`,
+`nextCacheStorageProvider()`). It auto-activates when `next` appears in your app
+dependencies (and takes priority over React Router). See [Navigation architecture](../architecture/navigation.md) for the
 full adapter contract.
 
 ## What is modeled

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { routerSource } from "modality-ts/extract/sources/router";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import {
   navigate,
   observe,
@@ -8,7 +8,7 @@ import {
 
 describe("router source plugin", () => {
   it("exposes a NavigationAdapter-compatible source slice", () => {
-    const plugin = routerSource({ historyMaxLen: 2 });
+    const plugin = reactRouterAdapter({ historyMaxLen: 2 });
     expect(plugin.id).toBe("router");
     expect(plugin.packageNames).toEqual(["react-router", "react-router-dom"]);
     expect(plugin.classifyNavigationCall("router.push", ["/checkout"])).toEqual(
@@ -42,7 +42,7 @@ describe("router source plugin", () => {
       ],
     };
     expect(
-      routerSource().locationVars(
+      reactRouterAdapter().locationVars(
         inventory,
         { route: "/", bounds: { maxHistory: 3 } },
         { pushTargets: [], pushOrigins: [], hasUnboundPush: true },
@@ -70,7 +70,7 @@ describe("router source plugin", () => {
   });
 
   it("classifies supported navigation call shapes", () => {
-    const plugin = routerSource();
+    const plugin = reactRouterAdapter();
     expect(plugin.classifyNavigationCall("navigate", ["/settings"])).toEqual({
       mode: "push",
       to: "/settings",

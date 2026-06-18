@@ -511,7 +511,7 @@ describe("runCheckCommand", () => {
     const globalTaint = {
       kind: "global-taint" as const,
       id: "local:App.status",
-      reason: "Global taint local:App.status",
+      reason: "global-taint:local:App.status",
       severity: "unsound-risk" as const,
     };
     const staleRead = {

@@ -186,12 +186,12 @@ describe("Jotai source plugin", () => {
       }),
     ).toEqual([
       {
-        message: "Global taint jotai:getDefaultStore",
+        message: "global-taint:jotai:getDefaultStore",
         source: { file: "state.ts", line: 2, column: 16 },
         caveat: {
           kind: "global-taint",
           id: "jotai:getDefaultStore",
-          reason: "Global taint jotai:getDefaultStore",
+          reason: "global-taint:jotai:getDefaultStore",
           source: { file: "state.ts", line: 2, column: 16 },
           severity: "unsound-risk",
         },

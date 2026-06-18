@@ -31,6 +31,18 @@ describe("modality plugin registry", () => {
         {
           id: "swr",
           version: "1.2.3",
+          kind: "observation",
+          packageNames: ["swr"],
+        },
+        {
+          id: "use-state",
+          version: "1.2.3",
+          kind: "observation",
+          packageNames: ["use-state"],
+        },
+        {
+          id: "swr",
+          version: "1.2.3",
           kind: "state-source",
           packageNames: ["swr"],
         },
@@ -115,6 +127,24 @@ describe("modality plugin registry", () => {
           packageNames: ["react-router", "react-router-dom"],
         },
         {
+          id: "router-observation",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "swr",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["swr"],
+        },
+        {
+          id: "use-state",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["react"],
+        },
+        {
           id: "swr",
           kind: "state-source",
           version: "0.1.0",
@@ -180,6 +210,8 @@ describe("modality plugin registry", () => {
       domainRefinementProviders: [expect.objectContaining({ id: "arktype" })],
       plugins: [
         { id: "arktype", kind: "domain-refinement" },
+        { id: "jotai", kind: "observation" },
+        { id: "use-state", kind: "observation" },
         { id: "jotai", kind: "state-source" },
         { id: "use-state", kind: "state-source" },
       ],

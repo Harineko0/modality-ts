@@ -50,8 +50,9 @@ discovers App and Pages Router routes from the filesystem and models optional
 route-tree state for layouts, parallel slots, and intercepting routes. See
 [Next.js source](./next.md).
 
-**React Router** (`reactRouterAdapter()`; the older alias `routerSource()` still
-works) is used when Next is absent. The engine itself contains **no**
+**React Router** (`reactRouterAdapter()`) is used when Next is absent. Export
+`reactRouterModuleRoleAdapter()` and `reactRouterEffectApiProvider()` when
+registering a custom bundle. The engine itself contains **no**
 framework-specific identifiers — it only calls the adapter — so other frameworks can
 be supported by writing a new adapter, with no engine changes. See
 [Navigation](../architecture/navigation.md).

@@ -86,9 +86,6 @@ export function reactRouterAdapter(
   };
 }
 
-/** @deprecated use reactRouterAdapter */
-export const routerSource = reactRouterAdapter;
-
 export { parseReactRouterRoutes } from "./discover.js";
 
 export default reactRouterAdapter;
