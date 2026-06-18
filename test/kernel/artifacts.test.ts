@@ -83,6 +83,28 @@ describe("artifact parsers", () => {
         modelId: "m",
       },
     );
+    expect(
+      parseCheckReportArtifact(
+        JSON.stringify({
+          ...checkReport,
+          verdicts: [
+            {
+              property: "p",
+              status: "verified-within-bounds",
+              confidence: {
+                level: "over-approx",
+                reasons: [
+                  "Over-approx transition(s) retained in property slice: t1",
+                ],
+                caveatIds: [],
+                affectedTransitions: ["t1"],
+                affectedVars: [],
+              },
+            },
+          ],
+        }),
+      ).verdicts[0]?.confidence,
+    ).toMatchObject({ level: "over-approx" });
   });
 
   it("accepts report artifacts for every phase-6 feature output", () => {

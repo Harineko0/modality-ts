@@ -23,7 +23,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function contributorForVar(decl: StateVarDecl): StateSpaceContributor {
+function contributorForVar(
+  decl: StateVarDecl,
+  prunedFieldPaths?: readonly string[][],
+): StateSpaceContributor {
   const cardinality = domainCardinality(decl.domain);
   const bits = cardinality < 1 ? 0 : round2(Math.log2(cardinality));
   const scope =
@@ -36,6 +39,9 @@ function contributorForVar(decl: StateVarDecl): StateSpaceContributor {
     bits,
     scope,
     origin,
+    ...(prunedFieldPaths && prunedFieldPaths.length > 0
+      ? { prunedFieldPaths }
+      : {}),
   };
 }
 
@@ -56,7 +62,7 @@ export function buildStateContributors(
   model: Model,
   limit = 20,
 ): StateSpaceContributors {
-  const contributors = model.vars.map(contributorForVar);
+  const contributors = model.vars.map((decl) => contributorForVar(decl));
   const totalBits = round2(contributors.reduce((sum, c) => sum + c.bits, 0));
   const topVars = topContributors(contributors, limit);
   const bySourceMap = new Map<string, number>();
@@ -76,12 +82,15 @@ export function compareModelEconomics(
   full: Model,
   slice: Model,
   limit = 20,
+  retainedFieldPaths?: ReadonlyMap<string, readonly string[][]>,
 ): SliceEconomics {
   const sliceVarIds = new Set(slice.vars.map((decl) => decl.id));
   const retainedDecls = full.vars.filter((decl) => sliceVarIds.has(decl.id));
   const prunedDecls = full.vars.filter((decl) => !sliceVarIds.has(decl.id));
-  const retainedContributors = retainedDecls.map(contributorForVar);
-  const prunedContributors = prunedDecls.map(contributorForVar);
+  const retainedContributors = retainedDecls.map((decl) =>
+    contributorForVar(decl, retainedFieldPaths?.get(decl.id)),
+  );
+  const prunedContributors = prunedDecls.map((decl) => contributorForVar(decl));
   const retainedBits = round2(
     retainedContributors.reduce((sum, c) => sum + c.bits, 0),
   );

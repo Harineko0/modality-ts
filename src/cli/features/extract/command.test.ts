@@ -3163,6 +3163,52 @@ describe("runExtractCommand", () => {
     ).toBe(true);
   });
 
+  it("records field pruning metadata and model-slack caveats for nested records", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "SessionApp.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      type User = { id: string; avatarUrl: string };
+      type Session = { user: User };
+      export default function SessionApp() {
+        const [session, setSession] = useState<Session>({
+          user: { id: "u1", avatarUrl: "" },
+        });
+        const blocked = session.user.id === "blocked";
+        return (
+          <button
+            disabled={blocked}
+            onClick={() => setSession({ user: { id: "u2", avatarUrl: "" } })}
+          />
+        );
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const session = result.model.vars.find(
+      (decl) => decl.id === "local:SessionApp.session",
+    );
+    expect(session?.domain.kind).toBe("record");
+    const entry = result.model.metadata?.fieldPruning?.entries.find(
+      (candidate) => candidate.varId === "local:SessionApp.session",
+    );
+    expect(entry?.keptPaths).toContainEqual(["user", "id"]);
+    expect(entry?.prunedPaths).toContainEqual(["user", "avatarUrl"]);
+    expect(result.report.fieldPruning?.entries).toContainEqual(entry);
+    expect(
+      result.model.metadata?.extractionCaveats?.entries.some(
+        (caveat) =>
+          caveat.kind === "model-slack" &&
+          caveat.id === "field:local:SessionApp.session:user.avatarUrl",
+      ),
+    ).toBe(true);
+  });
+
   it("preserves aliased union fields inside jotai atom record domains", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "state.ts");

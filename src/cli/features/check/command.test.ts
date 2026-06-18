@@ -881,6 +881,180 @@ describe("runCheckCommand", () => {
     expect(summary?.mode).toBeDefined();
   });
 
+  it("includes pruned field paths in slice contributor diagnostics", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const sessionPredicate = `{ kind: "eq", args: [{ kind: "read", var: "session", path: ["user", "id"] }, { kind: "lit", value: "blocked" }] }`;
+
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "field-pruning-check",
+        bounds: { maxDepth: 4, maxPending: 2, maxInternalSteps: 4 },
+        vars: [
+          {
+            id: "session",
+            domain: {
+              kind: "record",
+              fields: {
+                user: {
+                  kind: "record",
+                  fields: {
+                    id: { kind: "tokens", count: 1 },
+                    avatarUrl: { kind: "tokens", count: 1 },
+                  },
+                },
+              },
+            },
+            origin: { file: "fixture.ts", line: 1 },
+            scope: { kind: "global" },
+            initial: { user: { id: "u1", avatarUrl: "" } },
+          },
+          {
+            id: "noise",
+            domain: { kind: "enum", values: ["a", "b"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "a",
+          },
+        ],
+        transitions: [
+          {
+            id: "noop",
+            cls: "internal",
+            label: { kind: "internal", text: "noop" },
+            source: [{ file: "fixture.ts", line: 2 }],
+            guard: { kind: "lit", value: true },
+            effect: {
+              kind: "assign",
+              var: "session",
+              expr: {
+                kind: "lit",
+                value: { user: { id: "u2", avatarUrl: "" } },
+              },
+            },
+            reads: [],
+            writes: ["session"],
+            confidence: "exact",
+          },
+        ],
+        metadata: {
+          fieldPruning: {
+            entries: [
+              {
+                varId: "session",
+                keptPaths: [["user", "id"]],
+                prunedPaths: [["user", "avatarUrl"]],
+                reason: "unread",
+                confidence: "exact",
+              },
+            ],
+          },
+        },
+      } satisfies Model),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "idNotBlocked", predicate: ${sessionPredicate}, reads: ["session"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const contributor =
+      result.report.diagnostics?.slicing?.sliceSummaries?.[0]?.topContributors?.find(
+        (entry) => entry.varId === "session",
+      );
+    expect(contributor?.prunedFieldPaths).toEqual([["user", "avatarUrl"]]);
+  });
+
+  it("embeds mount-scope and route system var diagnostics in sliced check report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const twoRoutes = { kind: "enum", values: ["/a", "/b"] };
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "route-mount-cli",
+        bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+        vars: [
+          {
+            id: "sys:route",
+            domain: twoRoutes,
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-current" },
+            initial: "/a",
+          },
+          {
+            id: "sys:history",
+            domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-history" },
+            initial: [],
+          },
+          {
+            id: "local:panel",
+            domain: { kind: "bool" },
+            origin: "system",
+            scope: {
+              kind: "mount-local",
+              id: "route-a",
+              when: {
+                kind: "eq",
+                args: [
+                  { kind: "read", var: "sys:route" },
+                  { kind: "lit", value: "/a" },
+                ],
+              },
+            },
+            initial: false,
+          },
+        ],
+        transitions: [],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "panelReachable", predicate: { kind: "eq", args: [{ kind: "read", var: "local:panel" }, { kind: "lit", value: true }] }, reads: ["local:panel"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const summary = result.report.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:panel",
+        guardReads: ["sys:route"],
+        retainedBecause: ["property-read"],
+      },
+    ]);
+    expect(summary?.retainedSystemVars).toEqual(
+      expect.arrayContaining(["sys:route"]),
+    );
+    expect(summary?.prunedSystemVars).toEqual(
+      expect.arrayContaining(["sys:history"]),
+    );
+  });
+
   it("uses slicing by default when property reads are declared", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
@@ -1425,5 +1599,213 @@ describe("runCheckCommand streaming output", () => {
     expect(
       result.lines.some((line) => line.startsWith("search-limit=memoryGuard")),
     ).toBe(true);
+  });
+});
+
+describe("property confidence reporting", () => {
+  it("includes confidence for over-approx transitions retained in the slice", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "over-approx",
+      affectedTransitions: ["setFlag"],
+    });
+    expect(
+      result.report.verdicts[0]?.confidence?.reasons.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("includes confidence for manual transitions retained in the slice", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const overlayPath = join(dir, "overlay.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+    await writeFile(
+      overlayPath,
+      JSON.stringify({
+        transitions: [
+          {
+            id: "setFlag",
+            cls: "user",
+            label: { kind: "click", text: "Manual" },
+            source: [],
+            guard: { kind: "lit", value: true },
+            effect: {
+              kind: "assign",
+              var: "flag",
+              expr: { kind: "lit", value: false },
+            },
+            reads: ["flag"],
+            writes: ["flag"],
+            confidence: "manual",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath, overlayPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "manual",
+      affectedTransitions: ["setFlag"],
+    });
+  });
+
+  it("includes confidence for relevant model-slack caveats", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const modelSlack = {
+      kind: "model-slack" as const,
+      id: "payload",
+      reason: "Wide product domain (257 values) may enlarge search",
+      severity: "over-approx" as const,
+    };
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        metadata: {
+          extractionCaveats: {
+            entries: [modelSlack],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "payloadKnown", predicate: { kind: "eq", args: [{ kind: "read", var: "payload" }, { kind: "lit", value: "tok1" }] }, reads: ["payload"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "over-approx",
+      caveatIds: ["payload"],
+      affectedVars: ["payload"],
+    });
+    expect(result.report.verdicts[0]?.confidence?.reasons).toEqual(
+      expect.arrayContaining([
+        "Model slack: Wide product domain (257 values) may enlarge search",
+      ]),
+    );
+  });
+
+  it("preserves numeric reduction downgrade and includes confidence reasons", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        vars: [
+          ...model().vars,
+          {
+            id: "amount",
+            domain: { kind: "enum", values: ["validSmall", "aboveMax"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "validSmall",
+          },
+        ],
+        metadata: {
+          numericReductions: {
+            entries: [
+              {
+                varId: "amount",
+                kind: "input-class",
+                claim: "heuristic",
+                reason: "User-entered numeric input modeled as classes",
+              },
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+  {
+    kind: "always",
+    name: "amountKnown",
+    predicate: { kind: "eq", args: [{ kind: "read", var: "amount" }, { kind: "lit", value: "validSmall" }] },
+    reads: ["amount"],
+  },
+];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]).toMatchObject({
+      property: "amountKnown",
+      status: "vacuous-warning",
+      confidence: {
+        level: "heuristic",
+        affectedVars: ["amount"],
+      },
+    });
+    expect(
+      result.report.verdicts[0]?.confidence?.reasons.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows compact non-exact confidence in human output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "props.ts",
+          check: result.check,
+          reportVerdicts: result.report.verdicts,
+          artifacts: [],
+          durationMs: 5,
+        },
+      ],
+      {
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+        totalDurationMs: 12,
+      },
+    );
+    expect(lines.some((line) => line.includes("confidence=over-approx"))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes("reasons:"))).toBe(true);
   });
 });

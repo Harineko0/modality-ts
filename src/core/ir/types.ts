@@ -200,6 +200,19 @@ export interface NumericReductions {
   entries: readonly NumericReduction[];
 }
 
+export interface FieldPruningEntry {
+  varId: string;
+  keptPaths: readonly string[][];
+  prunedPaths: readonly string[][];
+  reason: "unread" | "property-unrelated" | "bounded-record";
+  source?: SourceAnchor;
+  confidence: "exact" | "over-approx";
+}
+
+export interface FieldPruningMetadata {
+  entries: readonly FieldPruningEntry[];
+}
+
 export interface Model {
   schemaVersion: 1;
   id: string;
@@ -212,6 +225,7 @@ export interface Model {
     domainProvenance?: Record<string, "overlay-refined">;
     extractionCaveats?: ExtractionCaveats;
     numericReductions?: NumericReductions;
+    fieldPruning?: FieldPruningMetadata;
   };
 }
 

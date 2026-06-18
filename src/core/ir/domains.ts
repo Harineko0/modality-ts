@@ -255,6 +255,51 @@ export function collectTokenDomainPaths(domain: AbstractDomain): string[] {
   return [...new Set(paths)].sort();
 }
 
+export function collectRecordDomainFieldPaths(
+  domain: AbstractDomain,
+): readonly (readonly string[])[] {
+  const paths: string[][] = [];
+
+  function collect(current: AbstractDomain, prefix: readonly string[]): void {
+    switch (current.kind) {
+      case "record":
+        for (const [field, fieldDomain] of Object.entries(current.fields)) {
+          collect(fieldDomain, [...prefix, field]);
+        }
+        break;
+      case "option":
+        collect(current.inner, prefix);
+        break;
+      case "tagged":
+        for (const [variant, variantDomain] of Object.entries(
+          current.variants,
+        )) {
+          collect(variantDomain, [...prefix, `#${variant}`]);
+        }
+        break;
+      case "boundedList":
+        collect(current.inner, [...prefix, "[]"]);
+        break;
+      default:
+        if (prefix.length > 0) paths.push([...prefix]);
+        break;
+    }
+  }
+
+  collect(domain, []);
+  const seen = new Set<string>();
+  const unique: string[][] = [];
+  for (const path of paths) {
+    const key = path.join("\0");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(path);
+  }
+  return unique.sort((left, right) =>
+    left.join("\0").localeCompare(right.join("\0")),
+  );
+}
+
 function cartesian<T>(sets: readonly (readonly T[])[]): T[][] {
   return sets.reduce<T[][]>(
     (acc, set) => acc.flatMap((prefix) => set.map((item) => [...prefix, item])),

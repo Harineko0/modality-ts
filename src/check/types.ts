@@ -40,6 +40,12 @@ export interface PendingQueueDependency {
   continuations?: readonly string[];
 }
 
+export interface MountScopeDependency {
+  varId: string;
+  guardReads: readonly string[];
+  retainedBecause: readonly string[];
+}
+
 export interface SliceSummary {
   index: number;
   properties: readonly string[];
@@ -56,6 +62,7 @@ export interface SliceSummary {
   retainedSystemVars?: readonly string[];
   prunedSystemVars?: readonly string[];
   pendingQueueDependencies?: readonly PendingQueueDependency[];
+  mountScopeDependencies?: readonly MountScopeDependency[];
 }
 
 export type EdgeRecordingMode =

@@ -13,9 +13,14 @@ import type {
   StepPredicateIR,
   Transition,
 } from "modality-ts/core";
-import type { PendingQueueDependency } from "../types.js";
+import type { MountScopeDependency, PendingQueueDependency } from "../types.js";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
+
+export interface SliceDiagnostics {
+  mountScopeDependencies?: readonly MountScopeDependency[];
+  pendingQueueDependencies?: readonly PendingQueueDependency[];
+}
 
 interface PropertyDependencyRequest {
   stateReads: readonly string[];
@@ -31,7 +36,7 @@ export function sliceModel(
   model: Model,
   propertyReads: readonly string[],
 ): Model {
-  return sliceModelForProperty(model, { reads: propertyReads });
+  return sliceModelForProperty(model, { reads: propertyReads }).model;
 }
 
 export function targetedAlwaysStepTransitionIds(
@@ -55,34 +60,40 @@ export function propertySliceMode(
 export function sliceModelForCheckProperty(
   model: Model,
   property: Property,
-): {
-  model: Model;
-  mode: PropertySliceMode;
-  pendingQueueDependencies: readonly PendingQueueDependency[];
-} {
+): { model: Model; mode: PropertySliceMode; diagnostics?: SliceDiagnostics } {
   const deps = collectPropertyDependencyRequest(model, property);
   switch (deps.mode) {
-    case "state":
+    case "state": {
+      const sliced = sliceModelForProperty(model, dependencySliceInput(deps));
       return {
-        model: sliceModelForProperty(model, dependencySliceInput(deps)),
+        model: sliced.model,
         mode: deps.mode,
-        pendingQueueDependencies: deps.pendingQueueDependencies,
+        diagnostics: mergeSliceDiagnostics(sliced.diagnostics, {
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
       };
-    case "targetedStep":
+    }
+    case "targetedStep": {
+      const sliced = sliceModelForTargetedStepProperty(
+        model,
+        property as Extract<Property, { kind: "alwaysStep" }>,
+        deps,
+      );
       return {
-        model: sliceModelForTargetedStepProperty(
-          model,
-          property as Extract<Property, { kind: "alwaysStep" }>,
-          deps,
-        ),
+        model: sliced.model,
         mode: deps.mode,
-        pendingQueueDependencies: deps.pendingQueueDependencies,
+        diagnostics: mergeSliceDiagnostics(sliced.diagnostics, {
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
       };
+    }
     case "full":
       return {
         model,
         mode: deps.mode,
-        pendingQueueDependencies: deps.pendingQueueDependencies,
+        diagnostics: mergeSliceDiagnostics({
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
       };
   }
 }
@@ -90,7 +101,7 @@ export function sliceModelForCheckProperty(
 export function sliceModelForProperty(
   model: Model,
   property: Pick<Property, "reads" | "enabledTransitions">,
-): Model {
+): { model: Model; diagnostics?: SliceDiagnostics } {
   const pendingQueues = pendingQueueVarIds(model);
   const forcedTransitions = new Set(property.enabledTransitions ?? []);
   const neededVars = new Set([
@@ -98,11 +109,20 @@ export function sliceModelForProperty(
     ...enabledTransitionVars(model, forcedTransitions),
   ]);
   const neededTransitions = new Set<string>();
+  const mountAcc = createMountScopeAccumulator();
+  const seedVars = new Set(neededVars);
 
   let changed = true;
   while (changed) {
     changed = false;
-    if (addMountGuardVarsForNeededMountLocals(model, neededVars)) {
+    if (
+      addMountGuardVarsForNeededMountLocals(
+        model,
+        neededVars,
+        mountAcc,
+        seedVars,
+      )
+    ) {
       changed = true;
     }
     for (const transition of model.transitions) {
@@ -157,7 +177,17 @@ export function sliceModelForProperty(
       neededTransitions.has(transition.id),
     ),
   );
-  return { ...model, vars, transitions };
+  const mountScopeDependencies = finalizeMountScopeDependencies(
+    mountAcc,
+    neededVars,
+  );
+  return {
+    model: { ...model, vars, transitions },
+    diagnostics:
+      mountScopeDependencies.length > 0
+        ? { mountScopeDependencies }
+        : undefined,
+  };
 }
 
 export function sliceModelForTargetedStepProperty(
@@ -167,12 +197,14 @@ export function sliceModelForTargetedStepProperty(
     PropertyDependencyRequest,
     "stateReads" | "enabledTransitions" | "stepFactVars"
   > = collectPropertyDependencyRequest(model, property),
-): Model {
+): { model: Model; diagnostics?: SliceDiagnostics } {
   const pendingQueues = pendingQueueVarIds(model);
   const targetIds = targetedAlwaysStepTransitionIds(property);
   const targetIdSet = new Set(targetIds);
   const dependencyVars = new Set([...deps.stateReads, ...deps.stepFactVars]);
   const neededTransitions = new Set<string>();
+  const mountAcc = createMountScopeAccumulator();
+  const seedVars = new Set(dependencyVars);
 
   for (const id of targetIds) {
     const transition = model.transitions.find(
@@ -185,7 +217,14 @@ export function sliceModelForTargetedStepProperty(
   let changed = true;
   while (changed) {
     changed = false;
-    if (addMountGuardVarsForNeededMountLocals(model, dependencyVars)) {
+    if (
+      addMountGuardVarsForNeededMountLocals(
+        model,
+        dependencyVars,
+        mountAcc,
+        seedVars,
+      )
+    ) {
       changed = true;
     }
     for (const transition of model.transitions) {
@@ -283,7 +322,17 @@ export function sliceModelForTargetedStepProperty(
       neededTransitions.has(transition.id),
     ),
   );
-  return { ...model, vars, transitions };
+  const mountScopeDependencies = finalizeMountScopeDependencies(
+    mountAcc,
+    executionVars,
+  );
+  return {
+    model: { ...model, vars, transitions },
+    diagnostics:
+      mountScopeDependencies.length > 0
+        ? { mountScopeDependencies }
+        : undefined,
+  };
 }
 
 function collectPropertyDependencyRequest(
@@ -419,6 +468,29 @@ function dependencySliceInput(
       deps.enabledTransitions,
       deps.targetTransitionIds,
     ),
+  };
+}
+
+function mergeSliceDiagnostics(
+  ...groups: readonly (SliceDiagnostics | undefined)[]
+): SliceDiagnostics | undefined {
+  const mountScopeDependencies = mergeMountScopeDependencies(
+    ...groups.map((group) => group?.mountScopeDependencies),
+  );
+  const pendingQueueDependencies = mergePendingQueueDependencies(
+    ...groups.map((group) => group?.pendingQueueDependencies),
+  );
+  if (
+    mountScopeDependencies.length === 0 &&
+    pendingQueueDependencies.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    ...(mountScopeDependencies.length > 0 ? { mountScopeDependencies } : {}),
+    ...(pendingQueueDependencies.length > 0
+      ? { pendingQueueDependencies }
+      : {}),
   };
 }
 
@@ -808,6 +880,44 @@ function collectPendingQueueDependencies(
   ];
 }
 
+function mergePendingQueueDependencies(
+  ...groups: readonly (readonly PendingQueueDependency[] | undefined)[]
+): readonly PendingQueueDependency[] {
+  const merged = new Map<string, PendingQueueDependency>();
+  for (const dependencies of groups) {
+    if (!dependencies) continue;
+    for (const entry of dependencies) {
+      const existing = merged.get(entry.varId);
+      if (!existing) {
+        merged.set(entry.varId, entry);
+        continue;
+      }
+      merged.set(entry.varId, {
+        varId: entry.varId,
+        reasons: [...new Set([...existing.reasons, ...entry.reasons])].sort(),
+        opIds:
+          existing.opIds || entry.opIds
+            ? [
+                ...new Set([...(existing.opIds ?? []), ...(entry.opIds ?? [])]),
+              ].sort()
+            : undefined,
+        continuations:
+          existing.continuations || entry.continuations
+            ? [
+                ...new Set([
+                  ...(existing.continuations ?? []),
+                  ...(entry.continuations ?? []),
+                ]),
+              ].sort()
+            : undefined,
+      });
+    }
+  }
+  return [...merged.values()].sort((left, right) =>
+    left.varId.localeCompare(right.varId),
+  );
+}
+
 function pendingQueueVarIds(model: Model): Set<string> {
   return new Set(
     model.vars
@@ -846,14 +956,13 @@ function stripEnqueueDequeueEffects(effect: EffectIR): EffectIR {
       return { kind: "seq", effects };
     }
     case "if": {
-      const stripped: EffectIR = {
+      return {
         kind: "if",
         cond: effect.cond,
+        // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+        then: stripEnqueueDequeueEffects(effect.then),
         else: stripEnqueueDequeueEffects(effect.else),
-      } as EffectIR;
-      // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
-      stripped["then"] = stripEnqueueDequeueEffects(effect.then);
-      return stripped;
+      };
     }
     default:
       return effect;
@@ -871,13 +980,19 @@ function solePendingQueueVarId(model: Model): string | undefined {
 function addMountGuardVarsForNeededMountLocals(
   model: Model,
   neededVars: Set<string>,
+  mountAcc?: MountScopeAccumulator,
+  seedVars?: ReadonlySet<string>,
 ): boolean {
   let changed = false;
+  const seededMountLocals = seedVars ?? neededVars;
   for (const decl of model.vars) {
     if (!neededVars.has(decl.id)) continue;
     if (decl.scope.kind === "mount-local") {
       const guard = mountGuardForScope(decl.scope);
       if (!guard) continue;
+      if (mountAcc && seededMountLocals.has(decl.id)) {
+        recordMountScopeDependency(mountAcc, decl.id, guard, "property-read");
+      }
       for (const read of exprReads(guard)) {
         if (!neededVars.has(read)) {
           neededVars.add(read);
@@ -892,13 +1007,93 @@ function addMountGuardVarsForNeededMountLocals(
     if (!guard) continue;
     for (const read of exprReads(guard)) {
       if (!neededVars.has(read)) continue;
-      if (!neededVars.has(decl.id)) {
+      const mountLocalWasNeeded = neededVars.has(decl.id);
+      if (!mountLocalWasNeeded) {
         neededVars.add(decl.id);
         changed = true;
+      }
+      if (mountAcc && !seededMountLocals.has(decl.id)) {
+        recordMountScopeDependency(
+          mountAcc,
+          decl.id,
+          guard,
+          `guard-read:${read}`,
+        );
       }
     }
   }
   return changed;
+}
+
+interface MountScopeAccumulator {
+  entries: Map<
+    string,
+    { guardReads: readonly string[]; retainedBecause: Set<string> }
+  >;
+}
+
+function createMountScopeAccumulator(): MountScopeAccumulator {
+  return { entries: new Map() };
+}
+
+function recordMountScopeDependency(
+  acc: MountScopeAccumulator,
+  varId: string,
+  guard: ExprIR,
+  reason: string,
+): void {
+  const guardReads = [...exprReads(guard)].sort();
+  let entry = acc.entries.get(varId);
+  if (!entry) {
+    entry = { guardReads, retainedBecause: new Set() };
+    acc.entries.set(varId, entry);
+  }
+  entry.retainedBecause.add(reason);
+}
+
+function finalizeMountScopeDependencies(
+  acc: MountScopeAccumulator,
+  retainedVars: Set<string>,
+): readonly MountScopeDependency[] {
+  const results: MountScopeDependency[] = [];
+  for (const [varId, entry] of acc.entries) {
+    if (!retainedVars.has(varId)) continue;
+    results.push({
+      varId,
+      guardReads: entry.guardReads,
+      retainedBecause: [...entry.retainedBecause].sort(),
+    });
+  }
+  return results.sort((left, right) => left.varId.localeCompare(right.varId));
+}
+
+export function mergeMountScopeDependencies(
+  ...groups: readonly (readonly MountScopeDependency[] | undefined)[]
+): readonly MountScopeDependency[] {
+  const merged = new Map<
+    string,
+    { guardReads: readonly string[]; retainedBecause: Set<string> }
+  >();
+  for (const deps of groups) {
+    if (!deps) continue;
+    for (const dep of deps) {
+      let entry = merged.get(dep.varId);
+      if (!entry) {
+        entry = { guardReads: dep.guardReads, retainedBecause: new Set() };
+        merged.set(dep.varId, entry);
+      }
+      for (const reason of dep.retainedBecause) {
+        entry.retainedBecause.add(reason);
+      }
+    }
+  }
+  return [...merged.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([varId, entry]) => ({
+      varId,
+      guardReads: entry.guardReads,
+      retainedBecause: [...entry.retainedBecause].sort(),
+    }));
 }
 
 export function enabledTransitionVars(

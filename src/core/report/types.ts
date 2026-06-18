@@ -1,6 +1,8 @@
 import type {
   Bounds,
   ExtractionCaveat,
+  FieldPruningEntry,
+  FieldPruningMetadata,
   NumericReduction,
   PluginProvenance,
 } from "../ir/types.js";
@@ -35,7 +37,7 @@ export interface DomainReportEntry {
     | "system";
 }
 
-export type { ExtractionCaveat };
+export type { ExtractionCaveat, FieldPruningEntry, FieldPruningMetadata };
 
 export type ReportVerdictStatus =
   | "verified-within-bounds"
@@ -44,6 +46,22 @@ export type ReportVerdictStatus =
   | "vacuous-warning"
   | "error";
 
+export type ReportPropertyConfidenceLevel =
+  | "exact"
+  | "property-preserving"
+  | "over-approx"
+  | "manual"
+  | "bounded"
+  | "heuristic";
+
+export interface ReportPropertyConfidence {
+  level: ReportPropertyConfidenceLevel;
+  reasons: readonly string[];
+  caveatIds: readonly string[];
+  affectedTransitions: readonly string[];
+  affectedVars: readonly string[];
+}
+
 export interface ReportPropertyVerdict {
   property: string;
   status: ReportVerdictStatus;
@@ -51,6 +69,7 @@ export interface ReportPropertyVerdict {
   trace?: Trace;
   replayable?: boolean;
   replayBlockedReason?: string;
+  confidence?: ReportPropertyConfidence;
 }
 
 export interface CheckReportDiagnostics {
@@ -79,6 +98,11 @@ export interface CheckReportDiagnostics {
         reasons: readonly string[];
         opIds?: readonly string[];
         continuations?: readonly string[];
+      }[];
+      mountScopeDependencies?: readonly {
+        varId: string;
+        guardReads: readonly string[];
+        retainedBecause: readonly string[];
       }[];
     }[];
   };
@@ -139,6 +163,7 @@ export interface StateSpaceContributor {
   bits: number;
   scope: string;
   origin: string;
+  prunedFieldPaths?: readonly string[][];
 }
 
 export interface StateSpaceContributors {
@@ -183,6 +208,7 @@ export interface ExtractionReport {
   modelSlack: readonly ExtractionCaveat[];
   domains: readonly DomainReportEntry[];
   coarseDomains?: readonly { varId: string; paths: readonly string[] }[];
+  fieldPruning?: FieldPruningMetadata;
   stateContributors?: StateSpaceContributors;
   routeCoverage?: RouteCoverage;
   coverage: {

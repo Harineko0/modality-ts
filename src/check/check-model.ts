@@ -1,7 +1,9 @@
 import type { Model, Property } from "modality-ts/core";
+import { prunedFieldPathsForSlice } from "modality-ts/core";
 import { compareModelEconomics } from "./slicing/contributors.js";
 import {
   canSliceAllProperties,
+  mergeMountScopeDependencies,
   propertySlicingSkipReason,
   sliceModelForCheckProperty,
 } from "./slicing/slice-model.js";
@@ -10,6 +12,7 @@ import type {
   CheckDiagnostics,
   CheckOptions,
   CheckResult,
+  MountScopeDependency,
   PendingQueueDependency,
   SliceSummary,
 } from "./types.js";
@@ -80,6 +83,7 @@ function checkModelSliced(
       index: number;
       mode: SliceSummary["mode"];
       pendingQueueDependencies: PendingQueueDependency[];
+      mountScopeDependencies: MountScopeDependency[];
     }
   >();
   const sliceSummaries: SliceSummary[] = [];
@@ -88,7 +92,7 @@ function checkModelSliced(
     const {
       model: slice,
       mode,
-      pendingQueueDependencies,
+      diagnostics,
     } = sliceModelForCheckProperty(model, property);
     const key = [
       slice.vars
@@ -106,15 +110,28 @@ function checkModelSliced(
       group.properties.push(property);
       group.pendingQueueDependencies = mergePendingQueueDependencies(
         group.pendingQueueDependencies,
-        pendingQueueDependencies,
+        diagnostics?.pendingQueueDependencies,
       );
+      group.mountScopeDependencies = [
+        ...mergeMountScopeDependencies(
+          group.mountScopeDependencies,
+          diagnostics?.mountScopeDependencies,
+        ),
+      ];
     } else {
       groups.set(key, {
         model: slice,
         properties: [property],
         index: sliceIndex,
         mode,
-        pendingQueueDependencies: [...pendingQueueDependencies],
+        pendingQueueDependencies: [
+          ...mergePendingQueueDependencies(
+            diagnostics?.pendingQueueDependencies,
+          ),
+        ],
+        mountScopeDependencies: [
+          ...mergeMountScopeDependencies(diagnostics?.mountScopeDependencies),
+        ],
       });
       sliceIndex += 1;
     }
@@ -163,7 +180,15 @@ function checkModelSliced(
       ...(group.pendingQueueDependencies.length > 0
         ? { pendingQueueDependencies: group.pendingQueueDependencies }
         : {}),
-      ...compareModelEconomics(model, group.model),
+      ...compareModelEconomics(
+        model,
+        group.model,
+        20,
+        prunedFieldPathsForSlice(model, group.model, group.properties),
+      ),
+      ...(group.mountScopeDependencies.length > 0
+        ? { mountScopeDependencies: group.mountScopeDependencies }
+        : {}),
     });
   }
 
@@ -268,35 +293,37 @@ function mergeDiagnostics(
 }
 
 function mergePendingQueueDependencies(
-  left: readonly PendingQueueDependency[],
-  right: readonly PendingQueueDependency[],
+  ...groups: readonly (readonly PendingQueueDependency[] | undefined)[]
 ): PendingQueueDependency[] {
   const merged = new Map<string, PendingQueueDependency>();
-  for (const entry of [...left, ...right]) {
-    const existing = merged.get(entry.varId);
-    if (!existing) {
-      merged.set(entry.varId, entry);
-      continue;
+  for (const dependencies of groups) {
+    if (!dependencies) continue;
+    for (const entry of dependencies) {
+      const existing = merged.get(entry.varId);
+      if (!existing) {
+        merged.set(entry.varId, entry);
+        continue;
+      }
+      merged.set(entry.varId, {
+        varId: entry.varId,
+        reasons: [...new Set([...existing.reasons, ...entry.reasons])].sort(),
+        opIds:
+          existing.opIds || entry.opIds
+            ? [
+                ...new Set([...(existing.opIds ?? []), ...(entry.opIds ?? [])]),
+              ].sort()
+            : undefined,
+        continuations:
+          existing.continuations || entry.continuations
+            ? [
+                ...new Set([
+                  ...(existing.continuations ?? []),
+                  ...(entry.continuations ?? []),
+                ]),
+              ].sort()
+            : undefined,
+      });
     }
-    merged.set(entry.varId, {
-      varId: entry.varId,
-      reasons: [...new Set([...existing.reasons, ...entry.reasons])].sort(),
-      opIds:
-        existing.opIds || entry.opIds
-          ? [
-              ...new Set([...(existing.opIds ?? []), ...(entry.opIds ?? [])]),
-            ].sort()
-          : undefined,
-      continuations:
-        existing.continuations || entry.continuations
-          ? [
-              ...new Set([
-                ...(existing.continuations ?? []),
-                ...(entry.continuations ?? []),
-              ]),
-            ].sort()
-          : undefined,
-    });
   }
   return [...merged.values()].sort((a, b) => a.varId.localeCompare(b.varId));
 }

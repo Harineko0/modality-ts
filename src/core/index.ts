@@ -1,5 +1,6 @@
 export * from "./ir/types.js";
 export * from "./ir/domains.js";
+export * from "./ir/field-pruning.js";
 export * from "./ir/canonical.js";
 export * from "./ir/roles.js";
 export * from "./ir/validator.js";
