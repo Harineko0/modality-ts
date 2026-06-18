@@ -284,7 +284,9 @@ export function runExtractionPipeline(
     ...(isEffectOpAliasesPopulated(options.effectOpAliases)
       ? { effectOpAliases: options.effectOpAliases }
       : {}),
-    ...(options.projectSummary ? { projectSummary: options.projectSummary } : {}),
+    ...(options.projectSummary
+      ? { projectSummary: options.projectSummary }
+      : {}),
   });
   const sourceExtractions = sourcePlugins.map(
     (plugin) =>

@@ -2715,6 +2715,149 @@ describe("checker", () => {
     );
   });
 
+  it("prunes wide printer and order-history vars from grouped enabled properties", () => {
+    const printerStatus = {
+      kind: "enum",
+      values: ["connected", "disconnected", "error"],
+    } as const;
+    const densityValues = Array.from({ length: 20 }, (_, index) => `d${index}`);
+    const orderHistoryValues = Array.from(
+      { length: 16 },
+      (_, index) => `o${index}`,
+    );
+    const printerDataFields = Object.fromEntries(
+      Array.from({ length: 24 }, (_, index) => [`bit${index}`, bool]),
+    );
+    const customerRoute = "/customer/home";
+    const m: Model = {
+      schemaVersion: 1,
+      id: "coffee-enabled-group",
+      bounds: { maxDepth: 3, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: [customerRoute, "/other"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: customerRoute,
+        },
+        {
+          id: "printerStatus",
+          domain: printerStatus,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "printerStatusData",
+          domain: { kind: "record", fields: printerDataFields },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 24 }, (_, index) => [`bit${index}`, false]),
+          ),
+        },
+        {
+          id: "orderHistory",
+          domain: { kind: "enum", values: orderHistoryValues },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "o0",
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        ...densityValues.map((value, index) => ({
+          id: `optimisticDensity${index}`,
+          domain: bool,
+          origin: "system" as const,
+          scope: routeMountScope(customerRoute),
+          initial: false,
+        })),
+      ],
+      transitions: [
+        ...densityValues.map((value, index) => ({
+          id: `setDensity${index}`,
+          cls: "user" as const,
+          label: { kind: "click" as const, text: `Set ${value}` },
+          source: [],
+          guard: {
+            kind: "eq" as const,
+            args: [read("printerStatus"), lit("connected")],
+          },
+          effect: {
+            kind: "assign" as const,
+            var: `optimisticDensity${index}`,
+            expr: lit(true),
+          },
+          reads: [
+            `optimisticDensity${index}`,
+            "printerStatus",
+            "printerStatusData",
+          ],
+          writes: [`optimisticDensity${index}`, "printerStatusData"],
+          confidence: "exact" as const,
+        })),
+        {
+          id: "submitOrder",
+          cls: "user",
+          label: { kind: "submit", text: "Submit order" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "enqueue",
+            queue: "sys:pending",
+            op: "POST",
+            continuation: "submitOrder#1",
+            args: {},
+          },
+          reads: ["orderHistory"],
+          writes: ["sys:pending"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const props = [0, 1, 2].map((index) =>
+      always(
+        m,
+        orExpr(
+          neq(readVar("printerStatus"), lit("connected")),
+          enabled(m, `setDensity${index}`),
+        ),
+        { name: `density${index}Guarded`, reads: ["printerStatus"] },
+      ),
+    );
+    const unsliced = checkModel(m, props);
+    const sliced = checkModel(m, props, { slicing: true });
+    expect(
+      sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    ).toEqual(
+      unsliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
+    );
+    const summary = sliced.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.vars).toBeLessThan(10);
+    expect(summary?.transitions).toBeLessThan(10);
+    const { model: slicedModel } = sliceModelForCheckProperty(m, props[0]!);
+    const varIds = slicedModel.vars.map((decl) => decl.id);
+    expect(varIds).toContain("printerStatus");
+    expect(varIds).not.toEqual(
+      expect.arrayContaining([
+        "printerStatusData",
+        "orderHistory",
+        "sys:pending",
+        "optimisticDensity3",
+        "optimisticDensity10",
+      ]),
+    );
+    expect(summary?.prunedSystemVars).toContain("sys:pending");
+  });
+
   it("enabledTransitionPrefix matches suffixed transition ids when exact id is absent", () => {
     const draftSecVar = "local:LaneTimer.draftSec";
     const resetPrefix = "LaneTimer.onClick.draftSec";
@@ -4053,8 +4196,15 @@ describe("checker", () => {
   });
 
   it("prunes route-local wide siblings and pending queue under slice economics gates", () => {
-    const productValues = Array.from({ length: 32 }, (_, index) => `sku${index}`);
-    const siblingIds = ["local:home.flag", "local:home.noise", "local:home.cart"];
+    const productValues = Array.from(
+      { length: 32 },
+      (_, index) => `sku${index}`,
+    );
+    const siblingIds = [
+      "local:home.flag",
+      "local:home.noise",
+      "local:home.cart",
+    ];
     const m: Model = {
       schemaVersion: 1,
       id: "route-local-economy",

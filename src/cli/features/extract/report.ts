@@ -15,7 +15,10 @@ import {
   type RouteCoverageEntry,
   type StateVarDecl,
 } from "modality-ts/core";
-import type { RouteInventory, StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import type {
+  RouteInventory,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
 import {
   compareCaveats,
   modelSlackCaveat,

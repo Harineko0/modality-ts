@@ -111,7 +111,7 @@ export function computeStateSliceClosure(
 
   for (const id of forcedTransitions) {
     neededTransitions.add(id);
-    addTransitionSemanticVars(graph, neededVars, id);
+    addEnabledObservationMountLocals(graph, neededVars, id);
   }
 
   return {
@@ -179,7 +179,7 @@ export function computeTargetedStepSliceClosure(
   };
 }
 
-export function enabledTransitionSeedVars(
+export function enabledTransitionGuardVars(
   graph: ModelDependencyGraph,
   transitionIds: ReadonlySet<string>,
 ): string[] {
@@ -188,22 +188,16 @@ export function enabledTransitionSeedVars(
     const transition = graph.transitionsById.get(id);
     if (!transition) continue;
     for (const read of exprReads(transition.guard)) vars.add(read);
-    for (const read of effectReadsForModel(
-      graph.model,
-      transition.effect,
-      transition.id,
-    )) {
-      vars.add(read);
-    }
-    for (const read of transition.reads) vars.add(read);
-    for (const write of transition.writes) {
-      if (graph.pendingQueueVarIds.has(write)) continue;
-      vars.add(write);
-    }
   }
   expandMountGuardReads(graph, vars);
-  expandMountLocalsFromGuardReads(graph, vars);
   return [...vars].sort();
+}
+
+export function enabledTransitionSeedVars(
+  graph: ModelDependencyGraph,
+  transitionIds: ReadonlySet<string>,
+): string[] {
+  return enabledTransitionGuardVars(graph, transitionIds);
 }
 
 function reachVarsThroughTransitions(
@@ -309,17 +303,19 @@ function expandMountGuardReads(
   }
 }
 
-function expandMountLocalsFromGuardReads(
+function addEnabledObservationMountLocals(
   graph: ModelDependencyGraph,
   vars: Set<string>,
+  transitionId: string,
 ): void {
-  for (const decl of graph.mountLocalVars) {
-    const guard = mountGuardForScope(decl.scope);
-    if (!guard) continue;
-    for (const read of exprReads(guard)) {
-      if (vars.has(read)) vars.add(decl.id);
-    }
+  const transition = graph.transitionsById.get(transitionId);
+  if (!transition) return;
+  for (const varId of [...transition.reads, ...transition.writes]) {
+    if (graph.pendingQueueVarIds.has(varId)) continue;
+    const decl = graph.varsById.get(varId);
+    if (decl?.scope.kind === "mount-local") vars.add(varId);
   }
+  expandMountGuardReads(graph, vars);
 }
 
 function addTransitionReadVars(

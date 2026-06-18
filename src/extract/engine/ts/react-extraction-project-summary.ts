@@ -42,10 +42,7 @@ export function buildReactExtractionProjectSummary(
       ),
     ),
   ].sort((left, right) => left.localeCompare(right));
-  const relatedSourceFiles = collectRelatedSourceFiles(
-    relatedFragments,
-    types,
-  );
+  const relatedSourceFiles = collectRelatedSourceFiles(relatedFragments, types);
   const typeAliases = collectProjectTypeAliases(relatedFragments, types);
   const contextBindings = collectMergedContextBindings(
     discoverFragments,
@@ -141,7 +138,8 @@ function collectRelatedSourceFiles(
   const files: ts.SourceFile[] = [];
   for (const fragment of relatedFragments) {
     const key =
-      types.canonicalFileName?.(fragment.fileName) ?? resolve(fragment.fileName);
+      types.canonicalFileName?.(fragment.fileName) ??
+      resolve(fragment.fileName);
     if (seen.has(key)) continue;
     seen.add(key);
     const sourceFile = types.getSourceFile(fragment.fileName);

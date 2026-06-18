@@ -1105,9 +1105,9 @@ export function App() {
     expect(cached.vars.map((decl) => decl.id).sort()).toEqual(
       uncached.vars.map((decl) => decl.id).sort(),
     );
-    expect(cached.transitions.map((transition) => transition.id).sort()).toEqual(
-      uncached.transitions.map((transition) => transition.id).sort(),
-    );
+    expect(
+      cached.transitions.map((transition) => transition.id).sort(),
+    ).toEqual(uncached.transitions.map((transition) => transition.id).sort());
     expect(cached.warnings.map((warning) => warning.message).sort()).toEqual(
       uncached.warnings.map((warning) => warning.message).sort(),
     );
@@ -1204,9 +1204,9 @@ export function App() {
         expect.objectContaining({ fileName: childPath }),
       ]),
     );
-    expect(
-      options?.types?.getSourceFile?.(childPath)?.fileName,
-    ).toBe(childPath);
+    expect(options?.types?.getSourceFile?.(childPath)?.fileName).toBe(
+      childPath,
+    );
     buildComponentSpy.mockRestore();
   });
 
@@ -1241,9 +1241,9 @@ export function App() {
       relatedFragments,
       projectSummary,
     });
-    expect(cached.transitions.map((transition) => transition.id).sort()).toEqual(
-      uncached.transitions.map((transition) => transition.id).sort(),
-    );
+    expect(
+      cached.transitions.map((transition) => transition.id).sort(),
+    ).toEqual(uncached.transitions.map((transition) => transition.id).sort());
   });
 });
 

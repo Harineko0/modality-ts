@@ -8,9 +8,12 @@ import {
   always,
   alwaysStep,
   enabled,
+  enabledTransitionPrefix,
   eq,
   lit,
+  neq,
   notExpr,
+  orExpr,
   readVar,
   reachable,
   stepChangedTo,
@@ -45,6 +48,178 @@ function mountScope(route: string) {
     },
   };
 }
+
+function wideProductDomain() {
+  const fields: Record<string, { kind: "bool" }> = {};
+  for (let index = 0; index < 32; index += 1) {
+    fields[`flag${index}`] = { kind: "bool" };
+  }
+  return { kind: "record" as const, fields };
+}
+
+describe("enabled transition guard-only slicing", () => {
+  it("retains guard reads but not transition writes or effect reads", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "enabled-guard-only",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "status",
+          domain: {
+            kind: "enum",
+            values: ["connected", "disconnected", "error"],
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "widePayload",
+          domain: wideProductDomain(),
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 32 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+        {
+          id: "unrelated",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "setDensity1",
+          cls: "user",
+          label: { kind: "click", text: "Set density 1" },
+          source: [],
+          guard: { kind: "eq", args: [read("status"), lit("connected")] },
+          effect: {
+            kind: "assign",
+            var: "widePayload",
+            expr: {
+              kind: "updateField",
+              target: read("widePayload"),
+              field: "flag0",
+              value: lit(true),
+            },
+          },
+          reads: ["status", "widePayload", "unrelated"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      m,
+      orExpr(
+        neq(readVar("status"), lit("connected")),
+        enabled(m, "setDensity1"),
+      ),
+      { name: "densityGuardedByConnection", reads: ["status"] },
+    );
+    const { model: sliced } = sliceModelForCheckProperty(m, property);
+    const varIds = sliced.vars.map((decl) => decl.id);
+    expect(varIds).toContain("status");
+    expect(varIds).not.toEqual(
+      expect.arrayContaining(["widePayload", "unrelated", "sys:pending"]),
+    );
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "setDensity1",
+    ]);
+    expect(sliced.transitions[0]?.writes).toEqual([]);
+    expect(sliced.transitions[0]?.effect).toEqual({
+      kind: "seq",
+      effects: [],
+    });
+  });
+
+  it("prunes transition writes for prefix-enabled predicates", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "enabled-prefix-guard-only",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "status",
+          domain: { kind: "enum", values: ["ready", "busy"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "ready",
+        },
+        {
+          id: "widePayload",
+          domain: wideProductDomain(),
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 32 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+      ],
+      transitions: [
+        {
+          id: "LaneTimer.onClick.draftSec.aaa",
+          cls: "user",
+          label: { kind: "click", text: "+1" },
+          source: [],
+          guard: { kind: "eq", args: [read("status"), lit("ready")] },
+          effect: { kind: "assign", var: "widePayload", expr: lit(true) },
+          reads: ["status", "widePayload"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+        {
+          id: "LaneTimer.onClick.draftSec.bbb",
+          cls: "user",
+          label: { kind: "click", text: "+2" },
+          source: [],
+          guard: { kind: "eq", args: [read("status"), lit("ready")] },
+          effect: { kind: "assign", var: "widePayload", expr: lit(false) },
+          reads: ["status", "widePayload"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      m,
+      enabledTransitionPrefix(m, "LaneTimer.onClick.draftSec"),
+      {
+        name: "prefixEnabled",
+        reads: ["status"],
+      },
+    );
+    const { model: sliced } = sliceModelForCheckProperty(m, property);
+    const varIds = sliced.vars.map((decl) => decl.id);
+    expect(varIds).toContain("status");
+    expect(varIds).not.toContain("widePayload");
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "LaneTimer.onClick.draftSec.aaa",
+      "LaneTimer.onClick.draftSec.bbb",
+    ]);
+    expect(
+      sliced.transitions.every(
+        (transition) =>
+          transition.writes.length === 0 &&
+          transition.effect.kind === "seq" &&
+          transition.effect.effects.length === 0,
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("neutral slicing parity", () => {
   it("includes changed and changedTo vars from step facts", () => {
@@ -247,7 +422,9 @@ describe("neutral slicing parity", () => {
       reads: ["local:a.flag"],
     });
     const varIds = sliced.vars.map((decl) => decl.id);
-    expect(varIds).toEqual(expect.arrayContaining(["local:a.flag", "sys:route"]));
+    expect(varIds).toEqual(
+      expect.arrayContaining(["local:a.flag", "sys:route"]),
+    );
     expect(varIds).not.toEqual(
       expect.arrayContaining(["local:a.noise", "local:a.wide", "sys:pending"]),
     );

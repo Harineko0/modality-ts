@@ -336,7 +336,9 @@ export function buildComponentRegistry(
   }
   for (const supplemental of options.supplementalSources ?? []) {
     const supplementalSource =
-      options.types?.getSourceFile?.(supplemental.fileName ?? primary.fileName) ??
+      options.types?.getSourceFile?.(
+        supplemental.fileName ?? primary.fileName,
+      ) ??
       ts.createSourceFile(
         supplemental.fileName ?? primary.fileName,
         supplemental.sourceText,
@@ -370,7 +372,9 @@ export function buildCustomHookRegistry(
   }
   for (const supplemental of options.supplementalSources ?? []) {
     const supplementalSource =
-      options.types?.getSourceFile?.(supplemental.fileName ?? primary.fileName) ??
+      options.types?.getSourceFile?.(
+        supplemental.fileName ?? primary.fileName,
+      ) ??
       ts.createSourceFile(
         supplemental.fileName ?? primary.fileName,
         supplemental.sourceText,

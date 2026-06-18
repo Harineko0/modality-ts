@@ -757,15 +757,55 @@ function finalizeSlicedTransitions(
   vars: readonly Model["vars"][number][],
   transitions: readonly Transition[],
 ): Transition[] {
+  const retainedVarIds = new Set(vars.map((decl) => decl.id));
+  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
   const pendingQueues = pendingQueueVarIds(model);
   const retainsPending = vars.some((decl) => pendingQueues.has(decl.id));
-  if (retainsPending) return [...transitions];
-  return transitions.map((transition) => ({
+  return transitions.map((transition) => {
+    const stripped = retainsPending
+      ? transition
+      : {
+          ...transition,
+          effect: stripEnqueueDequeueEffects(transition.effect),
+          reads: transition.reads.filter((id) => !pendingQueues.has(id)),
+          writes: transition.writes.filter((id) => !pendingQueues.has(id)),
+        };
+    return stripToEnabledObservationTransition(
+      stripped,
+      retainedVarIds,
+      varsById,
+      pendingQueues,
+    );
+  });
+}
+
+function stripToEnabledObservationTransition(
+  transition: Transition,
+  retainedVarIds: ReadonlySet<string>,
+  varsById: ReadonlyMap<string, Model["vars"][number]>,
+  pendingQueues: ReadonlySet<string>,
+): Transition {
+  const executionVars = [
+    ...transition.reads,
+    ...transition.writes.filter((id) => !pendingQueues.has(id)),
+  ];
+  if (executionVars.every((id) => retainedVarIds.has(id))) {
+    return transition;
+  }
+  const mountLocalRefs = [
+    ...new Set(
+      [...transition.reads, ...transition.writes].filter((id) => {
+        const decl = varsById.get(id);
+        return decl?.scope.kind === "mount-local";
+      }),
+    ),
+  ].sort();
+  return {
     ...transition,
-    effect: stripEnqueueDequeueEffects(transition.effect),
-    reads: transition.reads.filter((id) => !pendingQueues.has(id)),
-    writes: transition.writes.filter((id) => !pendingQueues.has(id)),
-  }));
+    reads: mountLocalRefs,
+    writes: mountLocalRefs,
+    effect: { kind: "seq", effects: [] },
+  };
 }
 
 function stripEnqueueDequeueEffects(effect: EffectIR): EffectIR {

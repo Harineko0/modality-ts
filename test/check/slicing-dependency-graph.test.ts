@@ -8,7 +8,10 @@ import { lit, type Model } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 
 const bool = { kind: "bool" } as const;
-const twoRoutes = { kind: "enum", values: ["/customer/home", "/other"] } as const;
+const twoRoutes = {
+  kind: "enum",
+  values: ["/customer/home", "/other"],
+} as const;
 const pendingOp = {
   kind: "record",
   fields: {
