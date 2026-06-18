@@ -6,17 +6,26 @@ import type {
   Value,
 } from "modality-ts/core";
 import * as ts from "typescript";
-import type { RouterPlugin, SemanticTypeContext, StateSourcePlugin } from "../../spi/index.js";
+import type {
+  RouterPlugin,
+  SemanticTypeContext,
+  StateSourcePlugin,
+} from "../../spi/index.js";
 import type { EffectOpAliases } from "../effect-op-aliases.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
-import { handlerExpression, jsxTagName } from "../components.js";
+import {
+  handlerExpression,
+  jsxTagIdentifier,
+  jsxTagName,
+  resolveComponentEntry,
+  type ComponentRegistry,
+} from "../components.js";
 import { emptyContextBindings } from "../context.js";
 import { safeId, tagStableIdKey, uniqueStrings } from "../ids.js";
 import { inputTransitions } from "../input-transitions.js";
 import type {
   BoundExpr,
-  ComponentDecl,
   ContextBindings,
   ExtractableHandler,
   ExtractionWarning,
@@ -234,7 +243,7 @@ export function transitionsFromComponentPropAttribute(
   node: ts.JsxAttribute,
   setters: Map<string, SetterBinding>,
   handlers: Map<string, ExtractableHandler>,
-  components: Map<string, ComponentDecl>,
+  components: ComponentRegistry,
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
@@ -245,11 +254,12 @@ export function transitionsFromComponentPropAttribute(
   contextBindings: ContextBindings = emptyContextBindings(),
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
   handlerContext: HandlerExtractionContext = {},
+  types?: SemanticTypeContext,
 ): Transition[] {
   if (!node.initializer || !ts.isIdentifier(node.name)) return [];
-  const tag = jsxTagName(node);
+  const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
   if (!tag) return [];
-  const callee = components.get(tag);
+  const callee = resolveComponentEntry(components, tag, types)?.decl;
   if (!callee) return [];
   const triggers = resolveComponentPropTriggers(
     source,
@@ -258,6 +268,8 @@ export function transitionsFromComponentPropAttribute(
     components,
     setters,
     warnings,
+    {},
+    types,
   );
   if (triggers.length === 0) return [];
   const expression = ts.isJsxExpression(node.initializer)
@@ -371,7 +383,7 @@ export function transitionsFromBoundedListComponentPropAttribute(
   node: ts.JsxAttribute,
   setters: Map<string, SetterBinding>,
   handlers: Map<string, ExtractableHandler>,
-  components: Map<string, ComponentDecl>,
+  components: ComponentRegistry,
   component: string,
   listInfo: {
     varId: string;
@@ -387,11 +399,12 @@ export function transitionsFromBoundedListComponentPropAttribute(
   contextBindings: ContextBindings = emptyContextBindings(),
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
   handlerContext: HandlerExtractionContext = {},
+  types?: SemanticTypeContext,
 ): Transition[] {
   if (!node.initializer || !ts.isIdentifier(node.name)) return [];
-  const tag = jsxTagName(node);
+  const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
   if (!tag) return [];
-  const callee = components.get(tag);
+  const callee = resolveComponentEntry(components, tag, types)?.decl;
   if (!callee) return [];
   const triggers = resolveComponentPropTriggers(
     source,
@@ -400,6 +413,8 @@ export function transitionsFromBoundedListComponentPropAttribute(
     components,
     setters,
     warnings,
+    {},
+    types,
   );
   if (triggers.length === 0) return [];
   const expression = ts.isJsxExpression(node.initializer)

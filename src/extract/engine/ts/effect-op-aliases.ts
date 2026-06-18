@@ -1,9 +1,6 @@
 import { resolve } from "node:path";
 
-export type EffectOpAliases = ReadonlyMap<
-  string,
-  ReadonlyMap<string, string>
->;
+export type EffectOpAliases = ReadonlyMap<string, ReadonlyMap<string, string>>;
 
 export function normalizeSourcePath(fileName: string): string {
   return resolve(fileName).split("\\").join("/");
@@ -17,9 +14,7 @@ export function canonicalEffectOp(
   return aliases.get(normalizeSourcePath(fileName))?.get(op) ?? op;
 }
 
-export function allEffectOpAliasLocalNames(
-  aliases: EffectOpAliases,
-): string[] {
+export function allEffectOpAliasLocalNames(aliases: EffectOpAliases): string[] {
   const names = new Set<string>();
   for (const perFile of aliases.values()) {
     for (const local of perFile.keys()) names.add(local);

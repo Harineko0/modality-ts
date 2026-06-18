@@ -331,10 +331,7 @@ export function createSemanticProject(
 
   for (const sourceFile of program.getSourceFiles()) {
     if (!sourceFile.isDeclarationFile) {
-      sourceFilesByPath.set(
-        canonicalFileName(sourceFile.fileName),
-        sourceFile,
-      );
+      sourceFilesByPath.set(canonicalFileName(sourceFile.fileName), sourceFile);
     }
   }
 

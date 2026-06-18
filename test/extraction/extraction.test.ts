@@ -3984,7 +3984,8 @@ describe("useState inventory", () => {
     );
     const confirmVar = "sys:confirm:App.onClick.api.deleteDefinition";
     const start = result.transitions.find(
-      (transition) => transition.id === "App.onClick.api.deleteDefinition.start",
+      (transition) =>
+        transition.id === "App.onClick.api.deleteDefinition.start",
     );
     const declined = result.transitions.find(
       (transition) =>
@@ -4005,8 +4006,7 @@ describe("useState inventory", () => {
       start?.effect.kind === "seq" &&
         start.effect.effects.some(
           (effect) =>
-            effect.kind === "enqueue" &&
-            effect.op === "api.deleteDefinition",
+            effect.kind === "enqueue" && effect.op === "api.deleteDefinition",
         ),
     ).toBe(true);
     expect(
@@ -5676,5 +5676,40 @@ describe("environment callbacks", () => {
       kind: "timer",
       key: "App.setTimeout.saveStatus",
     });
+  });
+});
+
+describe("component and hook registry fallback", () => {
+  it("resolves supplemental components and hooks by display name without semantic context", () => {
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const appText = `export function App() {
+  const [count, setCount] = useCounter();
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const result = extractReactSourceTransitions(appText, {
+      fileName: "App.tsx",
+      route: "/",
+      additionalComponentSources: [childText, hookText],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      true,
+    );
+    expect(result.vars.some((decl) => decl.id === "local:App.done")).toBe(true);
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") ||
+          transition.id.includes("onDone") ||
+          transition.id.includes("done"),
+      ),
+    ).toBe(true);
   });
 });

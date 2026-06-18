@@ -42,10 +42,7 @@ function setterIdentifier(
   let found: ts.Identifier | undefined;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if (
-      ts.isFunctionDeclaration(node) &&
-      node.name?.text === component
-    ) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === component) {
       inComponent = true;
       ts.forEachChild(node, visit);
       inComponent = false;
@@ -253,7 +250,9 @@ describe("symbol-keyed write channels", () => {
     });
     expect(result.vars.some((decl) => decl.id === "local:App.mode")).toBe(true);
     expect(
-      result.transitions.some((transition) => transition.id.includes("onClick")),
+      result.transitions.some((transition) =>
+        transition.id.includes("onClick"),
+      ),
     ).toBe(true);
   });
 });

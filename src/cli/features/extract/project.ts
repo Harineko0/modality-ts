@@ -487,8 +487,9 @@ function resolveReExportTarget(
 function isSemanticModuleResolver(
   value: SemanticModuleResolver | TsConfigResolution,
 ): value is SemanticModuleResolver {
-  return typeof (value as SemanticModuleResolver).resolveModuleName ===
-    "function";
+  return (
+    typeof (value as SemanticModuleResolver).resolveModuleName === "function"
+  );
 }
 
 function moduleKey(
@@ -496,9 +497,7 @@ function moduleKey(
   moduleResolver?: SemanticModuleResolver,
 ): string {
   const resolved = resolve(path);
-  return moduleResolver
-    ? moduleResolver.canonicalFileName(resolved)
-    : resolved;
+  return moduleResolver ? moduleResolver.canonicalFileName(resolved) : resolved;
 }
 
 function storagePath(path: string): string {
@@ -1168,9 +1167,7 @@ async function resolveImportPath(
       containingFile,
     );
     if (!resolved) {
-      warnings.push(
-        unresolvedModuleWarning(kind, specifier, containingFile),
-      );
+      warnings.push(unresolvedModuleWarning(kind, specifier, containingFile));
       return undefined;
     }
     if (resolved.isExternal) return undefined;
@@ -1180,7 +1177,11 @@ async function resolveImportPath(
     warnings.push(unresolvedModuleWarning(kind, specifier, containingFile));
     return undefined;
   }
-  const bases = fallbackImportBases(dirname(containingFile), specifier, tsconfig);
+  const bases = fallbackImportBases(
+    dirname(containingFile),
+    specifier,
+    tsconfig,
+  );
   for (const base of bases) {
     const resolved = await fallbackFirstExistingModulePath(base);
     if (resolved) return resolved;

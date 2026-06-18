@@ -654,7 +654,12 @@ export function transitionsFromSequentialAwait(
   if (secondIndex < 0) return [];
   const secondAwait = successStatements[secondIndex];
   if (!secondAwait) return [];
-  const secondOp = awaitedOp(secondAwait, effectApis, fileName, effectOpAliases);
+  const secondOp = awaitedOp(
+    secondAwait,
+    effectApis,
+    fileName,
+    effectOpAliases,
+  );
   const promiseAllOps = secondOp
     ? undefined
     : promiseAllAwaitOps(secondAwait, effectApis, fileName, effectOpAliases);
@@ -868,7 +873,9 @@ export function statementHasAwaitedEffect(
 ): boolean {
   return (
     Boolean(awaitedEffect(statement, effectApis, fileName, effectOpAliases)) ||
-    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
+    Boolean(
+      promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases),
+    )
   );
 }
 
@@ -879,8 +886,15 @@ export function expressionStatementAwait(
   effectOpAliases: EffectOpAliases = new Map(),
 ): boolean {
   return (
-    statementHasAwaitedEffect(statement, effectApis, fileName, effectOpAliases) ||
-    Boolean(promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases))
+    statementHasAwaitedEffect(
+      statement,
+      effectApis,
+      fileName,
+      effectOpAliases,
+    ) ||
+    Boolean(
+      promiseAllAwaitOps(statement, effectApis, fileName, effectOpAliases),
+    )
   );
 }
 
@@ -954,7 +968,12 @@ export function awaitedCall(
   fileName: string,
   effectOpAliases: EffectOpAliases = new Map(),
 ): { op: string; call: ts.CallExpression } | undefined {
-  const awaited = awaitedEffect(statement, effectApis, fileName, effectOpAliases);
+  const awaited = awaitedEffect(
+    statement,
+    effectApis,
+    fileName,
+    effectOpAliases,
+  );
   return awaited ? { op: awaited.op, call: awaited.call } : undefined;
 }
 

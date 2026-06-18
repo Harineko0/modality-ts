@@ -4726,7 +4726,9 @@ describe("compiler-backed project surface", () => {
   });
 
   it("resolves extensionless relative imports through the compiler resolver", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "modality-surface-extensionless-"));
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-surface-extensionless-"),
+    );
     const result = await surfaceWithResolver(
       dir,
       {
@@ -4747,7 +4749,9 @@ describe("compiler-backed project surface", () => {
       },
       "App.tsx",
     );
-    const utils = result.sources.find((entry) => entry.path.endsWith("utils.ts"));
+    const utils = result.sources.find((entry) =>
+      entry.path.endsWith("utils.ts"),
+    );
     expect(utils?.included).toBe(true);
     expect(utils?.interactionText).toContain("onClick");
   });
@@ -4878,9 +4882,7 @@ describe("compiler-backed project surface", () => {
     );
     expect(result.warnings).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(
-          /Unresolved import "\.\/missing" in .*App\.tsx/,
-        ),
+        expect.stringMatching(/Unresolved import "\.\/missing" in .*App\.tsx/),
       ]),
     );
   });

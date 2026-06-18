@@ -6,6 +6,10 @@ import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import {
+  buildComponentRegistry,
+  buildCustomHookRegistry,
+} from "../../src/extract/engine/ts/components.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
   createSemanticProject,
@@ -48,6 +52,27 @@ function identifierNode(
   };
   visit(sourceFile);
   return found;
+}
+
+function semanticTypesFor(
+  semanticProject: ReturnType<typeof createSemanticProjectForTest>,
+  fileName: string,
+) {
+  const sourceFile = semanticProject.getSourceFile(fileName);
+  return {
+    program: semanticProject.program,
+    checker: semanticProject.checker,
+    ...(sourceFile ? { sourceFile } : {}),
+    getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+    canonicalFileName: (name: string) =>
+      semanticProject.canonicalFileName(name),
+    resolveModuleName: (specifier: string, containingFile: string) =>
+      semanticProject.resolveModuleName(specifier, containingFile),
+    symbolAt: (node: ts.Node) => semanticProject.symbolAt(node),
+    aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+    symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+    localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
+  };
 }
 
 describe("loadSemanticProjectConfig", () => {
@@ -312,7 +337,9 @@ export function App() {
     ]);
 
     const resolved = semanticProject.resolveModuleName("./types.js", appPath);
-    expect(resolved?.fileName).toBe(semanticProject.canonicalFileName(typesPath));
+    expect(resolved?.fileName).toBe(
+      semanticProject.canonicalFileName(typesPath),
+    );
     expect(resolved?.sourceFile).toBe(semanticProject.getSourceFile(typesPath));
   });
 
@@ -366,8 +393,13 @@ export const value: Shared = "ok";`,
         const config = loadSemanticProjectConfig(rootDir);
         const appPath = join(rootDir, "app.ts");
         const semanticProject = createSemanticProject(
-          [{ path: appPath, text: `import type { Shared } from "./lib/index.js";
-export const value: Shared = "ok";` }],
+          [
+            {
+              path: appPath,
+              text: `import type { Shared } from "./lib/index.js";
+export const value: Shared = "ok";`,
+            },
+          ],
           config,
         );
         const resolved = semanticProject.resolveModuleName(
@@ -406,9 +438,11 @@ export const value: Shared = "ok";` }],
     );
     expect(fromMap).toBeDefined();
     expect(fromContext).toBe(fromMap);
-    expect(semanticProject.sourceFiles.get(semanticProject.canonicalFileName(appPath))).toBe(
-      fromMap,
-    );
+    expect(
+      semanticProject.sourceFiles.get(
+        semanticProject.canonicalFileName(appPath),
+      ),
+    ).toBe(fromMap);
     expect(semanticProject.canonicalFileName(appPath)).toBe(
       semanticProject.canonicalFileName(resolve(projectRoot, "./App.tsx")),
     );
@@ -522,9 +556,7 @@ describe("runExtractionPipeline semantic context", () => {
       discover(ctx) {
         discoverChecker = ctx.types?.checker;
         const appFile = ctx.types?.getSourceFile(fileName);
-        const appNode = appFile
-          ? identifierNode(appFile, "App")
-          : undefined;
+        const appNode = appFile ? identifierNode(appFile, "App") : undefined;
         discoverSymbolKey = appNode
           ? ctx.types?.localSymbolKey?.(appNode)
           : undefined;
@@ -634,11 +666,304 @@ export function App() {
       ],
     });
 
-    const statusVar = result.stateVars.find((decl) => decl.id === "local:App.status");
+    const statusVar = result.stateVars.find(
+      (decl) => decl.id === "local:App.status",
+    );
     expect(statusVar?.domain).toEqual({
       kind: "enum",
       values: ["done", "idle", "loading"],
     });
+  });
+
+  it("discovers imported components through related project files without supplemental sources", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child } from "./Child.js";
+export function App() {
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: childText, fileName: childPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") || transition.id.includes("onDone"),
+      ),
+    ).toBe(true);
+    expect(result.vars.some((decl) => decl.id === "local:App.done")).toBe(true);
+  });
+
+  it("populates component registry entries with symbol keys for imported declarations", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child() { return null; }`;
+    const appText = `import { Child } from "./Child.js";
+export function App() { return <Child />; }`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+    const appSource = semanticProject.getSourceFile(appPath)!;
+    const registry = buildComponentRegistry(appSource, {
+      types,
+      primaryFileName: appPath,
+      relatedSourceFiles: [semanticProject.getSourceFile(childPath)!],
+    });
+
+    expect(registry.bySymbolKey.size).toBeGreaterThanOrEqual(2);
+    expect(registry.byDisplayName.has("App")).toBe(true);
+    expect(registry.byDisplayName.has("Child")).toBe(false);
+    const childTag = identifierNode(appSource, "Child");
+    const childKey = childTag ? types.localSymbolKey(childTag) : undefined;
+    expect(childKey).toBeTruthy();
+    expect(registry.bySymbolKey.get(childKey!)?.displayName).toBe("Child");
+  });
+
+  it("discovers re-exported components through a local barrel", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const barrelPath = resolve(projectRoot, "components/index.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const barrelText = `export { Child } from "../Child.js";`;
+    const appText = `import { Child } from "./components/index.js";
+export function App() {
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: barrelPath, text: barrelText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: childText, fileName: childPath },
+        { sourceText: barrelText, fileName: barrelPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") || transition.id.includes("onDone"),
+      ),
+    ).toBe(true);
+  });
+
+  it("inlines imported custom hooks from related project files", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const appText = `import { useCounter } from "./useCounter.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: hookText, fileName: hookPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      true,
+    );
+    expect(
+      result.transitions.some((transition) =>
+        transition.id.includes("onClick"),
+      ),
+    ).toBe(true);
+  });
+
+  it("inlines re-exported custom hooks through a local barrel", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const barrelPath = resolve(projectRoot, "hooks/index.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const barrelText = `export { useCounter } from "../useCounter.js";`;
+    const appText = `import { useCounter } from "./hooks/index.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: barrelPath, text: barrelText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: hookText, fileName: hookPath },
+        { sourceText: barrelText, fileName: barrelPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      true,
+    );
+  });
+
+  it("does not cross-bind shadowed component prop handlers", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child as ImportedChild } from "./Child.js";
+function Child() {
+  return <button onClick={() => undefined}>shadow</button>;
+}
+export function App() {
+  const [done, setDone] = useState(false);
+  return <ImportedChild onDone={() => setDone(true)} />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: childText, fileName: childPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.done")).toBe(true);
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") || transition.id.includes("onDone"),
+      ),
+    ).toBe(true);
+    expect(
+      result.transitions.some((transition) => transition.id.includes("shadow")),
+    ).toBe(false);
+  });
+
+  it("does not cross-bind shadowed custom hook inlining", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const appText = `import { useCounter } from "./useCounter.js";
+export function App() {
+  function useCounter() {
+    const [shadow, setShadow] = useState(false);
+    return [shadow, setShadow] as const;
+  }
+  const [value, setValue] = useCounter();
+  return <button onClick={() => setValue(true)}>{String(value)}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+
+    const result = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments: [
+        { sourceText: hookText, fileName: hookPath },
+        { sourceText: appText, fileName: appPath },
+      ],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.shadow")).toBe(
+      true,
+    );
+    expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      false,
+    );
+  });
+
+  it("populates custom hook registry entries with symbol keys for imported hooks", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const appText = `import { useCounter } from "./useCounter.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+    const appSource = semanticProject.getSourceFile(appPath)!;
+    const registry = buildCustomHookRegistry(appSource, {
+      types,
+      primaryFileName: appPath,
+      relatedSourceFiles: [semanticProject.getSourceFile(hookPath)!],
+    });
+    const callSite = identifierNode(appSource, "useCounter");
+    const symbolKey = callSite ? types.localSymbolKey(callSite) : undefined;
+
+    expect(symbolKey).toBeTruthy();
+    expect(registry.bySymbolKey.get(symbolKey!)?.displayName).toBe(
+      "useCounter",
+    );
   });
 
   it("discovers components through related project files with transitional supplemental sources", () => {
@@ -660,7 +985,8 @@ export function App() {
       program: semanticProject.program,
       checker: semanticProject.checker,
       sourceFile: semanticProject.getSourceFile(appPath),
-      getSourceFile: (fileName: string) => semanticProject.getSourceFile(fileName),
+      getSourceFile: (fileName: string) =>
+        semanticProject.getSourceFile(fileName),
       canonicalFileName: (fileName: string) =>
         semanticProject.canonicalFileName(fileName),
       resolveModuleName: (specifier: string, containingFile: string) =>
@@ -685,8 +1011,7 @@ export function App() {
     expect(
       result.transitions.some(
         (transition) =>
-          transition.id.includes("onClick") ||
-          transition.id.includes("onDone"),
+          transition.id.includes("onClick") || transition.id.includes("onDone"),
       ),
     ).toBe(true);
   });
@@ -702,15 +1027,24 @@ export function App() {
       fileName: "App.tsx",
       route: "/",
       additionalTypeAliases: new Map([
-        ["Mode", ts.factory.createUnionTypeNode([
-          ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral("on")),
-          ts.factory.createLiteralTypeNode(ts.factory.createStringLiteral("off")),
-        ])],
+        [
+          "Mode",
+          ts.factory.createUnionTypeNode([
+            ts.factory.createLiteralTypeNode(
+              ts.factory.createStringLiteral("on"),
+            ),
+            ts.factory.createLiteralTypeNode(
+              ts.factory.createStringLiteral("off"),
+            ),
+          ]),
+        ],
       ]),
     });
     expect(result.vars.some((decl) => decl.id === "local:App.mode")).toBe(true);
     expect(
-      result.transitions.some((transition) => transition.id.includes("onClick")),
+      result.transitions.some((transition) =>
+        transition.id.includes("onClick"),
+      ),
     ).toBe(true);
   });
 });

@@ -1,6 +1,4 @@
-import type {
-  EffectOpAliases,
-} from "./effect-op-aliases.js";
+import type { EffectOpAliases } from "./effect-op-aliases.js";
 import * as ts from "typescript";
 import {
   componentNameFor,
@@ -32,9 +30,10 @@ function unextractableHandlerAlreadyReported(
   );
 }
 import {
-  componentDeclarations,
+  buildComponentRegistry,
+  buildCustomHookRegistry,
   calledCustomHook,
-  customHookDeclarations,
+  componentRegistryDisplayMap,
   detectStatefulListComponents,
   inlineCustomHookState,
   isCustomHookDeclaration,
@@ -236,38 +235,38 @@ export function extractReactSourceTransitions(
     submitBindings,
     modeledSubmitHandlers,
   });
-  const components = componentDeclarations(source);
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    for (const [name, decl] of componentDeclarations(supplemental)) {
-      if (!components.has(name)) components.set(name, decl);
-    }
-  }
-  const providerComponents = providerComponentNames(source);
-  const customHooks = customHookDeclarations(source);
-  for (const fragment of options.additionalComponentSources ?? []) {
-    const supplemental = ts.createSourceFile(
-      fileName,
-      fragment,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    for (const [name, decl] of customHookDeclarations(supplemental)) {
-      if (!customHooks.has(name)) customHooks.set(name, decl);
-    }
-  }
+  const components = buildComponentRegistry(source, {
+    ...(options.types ? { types: options.types } : {}),
+    primaryFileName: fileName,
+    relatedSourceFiles: relatedDiscoverySourceFiles(source, options),
+    ...(options.additionalComponentSources
+      ? {
+          supplementalSources: options.additionalComponentSources.map(
+            (sourceText) => ({ sourceText, fileName }),
+          ),
+        }
+      : {}),
+  });
+  const componentDisplayMap = componentRegistryDisplayMap(components);
+  const customHooks = buildCustomHookRegistry(source, {
+    ...(options.types ? { types: options.types } : {}),
+    primaryFileName: fileName,
+    relatedSourceFiles: relatedDiscoverySourceFiles(source, options),
+    ...(options.additionalComponentSources
+      ? {
+          supplementalSources: options.additionalComponentSources.map(
+            (sourceText) => ({ sourceText, fileName }),
+          ),
+        }
+      : {}),
+  });
   const statefulListComponents = detectStatefulListComponents(
     source,
     components,
+    options.types,
   );
   const reportedStatefulListComponents = new Set<string>();
+  const providerComponents = providerComponentNames(source);
   const reportedCustomHooks = new Set<string>();
   for (const decl of contextBindings.vars) {
     if (!vars.some((candidate) => candidate.id === decl.id)) vars.push(decl);
@@ -293,7 +292,7 @@ export function extractReactSourceTransitions(
   const handlers = new Map<string, ExtractableHandler>();
   const renderBoundaries = discoverComponentRenderBoundaries(
     source,
-    components,
+    componentDisplayMap,
   );
   const registerTimerVars = (
     registrations: readonly TimerRegistration[],
@@ -356,7 +355,13 @@ export function extractReactSourceTransitions(
         ...lineAndColumn(source, node),
       });
     }
-    bindContextHookObjectDeclaration(node, contextBindings, setters);
+    bindContextHookObjectDeclaration(
+      node,
+      contextBindings,
+      setters,
+      customHooks,
+      options.types,
+    );
     if (
       ts.isVariableDeclaration(node) &&
       nextComponent &&
@@ -384,11 +389,11 @@ export function extractReactSourceTransitions(
     ) {
       return;
     }
-    const customHook = calledCustomHook(node, new Set(customHooks.keys()));
+    const customHook = calledCustomHook(node, customHooks, options.types);
     if (customHook && nextComponent) {
-      const key = `${nextComponent}.${customHook}`;
+      const key = `${nextComponent}.${customHook.displayName}`;
       if (
-        !contextBindings.hookReturns.has(customHook) &&
+        !contextBindings.hookReturns.has(customHook.displayName) &&
         !reportedCustomHooks.has(key)
       ) {
         reportedCustomHooks.add(key);
@@ -610,6 +615,7 @@ export function extractReactSourceTransitions(
               ]),
               valueSuffix: safeId(String(value)),
             },
+            options.types,
           ),
         );
         if (extracted.length > 0) {
@@ -652,6 +658,7 @@ export function extractReactSourceTransitions(
             contextBindings,
             resetSymbols,
             componentPropHandlerContext,
+            options.types,
           );
           if (extracted.length > 0) {
             transitions.push(
@@ -690,6 +697,7 @@ export function extractReactSourceTransitions(
         contextBindings,
         resetSymbols,
         componentPropHandlerContext,
+        options.types,
       );
       transitions.push(
         ...extracted,
@@ -704,6 +712,7 @@ export function extractReactSourceTransitions(
           components,
           scopedSetters,
           warnings,
+          options.types,
         ) &&
         !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
@@ -884,11 +893,12 @@ export function extractReactSourceTransitions(
         !forwardsComponentProp(
           node,
           handlers,
-          components.get(nextComponent ?? ""),
+          componentDisplayMap.get(nextComponent ?? ""),
           components,
           scopedSetters,
           source,
           warnings,
+          options.types,
         ) &&
         !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
         !modeledSubmitHandlers.has(handlerId) &&
@@ -1082,7 +1092,7 @@ export function extractReactSourceTransitions(
       source,
       fileName,
       routePatterns,
-      components,
+      componentDisplayMap,
       routerPlugin,
       inventory,
     ),
@@ -1092,6 +1102,28 @@ export function extractReactSourceTransitions(
     transitions: withStableTransitionIds(transitions),
     warnings,
   };
+}
+
+function relatedDiscoverySourceFiles(
+  primary: ts.SourceFile,
+  options: ReactSourceTransitionOptions,
+): ts.SourceFile[] {
+  if (!options.types?.getSourceFile) return [];
+  const seen = new Set<string>();
+  const files: ts.SourceFile[] = [];
+  const addFile = (fileName: string): void => {
+    const key =
+      options.types?.canonicalFileName?.(fileName) ?? resolve(fileName);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const sourceFile = options.types?.getSourceFile(fileName);
+    if (!sourceFile || sourceFile === primary) return;
+    files.push(sourceFile);
+  };
+  for (const fragment of options.relatedFragments ?? []) {
+    addFile(fragment.fileName);
+  }
+  return files;
 }
 
 function collectProjectTypeAliases(
