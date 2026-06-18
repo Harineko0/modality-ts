@@ -74,6 +74,11 @@ export interface CheckReportDiagnostics {
       prunedTopContributors?: readonly StateSpaceContributor[];
       retainedSystemVars?: readonly string[];
       prunedSystemVars?: readonly string[];
+      mountScopeDependencies?: readonly {
+        varId: string;
+        guardReads: readonly string[];
+        retainedBecause: readonly string[];
+      }[];
     }[];
   };
   search?: {
