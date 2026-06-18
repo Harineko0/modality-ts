@@ -79,6 +79,7 @@ export function checkoutHandModel(): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

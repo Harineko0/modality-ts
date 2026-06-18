@@ -1,4 +1,8 @@
-import type { CheckReport, ExtractionCaveat, ExtractionReport } from "modality-ts/core";
+import type {
+  CheckReport,
+  ExtractionCaveat,
+  ExtractionReport,
+} from "modality-ts/core";
 import type { AcceptedCaveatRef, CaveatGateOutcome } from "./types.js";
 
 export interface ReportCaveat {
@@ -29,8 +33,8 @@ export function evaluateAcceptedCaveats(input: {
     const accepted = input.acceptedCaveats.some((entry) =>
       matchesAcceptedCaveat(caveat, entry),
     );
-    const knownUnsupported = (input.knownUnsupported ?? []).some((entry) =>
-      entry === key || entry === `${caveat.kind}:${caveat.id}`,
+    const knownUnsupported = (input.knownUnsupported ?? []).some(
+      (entry) => entry === key || entry === `${caveat.kind}:${caveat.id}`,
     );
     if (accepted || knownUnsupported) {
       acceptedCaveats.push(key);
@@ -99,19 +103,22 @@ export function matchesAcceptedCaveat(
   if (caveat.kind !== accepted.kind || caveat.id !== accepted.id) {
     return false;
   }
-  if (accepted.severity !== undefined && caveat.severity !== accepted.severity) {
+  if (
+    accepted.severity !== undefined &&
+    caveat.severity !== accepted.severity
+  ) {
     return false;
   }
-  if (accepted.producer !== undefined && caveat.producer !== accepted.producer) {
+  if (
+    accepted.producer !== undefined &&
+    caveat.producer !== accepted.producer
+  ) {
     return false;
   }
   return true;
 }
 
-export function caveatIdentity(caveat: {
-  kind: string;
-  id: string;
-}): string {
+export function caveatIdentity(caveat: { kind: string; id: string }): string {
   return `${caveat.kind}:${caveat.id}`;
 }
 

@@ -150,7 +150,9 @@ function resolvePendingQueueVar(
       return undefined;
     }
     if (decl.role?.kind !== "pending-queue") {
-      errors.push(`${context}: ${explicitQueue} is not a pending-queue role var`);
+      errors.push(
+        `${context}: ${explicitQueue} is not a pending-queue role var`,
+      );
       return undefined;
     }
     return decl;
@@ -356,8 +358,7 @@ function validatePendingOpDomain(
   if (!opId) errors.push(`${varId} item domain missing opId`);
   else if (opId.kind !== "enum")
     errors.push(`${varId} opId must use an enum domain`);
-  if (!continuation)
-    errors.push(`${varId} item domain missing continuation`);
+  if (!continuation) errors.push(`${varId} item domain missing continuation`);
   else if (continuation.kind !== "enum")
     errors.push(`${varId} continuation must use an enum domain`);
   if (!args) errors.push(`${varId} item domain missing args`);

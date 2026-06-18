@@ -45,9 +45,7 @@ export function discoverZustandWritesDetailed(
   const imports = resolveZustandImports(source, types);
   const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];
-  const warnings: ExtractionWarning[] = [
-    ...discovery.warnings,
-  ];
+  const warnings: ExtractionWarning[] = [...discovery.warnings];
   const setterFixedEffects = new Map<string, EffectIR>();
   const resettableVarIds = new Set<string>();
   const storeHandles = new Set<string>(discovery.storeNames);

@@ -88,7 +88,9 @@ export function evaluateConformThresholds(
   const results: GateThresholdResult[] = [];
 
   if (thresholds.minConformPassRate !== undefined) {
-    results.push(evaluateConformPassRate(report, thresholds.minConformPassRate));
+    results.push(
+      evaluateConformPassRate(report, thresholds.minConformPassRate),
+    );
   }
 
   if (thresholds.minTransitionPassRate !== undefined) {

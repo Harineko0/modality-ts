@@ -46,7 +46,7 @@ function systemVars(routeInitial = "/a"): Model["vars"] {
       domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
       origin: "system",
       scope: { kind: "global" },
-        role: { kind: "pending-queue" },
+      role: { kind: "pending-queue" },
       initial: [],
     },
   ];

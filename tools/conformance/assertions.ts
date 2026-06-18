@@ -256,10 +256,7 @@ function walkExpr(expr: ExprIR, kinds: string[]): void {
   }
 }
 
-function walkEffect(
-  effect: EffectIR,
-  visitExpr: (expr: ExprIR) => void,
-): void {
+function walkEffect(effect: EffectIR, visitExpr: (expr: ExprIR) => void): void {
   if (effect.kind === "assign") {
     visitExpr(effect.expr);
     return;

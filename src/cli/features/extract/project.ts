@@ -159,7 +159,9 @@ function mergeModuleClassifications(
   if (explicit.length === 1) {
     defaultContext = explicit[0]!.defaultContext;
   } else if (explicit.length > 1) {
-    const contexts = [...new Set(explicit.map((result) => result.defaultContext))];
+    const contexts = [
+      ...new Set(explicit.map((result) => result.defaultContext)),
+    ];
     if (contexts.length === 1) {
       defaultContext = contexts[0]!;
     } else {
@@ -986,14 +988,18 @@ export async function sourceWithReachableImports(
           continue;
         }
 
-        const edgeContext = classifyImportEdge(moduleRoleAdapters, {
-          importer: record.path,
-          specifier: binding.specifier,
-          imported: binding.imported,
-          isTypeOnly: binding.isTypeOnly,
-          importerContext: record.classification.defaultContext,
-          surface: next.surface,
-        }, warnings);
+        const edgeContext = classifyImportEdge(
+          moduleRoleAdapters,
+          {
+            importer: record.path,
+            specifier: binding.specifier,
+            imported: binding.imported,
+            isTypeOnly: binding.isTypeOnly,
+            importerContext: record.classification.defaultContext,
+            surface: next.surface,
+          },
+          warnings,
+        );
 
         if (edgeContext === "type") {
           record.typeImports.add(binding.local);
@@ -1019,7 +1025,11 @@ export async function sourceWithReachableImports(
 
         if (
           next.surface === "interaction" &&
-          isServerOnlyTarget(moduleRoleAdapters, target.path, target.classification)
+          isServerOnlyTarget(
+            moduleRoleAdapters,
+            target.path,
+            target.classification,
+          )
         ) {
           warnings.push(
             `Client import skipped server-only module ${target.path} from ${record.path}`,

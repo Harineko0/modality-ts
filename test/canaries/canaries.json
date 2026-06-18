@@ -148,7 +148,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local React Router example app is checked in yet."]
+      "knownUnsupported": [
+        "No local React Router example app is checked in yet."
+      ]
     },
     {
       "id": "planned-next-app-router-app",
@@ -160,7 +162,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local Next App Router example app is checked in yet."]
+      "knownUnsupported": [
+        "No local Next App Router example app is checked in yet."
+      ]
     },
     {
       "id": "planned-next-pages-router-app",
@@ -172,7 +176,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local Next Pages Router example app is checked in yet."]
+      "knownUnsupported": [
+        "No local Next Pages Router example app is checked in yet."
+      ]
     },
     {
       "id": "planned-external-store-app",
@@ -184,7 +190,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local external-store example app is checked in yet."]
+      "knownUnsupported": [
+        "No local external-store example app is checked in yet."
+      ]
     },
     {
       "id": "planned-schema-form-app",
@@ -196,7 +204,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local schema/forms example app is checked in yet."]
+      "knownUnsupported": [
+        "No local schema/forms example app is checked in yet."
+      ]
     },
     {
       "id": "planned-server-action-app",
@@ -208,7 +218,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local server-action example app is checked in yet."]
+      "knownUnsupported": [
+        "No local server-action example app is checked in yet."
+      ]
     },
     {
       "id": "planned-tsconfig-layout-app",
@@ -220,7 +232,9 @@
       "extract": {},
       "thresholds": {},
       "acceptedCaveats": [],
-      "knownUnsupported": ["No local tsconfig-layout example app is checked in yet."]
+      "knownUnsupported": [
+        "No local tsconfig-layout example app is checked in yet."
+      ]
     }
   ]
 }

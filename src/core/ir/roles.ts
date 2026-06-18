@@ -14,8 +14,7 @@ export function locationCurrentVar(model: Model): StateVarDecl | undefined {
   const currents = locationCurrentVars(model);
   if (currents.length === 0) return undefined;
   const preferred = currents.find(
-    (decl) =>
-      effectiveRoleGroup(decl.role?.group) === DEFAULT_LOCATION_GROUP,
+    (decl) => effectiveRoleGroup(decl.role?.group) === DEFAULT_LOCATION_GROUP,
   );
   return preferred ?? currents[0];
 }

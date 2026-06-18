@@ -6,7 +6,14 @@ import {
   routeMountGuard,
   routeTargetValue,
 } from "../routes.js";
-import { effectReads, type EffectIR, type ExprIR, type Locator, type Transition, type Value } from "modality-ts/core";
+import {
+  effectReads,
+  type EffectIR,
+  type ExprIR,
+  type Locator,
+  type Transition,
+  type Value,
+} from "modality-ts/core";
 import type {
   NavigationAdapter,
   NavIntent,
@@ -20,7 +27,9 @@ const DEFAULT_HISTORY_CAP = 4;
 const HISTORY_UNROLL_THRESHOLD = 512;
 
 function readVar(varId: string, path?: readonly string[]): ExprIR {
-  return path ? { kind: "read", var: varId, path } : { kind: "read", var: varId };
+  return path
+    ? { kind: "read", var: varId, path }
+    : { kind: "read", var: varId };
 }
 
 function readPreVar(varId: string): ExprIR {
@@ -49,10 +58,9 @@ function orExpr(left: ExprIR, right: ExprIR): ExprIR {
 
 function orMany(parts: readonly ExprIR[]): ExprIR {
   if (parts.length === 0) return litValue(false);
-  return parts.slice(1).reduce(
-    (acc, next) => orExpr(acc, next),
-    parts[0] ?? litValue(false),
-  );
+  return parts
+    .slice(1)
+    .reduce((acc, next) => orExpr(acc, next), parts[0] ?? litValue(false));
 }
 
 function lenCatExpr(varId: string): ExprIR {
@@ -178,10 +186,7 @@ function buildPushHistoryEffect(
         );
         effect = ifEffect(
           guard,
-          assignEffect(
-            historyVar,
-            litValue([...tuple, current]),
-          ),
+          assignEffect(historyVar, litValue([...tuple, current])),
           effect,
         );
       }
@@ -327,9 +332,7 @@ export function navigationTransition(
         currentVar: "sys:route",
         historyVar: "sys:history",
         mode: navigation.mode,
-        to: navigation.to
-          ? { kind: "lit", value: navigation.to }
-          : undefined,
+        to: navigation.to ? { kind: "lit", value: navigation.to } : undefined,
         routeValues: routePatterns,
       }),
       confidence: "exact",
@@ -588,10 +591,7 @@ export function appendEffect(
     ...transition.writes,
     ...effectWriteVars(effect),
   ]);
-  const reads = uniqueStrings([
-    ...transition.reads,
-    ...effectReads(effect),
-  ]);
+  const reads = uniqueStrings([...transition.reads, ...effectReads(effect)]);
   return {
     ...transition,
     effect: { kind: "seq", effects: [...current, effect] },

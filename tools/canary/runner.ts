@@ -90,8 +90,8 @@ export async function runCanarySuite(
       const replayTestsDir = join(canaryArtifactDir, "replay-tests");
       const ciArtifactDir = join(canaryArtifactDir, ".modality");
 
-      const sourcePaths = (canary.extract.sourcePaths ?? []).map((relativePath) =>
-        join(canaryRoot, relativePath),
+      const sourcePaths = (canary.extract.sourcePaths ?? []).map(
+        (relativePath) => join(canaryRoot, relativePath),
       );
       const propsPaths = (canary.check?.propsPaths ?? []).map((relativePath) =>
         join(canaryRoot, relativePath),
@@ -147,7 +147,8 @@ export async function runCanarySuite(
           harnessPath: canary.conform.harnessPath,
           thresholds: {
             minPassRate:
-              canary.conform.minPassRate ?? canary.thresholds.minConformPassRate,
+              canary.conform.minPassRate ??
+              canary.thresholds.minConformPassRate,
             minTransitionPassRate:
               canary.conform.minTransitionPassRate ??
               canary.thresholds.minTransitionPassRate,
@@ -184,7 +185,10 @@ export async function runCanarySuite(
 
       let ciExitCode: number | undefined;
       let ciLines: string[] | undefined;
-      if (canary.expectations?.expectedCiExitCode !== undefined && sourcePaths[0]) {
+      if (
+        canary.expectations?.expectedCiExitCode !== undefined &&
+        sourcePaths[0]
+      ) {
         const ci = await runCiCommand({
           modelPath,
           propsPath: propsPaths[0],
@@ -208,7 +212,9 @@ export async function runCanarySuite(
       const failedThresholds = thresholdResults.filter(
         (entry) => entry.status === "fail",
       );
-      const failedBudgets = budgetResults.filter((entry) => entry.status === "fail");
+      const failedBudgets = budgetResults.filter(
+        (entry) => entry.status === "fail",
+      );
       const coveragePassed = !failedThresholds.some(
         (entry) => entry.id === "minCoverageExactOrOverlay",
       );
@@ -276,7 +282,9 @@ export async function runCanarySuite(
       }
     }
 
-    const exitCode = canaryResults.every((entry) => entry.status === "pass") ? 0 : 2;
+    const exitCode = canaryResults.every((entry) => entry.status === "pass")
+      ? 0
+      : 2;
     return finalize({
       exitCode,
       reportPath,
@@ -447,7 +455,9 @@ async function invalidManifestResult(
   options: CanaryRunnerOptions,
   now: Date,
 ): Promise<CanaryRunnerResult> {
-  const artifactRoot = await mkdtemp(join(tmpdir(), "modality-canary-invalid-"));
+  const artifactRoot = await mkdtemp(
+    join(tmpdir(), "modality-canary-invalid-"),
+  );
   const reportPath =
     options.reportPath ?? join(artifactRoot, "canary-run-report.json");
   return finalize({

@@ -1,4 +1,8 @@
-import type { AcceptedCaveatRef, SharedBudgets, SharedThresholds } from "./types.js";
+import type {
+  AcceptedCaveatRef,
+  SharedBudgets,
+  SharedThresholds,
+} from "./types.js";
 
 const THRESHOLD_PASS_RATE_KEYS = [
   "minCoverageExactOrOverlay",
@@ -72,7 +76,9 @@ export function validateAcceptedCaveatRef(
   assertNonEmptyString(value.id, `${path}.id`);
   assertNonEmptyString(value.kind, `${path}.kind`);
   if ("message" in value || "pattern" in value || "regex" in value) {
-    throw new Error(`${path} must use stable kind and id, not free-form matching`);
+    throw new Error(
+      `${path} must use stable kind and id, not free-form matching`,
+    );
   }
   if (value.severity !== undefined) {
     assertNonEmptyString(value.severity, `${path}.severity`);

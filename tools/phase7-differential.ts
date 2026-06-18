@@ -92,6 +92,41 @@ async function main(): Promise<void> {
       );
     }
 
+    const neutralModels = [
+      {
+        name: "NeutralAssignment",
+        model: withDepth(neutralAssignmentModel(), 4),
+      },
+      { name: "NeutralLocation", model: withDepth(neutralLocationModel(), 4) },
+      { name: "NeutralPending", model: withDepth(neutralPendingModel(), 4) },
+      {
+        name: "NeutralMountReset",
+        model: withDepth(neutralMountResetModel(), 4),
+      },
+    ];
+    for (const { name, model } of neutralModels) {
+      const checker = checkModel(model, []);
+      const tlc = await runTlc(
+        tlcJar,
+        workDir,
+        name,
+        generateTlaModule(model, name),
+      );
+      assertEqual(
+        `${name} reachable states`,
+        tlc.distinctStates,
+        checker.stats.states,
+      );
+      assertEqual(
+        `${name} generated states`,
+        tlc.statesGenerated,
+        checker.stats.edges + modelInitialStates(model).length,
+      );
+      console.log(
+        `${name}: checker states=${checker.stats.states} edges=${checker.stats.edges}; TLC distinct=${tlc.distinctStates} generated=${tlc.statesGenerated}`,
+      );
+    }
+
     const randomModels = Array.from({ length: randomCount }, (_value, index) =>
       randomModel(index),
     );
@@ -625,6 +660,219 @@ function transition(
   };
 }
 
+function neutralAssignmentModel(): Model {
+  return {
+    schemaVersion: 1,
+    id: "neutral-assignment",
+    bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "flag",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+    ],
+    transitions: [
+      {
+        id: "set",
+        cls: "user",
+        label: { kind: "click", text: "Set" },
+        source: [],
+        guard: { kind: "not", args: [read("flag")] },
+        effect: { kind: "assign", var: "flag", expr: lit(true) },
+        reads: ["flag"],
+        writes: ["flag"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function neutralLocationModel(): Model {
+  const routes = { kind: "enum", values: ["/a", "/b"] } as const;
+  return {
+    schemaVersion: 1,
+    id: "neutral-location",
+    bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "app:location",
+        domain: routes,
+        origin: "system",
+        scope: { kind: "global" },
+        role: { kind: "location-current" },
+        initial: "/a",
+      },
+      {
+        id: "app:history",
+        domain: { kind: "boundedList", inner: routes, maxLen: 1 },
+        origin: "system",
+        scope: { kind: "global" },
+        role: { kind: "location-history", group: "default" },
+        initial: [],
+      },
+    ],
+    transitions: [
+      {
+        id: "goB",
+        cls: "user",
+        label: { kind: "click", text: "Go B" },
+        source: [],
+        guard: { kind: "eq", args: [read("app:location"), lit("/a")] },
+        effect: { kind: "assign", var: "app:location", expr: lit("/b") },
+        reads: ["app:location"],
+        writes: ["app:location"],
+        confidence: "exact",
+      },
+      {
+        id: "goA",
+        cls: "user",
+        label: { kind: "click", text: "Go A" },
+        source: [],
+        guard: { kind: "eq", args: [read("app:location"), lit("/b")] },
+        effect: { kind: "assign", var: "app:location", expr: lit("/a") },
+        reads: ["app:location"],
+        writes: ["app:location"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function neutralPendingModel(): Model {
+  const pendingOp = {
+    kind: "record",
+    fields: {
+      opId: { kind: "enum", values: ["POST"] },
+      continuation: { kind: "enum", values: ["noop"] },
+      args: { kind: "record", fields: {} },
+    },
+  } as const;
+  return {
+    schemaVersion: 1,
+    id: "neutral-pending",
+    bounds: { maxDepth: 4, maxPending: 1, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "app:asyncQueue",
+        domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+        origin: "system",
+        scope: { kind: "global" },
+        role: { kind: "pending-queue" },
+        initial: [],
+      },
+      {
+        id: "flag",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+    ],
+    transitions: [
+      {
+        id: "submit",
+        cls: "user",
+        label: { kind: "submit", text: "Submit" },
+        source: [],
+        guard: { kind: "not", args: [read("flag")] },
+        effect: {
+          kind: "seq",
+          effects: [
+            { kind: "assign", var: "flag", expr: lit(true) },
+            {
+              kind: "enqueue",
+              queue: "app:asyncQueue",
+              op: "POST",
+              continuation: "noop",
+              args: {},
+            },
+          ],
+        },
+        reads: ["flag"],
+        writes: ["flag", "app:asyncQueue"],
+        confidence: "exact",
+      },
+      {
+        id: "resolve",
+        cls: "env",
+        label: { kind: "resolve", op: "POST", outcome: "success" },
+        source: [],
+        guard: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "app:asyncQueue", path: ["0", "opId"] },
+            lit("POST"),
+          ],
+        },
+        effect: { kind: "dequeue", queue: "app:asyncQueue", index: 0 },
+        reads: ["app:asyncQueue"],
+        writes: ["app:asyncQueue"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function neutralMountResetModel(): Model {
+  const routes = { kind: "enum", values: ["/a", "/b"] } as const;
+  return {
+    schemaVersion: 1,
+    id: "neutral-mount-reset",
+    bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      {
+        id: "app:location",
+        domain: routes,
+        origin: "system",
+        scope: { kind: "global" },
+        role: { kind: "location-current" },
+        initial: "/a",
+      },
+      {
+        id: "local:panel",
+        domain: { kind: "enum", values: ["off", "on"] },
+        origin: "system",
+        scope: {
+          kind: "mount-local",
+          id: "route-a",
+          when: {
+            kind: "eq",
+            args: [read("app:location"), lit("/a")],
+          },
+        },
+        initial: "off",
+      },
+    ],
+    transitions: [
+      {
+        id: "goB",
+        cls: "user",
+        label: { kind: "click", text: "Go B" },
+        source: [],
+        guard: { kind: "eq", args: [read("app:location"), lit("/a")] },
+        effect: { kind: "assign", var: "app:location", expr: lit("/b") },
+        reads: ["app:location"],
+        writes: ["app:location"],
+        confidence: "exact",
+      },
+      {
+        id: "goA",
+        cls: "user",
+        label: { kind: "click", text: "Go A" },
+        source: [],
+        guard: { kind: "eq", args: [read("app:location"), lit("/b")] },
+        effect: { kind: "assign", var: "app:location", expr: lit("/a") },
+        reads: ["app:location"],
+        writes: ["app:location"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
 function routeDecl(): StateVarDecl {
   return {
     id: "sys:route",
@@ -662,6 +910,7 @@ function pendingDecl(maxLen: number): StateVarDecl {
     },
     origin: "system",
     scope: { kind: "global" },
+    role: { kind: "pending-queue" },
     initial: [],
   };
 }

@@ -1,4 +1,3 @@
-
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -125,7 +124,9 @@ describe("parseCanaryRunReportArtifact", () => {
           ],
         }),
       ),
-    ).toThrow("canaryResults[0].thresholds[0].expected must be a number between 0 and 1");
+    ).toThrow(
+      "canaryResults[0].thresholds[0].expected must be a number between 0 and 1",
+    );
     expect(() =>
       parseCanaryRunReportArtifact(
         JSON.stringify({
@@ -306,7 +307,9 @@ describe("canary manifest", () => {
 
   it("represents demo seeded-bug expectations in manifest data", async () => {
     const manifest = await readCanaryManifest(manifestPath);
-    const demo = manifest.canaries.find((canary) => canary.id === "examples-demo-app");
+    const demo = manifest.canaries.find(
+      (canary) => canary.id === "examples-demo-app",
+    );
     expect(demo?.expectations).toEqual({
       violatedPropertyCount: 3,
       violatedPropertyNames: [
@@ -332,7 +335,8 @@ describe("canary manifest", () => {
     for (const canary of active) {
       expect(Object.keys(canary.thresholds).length).toBeGreaterThan(0);
       expect(
-        canary.budgets !== undefined || canary.budgetNotApplicableReason !== undefined,
+        canary.budgets !== undefined ||
+          canary.budgetNotApplicableReason !== undefined,
       ).toBe(true);
       expect(Array.isArray(canary.acceptedCaveats)).toBe(true);
       expect(Array.isArray(canary.knownUnsupported)).toBe(true);

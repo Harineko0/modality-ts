@@ -22,7 +22,11 @@ import type {
   EffectSummary,
   SetterBinding,
 } from "../types.js";
-import { effectWriteVars, PENDING_QUEUE_VAR, summarizeAsyncSegment } from "./effects.js";
+import {
+  effectWriteVars,
+  PENDING_QUEUE_VAR,
+  summarizeAsyncSegment,
+} from "./effects.js";
 import { valueExpr } from "./expressions.js";
 import {
   andGuard,
@@ -318,7 +322,10 @@ export function transitionsFromAsyncHandler(
     },
     reads: uniqueStrings([PENDING_QUEUE_VAR, ...successReads]),
     writes: [
-      ...new Set([PENDING_QUEUE_VAR, ...successEffects.flatMap(effectWriteVars)]),
+      ...new Set([
+        PENDING_QUEUE_VAR,
+        ...successEffects.flatMap(effectWriteVars),
+      ]),
     ],
     confidence: confidenceForEffects(successEffects),
   };
@@ -342,7 +349,10 @@ export function transitionsFromAsyncHandler(
       },
       reads: uniqueStrings([PENDING_QUEUE_VAR, ...catchReads]),
       writes: [
-        ...new Set([PENDING_QUEUE_VAR, ...catchEffects.flatMap(effectWriteVars)]),
+        ...new Set([
+          PENDING_QUEUE_VAR,
+          ...catchEffects.flatMap(effectWriteVars),
+        ]),
       ],
       confidence: confidenceForEffects(catchEffects),
     };

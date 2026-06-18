@@ -42,7 +42,10 @@ describe("nextModuleRoleAdapter", () => {
       }),
     ).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "generateMetadata", context: "server" }),
+        expect.objectContaining({
+          name: "generateMetadata",
+          context: "server",
+        }),
       ]),
     );
   });

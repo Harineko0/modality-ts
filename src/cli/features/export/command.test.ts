@@ -33,34 +33,24 @@ const pendingOp = {
   },
 } as const;
 
+function pendingQueueDecl(id = "app:asyncQueue") {
+  return {
+    id,
+    domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+    origin: "system" as const,
+    scope: { kind: "global" as const },
+    role: { kind: "pending-queue" as const },
+    initial: [],
+  };
+}
+
 function model(): Model {
   return {
     schemaVersion: 1,
     id: "export-fixture",
     bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
     vars: [
-      {
-        id: "sys:route",
-        domain: route,
-        origin: "system",
-        scope: { kind: "global" },
-        initial: "/",
-      },
-      {
-        id: "sys:history",
-        domain: { kind: "boundedList", inner: route, maxLen: 1 },
-        origin: "system",
-        scope: { kind: "global" },
-        initial: [],
-      },
-      {
-        id: "sys:pending",
-        domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
-        origin: "system",
-        scope: { kind: "global" },
-        role: { kind: "pending-queue" },
-        initial: [],
-      },
+      pendingQueueDecl(),
       {
         id: "flag",
         domain: { kind: "bool" },
@@ -194,7 +184,7 @@ function assuranceModel(): Model {
           ],
         },
         reads: ["mode", "flag"],
-        writes: ["sys:pending", "seen"],
+        writes: ["app:asyncQueue", "seen"],
         confidence: "exact",
       },
       {
@@ -205,7 +195,7 @@ function assuranceModel(): Model {
         guard: {
           kind: "eq",
           args: [
-            { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+            { kind: "read", var: "app:asyncQueue", path: ["0", "opId"] },
             { kind: "lit", value: "POST" },
           ],
         },
@@ -220,8 +210,8 @@ function assuranceModel(): Model {
             },
           ],
         },
-        reads: ["sys:pending"],
-        writes: ["sys:pending", "mode"],
+        reads: ["app:asyncQueue"],
+        writes: ["app:asyncQueue", "mode"],
         confidence: "exact",
       },
       {
@@ -253,9 +243,7 @@ function oracleReachableStates(m: Model): Set<string> {
 
 function oracleReachableStateList(m: Model): ModelState[] {
   const initial: ModelState = {
-    "sys:route": "/",
-    "sys:history": [],
-    "sys:pending": [],
+    "app:asyncQueue": [],
     flag: false,
     mode: "idle",
     seen: false,
@@ -283,7 +271,7 @@ function oracleReachableStateList(m: Model): ModelState[] {
 function stateEqualsPredicate(target: ModelState): ExprIR {
   const parts: ExprIR[] = [];
   for (const [key, value] of Object.entries(target)) {
-    if (key === "sys:pending") {
+    if (key === "app:asyncQueue") {
       const pending = value as {
         opId: string;
         continuation: string;
@@ -291,28 +279,27 @@ function stateEqualsPredicate(target: ModelState): ExprIR {
       }[];
       parts.push(
         eq(
-          { kind: "lenCat", arg: readVar("sys:pending") },
+          { kind: "lenCat", arg: readVar("app:asyncQueue") },
           lit(String(pending.length) as Value),
         ),
       );
       if (pending.length === 1) {
         const op = pending[0];
         if (!op) throw new Error("missing pending op");
-        parts.push(eq(readVar("sys:pending", ["0", "opId"]), lit(op.opId)));
+        parts.push(eq(readVar("app:asyncQueue", ["0", "opId"]), lit(op.opId)));
         parts.push(
           eq(
-            readVar("sys:pending", ["0", "continuation"]),
+            readVar("app:asyncQueue", ["0", "continuation"]),
             lit(op.continuation),
           ),
         );
         parts.push(
-          eq(readVar("sys:pending", ["0", "args", "flag"]), lit(op.args.flag)),
+          eq(
+            readVar("app:asyncQueue", ["0", "args", "flag"]),
+            lit(op.args.flag),
+          ),
         );
       }
-      continue;
-    }
-    if (key === "sys:history") {
-      parts.push(eq({ kind: "lenCat", arg: readVar("sys:history") }, lit("0")));
       continue;
     }
     parts.push(eq(readVar(key), lit(value as Value)));
@@ -322,7 +309,7 @@ function stateEqualsPredicate(target: ModelState): ExprIR {
 
 function oraclePosts(state: ModelState): ModelState[] {
   const posts: ModelState[] = [];
-  const pending = state["sys:pending"] as {
+  const pending = state["app:asyncQueue"] as {
     opId: string;
     continuation: string;
     args: { flag: boolean };
@@ -336,7 +323,7 @@ function oraclePosts(state: ModelState): ModelState[] {
   if (state.mode === "armed" && state.flag === true && pending.length < 1) {
     posts.push({
       ...state,
-      "sys:pending": [
+      "app:asyncQueue": [
         ...pending,
         { opId: "POST", continuation: "submit#1", args: { flag: true } },
       ],
@@ -344,7 +331,7 @@ function oraclePosts(state: ModelState): ModelState[] {
     });
   }
   if (pending[0]?.opId === "POST") {
-    posts.push({ ...state, "sys:pending": pending.slice(1), mode: "idle" });
+    posts.push({ ...state, "app:asyncQueue": pending.slice(1), mode: "idle" });
   }
   if (state.mode === "armed") {
     posts.push({ ...state, seen: false }, { ...state, seen: true });
@@ -359,19 +346,15 @@ describe("TLA export", () => {
         "---- MODULE ExportFixture ----",
         "EXTENDS Naturals, Sequences, TLC",
         "",
-        "VARIABLES sys_route, sys_history, sys_pending, flag",
+        "VARIABLES app_asyncQueue, flag",
         "",
         "Init ==",
-        '  sys_route = "/" /\\',
-        "  sys_history = <<>> /\\",
-        "  sys_pending = <<>> /\\",
+        "  app_asyncQueue = <<>> /\\",
         "  flag = FALSE",
         "",
         "setFlag ==",
         "  ~(flag) /\\",
-        "  sys_route' = sys_route /\\",
-        "  sys_history' = sys_history /\\",
-        "  sys_pending' = sys_pending /\\",
+        "  app_asyncQueue' = app_asyncQueue /\\",
         "  flag' = TRUE",
         "",
         "Next ==",
@@ -395,57 +378,52 @@ describe("TLA export", () => {
     expect(await readFile(outPath, "utf8")).toBe(result.source);
   });
 
-  it("exports push navigation with the bounded history assumption", () => {
+  it("exports assignment-driven location changes without route navigation semantics", () => {
     const routes = { kind: "enum", values: ["/a", "/b"] } as const;
     const m: Model = {
       ...model(),
       vars: [
         {
-          id: "sys:route",
+          id: "app:location",
           domain: routes,
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "location-current" },
           initial: "/a",
         },
-        {
-          id: "sys:history",
-          domain: { kind: "boundedList", inner: routes, maxLen: 1 },
-          origin: "system",
-          scope: { kind: "global" },
-          initial: [],
-        },
-        requiredVar("sys:pending"),
-        requiredVar("flag"),
+        ...model().vars,
       ],
       transitions: [
         {
-          id: "pushB",
-          cls: "nav",
-          label: { kind: "navigate", mode: "push", to: "/b" },
+          id: "goB",
+          cls: "user",
+          label: { kind: "click", text: "Go to B" },
           source: [],
           guard: { kind: "lit", value: true },
           effect: locationEffect({
-            currentVar: "sys:route",
-            historyVar: "sys:history",
-            mode: "push",
+            currentVar: "app:location",
+            mode: "replace",
             to: { kind: "lit", value: "/b" },
-            routeValues: ["/a", "/b"],
-            historyCap: 1,
           }).effect,
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
+          reads: ["app:location"],
+          writes: ["app:location"],
           confidence: "exact",
         },
       ],
     };
 
     const structured = generateTlaStructuredModel(m, "HistoryFixture");
+    const source = generateTlaModule(m, "HistoryFixture");
+    expect(source).not.toContain("sys_route");
+    expect(source).not.toContain("sys_history");
     const push = structured.transitions.find(
-      (transition) => transition.id === "pushB",
+      (transition) => transition.id === "goB",
     );
     expect(push?.branches.length).toBeGreaterThan(0);
     expect(
-      push?.branches.some((branch) => branch.next["sys:route"]?.includes("/b")),
+      push?.branches.some((branch) =>
+        branch.next["app:location"]?.includes("/b"),
+      ),
     ).toBe(true);
   });
 
@@ -454,9 +432,7 @@ describe("TLA export", () => {
     const expectedReachable = oracleReachableStates(m);
     const reachableStates = oracleReachableStateList(m);
     const unreachable: ModelState = {
-      "sys:route": "/",
-      "sys:history": [],
-      "sys:pending": [],
+      "app:asyncQueue": [],
       flag: false,
       mode: "idle",
       seen: true,
@@ -484,9 +460,7 @@ describe("TLA export", () => {
 
     const structured = generateTlaStructuredModel(m, "AssuranceFixture");
     expect(structured.init.map((item) => item.predicate)).toEqual([
-      'sys_route = "/"',
-      "sys_history = <<>>",
-      "sys_pending = <<>>",
+      "app_asyncQueue = <<>>",
       "flag = FALSE",
       'mode = "idle"',
       "seen = FALSE",
@@ -520,67 +494,64 @@ describe("TLA export", () => {
     );
     expect(submit?.guard).toBe('(mode = "armed") /\\ flag');
     expect(submit?.branches[0]?.assumptions).toEqual([
-      "(Len(sys_pending) < 1)",
+      "(Len(app_asyncQueue) < 1)",
     ]);
-    expect(submit?.branches[0]?.next["sys:pending"]).toBe(
-      'Append(sys_pending, [opId |-> "POST", continuation |-> "submit#1", args |-> [flag |-> flag]])',
+    expect(submit?.branches[0]?.next["app:asyncQueue"]).toBe(
+      'Append(app_asyncQueue, [opId |-> "POST", continuation |-> "submit#1", args |-> [flag |-> flag]])',
     );
     expect(submit?.branches[0]?.next.seen).toBe("TRUE");
     const resolve = structured.transitions.find(
       (transition) => transition.id === "resolve",
     );
     expect(resolve?.guard).toBe(
-      '((IF Len(sys_pending) >= 1 THEN sys_pending[1].opId ELSE "__modality_oob__") = "POST")',
+      '((IF Len(app_asyncQueue) >= 1 THEN app_asyncQueue[1].opId ELSE "__modality_oob__") = "POST")',
     );
-    expect(resolve?.branches[0]?.next["sys:pending"]).toBe(
-      "SubSeq(sys_pending, 1, 0) \\o SubSeq(sys_pending, 2, Len(sys_pending))",
+    expect(resolve?.branches[0]?.next["app:asyncQueue"]).toBe(
+      "SubSeq(app_asyncQueue, 1, 0) \\o SubSeq(app_asyncQueue, 2, Len(app_asyncQueue))",
     );
   });
 
-  it("exports enqueue and dequeue against a non-sys pending queue role var", () => {
-    const base = assuranceModel();
-    const customPendingModel: Model = {
-      ...base,
-      vars: base.vars.map((decl) =>
-        decl.id === "sys:pending"
-          ? {
-              ...decl,
-              id: "app:pendingOps",
-              role: { kind: "pending-queue" as const },
-            }
-          : decl,
-      ),
-      transitions: base.transitions.map((transition) => ({
-        ...transition,
-        reads: transition.reads.map((id) =>
-          id === "sys:pending" ? "app:pendingOps" : id,
-        ),
-        writes: transition.writes.map((id) =>
-          id === "sys:pending" ? "app:pendingOps" : id,
-        ),
-        guard: JSON.parse(
-          JSON.stringify(transition.guard).replaceAll(
-            "sys:pending",
-            "app:pendingOps",
-          ),
-        ),
-        effect: JSON.parse(
-          JSON.stringify(transition.effect).replaceAll(
-            "sys:pending",
-            "app:pendingOps",
-          ),
-        ),
-      })),
-    };
-    const structured = generateTlaStructuredModel(customPendingModel, "CustomPending");
+  it("exports enqueue and dequeue against app:asyncQueue pending queue role var", () => {
+    const structured = generateTlaStructuredModel(
+      assuranceModel(),
+      "CustomPending",
+    );
     const submit = structured.transitions.find(
       (transition) => transition.id === "submit",
     );
-    expect(submit?.branches[0]?.next["app:pendingOps"]).toContain("Append(");
+    expect(submit?.branches[0]?.next["app:asyncQueue"]).toContain("Append(");
     const resolve = structured.transitions.find(
       (transition) => transition.id === "resolve",
     );
-    expect(resolve?.branches[0]?.next["app:pendingOps"]).toContain("SubSeq(");
+    expect(resolve?.branches[0]?.next["app:asyncQueue"]).toContain("SubSeq(");
+  });
+
+  it("rejects ambiguous implicit pending queue export", () => {
+    const ambiguous: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        {
+          ...pendingQueueDecl("app:secondaryQueue"),
+          id: "app:secondaryQueue",
+        },
+      ],
+      transitions: [
+        {
+          ...firstTransition(),
+          effect: {
+            kind: "enqueue",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
+          writes: ["app:asyncQueue", "app:secondaryQueue"],
+        },
+      ],
+    };
+    expect(() =>
+      generateTlaStructuredModel(ambiguous, "AmbiguousQueue"),
+    ).toThrow(/queue is ambiguous/);
   });
 
   it("exports havoc as a finite-domain nondeterministic assignment", () => {
@@ -598,9 +569,7 @@ describe("TLA export", () => {
         "setFlag ==",
         "  ~(flag) /\\",
         "  \\E flag_choice_1 \\in {FALSE, TRUE}:",
-        "    sys_route' = sys_route /\\",
-        "    sys_history' = sys_history /\\",
-        "    sys_pending' = sys_pending /\\",
+        "    app_asyncQueue' = app_asyncQueue /\\",
         "    flag' = flag_choice_1",
       ].join("\n"),
     );
@@ -640,9 +609,7 @@ describe("TLA export", () => {
     expect(generateTlaModule(sequential, "SequentialHavocFixture")).toContain(
       [
         "\\E flag_choice_1 \\in {FALSE, TRUE}:",
-        "    sys_route' = sys_route /\\",
-        "    sys_history' = sys_history /\\",
-        "    sys_pending' = sys_pending /\\",
+        "    app_asyncQueue' = app_asyncQueue /\\",
         "    flag' = flag_choice_1 /\\",
         "    mirror' = flag_choice_1",
       ].join("\n"),
@@ -676,7 +643,7 @@ describe("TLA export", () => {
             ],
           },
           reads: ["flag"],
-          writes: ["flag", "sys:pending"],
+          writes: ["flag", "app:asyncQueue"],
           confidence: "exact",
         },
         {
@@ -687,7 +654,7 @@ describe("TLA export", () => {
           guard: {
             kind: "eq",
             args: [
-              { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+              { kind: "read", var: "app:asyncQueue", path: ["0", "opId"] },
               { kind: "lit", value: "POST" },
             ],
           },
@@ -699,32 +666,32 @@ describe("TLA export", () => {
                 var: "flag",
                 expr: {
                   kind: "read",
-                  var: "sys:pending",
+                  var: "app:asyncQueue",
                   path: ["0", "args", "flag"],
                 },
               },
               { kind: "dequeue", index: 0 },
             ],
           },
-          reads: ["sys:pending"],
-          writes: ["sys:pending", "flag"],
+          reads: ["app:asyncQueue"],
+          writes: ["app:asyncQueue", "flag"],
           confidence: "exact",
         },
       ],
     };
     const source = generateTlaModule(asyncModel, "AsyncFixture");
-    expect(source).toContain("Len(sys_pending) < 1");
+    expect(source).toContain("Len(app_asyncQueue) < 1");
     expect(source).toContain(
-      'sys_pending\' = Append(sys_pending, [opId |-> "POST", continuation |-> "submit#1", args |-> [flag |-> TRUE]])',
+      'app_asyncQueue\' = Append(app_asyncQueue, [opId |-> "POST", continuation |-> "submit#1", args |-> [flag |-> TRUE]])',
     );
     expect(source).toContain(
-      '((IF Len(sys_pending) >= 1 THEN sys_pending[1].opId ELSE "__modality_oob__") = "POST")',
+      '((IF Len(app_asyncQueue) >= 1 THEN app_asyncQueue[1].opId ELSE "__modality_oob__") = "POST")',
     );
     expect(source).toContain(
-      "SubSeq(sys_pending, 1, 0) \\o SubSeq(sys_pending, 2, Len(sys_pending))",
+      "SubSeq(app_asyncQueue, 1, 0) \\o SubSeq(app_asyncQueue, 2, Len(app_asyncQueue))",
     );
     expect(source).toContain(
-      'flag\' = (IF Len(sys_pending) >= 1 THEN sys_pending[1].args.flag ELSE "__modality_oob__")',
+      'flag\' = (IF Len(app_asyncQueue) >= 1 THEN app_asyncQueue[1].args.flag ELSE "__modality_oob__")',
     );
   });
 
@@ -745,7 +712,7 @@ describe("TLA export", () => {
             args: {},
           },
           reads: [],
-          writes: ["sys:pending"],
+          writes: ["app:asyncQueue"],
           confidence: "exact",
         },
       ],
@@ -857,7 +824,7 @@ describe("TLA export", () => {
         "branch ==",
         "  flag /\\",
         "  ((flag /\\",
-        "  sys_route' = sys_route /\\",
+        "  app_asyncQueue' = app_asyncQueue /\\",
       ].join("\n"),
     );
     expect(source).toContain("\\/\n  (flag /\\");
@@ -935,6 +902,127 @@ describe("TLA export", () => {
       ],
     };
     expect(generateTlaModule(havocSparse, "SparseFixture")).toContain("{0, 2}");
+  });
+
+  it("exports readPre as pre-state reads during assignment", () => {
+    const staleRead: Model = {
+      ...model(),
+      transitions: [
+        {
+          ...firstTransition(),
+          effect: {
+            kind: "assign",
+            var: "flag",
+            expr: {
+              kind: "readPre",
+              var: "flag",
+            },
+          },
+        },
+      ],
+    };
+    const source = generateTlaModule(staleRead, "ReadPreFixture");
+    expect(source).toContain("flag' = flag");
+  });
+
+  it("rejects readOpArg in transition effects", () => {
+    const opArg: Model = {
+      ...model(),
+      vars: [
+        ...model().vars,
+        {
+          id: "token",
+          domain: { kind: "tokens", count: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "tok1",
+        },
+      ],
+      transitions: [
+        {
+          ...firstTransition(),
+          effect: {
+            kind: "assign",
+            var: "token",
+            expr: { kind: "readOpArg", key: "snap:token" },
+          },
+          writes: ["token"],
+        },
+      ],
+    };
+    expect(() => generateTlaModule(opArg, "ReadOpArgFixture")).toThrow(
+      /readOpArg/,
+    );
+  });
+
+  it("resets mount-local vars when app:location assignment changes mount guards", () => {
+    const routes = { kind: "enum", values: ["/a", "/b"] } as const;
+    const mountModel: Model = {
+      schemaVersion: 1,
+      id: "mount-reset-export",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "app:location",
+          domain: routes,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: "/a",
+        },
+        {
+          id: "local:panel",
+          domain: { kind: "enum", values: ["off", "on"] },
+          origin: "system",
+          scope: {
+            kind: "mount-local",
+            id: "route-a",
+            when: {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "app:location" },
+                { kind: "lit", value: "/a" },
+              ],
+            },
+          },
+          initial: "off",
+        },
+      ],
+      transitions: [
+        {
+          id: "goB",
+          cls: "user",
+          label: { kind: "click", text: "Go B" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "app:location",
+            expr: { kind: "lit", value: "/b" },
+          },
+          reads: ["app:location"],
+          writes: ["app:location"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const structured = generateTlaStructuredModel(mountModel, "MountReset");
+    const goB = structured.transitions.find(
+      (transition) => transition.id === "goB",
+    );
+    expect(
+      goB?.branches.some((branch) =>
+        branch.next["local:panel"]?.includes("__modality_unmounted__"),
+      ),
+    ).toBe(true);
+
+    const checker = checkModel(mountModel, [
+      reachable(mountModel, eq(readVar("local:panel"), lit("off")), {
+        name: "panelOffAfterActivation",
+        reads: ["local:panel"],
+      }),
+    ]);
+    expect(checker.verdicts[0]?.status).toBe("reachable");
   });
 
   it("rejects TLA identifier collisions before emitting ambiguous modules", () => {

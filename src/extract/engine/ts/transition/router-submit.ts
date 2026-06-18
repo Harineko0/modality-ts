@@ -14,7 +14,11 @@ import {
   containsAwaitedEffect,
   pendingIs,
 } from "./async.js";
-import { effectWriteVars, PENDING_QUEUE_VAR, summarizeAsyncSegment } from "./effects.js";
+import {
+  effectWriteVars,
+  PENDING_QUEUE_VAR,
+  summarizeAsyncSegment,
+} from "./effects.js";
 import { valueExpr } from "./expressions.js";
 import {
   applyParsedGuard,

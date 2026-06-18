@@ -3,7 +3,9 @@ import { dirname } from "node:path";
 import {
   enumerateDomain,
   initialValues,
+  mountGuardForScope,
   parseModelArtifact,
+  UNMOUNTED,
   validateModel,
 } from "modality-ts/core";
 import type {
@@ -150,7 +152,7 @@ export function generateTlaStructuredModel(
       id: transition.id,
       name: tlaName(transition.id),
       guard: tlaExpr(transition.guard),
-      branches: effectBranches(model, transition.effect, currentEnv(model)).map(
+      branches: topLevelEffectBranches(model, transition.effect).map(
         (branch) => ({
           assumptions: branch.assumptions,
           exists: branch.exists,
@@ -165,7 +167,7 @@ export function generateTlaStructuredModel(
 }
 
 function tlaAction(model: Model, transition: Transition): string {
-  const relation = effectRelation(model, transition.effect, currentEnv(model));
+  const relation = effectRelation(model, transition.effect);
   return [
     `${tlaName(transition.id)} ==`,
     indent(
@@ -183,14 +185,65 @@ interface TlaEnv {
   nextId: number;
 }
 
-function effectRelation(model: Model, effect: EffectIR, env: TlaEnv): string {
-  const branches = effectBranches(model, effect, env);
+function effectRelation(model: Model, effect: EffectIR): string {
+  const branches = topLevelEffectBranches(model, effect);
   if (branches.length === 1) {
     const branch = branches[0];
     if (!branch) return "FALSE";
     return branchRelation(model, branch);
   }
   return `(${branches.map((branch) => `(${branchRelation(model, branch)})`).join(" \\/\n")})`;
+}
+
+function topLevelEffectBranches(model: Model, effect: EffectIR): TlaEnv[] {
+  const preEnv = currentEnv(model);
+  return effectBranches(model, effect, preEnv).flatMap((branch) =>
+    applyMountLocalResets(model, preEnv, branch),
+  );
+}
+
+function applyMountLocalResets(
+  model: Model,
+  preEnv: TlaEnv,
+  branch: TlaEnv,
+): TlaEnv[] {
+  let next = branch;
+  for (const decl of model.vars) {
+    if (decl.scope.kind !== "mount-local") continue;
+    const guard = mountGuardForScope(decl.scope);
+    if (!guard) continue;
+    next = withValue(
+      next,
+      decl.id,
+      mountLocalResetExpr(decl, guard, preEnv, next),
+    );
+  }
+  return [next];
+}
+
+function mountLocalResetExpr(
+  decl: StateVarDecl,
+  guard: ExprIR,
+  preEnv: TlaEnv,
+  branch: TlaEnv,
+): string {
+  const preGuard = tlaExpr(guard, preEnv);
+  const postGuard = tlaExpr(guard, branch);
+  const effectValue = envValue(branch, decl.id);
+  const unmounted = tlaValue(UNMOUNTED);
+  const initials = initialValues(decl.domain, decl.initial);
+  if (initials.length === 0) {
+    return `(IF ${postGuard} THEN ${effectValue} ELSE ${unmounted})`;
+  }
+  if (initials.length === 1) {
+    const initial = tlaValue(initials[0]!);
+    return `(IF ${postGuard} THEN (IF ${preGuard} THEN ${effectValue} ELSE ${initial}) ELSE ${unmounted})`;
+  }
+  const initialSet = tlaSet(initials);
+  const activationChoice = `${tlaName(decl.id)}_mount_init_${branch.nextId + 1}`;
+  branch.nextId += 1;
+  branch.exists.push({ name: activationChoice, set: initialSet });
+  return `(IF ${postGuard} THEN (IF ${preGuard} THEN ${effectValue} ELSE ${activationChoice}) ELSE ${unmounted})`;
 }
 
 function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
@@ -461,6 +514,12 @@ function tlaExpr(expr: ExprIR, env: TlaEnv = emptyEnv()): string {
       return tlaValue(expr.value);
     case "read":
       return tlaRead(envValue(env, expr.var), expr.path ?? []);
+    case "readPre":
+      return tlaRead(envValue(env, expr.var), expr.path ?? []);
+    case "readOpArg":
+      throw new Error(
+        "TLA export does not support readOpArg; transition effects must not read enqueue-time snapshots",
+      );
     case "eq":
       return `(${tlaExpr(expr.args[0], env)} = ${tlaExpr(expr.args[1], env)})`;
     case "neq":
@@ -712,14 +771,18 @@ function resolvePendingQueueId(
     }
     return explicitQueue;
   }
-  const queues = model.vars.filter((decl) => decl.role?.kind === "pending-queue");
+  const queues = model.vars.filter(
+    (decl) => decl.role?.kind === "pending-queue",
+  );
   if (queues.length === 1) {
     const queue = queues[0];
     if (!queue) throw new Error("TLA export missing pending-queue role var");
     return queue.id;
   }
   if (queues.length === 0) {
-    throw new Error("TLA export enqueue/dequeue requires a pending-queue role var");
+    throw new Error(
+      "TLA export enqueue/dequeue requires a pending-queue role var",
+    );
   }
   throw new Error(
     "TLA export enqueue/dequeue queue is ambiguous; specify queue explicitly",

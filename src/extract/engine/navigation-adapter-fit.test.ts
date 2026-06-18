@@ -253,10 +253,15 @@ describe("navigation adapter interface fit", () => {
       packageNames: ["fake"],
       discoverEffectApis: () => [],
     };
-    expect(moduleRoleAdapter.classifyModule({ fileName: "x.ts", sourceText: "" }))
-      .toEqual({ defaultContext: "server" });
-    expect(effectApiProvider.discoverEffectApis({ fileName: "x.ts", sourceText: "" }))
-      .toEqual([]);
+    expect(
+      moduleRoleAdapter.classifyModule({ fileName: "x.ts", sourceText: "" }),
+    ).toEqual({ defaultContext: "server" });
+    expect(
+      effectApiProvider.discoverEffectApis({
+        fileName: "x.ts",
+        sourceText: "",
+      }),
+    ).toEqual([]);
   });
 
   it("uses separate fake cache/storage and observation providers", () => {
@@ -287,10 +292,14 @@ describe("navigation adapter interface fit", () => {
         varId === "cache:demo" ? { value: handles.cache } : "unobservable",
     };
 
-    expect(cacheStorageProvider.discoverCacheStorage({
-      files: [],
-      options: { route: "/" },
-    }).vars.map((decl) => decl.id)).toEqual(["cache:demo"]);
+    expect(
+      cacheStorageProvider
+        .discoverCacheStorage({
+          files: [],
+          options: { route: "/" },
+        })
+        .vars.map((decl) => decl.id),
+    ).toEqual(["cache:demo"]);
     expect(
       observationProvider.observe("cache:demo", observationProvider.setup({})),
     ).toEqual({ value: "ready" });
@@ -298,7 +307,10 @@ describe("navigation adapter interface fit", () => {
       observationProvider.observe("cache:demo", observationProvider.setup({})),
     ).not.toBe("unobservable");
     expect(
-      observationProvider.observe("local:missing", observationProvider.setup({})),
+      observationProvider.observe(
+        "local:missing",
+        observationProvider.setup({}),
+      ),
     ).toBe("unobservable");
   });
 });

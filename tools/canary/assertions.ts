@@ -1,4 +1,8 @@
-import type { CheckReport, ConformReport, ExtractionReport } from "modality-ts/core";
+import type {
+  CheckReport,
+  ConformReport,
+  ExtractionReport,
+} from "modality-ts/core";
 import { evaluateStateSpaceBudgets } from "../shared-gates/budgets.js";
 import {
   evaluateConformThresholds,
@@ -114,8 +118,9 @@ export function assertSeededBugExpectations(input: {
 
   if (expectations.violatedPropertyCount !== undefined) {
     const violations =
-      checkReport?.verdicts.filter((verdict) => verdict.status === "violated") ??
-      [];
+      checkReport?.verdicts.filter(
+        (verdict) => verdict.status === "violated",
+      ) ?? [];
     if (violations.length !== expectations.violatedPropertyCount) {
       failures.push({
         id: "violatedPropertyCount",

@@ -1,4 +1,9 @@
-import { effectReads, effectWrites, exprReads } from "modality-ts/core";
+import {
+  effectReads,
+  effectWrites,
+  exprReads,
+  mountGuardForScope,
+} from "modality-ts/core";
 import type { Model, Property, StepPredicateIR } from "modality-ts/core";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
@@ -64,7 +69,7 @@ export function sliceModelForProperty(
   let changed = true;
   while (changed) {
     changed = false;
-    if (addRouteVarsForNeededRouteLocals(model, neededVars)) {
+    if (addMountGuardVarsForNeededMountLocals(model, neededVars)) {
       changed = true;
     }
     for (const transition of model.transitions) {
@@ -120,7 +125,7 @@ export function sliceModelForTargetedStepProperty(
   let changed = true;
   while (changed) {
     changed = false;
-    if (addRouteVarsForNeededRouteLocals(model, dependencyVars)) {
+    if (addMountGuardVarsForNeededMountLocals(model, dependencyVars)) {
       changed = true;
     }
     for (const transition of model.transitions) {
@@ -217,12 +222,14 @@ function stepFactVars(model: Model, predicate: StepPredicateIR): string[] {
 }
 
 function solePendingQueueVarId(model: Model): string | undefined {
-  const queues = model.vars.filter((decl) => decl.role?.kind === "pending-queue");
+  const queues = model.vars.filter(
+    (decl) => decl.role?.kind === "pending-queue",
+  );
   if (queues.length === 1) return queues[0]?.id;
-  return queues[0]?.id;
+  return undefined;
 }
 
-function addRouteVarsForNeededRouteLocals(
+function addMountGuardVarsForNeededMountLocals(
   model: Model,
   neededVars: Set<string>,
 ): boolean {
@@ -230,11 +237,25 @@ function addRouteVarsForNeededRouteLocals(
   for (const decl of model.vars) {
     if (!neededVars.has(decl.id)) continue;
     if (decl.scope.kind === "mount-local") {
-      for (const read of exprReads(decl.scope.when)) {
+      const guard = mountGuardForScope(decl.scope);
+      if (!guard) continue;
+      for (const read of exprReads(guard)) {
         if (!neededVars.has(read)) {
           neededVars.add(read);
           changed = true;
         }
+      }
+    }
+  }
+  for (const decl of model.vars) {
+    if (decl.scope.kind !== "mount-local") continue;
+    const guard = mountGuardForScope(decl.scope);
+    if (!guard) continue;
+    for (const read of exprReads(guard)) {
+      if (!neededVars.has(read)) continue;
+      if (!neededVars.has(decl.id)) {
+        neededVars.add(decl.id);
+        changed = true;
       }
     }
   }
@@ -260,7 +281,17 @@ export function enabledTransitionVars(
   for (const decl of model.vars) {
     if (!vars.has(decl.id)) continue;
     if (decl.scope.kind === "mount-local") {
-      for (const read of exprReads(decl.scope.when)) vars.add(read);
+      const guard = mountGuardForScope(decl.scope);
+      if (!guard) continue;
+      for (const read of exprReads(guard)) vars.add(read);
+    }
+  }
+  for (const decl of model.vars) {
+    if (decl.scope.kind !== "mount-local") continue;
+    const guard = mountGuardForScope(decl.scope);
+    if (!guard) continue;
+    for (const read of exprReads(guard)) {
+      if (vars.has(read)) vars.add(decl.id);
     }
   }
   return [...vars].sort();

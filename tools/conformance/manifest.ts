@@ -192,9 +192,18 @@ export function parseConformanceMatrixManifest(
     parseCell(entry, `cells[${index}]`),
   );
 
-  assertUniqueIds(features.map((feature) => feature.id), "feature");
-  assertUniqueIds(targets.map((target) => target.id), "target");
-  assertUniqueIds(fixtures.map((fixture) => fixture.id), "fixture");
+  assertUniqueIds(
+    features.map((feature) => feature.id),
+    "feature",
+  );
+  assertUniqueIds(
+    targets.map((target) => target.id),
+    "target",
+  );
+  assertUniqueIds(
+    fixtures.map((fixture) => fixture.id),
+    "fixture",
+  );
 
   const featureIds = new Set(features.map((feature) => feature.id));
   const targetIds = new Set(targets.map((target) => target.id));
@@ -317,9 +326,7 @@ export async function loadConformanceFixtureManifests(
       throw new Error(`fixture ${entry.id} missing root`);
     }
     const fixtureRoot = resolve(repoRoot, entry.root);
-    manifests.push(
-      await readConformanceFixtureManifest(repoRoot, fixtureRoot),
-    );
+    manifests.push(await readConformanceFixtureManifest(repoRoot, fixtureRoot));
   }
   return manifests;
 }
@@ -345,9 +352,15 @@ export function parseConformanceFixtureManifest(
     root: value.root,
     sourcePaths: value.sourcePaths as readonly string[],
     propsPaths: value.propsPaths as readonly string[],
-    ...(value.extract ? { extract: value.extract as ConformanceFixtureManifest["extract"] } : {}),
-    ...(value.check ? { check: value.check as ConformanceFixtureManifest["check"] } : {}),
-    ...(value.conform ? { conform: value.conform as ConformanceFixtureManifest["conform"] } : {}),
+    ...(value.extract
+      ? { extract: value.extract as ConformanceFixtureManifest["extract"] }
+      : {}),
+    ...(value.check
+      ? { check: value.check as ConformanceFixtureManifest["check"] }
+      : {}),
+    ...(value.conform
+      ? { conform: value.conform as ConformanceFixtureManifest["conform"] }
+      : {}),
     ...(value.thresholds
       ? {
           thresholds: validateSharedThresholds(
@@ -363,8 +376,12 @@ export function parseConformanceFixtureManifest(
       : {}),
     ...(value.acceptedCaveats
       ? {
-          acceptedCaveats: (value.acceptedCaveats as unknown[]).map((entry, index) =>
-            validateAcceptedCaveatRef(entry, `fixture.acceptedCaveats[${index}]`),
+          acceptedCaveats: (value.acceptedCaveats as unknown[]).map(
+            (entry, index) =>
+              validateAcceptedCaveatRef(
+                entry,
+                `fixture.acceptedCaveats[${index}]`,
+              ),
           ),
         }
       : {}),
@@ -391,10 +408,16 @@ export async function validateConformanceFixturePaths(
   manifest: ConformanceFixtureManifest,
 ): Promise<void> {
   for (const relativePath of manifest.sourcePaths) {
-    await assertPathExists(resolve(fixtureRoot, relativePath), `source path ${relativePath}`);
+    await assertPathExists(
+      resolve(fixtureRoot, relativePath),
+      `source path ${relativePath}`,
+    );
   }
   for (const relativePath of manifest.propsPaths) {
-    await assertPathExists(resolve(fixtureRoot, relativePath), `props path ${relativePath}`);
+    await assertPathExists(
+      resolve(fixtureRoot, relativePath),
+      `props path ${relativePath}`,
+    );
   }
   if (manifest.extract?.packageJsonPath) {
     await assertPathExists(

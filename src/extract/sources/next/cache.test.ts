@@ -193,9 +193,7 @@ describe("nextCacheStorageProvider", () => {
         },
       ],
       inventory: {
-        routes: [
-          { pattern: "/", kind: "page", file: "/proj/app/page.tsx" },
-        ],
+        routes: [{ pattern: "/", kind: "page", file: "/proj/app/page.tsx" }],
       },
       options: { route: "/" },
     });

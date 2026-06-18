@@ -104,9 +104,7 @@ export function evaluateStateSpaceBudgets(input: {
       ? Math.max(...dominantVars.map((entry) => entry.distinctValues))
       : 0;
     const varIds = dominantVars
-      .filter(
-        (entry) => entry.distinctValues === actual && actual > 0,
-      )
+      .filter((entry) => entry.distinctValues === actual && actual > 0)
       .map((entry) => entry.varId);
     results.push(
       compareBudget({

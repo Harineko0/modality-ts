@@ -175,7 +175,10 @@ export function parseConformReportArtifact(json: string): ConformReport {
     if (!isRecord(value.thresholds))
       throw new Error("conform report thresholds must be an object");
     if (value.thresholds.minPassRate !== undefined) {
-      assertPassRate(value.thresholds.minPassRate, "conform report minPassRate");
+      assertPassRate(
+        value.thresholds.minPassRate,
+        "conform report minPassRate",
+      );
     }
     if (value.thresholds.minTransitionPassRate !== undefined) {
       assertPassRate(
@@ -230,7 +233,9 @@ export function parseCanaryRunReportArtifact(json: string): CanaryRunReport {
       `unsupported canary run report schemaVersion ${String(value.schemaVersion)}`,
     );
   if (value.kind !== "canary-run-report")
-    throw new Error("canary run report artifact kind must be canary-run-report");
+    throw new Error(
+      "canary run report artifact kind must be canary-run-report",
+    );
   assertNonEmptyString(value.manifestId, "canary run report manifestId");
   if (!Array.isArray(value.canaryResults))
     throw new Error("canary run report artifact missing canaryResults");
@@ -597,12 +602,7 @@ function assertStringArray(value: unknown, path: string): void {
   }
 }
 
-const REPORT_RESULT_STATUSES = new Set([
-  "pass",
-  "fail",
-  "skipped",
-  "error",
-]);
+const REPORT_RESULT_STATUSES = new Set(["pass", "fail", "skipped", "error"]);
 
 const REPORT_GATE_STATUSES = new Set(["pass", "fail", "skipped"]);
 
@@ -638,7 +638,8 @@ function assertGateStatus(value: unknown, path: string): void {
 function assertThresholdResults(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
   for (const [index, entry] of value.entries()) {
-    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    if (!isRecord(entry))
+      throw new Error(`${path}[${index}] must be an object`);
     assertNonEmptyString(entry.id, `${path}[${index}].id`);
     assertGateStatus(entry.status, `${path}[${index}].status`);
     if (entry.expected !== undefined) {
@@ -653,7 +654,8 @@ function assertThresholdResults(value: unknown, path: string): void {
 function assertBudgetResults(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
   for (const [index, entry] of value.entries()) {
-    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    if (!isRecord(entry))
+      throw new Error(`${path}[${index}] must be an object`);
     assertNonEmptyString(entry.id, `${path}[${index}].id`);
     assertGateStatus(entry.status, `${path}[${index}].status`);
     if (entry.maxStates !== undefined) {
@@ -669,7 +671,10 @@ function assertBudgetResults(value: unknown, path: string): void {
       assertPositiveInteger(entry.maxEdges, `${path}[${index}].maxEdges`);
     }
     if (entry.actualEdges !== undefined) {
-      assertNonNegativeInteger(entry.actualEdges, `${path}[${index}].actualEdges`);
+      assertNonNegativeInteger(
+        entry.actualEdges,
+        `${path}[${index}].actualEdges`,
+      );
     }
     if (entry.maxFrontier !== undefined) {
       assertPositiveInteger(entry.maxFrontier, `${path}[${index}].maxFrontier`);
@@ -686,7 +691,8 @@ function assertBudgetResults(value: unknown, path: string): void {
 function assertFailureClassifications(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
   for (const [index, entry] of value.entries()) {
-    if (!isRecord(entry)) throw new Error(`${path}[${index}] must be an object`);
+    if (!isRecord(entry))
+      throw new Error(`${path}[${index}] must be an object`);
     assertNonEmptyString(entry.canaryId, `${path}[${index}].canaryId`);
     if (entry.fixtureId !== undefined) {
       assertNonEmptyString(entry.fixtureId, `${path}[${index}].fixtureId`);

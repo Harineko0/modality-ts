@@ -597,9 +597,7 @@ describe("renderHumanConformResult", () => {
       durationMs: 8,
     });
     expect(lines.join("\n")).toContain("fixture state-local-setter-batch");
-    expect(lines.join("\n")).toContain(
-      "features state.local.setter-batching",
-    );
+    expect(lines.join("\n")).toContain("features state.local.setter-batching");
     expect(lines.join("\n")).toContain("targets react-use-state");
   });
 

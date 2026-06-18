@@ -100,7 +100,9 @@ const DEPENDENCY_SOURCES = new Set<CanaryDependencyFact["source"]>([
   "lockfile",
 ]);
 
-export async function readCanaryManifest(path: string): Promise<CanaryManifest> {
+export async function readCanaryManifest(
+  path: string,
+): Promise<CanaryManifest> {
   return parseCanaryManifest(await readFile(path, "utf8"));
 }
 
@@ -173,7 +175,9 @@ export function selectActiveCanaries(
     kind?: CanaryKind;
   } = {},
 ): CanaryDefinition[] {
-  let selected = manifest.canaries.filter((canary) => canary.status === "active");
+  let selected = manifest.canaries.filter(
+    (canary) => canary.status === "active",
+  );
   if (options.canaryId) {
     selected = selected.filter((canary) => canary.id === options.canaryId);
     if (selected.length === 0) {
@@ -208,7 +212,10 @@ function parseCanaryDefinition(value: unknown, path: string): CanaryDefinition {
   ) {
     throw new Error(`${path}.status is unsupported`);
   }
-  if (typeof value.kind !== "string" || !CANARY_KINDS.has(value.kind as CanaryKind)) {
+  if (
+    typeof value.kind !== "string" ||
+    !CANARY_KINDS.has(value.kind as CanaryKind)
+  ) {
     throw new Error(`${path}.kind is unsupported`);
   }
   assertNonEmptyString(value.root, `${path}.root`);
@@ -271,9 +278,16 @@ function parseCanaryDefinition(value: unknown, path: string): CanaryDefinition {
         }
       : {}),
     ...(value.expectations
-      ? { expectations: parseExpectations(value.expectations, `${path}.expectations`) }
+      ? {
+          expectations: parseExpectations(
+            value.expectations,
+            `${path}.expectations`,
+          ),
+        }
       : {}),
-    ...(value.budgets ? { budgets: parseBudgets(value.budgets, `${path}.budgets`) } : {}),
+    ...(value.budgets
+      ? { budgets: parseBudgets(value.budgets, `${path}.budgets`) }
+      : {}),
   };
 
   if (status === "active") {
@@ -336,7 +350,12 @@ function parseCheck(
   if (value.propsPaths !== undefined) {
     assertStringArray(value.propsPaths, `${path}.propsPaths`);
   }
-  for (const key of ["maxStates", "maxEdges", "maxFrontier", "memoryGuardMb"] as const) {
+  for (const key of [
+    "maxStates",
+    "maxEdges",
+    "maxFrontier",
+    "memoryGuardMb",
+  ] as const) {
     if (value[key] !== undefined) {
       assertPositiveInteger(value[key], `${path}.${key}`);
     }
@@ -377,10 +396,7 @@ function parseThresholds(
   return validateSharedThresholds(value, path);
 }
 
-function parseBudgets(
-  value: unknown,
-  path: string,
-): CanaryBudgets {
+function parseBudgets(value: unknown, path: string): CanaryBudgets {
   return validateSharedBudgets(value, path);
 }
 
@@ -389,20 +405,27 @@ function parseExpectations(
   path: string,
 ): CanarySeededBugExpectations {
   if (!isRecord(value)) throw new Error(`${path} must be an object`);
-  for (const key of ["violatedPropertyCount", "minReproducedReplayCount", "maxOverlayLines", "expectedCiExitCode"] as const) {
+  for (const key of [
+    "violatedPropertyCount",
+    "minReproducedReplayCount",
+    "maxOverlayLines",
+    "expectedCiExitCode",
+  ] as const) {
     if (value[key] !== undefined) {
       assertNonNegativeInteger(value[key], `${path}.${key}`);
     }
   }
   if (value.violatedPropertyNames !== undefined) {
-    assertStringArray(value.violatedPropertyNames, `${path}.violatedPropertyNames`);
+    assertStringArray(
+      value.violatedPropertyNames,
+      `${path}.violatedPropertyNames`,
+    );
   }
   if (value.ciOutputMustInclude !== undefined) {
     assertStringArray(value.ciOutputMustInclude, `${path}.ciOutputMustInclude`);
   }
   return value as CanarySeededBugExpectations;
 }
-
 
 function validateAcceptedCaveats(canary: CanaryDefinition): void {
   for (const [index, caveat] of canary.acceptedCaveats.entries()) {
@@ -425,7 +448,9 @@ function assertActiveThresholds(canary: CanaryDefinition): void {
     canary.thresholds.maxStaleReads !== undefined ||
     canary.thresholds.minRouteCoverage !== undefined;
   if (!hasThreshold) {
-    throw new Error(`active canary ${canary.id} must define at least one threshold`);
+    throw new Error(
+      `active canary ${canary.id} must define at least one threshold`,
+    );
   }
   assertActiveBudgets(canary);
 }

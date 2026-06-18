@@ -127,7 +127,9 @@ describe("canary runner", () => {
     );
     const accepted = evaluateAcceptedCaveats({
       extractionReport: {
-        globalTaints: [{ kind: "global-taint", id: "x", reason: "y", severity: "info" }],
+        globalTaints: [
+          { kind: "global-taint", id: "x", reason: "y", severity: "info" },
+        ],
         staleReads: [],
         unhandledRejections: [],
       } as ExtractionReport,
@@ -138,7 +140,9 @@ describe("canary runner", () => {
 
     const rejected = evaluateAcceptedCaveats({
       extractionReport: {
-        globalTaints: [{ kind: "global-taint", id: "y", reason: "z", severity: "info" }],
+        globalTaints: [
+          { kind: "global-taint", id: "y", reason: "z", severity: "info" },
+        ],
         staleReads: [],
         unhandledRejections: [],
       } as ExtractionReport,

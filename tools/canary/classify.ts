@@ -5,7 +5,11 @@ import type {
   ConformReport,
   ExtractionReport,
 } from "modality-ts/core";
-import type { CaveatGateOutcome, GateBudgetResult, GateThresholdResult } from "../shared-gates/types.js";
+import type {
+  CaveatGateOutcome,
+  GateBudgetResult,
+  GateThresholdResult,
+} from "../shared-gates/types.js";
 
 export interface ClassificationInput {
   canaryId: string;
@@ -73,10 +77,14 @@ export function classifyCanaryFailure(
 
   for (const budget of input.budgetResults ?? []) {
     if (budget.status !== "fail") continue;
-    push("state-space-budget", "action-required", budget.evidence ?? [
-      `budget.${budget.id}`,
-      budget.message ?? "state-space budget exceeded",
-    ]);
+    push(
+      "state-space-budget",
+      "action-required",
+      budget.evidence ?? [
+        `budget.${budget.id}`,
+        budget.message ?? "state-space budget exceeded",
+      ],
+    );
   }
 
   const failedThresholds = (input.thresholdResults ?? []).filter(
@@ -87,12 +95,13 @@ export function classifyCanaryFailure(
       threshold.id === "minCoverageExactOrOverlay" ||
       threshold.id === "maxUnextractable"
     ) {
-      const unextractable =
-        input.extractionReport?.coverage.unextractable ?? 0;
+      const unextractable = input.extractionReport?.coverage.unextractable ?? 0;
       if (unextractable > 0) {
-        push("missing-semantic-abstraction", "action-required", threshold.evidence ?? [
-          threshold.message ?? threshold.id,
-        ]);
+        push(
+          "missing-semantic-abstraction",
+          "action-required",
+          threshold.evidence ?? [threshold.message ?? threshold.id],
+        );
         continue;
       }
     }
@@ -101,19 +110,25 @@ export function classifyCanaryFailure(
       threshold.id.startsWith("minTransitionPassRate")
     ) {
       if (input.fixtureCoveragePassed) {
-        push("syntax-recognition-gap", "action-required", threshold.evidence ?? [
-          threshold.message ?? threshold.id,
-        ]);
+        push(
+          "syntax-recognition-gap",
+          "action-required",
+          threshold.evidence ?? [threshold.message ?? threshold.id],
+        );
       } else {
-        push("incorrect-ir-or-checker", "action-required", threshold.evidence ?? [
-          threshold.message ?? threshold.id,
-        ]);
+        push(
+          "incorrect-ir-or-checker",
+          "action-required",
+          threshold.evidence ?? [threshold.message ?? threshold.id],
+        );
       }
       continue;
     }
-    push("fixture-or-canary-invalid", "action-required", threshold.evidence ?? [
-      threshold.message ?? threshold.id,
-    ]);
+    push(
+      "fixture-or-canary-invalid",
+      "action-required",
+      threshold.evidence ?? [threshold.message ?? threshold.id],
+    );
   }
 
   if (input.caveatOutcome?.unacceptedCaveats.length) {
@@ -193,11 +208,16 @@ function dedupeClassifications(
 }
 
 export function classifyEveryCategoryFixtures(): CanaryFailureClassification[] {
-  const categories = Object.keys(PLAN_FAMILY_BY_CATEGORY) as CanaryFailureCategory[];
+  const categories = Object.keys(
+    PLAN_FAMILY_BY_CATEGORY,
+  ) as CanaryFailureCategory[];
   return categories.map((category) => ({
     canaryId: "synthetic",
     category,
-    severity: category === "explicit-unsupported-behavior" ? "accepted" : "action-required",
+    severity:
+      category === "explicit-unsupported-behavior"
+        ? "accepted"
+        : "action-required",
     evidence: [`synthetic:${category}`],
     suggestedPlanFamily: PLAN_FAMILY_BY_CATEGORY[category],
   }));

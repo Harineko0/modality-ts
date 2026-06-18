@@ -64,6 +64,7 @@ export function todoHandModel(): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

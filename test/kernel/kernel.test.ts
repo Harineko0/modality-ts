@@ -1229,9 +1229,7 @@ describe("validator", () => {
       ],
     };
     noQueueRole.vars = noQueueRole.vars.map((decl) =>
-      decl.id === "sys:pending"
-        ? { ...decl, role: undefined }
-        : decl,
+      decl.id === "sys:pending" ? { ...decl, role: undefined } : decl,
     );
     expect(validateModel(noQueueRole).errors.join("\n")).toContain(
       "enqueueOp: enqueue/dequeue requires a pending-queue role var",

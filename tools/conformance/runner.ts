@@ -263,7 +263,9 @@ export async function runConformanceMatrix(
           lines.push(`fixture ${fixture.id}: unaccepted caveat ${caveat}`);
         }
         for (const caveat of caveatOutcome.missingRequiredCaveats) {
-          lines.push(`fixture ${fixture.id}: missing required caveat ${caveat}`);
+          lines.push(
+            `fixture ${fixture.id}: missing required caveat ${caveat}`,
+          );
         }
       }
     }
@@ -297,19 +299,28 @@ export async function runConformanceMatrix(
   }
 }
 
-export async function listFixtureRootEntries(fixtureRoot: string): Promise<string[]> {
+export async function listFixtureRootEntries(
+  fixtureRoot: string,
+): Promise<string[]> {
   const entries: string[] = [];
   async function walk(relativeDir: string): Promise<void> {
-    const absoluteDir = relativeDir ? join(fixtureRoot, relativeDir) : fixtureRoot;
+    const absoluteDir = relativeDir
+      ? join(fixtureRoot, relativeDir)
+      : fixtureRoot;
     for (const name of await readdir(absoluteDir, { withFileTypes: true })) {
-      const relativePath = relativeDir ? join(relativeDir, name.name) : name.name;
+      const relativePath = relativeDir
+        ? join(relativeDir, name.name)
+        : name.name;
       if (name.isDirectory()) {
         if (name.name === ".modality") {
           entries.push(relativePath);
         } else {
           await walk(relativePath);
         }
-      } else if (name.name.endsWith(".json") && relativePath.includes(".modality")) {
+      } else if (
+        name.name.endsWith(".json") &&
+        relativePath.includes(".modality")
+      ) {
         entries.push(relativePath);
       }
     }
@@ -358,7 +369,8 @@ function selectFixtures(
 
   return [...selectedIds].map((fixtureId) => {
     const fixture = fixtureById.get(fixtureId);
-    if (!fixture) throw new Error(`matrix references missing fixture ${fixtureId}`);
+    if (!fixture)
+      throw new Error(`matrix references missing fixture ${fixtureId}`);
     return fixture;
   });
 }

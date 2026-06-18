@@ -572,9 +572,7 @@ describe("extraction architecture surface", () => {
       new RegExp(`\\b${["router", "Source"].join("")}\\b`),
       new RegExp(`\\b${["with", "Server", "Effect", "Discovery"].join("")}\\b`),
       new RegExp(`\\b${["plugin", "Safety", "Warning"].join("")}\\b`),
-      new RegExp(
-        `\\b${["validate", "Router", "Plugin"].join("")}\\b`,
-      ),
+      new RegExp(`\\b${["validate", "Router", "Plugin"].join("")}\\b`),
     ];
     const violations = await collectPatternViolations(srcDir, forbidden);
     expect(violations).toEqual([]);
@@ -582,12 +580,8 @@ describe("extraction architecture surface", () => {
 
   it("does not branch extraction flow on navigation adapter ids", async () => {
     const forbidden = [
-      new RegExp(
-        `${["adapter", ".id === \"next\""].join("")}`,
-      ),
-      new RegExp(
-        `${["adapter", ".id === \"router\""].join("")}`,
-      ),
+      new RegExp(`${["adapter", '.id === "next"'].join("")}`),
+      new RegExp(`${["adapter", '.id === "router"'].join("")}`),
       new RegExp(`${["routerAdapter", ".id ==="].join("")}`),
     ];
     const violations = await collectPatternViolations(srcDir, forbidden);
@@ -713,7 +707,8 @@ function isForbiddenRunnerImport(
 ): boolean {
   if (allowedCliWrappers.has(specifier)) return false;
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
-    if (!specifier.includes("/src/") && !specifier.includes("src/")) return false;
+    if (!specifier.includes("/src/") && !specifier.includes("src/"))
+      return false;
     if (specifier.includes("src/cli/features")) return true;
     if (specifier.includes("src/extract/sources")) return true;
     if (
