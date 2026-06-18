@@ -7,7 +7,7 @@ mod frontier;
 mod graph;
 mod memory;
 mod model;
-mod navigation;
+mod mount;
 mod property;
 mod report;
 mod search;

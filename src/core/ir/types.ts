@@ -97,7 +97,6 @@ export type EffectIR =
       args: Record<string, ExprIR>;
     }
   | { kind: "dequeue"; queue?: string; index: number }
-  | { kind: "navigate"; mode: "push" | "replace" | "back"; to?: ExprIR }
   | { kind: "opaque"; ref: OpaqueRef };
 
 export interface OpaqueRef {

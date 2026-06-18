@@ -3,7 +3,6 @@ import { dirname } from "node:path";
 import {
   enumerateDomain,
   initialValues,
-  mountGuardForScope,
   parseModelArtifact,
   validateModel,
 } from "modality-ts/core";
@@ -286,61 +285,11 @@ function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
         ),
       ];
     }
-    case "navigate":
-      return navigateBranches(model, effect, env);
     case "opaque":
       return opaqueBranches(model, effect, env);
     default:
       throw new Error("TLA export encountered an unsupported effect kind");
   }
-}
-
-function navigateBranches(
-  model: Model,
-  effect: Extract<EffectIR, { kind: "navigate" }>,
-  env: TlaEnv,
-): TlaEnv[] {
-  const route = envValue(env, "sys:route");
-  const history = envValue(env, "sys:history");
-  let next = cloneEnv(env);
-  if (effect.mode === "back") {
-    next = withValue(
-      next,
-      "sys:route",
-      `IF Len(${history}) = 0 THEN ${route} ELSE ${history}[Len(${history})]`,
-    );
-    next = withValue(
-      next,
-      "sys:history",
-      `IF Len(${history}) = 0 THEN ${history} ELSE SubSeq(${history}, 1, Len(${history}) - 1)`,
-    );
-  } else {
-    const to = effect.to ? tlaExpr(effect.to, env) : route;
-    const historyDecl = model.vars.find((decl) => decl.id === "sys:history");
-    const historyCap =
-      historyDecl?.domain.kind === "boundedList"
-        ? historyDecl.domain.maxLen
-        : undefined;
-    if (effect.mode === "push" && historyCap !== undefined) {
-      next = envWithAssumption(next, `(Len(${history}) < ${historyCap})`);
-    }
-    next = withValue(next, "sys:route", to);
-    next = withValue(
-      next,
-      "sys:history",
-      effect.mode === "push" ? `Append(${history}, ${route})` : history,
-    );
-  }
-  for (const decl of model.vars) {
-    const mountGuard = mountGuardForScope(decl.scope);
-    if (!mountGuard) continue;
-    next = withValue(
-      next,
-      decl.id,
-      `IF ${tlaExpr(mountGuard, next)} THEN ${tlaValue(decl.initial as Value)} ELSE ${tlaValue("__modality_unmounted__")}`,
-    );
-  }
-  return [next];
 }
 
 function opaqueBranches(

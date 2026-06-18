@@ -12,6 +12,7 @@ import {
 import type { NavigationAdapter } from "modality-ts/extract/engine/spi";
 import { locationVars } from "../../src/extract/sources/router/routes.js";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -142,9 +143,9 @@ describe("extraction architecture surface", () => {
             source: [],
             guard: { kind: "lit", value: true },
             effect: {
-              kind: "navigate",
-              mode: "push",
-              to: { kind: "lit", value: "/next" },
+              kind: "assign",
+              var: "sys:route",
+              expr: { kind: "lit", value: "/next" },
             },
             reads: [],
             writes: ["sys:route"],
@@ -260,15 +261,18 @@ describe("extraction architecture surface", () => {
         },
       ],
       lowerNavigation(intent) {
+        const location = locationEffect({
+          currentVar: "sys:route",
+          historyVar: "sys:history",
+          mode: intent.mode,
+          to: intent.to ? { kind: "lit", value: intent.to } : undefined,
+          routeValues: ["/", "/next"],
+        });
         return {
           effect: {
             kind: "seq",
             effects: [
-              {
-                kind: "navigate",
-                mode: intent.mode,
-                ...(intent.to ? { to: { kind: "lit", value: intent.to } } : {}),
-              },
+              location.effect,
               {
                 kind: "assign",
                 var: "sys:next:slot:children",
@@ -279,8 +283,8 @@ describe("extraction architecture surface", () => {
               },
             ],
           },
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history", "sys:next:slot:children"],
+          reads: [...location.reads, "sys:next:slot:children"],
+          writes: [...location.writes, "sys:next:slot:children"],
           confidence: "exact",
         };
       },
@@ -311,21 +315,17 @@ describe("extraction architecture surface", () => {
       extracted.transitions.find((transition) => transition.cls === "nav"),
     ).toEqual(
       expect.objectContaining({
-        effect: {
+        effect: expect.objectContaining({
           kind: "seq",
-          effects: [
-            {
-              kind: "navigate",
-              mode: "push",
-              to: { kind: "lit", value: "/next" },
-            },
+          effects: expect.arrayContaining([
+            expect.objectContaining({ kind: "if" }),
             {
               kind: "assign",
               var: "sys:next:slot:children",
               expr: { kind: "lit", value: "/next" },
             },
-          ],
-        },
+          ]),
+        }),
         writes: ["sys:route", "sys:history", "sys:next:slot:children"],
       }),
     );

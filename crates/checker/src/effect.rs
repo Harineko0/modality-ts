@@ -1,7 +1,7 @@
-use crate::domain::{apply_numeric_assign, enumerate_domain, NumericAssignOutcome};
+use crate::domain::{apply_numeric_assign, enumerate_domain, validate_value, NumericAssignOutcome};
 use crate::expr::{eval_expr, EvalOptions};
 use crate::model::{CompiledModel, EffectIR};
-use crate::navigation;
+use crate::mount;
 use crate::state::ModelState;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -42,7 +42,7 @@ pub fn apply_effect(
             states
                 .into_iter()
                 .flat_map(|successor| {
-                    navigation::reset_local_scopes(compiled, Some(pre_state), successor, false)
+                    mount::reset_mount_locals(compiled, Some(pre_state), successor, false)
                 })
                 .collect()
         } else {
@@ -78,6 +78,15 @@ fn apply_effect_inner(
                             return Ok(vec![]);
                         }
                     }
+                }
+                crate::model::AbstractDomain::BoundedList { .. } => {
+                    if !validate_value(&decl.domain, &raw_value) {
+                        if let Some(hit) = options.on_bound_hit.as_mut() {
+                            hit(&format!("history cap saturated for {var}"));
+                        }
+                        return Ok(vec![]);
+                    }
+                    raw_value
                 }
                 _ => raw_value,
             };
@@ -191,7 +200,6 @@ fn apply_effect_inner(
                 .collect();
             Ok(vec![state.with_var(pending_idx, Value::Array(filtered))])
         }
-        EffectIR::Navigate { mode, to } => navigation::navigate(compiled, state, mode, to.as_ref(), options),
         EffectIR::Opaque { .. } => Err(EffectError::TokenExhausted(
             "unsupported opaque effect".into(),
         )),
@@ -789,7 +797,7 @@ mod tests {
     }
 
     #[test]
-    fn seq_navigate_then_slot_assign_activates_mount_local() {
+    fn seq_location_assign_then_slot_assign_activates_mount_local() {
         let (compiled, state) = next_mount_local_compiled();
         let route_idx = compiled.sys_route_index.unwrap();
         let slot_idx = compiled.var_idx("sys:next:slot:children").unwrap();
@@ -800,11 +808,11 @@ mod tests {
             &state,
             &EffectIR::Seq {
                 effects: vec![
-                    EffectIR::Navigate {
-                        mode: "push".into(),
-                        to: Some(ExprIR::Lit {
+                    EffectIR::Assign {
+                        var: "sys:route".into(),
+                        expr: ExprIR::Lit {
                             value: json!("/dashboard"),
-                        }),
+                        },
                     },
                     EffectIR::Assign {
                         var: "sys:next:slot:children".into(),
@@ -834,11 +842,11 @@ mod tests {
             &state,
             &EffectIR::Seq {
                 effects: vec![
-                    EffectIR::Navigate {
-                        mode: "push".into(),
-                        to: Some(ExprIR::Lit {
+                    EffectIR::Assign {
+                        var: "sys:route".into(),
+                        expr: ExprIR::Lit {
                             value: json!("/dashboard"),
-                        }),
+                        },
                     },
                     EffectIR::Choose {
                         var: "sys:next:slot:children".into(),

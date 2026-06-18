@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import * as ts from "typescript";
-import type { EffectIR, Transition, Value } from "modality-ts/core";
+import type { Transition, Value } from "modality-ts/core";
 import type { RouteInventory } from "modality-ts/extract/engine/spi";
 import { safeId } from "../../engine/ts/ids.js";
 import { routeMountGuard } from "../../engine/ts/routes.js";
+import { locationEffect } from "../../engine/ts/transition/navigation.js";
 
 export interface NextConfigRedirect {
   source: string;
@@ -408,12 +409,17 @@ export function configMetadata(
   return metadata;
 }
 
-function navigateReplace(target: string): EffectIR {
-  return {
-    kind: "navigate",
+function navigateReplace(
+  target: string,
+  routeValues: readonly string[],
+): ReturnType<typeof locationEffect> {
+  return locationEffect({
+    currentVar: "sys:route",
+    historyVar: "sys:history",
     mode: "replace",
     to: { kind: "lit", value: target },
-  };
+    routeValues,
+  });
 }
 
 export function synthesizeConfigRedirectTransitions(
@@ -427,6 +433,10 @@ export function synthesizeConfigRedirectTransitions(
   );
   const transitions: Transition[] = [];
 
+  const routeValues = inventory.routes
+    .filter((node) => node.kind === "page" || node.kind === "index")
+    .map((node) => node.pattern);
+
   for (const redirect of config.redirects) {
     const destination = applyBasePath(config.basePath, redirect.destination);
     const source = applyBasePath(config.basePath, redirect.source);
@@ -439,9 +449,7 @@ export function synthesizeConfigRedirectTransitions(
       label: { kind: "navigate", mode: "push", to: destination },
       source: [],
       guard: routeMountGuard(source),
-      effect: navigateReplace(destination),
-      reads: ["sys:route", "sys:history"],
-      writes: ["sys:route", "sys:history"],
+      ...navigateReplace(destination, routeValues),
       confidence: "exact",
     });
   }
@@ -459,9 +467,7 @@ export function synthesizeConfigRedirectTransitions(
       },
       source: [],
       guard: routeMountGuard(source),
-      effect: navigateReplace(destination),
-      reads: ["sys:route", "sys:history"],
-      writes: ["sys:route", "sys:history"],
+      ...navigateReplace(destination, routeValues),
       confidence: "over-approx",
     });
   }

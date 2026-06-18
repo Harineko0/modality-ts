@@ -245,8 +245,6 @@ pub enum EffectIR {
         queue: Option<String>,
         index: usize,
     },
-    #[serde(rename = "navigate")]
-    Navigate { mode: String, to: Option<ExprIR> },
     #[serde(rename = "opaque")]
     Opaque { r#ref: OpaqueRef },
 }

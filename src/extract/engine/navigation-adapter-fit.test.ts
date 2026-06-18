@@ -150,19 +150,11 @@ describe("navigation adapter interface fit", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "Settings.Link.navigate._",
-          effect: {
-            kind: "navigate",
-            mode: "push",
-            to: { kind: "lit", value: "/" },
-          },
+          effect: expect.objectContaining({ kind: "if" }),
         }),
         expect.objectContaining({
           id: "Settings.onClick.navigate._settings",
-          effect: {
-            kind: "navigate",
-            mode: "push",
-            to: { kind: "lit", value: "/settings" },
-          },
+          effect: expect.objectContaining({ kind: "if" }),
         }),
       ]),
     );
@@ -196,9 +188,8 @@ describe("navigation adapter interface fit", () => {
       pipeline.transitions.some(
         (transition) =>
           transition.cls === "nav" &&
-          transition.effect.kind === "navigate" &&
-          transition.effect.to?.kind === "lit" &&
-          transition.effect.to.value === "/",
+          transition.effect.kind === "if" &&
+          JSON.stringify(transition.effect).includes('"/"'),
       ),
     ).toBe(true);
   });
@@ -210,9 +201,9 @@ describe("navigation adapter interface fit", () => {
     };
     const result: NavigationLoweringResult = {
       effect: {
-        kind: "navigate",
-        mode: "push",
-        to: { kind: "lit", value: "/" },
+        kind: "assign",
+        var: "sys:route",
+        expr: { kind: "lit", value: "/" },
       },
       reads: [],
       writes: ["sys:route", "sys:history"],

@@ -16,7 +16,7 @@ import { timerClearSummaryFromCall } from "./timers.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { labelForEvent } from "./ui.js";
-import { effectWriteVars, PENDING_QUEUE_VAR, summarizeStatements } from "./statement-summary.js";
+import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
 export {
   effectWriteVars,
   PENDING_QUEUE_VAR,

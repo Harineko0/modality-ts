@@ -670,11 +670,7 @@ describe("runExtractCommand", () => {
     ).toEqual({ kind: "enum", values: ["/", "/checkout"] });
     expect(result.model.transitions[0]).toMatchObject({
       id: "App.onClick.navigate._checkout",
-      effect: {
-        kind: "navigate",
-        mode: "push",
-        to: { kind: "lit", value: "/checkout" },
-      },
+      effect: expect.objectContaining({ kind: "if" }),
     });
 
     const check = checkModel(result.model, [
@@ -780,9 +776,9 @@ describe("runExtractCommand", () => {
     ).toMatchObject({
       cls: "nav",
       effect: {
-        kind: "navigate",
-        mode: "replace",
-        to: { kind: "lit", value: "/links" },
+        kind: "assign",
+        var: "sys:route",
+        expr: { kind: "lit", value: "/links" },
       },
     });
   });
@@ -1788,11 +1784,7 @@ describe("runExtractCommand", () => {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            {
-              kind: "navigate",
-              mode: "push",
-              to: { kind: "lit", value: "/done" },
-            },
+            expect.objectContaining({ kind: "if" }),
           ],
         },
         writes: expect.arrayContaining([
@@ -2203,7 +2195,7 @@ describe("runExtractCommand", () => {
     ).toMatchObject({
       kind: "seq",
       effects: expect.arrayContaining([
-        { kind: "navigate", mode: "push", to: { kind: "lit", value: "/" } },
+        expect.objectContaining({ kind: "if" }),
       ]),
     });
   });

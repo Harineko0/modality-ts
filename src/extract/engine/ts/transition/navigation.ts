@@ -4,10 +4,9 @@ import { safeId, uniqueStrings } from "../ids.js";
 import {
   normalizeRouteTarget,
   routeMountGuard,
-  routeMountReads,
   routeTargetValue,
 } from "../routes.js";
-import type { EffectIR, Locator, Transition } from "modality-ts/core";
+import { effectReads, type EffectIR, type ExprIR, type Locator, type Transition, type Value } from "modality-ts/core";
 import type {
   NavigationAdapter,
   NavIntent,
@@ -16,6 +15,288 @@ import type {
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { effectWriteVars } from "./effects.js";
 import { callArgumentValue } from "./plugin-calls.js";
+
+const DEFAULT_HISTORY_CAP = 4;
+const HISTORY_UNROLL_THRESHOLD = 512;
+
+function readVar(varId: string, path?: readonly string[]): ExprIR {
+  return path ? { kind: "read", var: varId, path } : { kind: "read", var: varId };
+}
+
+function readPreVar(varId: string): ExprIR {
+  return { kind: "readPre", var: varId };
+}
+
+function litValue(value: Value): ExprIR {
+  return { kind: "lit", value };
+}
+
+function eqExpr(left: ExprIR, right: ExprIR): ExprIR {
+  return { kind: "eq", args: [left, right] };
+}
+
+function neqExpr(left: ExprIR, right: ExprIR): ExprIR {
+  return { kind: "neq", args: [left, right] };
+}
+
+function andExpr(left: ExprIR, right: ExprIR): ExprIR {
+  return { kind: "and", args: [left, right] };
+}
+
+function orExpr(left: ExprIR, right: ExprIR): ExprIR {
+  return { kind: "or", args: [left, right] };
+}
+
+function orMany(parts: readonly ExprIR[]): ExprIR {
+  if (parts.length === 0) return litValue(false);
+  return parts.slice(1).reduce(
+    (acc, next) => orExpr(acc, next),
+    parts[0] ?? litValue(false),
+  );
+}
+
+function lenCatExpr(varId: string): ExprIR {
+  return { kind: "lenCat", arg: readVar(varId) };
+}
+
+function assignEffect(varId: string, expr: ExprIR): EffectIR {
+  return { kind: "assign", var: varId, expr };
+}
+
+function ifEffect(
+  cond: ExprIR,
+  then: EffectIR,
+  elseBranch: EffectIR,
+): EffectIR {
+  return { kind: "if", cond, then, else: elseBranch };
+}
+
+function seqEffects(effects: readonly EffectIR[]): EffectIR {
+  if (effects.length === 0) {
+    return assignEffect("__modality_noop", litValue(true));
+  }
+  if (effects.length === 1) return effects[0]!;
+  return { kind: "seq", effects: [...effects] };
+}
+
+function identityAssign(varId: string): EffectIR {
+  return assignEffect(varId, readVar(varId));
+}
+
+function cartesianTuples(
+  values: readonly string[],
+  length: number,
+): string[][] {
+  if (length === 0) return [[]];
+  return cartesianTuples(values, length - 1).flatMap((prefix) =>
+    values.map((value) => [...prefix, value]),
+  );
+}
+
+function exactHistoryLengthGuard(
+  historyVar: string,
+  length: number,
+  maxLen: number,
+): ExprIR {
+  if (length === 0) return eqExpr(lenCatExpr(historyVar), litValue("0"));
+  if (length === 1) return eqExpr(lenCatExpr(historyVar), litValue("1"));
+  let guard = eqExpr(lenCatExpr(historyVar), litValue("many"));
+  guard = andExpr(
+    guard,
+    neqExpr(readVar(historyVar, [String(length - 1)]), litValue(null)),
+  );
+  if (length < maxLen) {
+    guard = andExpr(
+      guard,
+      eqExpr(readVar(historyVar, [String(length)]), litValue(null)),
+    );
+  }
+  return guard;
+}
+
+function historyTupleGuard(
+  historyVar: string,
+  tuple: readonly string[],
+  maxLen: number,
+): ExprIR {
+  let guard = exactHistoryLengthGuard(historyVar, tuple.length, maxLen);
+  for (let index = 0; index < tuple.length; index++) {
+    guard = andExpr(
+      guard,
+      eqExpr(readVar(historyVar, [String(index)]), litValue(tuple[index]!)),
+    );
+  }
+  return guard;
+}
+
+function historyShorterThanCap(historyVar: string, cap: number): ExprIR {
+  const guards: ExprIR[] = [];
+  for (let length = 0; length < cap; length++) {
+    guards.push(exactHistoryLengthGuard(historyVar, length, cap));
+  }
+  return orMany(guards);
+}
+
+function historyOverflowAssign(
+  historyVar: string,
+  cap: number,
+  routeValues: readonly string[],
+): EffectIR {
+  const filler = routeValues[0] ?? "/";
+  return assignEffect(
+    historyVar,
+    litValue(Array.from({ length: cap + 1 }, () => filler)),
+  );
+}
+
+function canUnrollHistory(
+  routeValues: readonly string[] | undefined,
+  historyCap: number,
+): routeValues is readonly string[] {
+  if (!routeValues || routeValues.length === 0) return false;
+  let states = 1;
+  for (let length = 0; length <= historyCap; length++) {
+    states += routeValues.length ** length;
+    if (states > HISTORY_UNROLL_THRESHOLD) return false;
+  }
+  return true;
+}
+
+function buildPushHistoryEffect(
+  historyVar: string,
+  currentVar: string,
+  routeValues: readonly string[],
+  historyCap: number,
+): EffectIR {
+  let effect: EffectIR = identityAssign(historyVar);
+  for (let length = historyCap - 1; length >= 0; length--) {
+    for (const tuple of cartesianTuples(routeValues, length)) {
+      for (const current of routeValues) {
+        const guard = andExpr(
+          historyTupleGuard(historyVar, tuple, historyCap),
+          eqExpr(readPreVar(currentVar), litValue(current)),
+        );
+        effect = ifEffect(
+          guard,
+          assignEffect(
+            historyVar,
+            litValue([...tuple, current]),
+          ),
+          effect,
+        );
+      }
+    }
+  }
+  return effect;
+}
+
+function buildBackHistoryEffect(
+  historyVar: string,
+  currentVar: string,
+  routeValues: readonly string[],
+  historyCap: number,
+): EffectIR {
+  let effect: EffectIR = seqEffects([
+    identityAssign(currentVar),
+    identityAssign(historyVar),
+  ]);
+  for (let length = 1; length <= historyCap; length++) {
+    for (const tuple of cartesianTuples(routeValues, length)) {
+      const previous = tuple.at(-1);
+      if (!previous) continue;
+      const guard = historyTupleGuard(historyVar, tuple, historyCap);
+      const nextHistory = tuple.slice(0, -1);
+      effect = ifEffect(
+        guard,
+        seqEffects([
+          assignEffect(currentVar, litValue(previous)),
+          assignEffect(historyVar, litValue(nextHistory)),
+        ]),
+        effect,
+      );
+    }
+  }
+  return effect;
+}
+
+export function locationEffect(args: {
+  currentVar: string;
+  historyVar?: string;
+  mode: "push" | "replace" | "back";
+  to?: ExprIR;
+  historyCap?: number;
+  routeValues?: readonly string[];
+}): {
+  effect: EffectIR;
+  reads: readonly string[];
+  writes: readonly string[];
+} {
+  const historyVar = args.historyVar ?? "sys:history";
+  const historyCap = args.historyCap ?? DEFAULT_HISTORY_CAP;
+  const currentVar = args.currentVar;
+
+  if (args.mode === "replace") {
+    if (!args.to) {
+      throw new Error("locationEffect replace requires `to`");
+    }
+    const effect = assignEffect(currentVar, args.to);
+    return {
+      effect,
+      reads: args.historyVar ? [historyVar] : [],
+      writes: [currentVar],
+    };
+  }
+
+  if (args.mode === "back") {
+    const effect = canUnrollHistory(args.routeValues, historyCap)
+      ? buildBackHistoryEffect(
+          historyVar,
+          currentVar,
+          args.routeValues,
+          historyCap,
+        )
+      : seqEffects([
+          { kind: "havoc", var: currentVar },
+          { kind: "havoc", var: historyVar },
+        ]);
+    return {
+      effect,
+      reads: [historyVar],
+      writes: [currentVar, historyVar],
+    };
+  }
+
+  if (!args.to) {
+    throw new Error("locationEffect push requires `to`");
+  }
+
+  const pushBody = canUnrollHistory(args.routeValues, historyCap)
+    ? seqEffects([
+        buildPushHistoryEffect(
+          historyVar,
+          currentVar,
+          args.routeValues,
+          historyCap,
+        ),
+        assignEffect(currentVar, args.to),
+      ])
+    : seqEffects([
+        { kind: "havoc", var: historyVar },
+        assignEffect(currentVar, args.to),
+      ]);
+
+  const effect = ifEffect(
+    historyShorterThanCap(historyVar, historyCap),
+    pushBody,
+    historyOverflowAssign(historyVar, historyCap, args.routeValues ?? ["/"]),
+  );
+
+  return {
+    effect,
+    reads: [currentVar, historyVar],
+    writes: [currentVar, historyVar],
+  };
+}
 
 export function navigationTransition(
   source: ts.SourceFile,
@@ -42,12 +323,15 @@ export function navigationTransition(
     inventory,
     routePatterns,
     {
-      effect: navigationEffect(navigation),
-      reads:
-        navigation.mode === "push" || navigation.mode === "back"
-          ? ["sys:route", "sys:history"]
-          : ["sys:history"],
-      writes: ["sys:route", "sys:history"],
+      ...locationEffect({
+        currentVar: "sys:route",
+        historyVar: "sys:history",
+        mode: navigation.mode,
+        to: navigation.to
+          ? { kind: "lit", value: navigation.to }
+          : undefined,
+        routeValues: routePatterns,
+      }),
       confidence: "exact",
     },
   );
@@ -122,13 +406,13 @@ export function navigationJsxTransition(
     inventory,
     routePatterns,
     {
-      effect: {
-        kind: "navigate",
+      ...locationEffect({
+        currentVar: "sys:route",
+        historyVar: "sys:history",
         mode: classified.mode,
-        ...(to ? { to: { kind: "lit", value: to } } : {}),
-      },
-      reads: routeMountReads(routePattern),
-      writes: ["sys:route", "sys:history"],
+        to: to ? { kind: "lit", value: to } : undefined,
+        routeValues: routePatterns,
+      }),
       confidence: "exact",
     },
   );
@@ -243,15 +527,26 @@ export function firstNavigationInStatements(
   return undefined;
 }
 
-export function navigationEffect(navigation: {
-  mode: "push" | "replace" | "back";
-  to?: string;
-}): EffectIR {
-  return {
-    kind: "navigate",
+export function navigationEffect(
+  navigation: {
+    mode: "push" | "replace" | "back";
+    to?: string;
+  },
+  options: {
+    routeValues?: readonly string[];
+    historyCap?: number;
+    currentVar?: string;
+    historyVar?: string;
+  } = {},
+): EffectIR {
+  return locationEffect({
+    currentVar: options.currentVar ?? "sys:route",
+    historyVar: options.historyVar ?? "sys:history",
     mode: navigation.mode,
-    ...(navigation.to ? { to: { kind: "lit", value: navigation.to } } : {}),
-  };
+    to: navigation.to ? { kind: "lit", value: navigation.to } : undefined,
+    historyCap: options.historyCap,
+    routeValues: options.routeValues,
+  }).effect;
 }
 
 export function applyLowerNavigation(
@@ -295,7 +590,7 @@ export function appendEffect(
   ]);
   const reads = uniqueStrings([
     ...transition.reads,
-    ...(effect.kind === "navigate" ? ["sys:route", "sys:history"] : []),
+    ...effectReads(effect),
   ]);
   return {
     ...transition,

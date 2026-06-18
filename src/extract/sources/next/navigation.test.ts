@@ -221,14 +221,10 @@ describe("lowerNextNavigation", () => {
       { inventory: appInventory, routePatterns },
     );
     expect(lowered.confidence).toBe("exact");
-    expect(lowered.effect).toEqual({
+    expect(lowered.effect).toMatchObject({
       kind: "seq",
-      effects: [
-        {
-          kind: "navigate",
-          mode: "push",
-          to: { kind: "lit", value: "/dashboard" },
-        },
+      effects: expect.arrayContaining([
+        expect.objectContaining({ kind: "if" }),
         {
           kind: "assign",
           var: "sys:next:slot:children",
@@ -239,7 +235,7 @@ describe("lowerNextNavigation", () => {
           var: "sys:next:phase:app:root",
           expr: { kind: "lit", value: "loading" },
         },
-      ],
+      ]),
     });
     expect(lowered.writes).toEqual(
       expect.arrayContaining([

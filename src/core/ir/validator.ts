@@ -74,10 +74,6 @@ export function effectWrites(effect: EffectIR): Set<string> {
       case "dequeue":
         if (effectNode.queue) writes.add(effectNode.queue);
         break;
-      case "navigate":
-        writes.add("sys:route");
-        writes.add("sys:history");
-        break;
       case "opaque":
         for (const write of effectNode.ref.declaredWrites) writes.add(write);
         break;
@@ -113,10 +109,6 @@ export function effectWritesForModel(
         if (queue) writes.add(queue.id);
         break;
       }
-      case "navigate":
-        writes.add("sys:route");
-        writes.add("sys:history");
-        break;
       case "opaque":
         for (const write of effectNode.ref.declaredWrites) writes.add(write);
         break;
@@ -605,9 +597,6 @@ function validateEffectShape(
         }
         break;
       }
-      case "navigate":
-        if (node.to) validateExprShape(errors, transitionId, node.to);
-        break;
       default:
         break;
     }
@@ -691,8 +680,6 @@ function exprReadsInEffect(effect: EffectIR): Set<string> {
       return exprReads(effect.cond);
     case "enqueue":
       return union(Object.values(effect.args).map(exprReads));
-    case "navigate":
-      return effect.to ? exprReads(effect.to) : new Set();
     case "opaque":
       return new Set(effect.ref.declaredReads);
     default:
@@ -844,20 +831,6 @@ function validateEffectTypes(
         varsById,
         "if condition",
       );
-    if (effectNode.kind === "navigate" && effectNode.to) {
-      const route = varsById.get("sys:route");
-      const toDomain = inferExprDomain(
-        errors,
-        transitionId,
-        effectNode.to,
-        varsById,
-      );
-      if (route && toDomain && !sameDomain(toDomain, route.domain)) {
-        errors.push(
-          `${transitionId}: navigate target expects ${domainFingerprint(route.domain)} but got ${domainFingerprint(toDomain)}`,
-        );
-      }
-    }
   });
 }
 
@@ -1404,8 +1377,6 @@ function effectExpressions(effect: EffectIR): ExprIR[] {
       return [effect.cond];
     case "enqueue":
       return Object.values(effect.args);
-    case "navigate":
-      return effect.to ? [effect.to] : [];
     default:
       return [];
   }

@@ -30,10 +30,39 @@ import {
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
 import { checkerOracleCorpus } from "./oracle-corpus.js";
 
 function lit(value: unknown) {
   return coreLit(value as never);
+}
+
+function pushRoute(
+  to: string,
+  routeValues: readonly string[] = ["/a", "/b"],
+  historyCap = 2,
+) {
+  return locationEffect({
+    currentVar: "sys:route",
+    historyVar: "sys:history",
+    mode: "push",
+    to: lit(to),
+    routeValues,
+    historyCap,
+  }).effect;
+}
+
+function backRoute(
+  routeValues: readonly string[] = ["/a", "/b"],
+  historyCap = 2,
+) {
+  return locationEffect({
+    currentVar: "sys:route",
+    historyVar: "sys:history",
+    mode: "back",
+    routeValues,
+    historyCap,
+  }).effect;
 }
 
 const bool = { kind: "bool" } as const;
@@ -286,7 +315,7 @@ describe("checker", () => {
           label: { kind: "navigate", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -297,7 +326,7 @@ describe("checker", () => {
           label: { kind: "navigate", to: "/a" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/a") },
+          effect: pushRoute("/a"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -1789,7 +1818,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -1797,10 +1826,10 @@ describe("checker", () => {
         {
           id: "back",
           cls: "nav",
-          label: { kind: "navigate", mode: "back" },
+          label: backRoute(),
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "back" },
+          effect: backRoute(),
           reads: ["sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -1890,7 +1919,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -2044,11 +2073,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/analytics" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/tags")] },
-          effect: {
-            kind: "navigate",
-            mode: "push",
-            to: lit("/analytics"),
-          },
+          effect: pushRoute("/analytics", ["/tags", "/analytics"], 2),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -2174,7 +2199,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: { kind: "eq", args: [read("sys:route"), lit("/a")] },
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -2284,11 +2309,7 @@ describe("checker", () => {
             kind: "eq",
             args: [read("sys:route"), lit("/links/:id")],
           },
-          effect: {
-            kind: "navigate",
-            mode: "push",
-            to: lit("/analytics"),
-          },
+          effect: pushRoute("/analytics", ["/links/:id", "/analytics"], 2),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -2347,7 +2368,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -2445,17 +2466,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
-          reads: ["sys:route", "sys:history"],
-          writes: ["sys:route", "sys:history"],
-          confidence: "exact",
-        },
-      ],
-    };
-
-    const result = checkModel(m, [
-      reachable(m, eq(readVar("sys:route"), lit("/b")), {
-        name: "pushedB",
+          effect: pushRoute("/b", ["/a", "/b"], 0),
         reads: ["sys:route"],
       }),
     ]);
@@ -2463,7 +2474,9 @@ describe("checker", () => {
       status: "vacuous-warning",
       property: "pushedB",
     });
-    expect(result.boundHits).toContain("history cap saturated at pushB");
+    expect(result.boundHits).toContain(
+      "history cap saturated for sys:history at pushB",
+    );
   });
 
   it("reports max-depth bound hits only when enabled transitions remain at the boundary", () => {
@@ -3208,11 +3221,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: { kind: "lit", value: true },
-          effect: {
-            kind: "navigate",
-            to: "/other",
-            pushHistory: true,
-          },
+          effect: pushRoute("/other", ["/", "/other"], 4),
           reads: ["sys:route"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -3316,7 +3325,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -3375,7 +3384,7 @@ describe("checker", () => {
           label: { kind: "click", text: "Navigate" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
@@ -3694,7 +3703,7 @@ describe("checker", () => {
           label: { kind: "navigate", mode: "push", to: "/b" },
           source: [],
           guard: lit(true),
-          effect: { kind: "navigate", mode: "push", to: lit("/b") },
+          effect: pushRoute("/b"),
           reads: ["sys:route", "sys:history"],
           writes: ["sys:route", "sys:history"],
           confidence: "exact",

@@ -1,7 +1,8 @@
-import type { EffectIR, Transition } from "modality-ts/core";
+import type { Transition } from "modality-ts/core";
 import type { RouteInventory } from "../spi/index.js";
 import { safeId } from "../ts/ids.js";
 import { routeMountGuard } from "../ts/routes.js";
+import { locationEffect } from "../ts/transition/navigation.js";
 
 export function synthesizeRedirectTransitions(
   inventory: RouteInventory,
@@ -23,13 +24,15 @@ export function synthesizeRedirectTransitions(
       label: { kind: "navigate", mode: "push", to: target },
       source: [],
       guard: routeMountGuard(node.pattern),
-      effect: {
-        kind: "navigate",
+      ...locationEffect({
+        currentVar: "sys:route",
+        historyVar: "sys:history",
         mode: "replace",
         to: { kind: "lit", value: target },
-      },
-      reads: ["sys:route", "sys:history"],
-      writes: ["sys:route", "sys:history"],
+        routeValues: inventory.routes
+          .filter((route) => route.kind === "page" || route.kind === "index")
+          .map((route) => route.pattern),
+      }),
       confidence: "exact",
     });
   }
@@ -37,13 +40,13 @@ export function synthesizeRedirectTransitions(
   return transitions.sort(
     (left, right) =>
       left.id.localeCompare(right.id) ||
-      navigateTarget(left.effect).localeCompare(navigateTarget(right.effect)),
+      redirectTarget(left.effect).localeCompare(redirectTarget(right.effect)),
   );
 }
 
-function navigateTarget(effect: EffectIR): string {
-  if (effect.kind === "navigate" && effect.to?.kind === "lit") {
-    return String(effect.to.value);
+function redirectTarget(effect: Transition["effect"]): string {
+  if (effect.kind === "assign" && effect.expr.kind === "lit") {
+    return String(effect.expr.value);
   }
   return "";
 }

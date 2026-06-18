@@ -11,13 +11,13 @@ import {
   jsxRouteTarget,
   normalizeRouteTarget,
   routeMountGuard,
-  routeMountReads,
   templateRoutePattern,
 } from "./routes.js";
 import {
   isNavigationJsxTag,
   navigationRouteJsxAttribute,
   applyLowerNavigation,
+  locationEffect,
 } from "./transition/navigation.js";
 import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
 import type {
@@ -212,13 +212,13 @@ function staticNavigationJsxTransitions(
         inventory,
         routePatterns,
         {
-          effect: {
-            kind: "navigate" as const,
-            mode: "push" as const,
-            to: { kind: "lit" as const, value: target.to },
-          },
-          reads: routeMountReads(routePattern),
-          writes: ["sys:route", "sys:history"],
+          ...locationEffect({
+            currentVar: "sys:route",
+            historyVar: "sys:history",
+            mode: "push",
+            to: { kind: "lit", value: target.to },
+            routeValues: routePatterns,
+          }),
           confidence: target.confidence,
         },
       );

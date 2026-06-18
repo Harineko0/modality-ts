@@ -381,7 +381,6 @@ export function effectWriteVars(effect: EffectIR): string[] {
     return [...effectWriteVars(effect.then), ...effectWriteVars(effect.else)];
   if (effect.kind === "enqueue" || effect.kind === "dequeue")
     return [effect.queue ?? PENDING_QUEUE_VAR];
-  if (effect.kind === "navigate") return ["sys:route", "sys:history"];
   return [...effect.ref.declaredWrites];
 }
 

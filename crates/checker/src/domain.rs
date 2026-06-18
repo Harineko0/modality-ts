@@ -2,7 +2,7 @@ use crate::model::{
     AbstractDomain, CompiledModel, InitialValue, Model, NumericOverflowPolicy, StateVarDecl,
     SystemVarRoleKind, UNMOUNTED,
 };
-use crate::navigation;
+use crate::mount;
 use crate::state::ModelState;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -146,11 +146,6 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
                     walk_expr(expr, reads);
                 }
             }
-            EffectIR::Navigate { to, .. } => {
-                if let Some(expr) = to {
-                    walk_expr(expr, reads);
-                }
-            }
             EffectIR::Opaque { r#ref } => {
                 for read in &r#ref.declared_reads {
                     reads.insert(read.clone());
@@ -201,10 +196,6 @@ fn effect_writes_for_model(
                     }
                     None => {}
                 }
-            }
-            EffectIR::Navigate { .. } => {
-                writes.insert("sys:route".into());
-                writes.insert("sys:history".into());
             }
             EffectIR::Opaque { r#ref } => {
                 for write in &r#ref.declared_writes {
@@ -765,7 +756,7 @@ pub fn initial_states(compiled: &CompiledModel) -> Vec<ModelState> {
     }
     states
         .into_iter()
-        .flat_map(|s| navigation::normalize_initial_route_locals(compiled, s))
+        .flat_map(|s| mount::normalize_initial_mount_locals(compiled, s))
         .collect()
 }
 

@@ -79,9 +79,9 @@ describe("synthesizeConfigRedirectTransitions", () => {
     );
     expect(transitions).toHaveLength(1);
     expect(transitions[0]?.effect).toMatchObject({
-      kind: "navigate",
-      mode: "replace",
-      to: { kind: "lit", value: "/new" },
+      kind: "assign",
+      var: "sys:route",
+      expr: { kind: "lit", value: "/new" },
     });
   });
 });

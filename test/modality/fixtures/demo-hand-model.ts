@@ -1,4 +1,5 @@
 import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
+import { locationEffect } from "../../../src/extract/engine/ts/transition/navigation.js";
 import type { ExprIR, Model, Value } from "modality-ts/core";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
@@ -122,7 +123,14 @@ export function demoHandModel(): Model {
         label: { kind: "navigate", mode: "push", to: "/admin" },
         source: [],
         guard: lit(true),
-        effect: { kind: "navigate", mode: "push", to: lit("/admin") },
+        effect: locationEffect({
+          currentVar: "sys:route",
+          historyVar: "sys:history",
+          mode: "push",
+          to: { kind: "lit", value: "/admin" },
+          routeValues: ["/", "/admin"],
+          historyCap: 1,
+        }).effect,
         reads: ["sys:route", "sys:history"],
         writes: ["sys:route", "sys:history"],
         confidence: "exact",

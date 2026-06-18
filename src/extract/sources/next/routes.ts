@@ -16,6 +16,7 @@ import {
   normalizeRouteTarget,
   routeMountScope,
 } from "../../engine/ts/routes.js";
+import { locationEffect } from "../../engine/ts/transition/navigation.js";
 import {
   nextRouteTreeToMetadata,
   type NextInterceptInfo,
@@ -207,20 +208,20 @@ export function lowerNextNavigation(
       : (["sys:history"] as const);
   const writes = new Set<string>(["sys:route", "sys:history"]);
   const warnings: string[] = [];
-  const effects: EffectIR[] = [
-    {
-      kind: "navigate",
-      mode: intent.mode,
-      ...(intent.to
-        ? {
-            to: {
-              kind: "lit",
-              value: normalizeRouteTarget(intent.to, ctx.routePatterns),
-            },
-          }
-        : {}),
-    },
-  ];
+  const routeValues = ctx.routePatterns;
+  const location = locationEffect({
+    currentVar: "sys:route",
+    historyVar: "sys:history",
+    mode: intent.mode,
+    to: intent.to
+      ? {
+          kind: "lit",
+          value: normalizeRouteTarget(intent.to, ctx.routePatterns),
+        }
+      : undefined,
+    routeValues,
+  });
+  const effects: EffectIR[] = [location.effect];
 
   if (intent.mode === "back" || !intent.to) {
     return {

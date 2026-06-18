@@ -2,95 +2,15 @@ use crate::domain::initial_values;
 use crate::expr::{eval_expr, mount_guard_holds, EvalOptions};
 use crate::model::{mount_guard_for_scope, CompiledModel, UNMOUNTED};
 use crate::state::ModelState;
-use serde_json::Value;
 
-pub fn navigate(
-    compiled: &CompiledModel,
-    state: &ModelState,
-    mode: &str,
-    to: Option<&crate::model::ExprIR>,
-    options: &mut EvalOptions,
-) -> Result<Vec<ModelState>, crate::effect::EffectError> {
-    let route_idx = compiled
-        .sys_route_index
-        .ok_or_else(|| crate::effect::EffectError::TokenExhausted("sys:route".into()))?;
-    let history_idx = compiled
-        .sys_history_index
-        .ok_or_else(|| crate::effect::EffectError::TokenExhausted("sys:history".into()))?;
-
-    let route = state.get(route_idx).clone();
-    let history = state
-        .get(history_idx)
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-
-    if mode == "back" {
-        let previous = history.last().and_then(|v| v.as_str());
-        if previous.is_none() {
-            return Ok(vec![state.clone()]);
-        }
-        let previous = previous.unwrap().to_string();
-        let mut next = state.clone();
-        next.values[route_idx] = Value::String(previous);
-        next.values[history_idx] = Value::Array(history[..history.len().saturating_sub(1)].to_vec());
-        return Ok(vec![next]);
-    }
-
-    let to_val = to.map(|expr| eval_expr(compiled, state, expr, options));
-    let to_str = to_val.as_ref().and_then(|v| v.as_str());
-    if to_str.is_none() {
-        return Ok(vec![state.clone()]);
-    }
-    let to_str = to_str.unwrap().to_string();
-
-    let history_cap = compiled
-        .var_decl("sys:history")
-        .and_then(|decl| {
-            if let crate::model::AbstractDomain::BoundedList { max_len, .. } = &decl.domain {
-                Some(*max_len)
-            } else {
-                None
-            }
-        });
-
-    if mode == "push" {
-        if let Some(cap) = history_cap {
-            if history.len() >= cap as usize {
-                if let Some(hit) = options.on_bound_hit.as_mut() {
-                    hit("history cap saturated");
-                }
-                return Ok(vec![]);
-            }
-        }
-    }
-
-    let next_history = if mode == "push" {
-        if let Value::String(r) = &route {
-            let mut h = history;
-            h.push(Value::String(r.clone()));
-            h
-        } else {
-            history
-        }
-    } else {
-        history
-    };
-
-    let mut next = state.clone();
-    next.values[route_idx] = Value::String(to_str);
-    next.values[history_idx] = Value::Array(next_history);
-    Ok(vec![next])
-}
-
-pub fn normalize_initial_route_locals(
+pub fn normalize_initial_mount_locals(
     compiled: &CompiledModel,
     state: ModelState,
 ) -> Vec<ModelState> {
-    reset_local_scopes(compiled, None, state, true)
+    reset_mount_locals(compiled, None, state, true)
 }
 
-pub fn reset_local_scopes(
+pub fn reset_mount_locals(
     compiled: &CompiledModel,
     previous_state: Option<&ModelState>,
     next_state: ModelState,
@@ -123,7 +43,7 @@ pub fn reset_local_scopes(
                 next_states.push(candidate);
             } else {
                 let mut s = candidate;
-                s.values[var_idx] = Value::String(UNMOUNTED.to_string());
+                s.values[var_idx] = serde_json::Value::String(UNMOUNTED.to_string());
                 next_states.push(s);
             }
         }
@@ -136,12 +56,12 @@ pub fn reset_local_scopes(
 mod tests {
     use super::*;
     use crate::model::{
-        AbstractDomain, Bounds, CompiledModel, EffectIR, ExprIR, InitialValue, Model, Scope,
+        AbstractDomain, Bounds, CompiledModel, ExprIR, InitialValue, Model, Scope,
         StateVarDecl, Transition,
     };
     use serde_json::json;
 
-    fn route_model(local_scope: Scope, local_initial: Value) -> CompiledModel {
+    fn route_model(local_scope: Scope, local_initial: serde_json::Value) -> CompiledModel {
         let model = Model {
             schema_version: 1,
             id: "m".into(),
@@ -154,7 +74,6 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!("/a")),
-
                     role: None,
                 },
                 StateVarDecl {
@@ -168,7 +87,6 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
-
                     role: None,
                 },
                 StateVarDecl {
@@ -182,7 +100,6 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
-
                     role: None,
                 },
                 StateVarDecl {
@@ -191,7 +108,6 @@ mod tests {
                     origin: json!("test"),
                     scope: local_scope,
                     initial: InitialValue::Single(local_initial),
-
                     role: None,
                 },
             ],
@@ -206,10 +122,10 @@ mod tests {
         CompiledModel::compile(model, false).unwrap()
     }
 
-    fn state_on_route(compiled: &CompiledModel, route: &str, panel: Value) -> ModelState {
+    fn state_on_route(compiled: &CompiledModel, route: &str, panel: serde_json::Value) -> ModelState {
         let route_idx = compiled.sys_route_index.unwrap();
         let panel_idx = compiled.var_idx("local:panel").unwrap();
-        let mut state = ModelState::new(vec![Value::Null; compiled.model.vars.len()]);
+        let mut state = ModelState::new(vec![serde_json::Value::Null; compiled.model.vars.len()]);
         state.values[route_idx] = json!(route);
         state.values[panel_idx] = panel;
         state
@@ -236,7 +152,7 @@ mod tests {
         );
         let previous = state_on_route(&compiled, "/a", json!(true));
         let next = state_on_route(&compiled, "/b", json!(true));
-        let out = reset_local_scopes(&compiled, Some(&previous), next, false);
+        let out = reset_mount_locals(&compiled, Some(&previous), next, false);
         assert_eq!(out.len(), 1);
         let panel_idx = compiled.var_idx("local:panel").unwrap();
         assert_eq!(out[0].get(panel_idx), &json!(UNMOUNTED));
@@ -263,9 +179,92 @@ mod tests {
         );
         let previous = state_on_route(&compiled, "/b", json!(UNMOUNTED));
         let next = state_on_route(&compiled, "/a", json!(UNMOUNTED));
-        let out = reset_local_scopes(&compiled, Some(&previous), next, false);
+        let out = reset_mount_locals(&compiled, Some(&previous), next, false);
         assert_eq!(out.len(), 1);
         let panel_idx = compiled.var_idx("local:panel").unwrap();
         assert_eq!(out[0].get(panel_idx), &json!(false));
+    }
+
+    #[test]
+    fn assignment_driven_location_change_resets_mount_locals() {
+        let model = Model {
+            schema_version: 1,
+            id: "m".into(),
+            vars: vec![
+                StateVarDecl {
+                    id: "sys:route".into(),
+                    domain: AbstractDomain::Enum {
+                        values: vec!["/a".into(), "/b".into()],
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!("/a")),
+                    role: None,
+                },
+                StateVarDecl {
+                    id: "sys:history".into(),
+                    domain: AbstractDomain::BoundedList {
+                        inner: Box::new(AbstractDomain::Enum {
+                            values: vec!["/a".into(), "/b".into()],
+                        }),
+                        max_len: 1,
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!([])),
+                    role: None,
+                },
+                StateVarDecl {
+                    id: "loc:current".into(),
+                    domain: AbstractDomain::Enum {
+                        values: vec!["/a".into(), "/b".into()],
+                    },
+                    origin: json!("system"),
+                    scope: Scope::Global,
+                    initial: InitialValue::Single(json!("/a")),
+                    role: None,
+                },
+                StateVarDecl {
+                    id: "local:panel".into(),
+                    domain: AbstractDomain::Bool,
+                    origin: json!("test"),
+                    scope: Scope::MountLocal {
+                        id: "slot-a".into(),
+                        when: ExprIR::Eq {
+                            args: vec![
+                                ExprIR::Read {
+                                    var: "loc:current".into(),
+                                    path: None,
+                                },
+                                ExprIR::Lit {
+                                    value: json!("/a"),
+                                },
+                            ],
+                        },
+                    },
+                    initial: InitialValue::Single(json!(true)),
+                    role: None,
+                },
+            ],
+            transitions: vec![],
+            bounds: Bounds {
+                max_depth: 1,
+                max_pending: 0,
+                max_internal_steps: 1,
+            },
+            metadata: None,
+        };
+        let compiled = CompiledModel::compile(model, false).unwrap();
+        let location_idx = compiled.var_idx("loc:current").unwrap();
+        let panel_idx = compiled.var_idx("local:panel").unwrap();
+        let mut previous =
+            ModelState::new(vec![serde_json::Value::Null; compiled.model.vars.len()]);
+        previous.values[location_idx] = json!("/a");
+        previous.values[panel_idx] = json!(true);
+        let mut next = previous.clone();
+        next.values[location_idx] = json!("/b");
+        let out = reset_mount_locals(&compiled, Some(&previous), next, false);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].get(panel_idx), &json!(UNMOUNTED));
     }
 }

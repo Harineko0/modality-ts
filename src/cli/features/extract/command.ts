@@ -1403,20 +1403,22 @@ function buildLocationLowering(
 function collectPushReplaceNavigations(
   effect: EffectIR,
 ): Array<{ mode: "push" | "replace"; to?: string }> {
-  const navigations: Array<{ mode: "push" | "replace"; to?: string }> = [];
+  const routeTargets: string[] = [];
+  let touchesHistory = false;
   const visit = (current: EffectIR): void => {
     if (
-      current.kind === "navigate" &&
-      (current.mode === "push" || current.mode === "replace")
+      (current.kind === "assign" || current.kind === "havoc") &&
+      current.var === "sys:history"
     ) {
-      const to =
-        current.to?.kind === "lit" && typeof current.to.value === "string"
-          ? current.to.value
-          : undefined;
-      navigations.push({
-        mode: current.mode,
-        ...(to !== undefined ? { to } : {}),
-      });
+      touchesHistory = true;
+    }
+    if (
+      current.kind === "assign" &&
+      current.var === "sys:route" &&
+      current.expr.kind === "lit" &&
+      typeof current.expr.value === "string"
+    ) {
+      routeTargets.push(current.expr.value);
     }
     if (current.kind === "seq") {
       for (const child of current.effects) visit(child);
@@ -1427,7 +1429,8 @@ function collectPushReplaceNavigations(
     }
   };
   visit(effect);
-  return navigations;
+  const mode = touchesHistory ? "push" : "replace";
+  return routeTargets.map((to) => ({ mode, to }));
 }
 
 function emptyExtractionCaveats(): NonNullable<
