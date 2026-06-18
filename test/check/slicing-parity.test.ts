@@ -3,6 +3,7 @@ import {
   sliceModel,
   sliceModelForCheckProperty,
 } from "modality-ts/check";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
   alwaysStep,
@@ -151,6 +152,120 @@ describe("neutral slicing parity", () => {
     );
     const sliced = sliceModelForCheckProperty(m, property).model;
     expect(sliced.vars.map((decl) => decl.id)).toContain("app:asyncQueue");
+  });
+
+  it("prunes sibling route-local vars sharing the same mount guard", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "route-local-sibling-prune",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: "/a",
+        },
+        {
+          id: "local:a.flag",
+          domain: bool,
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+        {
+          id: "local:a.noise",
+          domain: bool,
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+        {
+          id: "local:a.wide",
+          domain: bool,
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "setFlag",
+          cls: "user",
+          label: { kind: "click", text: "Set flag" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "local:a.flag", expr: lit(true) },
+          reads: ["local:a.flag"],
+          writes: ["local:a.flag"],
+          confidence: "exact",
+        },
+        {
+          id: "setNoise",
+          cls: "user",
+          label: { kind: "click", text: "Set noise" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "local:a.noise", expr: lit(true) },
+          reads: ["local:a.noise"],
+          writes: ["local:a.noise"],
+          confidence: "exact",
+        },
+        {
+          id: "submit",
+          cls: "user",
+          label: { kind: "submit", text: "Submit" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "enqueue",
+            queue: "sys:pending",
+            op: "POST",
+            continuation: "submit#1",
+            args: {},
+          },
+          reads: [],
+          writes: ["sys:pending"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(m, {
+      kind: "always",
+      name: "flagSet",
+      predicate: eq(readVar("local:a.flag"), lit(true)),
+      reads: ["local:a.flag"],
+    });
+    const varIds = sliced.vars.map((decl) => decl.id);
+    expect(varIds).toEqual(expect.arrayContaining(["local:a.flag", "sys:route"]));
+    expect(varIds).not.toEqual(
+      expect.arrayContaining(["local:a.noise", "local:a.wide", "sys:pending"]),
+    );
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "setFlag",
+    ]);
+    expect(
+      sliced.transitions.every(
+        (transition) => transition.effect.kind !== "enqueue",
+      ),
+    ).toBe(true);
+    expect(diagnostics?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:a.flag",
+        guardReads: ["sys:route"],
+        retainedBecause: ["property-read"],
+      },
+    ]);
   });
 
   it("includes mount guard vars for touched mount-local vars", () => {

@@ -1007,6 +1007,7 @@ function addMountGuardVarsForNeededMountLocals(
     if (!guard) continue;
     for (const read of exprReads(guard)) {
       if (!neededVars.has(read)) continue;
+      if (!seededMountLocals.has(read)) continue;
       const mountLocalWasNeeded = neededVars.has(decl.id);
       if (!mountLocalWasNeeded) {
         neededVars.add(decl.id);
