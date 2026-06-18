@@ -6,7 +6,7 @@ import type {
   Value,
 } from "modality-ts/core";
 import * as ts from "typescript";
-import type { RouterPlugin, StateSourcePlugin } from "../../spi/index.js";
+import type { RouterPlugin, SemanticTypeContext, StateSourcePlugin } from "../../spi/index.js";
 import type { EffectOpAliases } from "../effect-op-aliases.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
@@ -158,6 +158,7 @@ export interface HandlerExtractionContext {
   timerIndex?: { value: number };
   routerSubmitContext?: ReactRouterSubmitContext;
   effectOpAliases?: EffectOpAliases;
+  types?: SemanticTypeContext;
 }
 
 export function transitionsFromJsxAttribute(
@@ -489,6 +490,7 @@ export function transitionsFromBoundedListAttribute(
     domain: Extract<AbstractDomain, { kind: "boundedList" }>;
     itemName: string;
   },
+  types?: SemanticTypeContext,
 ): Transition[] {
   if (!node.initializer || !ts.isIdentifier(node.name)) return [];
   const expression = ts.isJsxExpression(node.initializer)
@@ -503,7 +505,7 @@ export function transitionsFromBoundedListAttribute(
     new Map([[listInfo.itemName, readListItemBinding(listInfo.varId, 0)]]),
   );
   if (!summary) return [];
-  const setterCall = setterCallFrom(summary.call, setters);
+  const setterCall = setterCallFrom(summary.call, setters, types);
   if (!setterCall) return [];
   const baseLocator = locatorForEventAttribute(node);
   const transitions: Transition[] = [];
@@ -765,6 +767,7 @@ export function transitionsFromResolvedHandler(
           mergeLocals(handlerContext.initialLocals, initialLocals) ?? new Map(),
           resetSymbols,
           valueSuffix,
+          handlerContext.types,
         );
       return transition ? [transition] : [];
     });
@@ -876,7 +879,7 @@ export function transitionsFromResolvedHandler(
     locator,
   );
   if (noop) return applyParsedGuard([noop], disabledGuard);
-  const setterCall = setterCallFrom(inlinedCall, setters);
+  const setterCall = setterCallFrom(inlinedCall, setters, handlerContext.types);
   if (!setterCall) {
     const escaped = escapedSetters(inlinedCall, setters, locals);
     if (escaped.length === 0) return [];
@@ -965,10 +968,11 @@ function singleSetterTransitionFromHandler(
   initialLocals: Map<string, BoundExpr>,
   resetSymbols: ReadonlySet<string>,
   valueSuffix?: string,
+  types?: SemanticTypeContext,
 ): Transition | undefined {
   const summary = callSummaryFromHandler(handler, setters, initialLocals);
   if (!summary) return undefined;
-  const setterCall = setterCallFrom(summary.call, setters);
+  const setterCall = setterCallFrom(summary.call, setters, types);
   if (!setterCall) return undefined;
   const assignment = setterArgumentExpr(
     setterCall.argument,
@@ -1193,6 +1197,7 @@ function handlerSummaryOptions(
     envTransitions: handlerContext.envTransitions,
     fileName,
     source,
+    types: handlerContext.types,
   };
 }
 

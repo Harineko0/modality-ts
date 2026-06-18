@@ -13,6 +13,8 @@ export interface SetterBinding {
   component: string;
   stateName: string;
   domain: AbstractDomain;
+  /** Stable checker symbol identity when semantic extraction is available. */
+  symbolKey?: string;
   initial?: Value;
   resettable?: boolean;
   fixedEffect?: EffectIR;

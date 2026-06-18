@@ -82,7 +82,10 @@ export interface SourceDecl {
 export interface WriteChannel {
   id: string;
   varId: string;
+  /** Local display / syntax-only fallback identity for the setter. */
   symbolName: string;
+  /** Stable checker symbol identity when semantic extraction is available. */
+  symbolKey?: string;
   source: SourceAnchor;
 }
 

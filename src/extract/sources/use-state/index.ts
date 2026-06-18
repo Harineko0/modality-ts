@@ -124,7 +124,12 @@ function discoverUseState(
             ...(setterName &&
             ts.isBindingElement(setterName) &&
             ts.isIdentifier(setterName.name)
-              ? { setterName: setterName.name.text }
+              ? {
+                  setterName: setterName.name.text,
+                  ...(types?.localSymbolKey?.(setterName.name)
+                    ? { setterSymbolKey: types.localSymbolKey(setterName.name) }
+                    : {}),
+                }
               : {}),
             ...(isNumericSeedUseState(node.initializer)
               ? { numericSeed: true }
@@ -152,6 +157,9 @@ function discoverUseStateWriteChannels(
         id: `${decl.id}.setter`,
         varId: decl.var.id,
         symbolName: setterName,
+        ...(typeof decl.metadata?.setterSymbolKey === "string"
+          ? { symbolKey: decl.metadata.setterSymbolKey }
+          : {}),
         source: decl.origin as SourceAnchor,
       },
     ];

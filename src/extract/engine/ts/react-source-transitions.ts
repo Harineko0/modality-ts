@@ -174,13 +174,18 @@ export function extractReactSourceTransitions(
   options: ReactSourceTransitionOptions = {},
 ): ReactSourceTransitionResult {
   const fileName = options.fileName ?? "App.tsx";
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  const source =
+    options.types?.sourceFile &&
+    options.types.sourceFile.fileName === fileName &&
+    options.types.sourceFile.text === sourceText
+      ? options.types.sourceFile
+      : ts.createSourceFile(
+          fileName,
+          sourceText,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX,
+        );
   const typeAliases = collectProjectTypeAliases(source, options);
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
@@ -280,6 +285,7 @@ export function extractReactSourceTransitions(
     }
     const fixedEffect = options.setterFixedEffects?.get(channel.symbolName);
     if (fixedEffect) binding.fixedEffect = fixedEffect;
+    if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
     bindSetter(setters, channel.symbolName, binding);
   }
   for (const [symbolName, setter] of contextBindings.setters)
@@ -466,6 +472,11 @@ export function extractReactSourceTransitions(
               component,
               stateName: stateName.name.text,
               domain,
+              ...(options.types?.localSymbolKey?.(setterName.name)
+                ? {
+                    symbolKey: options.types.localSymbolKey(setterName.name),
+                  }
+                : {}),
             });
         }
       } else {
@@ -795,6 +806,7 @@ export function extractReactSourceTransitions(
               domain: listInfo.domain,
               itemName: listInfo.itemName,
             },
+            options.types,
           );
           if (extracted.length > 0) {
             transitions.push(...tagStableIdKey(extracted, node));
@@ -860,6 +872,7 @@ export function extractReactSourceTransitions(
             nextComponent ?? "Anonymous",
           ),
           effectOpAliases,
+          types: options.types,
         },
       );
       registerTimerVars(timerRegistrations);
@@ -1033,6 +1046,7 @@ export function extractReactSourceTransitions(
           webSocketIndex: { value: webSocketCounter },
           environment: options.environment,
           transitionBindings,
+          types: options.types,
         },
       );
       registerTimerVars(timerRegistrations);

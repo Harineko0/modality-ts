@@ -1,5 +1,7 @@
 import type { EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../spi/index.js";
+import { resolveSetterBinding } from "../context.js";
 import {
   callName,
   isFlushSyncCall,
@@ -60,6 +62,7 @@ export interface StatementSummaryOptions {
   warnings?: ExtractionWarning[];
   fileName?: string;
   source?: ts.SourceFile;
+  types?: SemanticTypeContext;
 }
 
 interface StatementSummaryState {
@@ -82,6 +85,7 @@ interface StatementSummaryState {
   warnings?: ExtractionWarning[];
   fileName?: string;
   source?: ts.SourceFile;
+  types?: SemanticTypeContext;
 }
 
 interface StatementSummaryResult {
@@ -126,6 +130,7 @@ export function summarizeHandlerStatements(
     if (helper) return helper;
     const summary = summarizeSetterCall(handler.body, setters, state.locals, {
       resetSymbols: options.resetSymbols,
+      types: options.types,
     });
     return summary ? [summary] : undefined;
   }
@@ -158,6 +163,7 @@ export function summarizeStatements(
     warnings: options.warnings,
     fileName: options.fileName,
     source: options.source,
+    types: options.types,
   });
   return result?.summaries;
 }
@@ -195,7 +201,7 @@ export function summarizeSetterCall(
   locals: Map<string, BoundExpr> = new Map(),
   resetOptions: StatementSummaryResetOptions = {},
 ): EffectSummary | undefined {
-  const setterCall = setterCallFrom(call, setters);
+  const setterCall = setterCallFrom(call, setters, resetOptions.types);
   if (!setterCall) return undefined;
   return summarizeSetterWrite(setterCall, setters, locals, resetOptions);
 }
@@ -204,6 +210,7 @@ export interface StatementSummaryResetOptions {
   resetSymbols?: ReadonlySet<string>;
   snapshotReads?: boolean;
   snapshottedReads?: ReadonlySet<string>;
+  types?: SemanticTypeContext;
 }
 
 export function summarizeSetterWrite(
@@ -263,9 +270,10 @@ export function summarizeSetterWrite(
 export function setterCallFrom(
   call: ts.CallExpression,
   setters: Map<string, SetterBinding>,
+  types?: SemanticTypeContext,
 ): SetterCall | undefined {
   if (ts.isIdentifier(call.expression) && call.arguments.length === 0) {
-    const setter = setters.get(call.expression.text);
+    const setter = resolveSetterBinding(setters, call.expression, types);
     if (setter?.resettable || setter?.fixedEffect) {
       return {
         setter,
@@ -275,7 +283,7 @@ export function setterCallFrom(
     return undefined;
   }
   if (ts.isIdentifier(call.expression) && call.arguments.length === 1) {
-    const setter = setters.get(call.expression.text);
+    const setter = resolveSetterBinding(setters, call.expression, types);
     const argument = call.arguments[0];
     return setter && argument ? { setter, argument } : undefined;
   }
@@ -699,6 +707,7 @@ function summarizeStatement(
         resetSymbols: state.resetSymbols,
         snapshotReads: state.snapshotReads,
         snapshottedReads: state.snapshottedReads,
+        types: state.types,
       });
       if (summary) return { summaries: [summary], terminated: false };
     }
@@ -1043,6 +1052,7 @@ function handlerSummaryState(
     warnings: options.warnings,
     fileName: options.fileName,
     source: options.source,
+    types: options.types,
   };
 }
 
