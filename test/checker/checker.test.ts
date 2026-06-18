@@ -26,6 +26,7 @@ import {
   stepAny,
   stepChangedTo,
   stepEnqueued,
+  stepResolved,
   stepTransitionId,
   UNMOUNTED,
 } from "modality-ts/core";
@@ -3804,7 +3805,62 @@ describe("checker", () => {
     expect(sliced.transitions.map((transition) => transition.id)).not.toEqual(
       expect.arrayContaining(["navigateAway", "spamPending0", "spamPending1"]),
     );
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:pending");
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:history");
+  });
+
+  it("prunes pending queue from state-only property slices unrelated to async", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const property = always(m, eq(readVar("draft"), lit("empty")), {
+      name: "draftEmpty",
+      reads: ["draft"],
+    });
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:pending");
+  });
+
+  it("retains pending queue when step facts observe resolved or opId", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const resolvedProperty = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: { ...stepTransitionId("submit"), ...stepResolved("POST", "ok") },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      { name: "submitResolved", reads: ["draft"] },
+    );
+    const opIdProperty = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: { ...stepTransitionId("submit"), opId: "POST" },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      { name: "submitOpId", reads: ["draft"] },
+    );
+    for (const property of [resolvedProperty, opIdProperty]) {
+      const sliced = sliceModelForCheckProperty(m, property).model;
+      expect(sliced.vars.map((decl) => decl.id)).toContain("sys:pending");
+    }
+  });
+
+  it("retains pending queue when step facts observe opArgs", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: {
+          ...stepTransitionId("submit"),
+          opArgs: { body: "payload" },
+        },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      { name: "submitOpArgs", reads: ["draft"] },
+    );
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    expect(sliced.vars.map((decl) => decl.id)).toContain("sys:pending");
   });
 
   it("keeps step-fact vars out of targeted alwaysStep dependency closure", () => {

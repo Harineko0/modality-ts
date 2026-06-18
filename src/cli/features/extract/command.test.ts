@@ -1260,6 +1260,7 @@ describe("runExtractCommand", () => {
       maxPending: 2,
       maxInternalSteps: 16,
     });
+    expect(result.report.assumptions).toContain("bound:maxPending=2");
     expect(
       result.model.vars.find((decl) => decl.id === "sys:route")?.initial,
     ).toBe("/configured");

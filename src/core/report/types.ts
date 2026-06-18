@@ -93,6 +93,12 @@ export interface CheckReportDiagnostics {
       prunedTopContributors?: readonly StateSpaceContributor[];
       retainedSystemVars?: readonly string[];
       prunedSystemVars?: readonly string[];
+      pendingQueueDependencies?: readonly {
+        varId: string;
+        reasons: readonly string[];
+        opIds?: readonly string[];
+        continuations?: readonly string[];
+      }[];
       mountScopeDependencies?: readonly {
         varId: string;
         guardReads: readonly string[];
@@ -213,6 +219,7 @@ export interface ExtractionReport {
     percentExactOrOverlay: number;
   };
   warnings: readonly string[];
+  assumptions?: readonly string[];
   numericReductions?: readonly NumericReduction[];
   effectOperations?: readonly {
     opId: string;

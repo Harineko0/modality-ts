@@ -1232,6 +1232,7 @@ function createExtractionReport(
         handlers.length === 0 ? 1 : exactOrOverlay / handlers.length,
     },
     warnings,
+    assumptions: [`bound:maxPending=${model.bounds.maxPending}`],
     ...(model.metadata?.numericReductions?.entries
       ? { numericReductions: model.metadata.numericReductions.entries }
       : {}),

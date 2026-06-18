@@ -164,7 +164,7 @@ describe("runCheckCommand", () => {
       trustLedger: {
         bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
         plugins: [],
-        assumptions: [],
+        assumptions: ["bound:maxPending=1"],
         abstractions: ["payload:tokens"],
         globalTaints: [],
         staleReads: [],
@@ -277,7 +277,128 @@ describe("runCheckCommand", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expect(result.report.trustLedger.assumptions).toEqual([
+      "bound:maxPending=1",
       `sourceHash:${sourcePath}=abc123`,
+    ]);
+  });
+
+  it("includes configured pending bounds in trust ledger assumptions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+
+    const result = await runCheckCommand({
+      modelPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.report.trustLedger.assumptions).toContain(
+      "bound:maxPending=1",
+    );
+  });
+
+  it("reports pending queue dependency reasons in slice summaries", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const pendingOp = {
+      kind: "record",
+      fields: {
+        opId: { kind: "enum", values: ["POST"] },
+        continuation: { kind: "enum", values: ["submit#1"] },
+        args: { kind: "record", fields: {} },
+      },
+    };
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "pending-slice-report",
+        bounds: { maxDepth: 4, maxPending: 2, maxInternalSteps: 8 },
+        vars: [
+          {
+            id: "draft",
+            domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "empty",
+          },
+          {
+            id: "sys:pending",
+            domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "pending-queue" },
+            initial: [],
+          },
+        ],
+        transitions: [
+          {
+            id: "submit",
+            cls: "user",
+            label: { kind: "submit", text: "Submit" },
+            source: [],
+            guard: {
+              kind: "eq",
+              args: [
+                { kind: "read", var: "draft" },
+                { kind: "lit", value: "nonEmpty" },
+              ],
+            },
+            effect: {
+              kind: "seq",
+              effects: [
+                {
+                  kind: "enqueue",
+                  op: "POST",
+                  continuation: "submit#1",
+                  args: {},
+                },
+                {
+                  kind: "assign",
+                  var: "draft",
+                  expr: { kind: "lit", value: "empty" },
+                },
+              ],
+            },
+            reads: ["draft"],
+            writes: ["draft", "sys:pending"],
+            confidence: "exact",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        {
+          kind: "alwaysStep",
+          name: "submitEnqueued",
+          predicate: {
+            negate: true,
+            step: { transitionId: "submit", enqueued: "POST" },
+            post: { kind: "eq", args: [{ kind: "read", var: "draft" }, { kind: "lit", value: "nonEmpty" }] }
+          },
+          reads: ["draft"]
+        }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(
+      result.report.diagnostics?.slicing?.sliceSummaries?.[0]
+        ?.pendingQueueDependencies,
+    ).toEqual([
+      {
+        varId: "sys:pending",
+        reasons: ["enqueued"],
+        opIds: ["POST"],
+      },
     ]);
   });
 

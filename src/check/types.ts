@@ -33,6 +33,13 @@ export interface CheckProgress {
   edges: number;
 }
 
+export interface PendingQueueDependency {
+  varId: string;
+  reasons: readonly string[];
+  opIds?: readonly string[];
+  continuations?: readonly string[];
+}
+
 export interface MountScopeDependency {
   varId: string;
   guardReads: readonly string[];
@@ -54,6 +61,7 @@ export interface SliceSummary {
   prunedTopContributors?: readonly StateSpaceContributor[];
   retainedSystemVars?: readonly string[];
   prunedSystemVars?: readonly string[];
+  pendingQueueDependencies?: readonly PendingQueueDependency[];
   mountScopeDependencies?: readonly MountScopeDependency[];
 }
 

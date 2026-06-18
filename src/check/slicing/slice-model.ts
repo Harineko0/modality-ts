@@ -1,23 +1,25 @@
 import {
-  effectReads,
-  effectWrites,
+  effectReadsForModel,
   exprReads,
   mountGuardForScope,
 } from "modality-ts/core";
 import type {
+  EffectIR,
   ExprIR,
   Model,
   Property,
   StatePredicateIR,
   StepPredicateFlat,
   StepPredicateIR,
+  Transition,
 } from "modality-ts/core";
-import type { MountScopeDependency } from "../types.js";
+import type { MountScopeDependency, PendingQueueDependency } from "../types.js";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
 
 export interface SliceDiagnostics {
   mountScopeDependencies?: readonly MountScopeDependency[];
+  pendingQueueDependencies?: readonly PendingQueueDependency[];
 }
 
 interface PropertyDependencyRequest {
@@ -25,6 +27,7 @@ interface PropertyDependencyRequest {
   enabledTransitions: readonly string[];
   targetTransitionIds: readonly string[];
   stepFactVars: readonly string[];
+  pendingQueueDependencies: readonly PendingQueueDependency[];
   mode: PropertySliceMode;
   unsliceableReason?: string;
 }
@@ -65,7 +68,9 @@ export function sliceModelForCheckProperty(
       return {
         model: sliced.model,
         mode: deps.mode,
-        diagnostics: sliced.diagnostics,
+        diagnostics: mergeSliceDiagnostics(sliced.diagnostics, {
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
       };
     }
     case "targetedStep": {
@@ -77,11 +82,19 @@ export function sliceModelForCheckProperty(
       return {
         model: sliced.model,
         mode: deps.mode,
-        diagnostics: sliced.diagnostics,
+        diagnostics: mergeSliceDiagnostics(sliced.diagnostics, {
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
       };
     }
     case "full":
-      return { model, mode: deps.mode };
+      return {
+        model,
+        mode: deps.mode,
+        diagnostics: mergeSliceDiagnostics({
+          pendingQueueDependencies: deps.pendingQueueDependencies,
+        }),
+      };
   }
 }
 
@@ -89,6 +102,7 @@ export function sliceModelForProperty(
   model: Model,
   property: Pick<Property, "reads" | "enabledTransitions">,
 ): { model: Model; diagnostics?: SliceDiagnostics } {
+  const pendingQueues = pendingQueueVarIds(model);
   const forcedTransitions = new Set(property.enabledTransitions ?? []);
   const neededVars = new Set([
     ...(property.reads ?? []),
@@ -117,7 +131,14 @@ export function sliceModelForProperty(
         neededTransitions.add(transition.id);
         changed = true;
       }
-      for (const id of [...transition.reads, ...transition.writes]) {
+      for (const id of transition.reads) {
+        if (!neededVars.has(id)) {
+          neededVars.add(id);
+          changed = true;
+        }
+      }
+      for (const id of transition.writes) {
+        if (pendingQueues.has(id)) continue;
         if (!neededVars.has(id)) {
           neededVars.add(id);
           changed = true;
@@ -132,14 +153,29 @@ export function sliceModelForProperty(
       (candidate) => candidate.id === id,
     );
     if (!transition) continue;
-    for (const varId of [...transition.reads, ...transition.writes]) {
+    for (const varId of transition.reads) {
+      neededVars.add(varId);
+    }
+    for (const varId of transition.writes) {
+      if (pendingQueues.has(varId)) continue;
+      neededVars.add(varId);
+    }
+    for (const varId of effectReadsForModel(
+      model,
+      transition.effect,
+      transition.id,
+    )) {
       neededVars.add(varId);
     }
   }
 
   const vars = model.vars.filter((decl) => neededVars.has(decl.id));
-  const transitions = model.transitions.filter((transition) =>
-    neededTransitions.has(transition.id),
+  const transitions = finalizeSlicedTransitions(
+    model,
+    vars,
+    model.transitions.filter((transition) =>
+      neededTransitions.has(transition.id),
+    ),
   );
   const mountScopeDependencies = finalizeMountScopeDependencies(
     mountAcc,
@@ -162,6 +198,7 @@ export function sliceModelForTargetedStepProperty(
     "stateReads" | "enabledTransitions" | "stepFactVars"
   > = collectPropertyDependencyRequest(model, property),
 ): { model: Model; diagnostics?: SliceDiagnostics } {
+  const pendingQueues = pendingQueueVarIds(model);
   const targetIds = targetedAlwaysStepTransitionIds(property);
   const targetIdSet = new Set(targetIds);
   const dependencyVars = new Set([...deps.stateReads, ...deps.stepFactVars]);
@@ -204,6 +241,13 @@ export function sliceModelForTargetedStepProperty(
           changed = true;
         }
       }
+      for (const id of transition.writes) {
+        if (pendingQueues.has(id)) continue;
+        if (!dependencyVars.has(id)) {
+          dependencyVars.add(id);
+          changed = true;
+        }
+      }
     }
   }
 
@@ -217,7 +261,18 @@ export function sliceModelForTargetedStepProperty(
       (candidate) => candidate.id === id,
     );
     if (!transition) continue;
-    for (const varId of [...transition.reads, ...transition.writes]) {
+    for (const varId of transition.reads) {
+      executionVars.add(varId);
+    }
+    for (const varId of transition.writes) {
+      if (pendingQueues.has(varId)) continue;
+      executionVars.add(varId);
+    }
+    for (const varId of effectReadsForModel(
+      model,
+      transition.effect,
+      transition.id,
+    )) {
       executionVars.add(varId);
     }
   }
@@ -227,7 +282,18 @@ export function sliceModelForTargetedStepProperty(
       (candidate) => candidate.id === id,
     );
     if (!transition) continue;
-    for (const varId of [...transition.reads, ...transition.writes]) {
+    for (const varId of transition.reads) {
+      executionVars.add(varId);
+    }
+    for (const varId of transition.writes) {
+      if (pendingQueues.has(varId)) continue;
+      executionVars.add(varId);
+    }
+    for (const varId of effectReadsForModel(
+      model,
+      transition.effect,
+      transition.id,
+    )) {
       executionVars.add(varId);
     }
   }
@@ -239,14 +305,22 @@ export function sliceModelForTargetedStepProperty(
     }
     if (!transition.writes.some((write) => executionVars.has(write))) continue;
     neededTransitions.add(transition.id);
-    for (const varId of [...transition.reads, ...transition.writes]) {
+    for (const varId of transition.reads) {
+      executionVars.add(varId);
+    }
+    for (const varId of transition.writes) {
+      if (pendingQueues.has(varId)) continue;
       executionVars.add(varId);
     }
   }
 
   const vars = model.vars.filter((decl) => executionVars.has(decl.id));
-  const transitions = model.transitions.filter((transition) =>
-    neededTransitions.has(transition.id),
+  const transitions = finalizeSlicedTransitions(
+    model,
+    vars,
+    model.transitions.filter((transition) =>
+      neededTransitions.has(transition.id),
+    ),
   );
   const mountScopeDependencies = finalizeMountScopeDependencies(
     mountAcc,
@@ -272,6 +346,7 @@ function collectPropertyDependencyRequest(
       enabledTransitions: [],
       targetTransitionIds: [],
       stepFactVars: [],
+      pendingQueueDependencies: [],
       mode: "full",
       unsliceableReason: opaqueReason,
     };
@@ -292,6 +367,7 @@ function collectPropertyDependencyRequest(
         ),
         targetTransitionIds: [],
         stepFactVars: [],
+        pendingQueueDependencies: [],
       });
     case "reachableFrom":
       return finalizePropertyDependencyRequest(model, property, {
@@ -308,6 +384,7 @@ function collectPropertyDependencyRequest(
         ),
         targetTransitionIds: [],
         stepFactVars: [],
+        pendingQueueDependencies: [],
       });
     case "leadsToWithin":
       return finalizePropertyDependencyRequest(model, property, {
@@ -322,6 +399,10 @@ function collectPropertyDependencyRequest(
         ),
         targetTransitionIds: stepPredicateFlatTransitionIds(property.trigger),
         stepFactVars: stepFactVars(model, property.trigger),
+        pendingQueueDependencies: collectPendingQueueDependencies(
+          model,
+          property.trigger,
+        ),
       });
     case "alwaysStep":
       return collectAlwaysStepDependencyRequest(model, property);
@@ -355,6 +436,7 @@ function collectAlwaysStepDependencyRequest(
     enabledTransitions,
     targetTransitionIds,
     stepFactVars: stepFacts,
+    pendingQueueDependencies: collectPendingQueueDependencies(model, predicate),
   };
 
   if (isPositiveTargetedAlwaysStep(property)) {
@@ -386,6 +468,29 @@ function dependencySliceInput(
       deps.enabledTransitions,
       deps.targetTransitionIds,
     ),
+  };
+}
+
+function mergeSliceDiagnostics(
+  ...groups: readonly (SliceDiagnostics | undefined)[]
+): SliceDiagnostics | undefined {
+  const mountScopeDependencies = mergeMountScopeDependencies(
+    ...groups.map((group) => group?.mountScopeDependencies),
+  );
+  const pendingQueueDependencies = mergePendingQueueDependencies(
+    ...groups.map((group) => group?.pendingQueueDependencies),
+  );
+  if (
+    mountScopeDependencies.length === 0 &&
+    pendingQueueDependencies.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    ...(mountScopeDependencies.length > 0 ? { mountScopeDependencies } : {}),
+    ...(pendingQueueDependencies.length > 0
+      ? { pendingQueueDependencies }
+      : {}),
   };
 }
 
@@ -708,12 +813,7 @@ function canUseTargetedStepSlice(
 function stepFactVars(model: Model, predicate: StepPredicateIR): string[] {
   const flat = "step" in predicate ? predicate.step : predicate;
   const vars: string[] = [];
-  if (
-    flat.enqueued !== undefined ||
-    flat.resolved !== undefined ||
-    flat.opId !== undefined ||
-    flat.continuation !== undefined
-  ) {
+  if (hasPendingStepFacts(flat)) {
     const queueId = solePendingQueueVarId(model);
     if (queueId) vars.push(queueId);
   }
@@ -724,6 +824,149 @@ function stepFactVars(model: Model, predicate: StepPredicateIR): string[] {
     vars.push(flat.changedTo.var);
   }
   return vars;
+}
+
+function hasPendingStepFacts(flat: StepPredicateFlat): boolean {
+  return (
+    flat.enqueued !== undefined ||
+    flat.resolved !== undefined ||
+    flat.opId !== undefined ||
+    flat.continuation !== undefined ||
+    flat.opArgs !== undefined
+  );
+}
+
+function collectPendingQueueDependencies(
+  model: Model,
+  predicate: StepPredicateIR,
+): PendingQueueDependency[] {
+  const flat = "step" in predicate ? predicate.step : predicate;
+  const queueId = solePendingQueueVarId(model);
+  if (!queueId || !hasPendingStepFacts(flat)) return [];
+
+  const reasons: string[] = [];
+  const opIds = new Set<string>();
+  const continuations = new Set<string>();
+
+  if (flat.enqueued !== undefined) {
+    reasons.push("enqueued");
+    opIds.add(flat.enqueued);
+  }
+  if (flat.resolved !== undefined) {
+    reasons.push("resolved");
+    opIds.add(flat.resolved[0]);
+  }
+  if (flat.opId !== undefined) {
+    reasons.push("opId");
+    opIds.add(flat.opId);
+  }
+  if (flat.continuation !== undefined) {
+    reasons.push("continuation");
+    continuations.add(flat.continuation);
+  }
+  if (flat.opArgs !== undefined) {
+    reasons.push("opArgs");
+  }
+
+  return [
+    {
+      varId: queueId,
+      reasons: [...reasons].sort(),
+      ...(opIds.size > 0 ? { opIds: [...opIds].sort() } : {}),
+      ...(continuations.size > 0
+        ? { continuations: [...continuations].sort() }
+        : {}),
+    },
+  ];
+}
+
+function mergePendingQueueDependencies(
+  ...groups: readonly (readonly PendingQueueDependency[] | undefined)[]
+): readonly PendingQueueDependency[] {
+  const merged = new Map<string, PendingQueueDependency>();
+  for (const dependencies of groups) {
+    if (!dependencies) continue;
+    for (const entry of dependencies) {
+      const existing = merged.get(entry.varId);
+      if (!existing) {
+        merged.set(entry.varId, entry);
+        continue;
+      }
+      merged.set(entry.varId, {
+        varId: entry.varId,
+        reasons: [...new Set([...existing.reasons, ...entry.reasons])].sort(),
+        opIds:
+          existing.opIds || entry.opIds
+            ? [
+                ...new Set([...(existing.opIds ?? []), ...(entry.opIds ?? [])]),
+              ].sort()
+            : undefined,
+        continuations:
+          existing.continuations || entry.continuations
+            ? [
+                ...new Set([
+                  ...(existing.continuations ?? []),
+                  ...(entry.continuations ?? []),
+                ]),
+              ].sort()
+            : undefined,
+      });
+    }
+  }
+  return [...merged.values()].sort((left, right) =>
+    left.varId.localeCompare(right.varId),
+  );
+}
+
+function pendingQueueVarIds(model: Model): Set<string> {
+  return new Set(
+    model.vars
+      .filter((decl) => decl.role?.kind === "pending-queue")
+      .map((decl) => decl.id),
+  );
+}
+
+function finalizeSlicedTransitions(
+  model: Model,
+  vars: readonly Model["vars"][number][],
+  transitions: readonly Transition[],
+): Transition[] {
+  const pendingQueues = pendingQueueVarIds(model);
+  const retainsPending = vars.some((decl) => pendingQueues.has(decl.id));
+  if (retainsPending) return [...transitions];
+  return transitions.map((transition) => ({
+    ...transition,
+    effect: stripEnqueueDequeueEffects(transition.effect),
+    reads: transition.reads.filter((id) => !pendingQueues.has(id)),
+    writes: transition.writes.filter((id) => !pendingQueues.has(id)),
+  }));
+}
+
+function stripEnqueueDequeueEffects(effect: EffectIR): EffectIR {
+  switch (effect.kind) {
+    case "enqueue":
+    case "dequeue":
+      return { kind: "seq", effects: [] };
+    case "seq": {
+      const effects = effect.effects
+        .map(stripEnqueueDequeueEffects)
+        .filter((child) => child.kind !== "seq" || child.effects.length > 0);
+      if (effects.length === 0) return { kind: "seq", effects: [] };
+      if (effects.length === 1) return effects[0]!;
+      return { kind: "seq", effects };
+    }
+    case "if": {
+      return {
+        kind: "if",
+        cond: effect.cond,
+        // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+        then: stripEnqueueDequeueEffects(effect.then),
+        else: stripEnqueueDequeueEffects(effect.else),
+      };
+    }
+    default:
+      return effect;
+  }
 }
 
 function solePendingQueueVarId(model: Model): string | undefined {
@@ -857,6 +1100,7 @@ export function enabledTransitionVars(
   model: Model,
   transitionIds: Set<string>,
 ): string[] {
+  const pendingQueues = pendingQueueVarIds(model);
   const vars = new Set<string>();
   for (const id of transitionIds) {
     const transition = model.transitions.find(
@@ -864,10 +1108,18 @@ export function enabledTransitionVars(
     );
     if (!transition) continue;
     for (const read of exprReads(transition.guard)) vars.add(read);
-    for (const read of effectReads(transition.effect)) vars.add(read);
-    for (const write of effectWrites(transition.effect)) vars.add(write);
+    for (const read of effectReadsForModel(
+      model,
+      transition.effect,
+      transition.id,
+    )) {
+      vars.add(read);
+    }
     for (const read of transition.reads) vars.add(read);
-    for (const write of transition.writes) vars.add(write);
+    for (const write of transition.writes) {
+      if (pendingQueues.has(write)) continue;
+      vars.add(write);
+    }
   }
   for (const decl of model.vars) {
     if (!vars.has(decl.id)) continue;

@@ -13,6 +13,7 @@ import type {
   CheckOptions,
   CheckResult,
   MountScopeDependency,
+  PendingQueueDependency,
   SliceSummary,
 } from "./types.js";
 
@@ -81,6 +82,7 @@ function checkModelSliced(
       properties: Property[];
       index: number;
       mode: SliceSummary["mode"];
+      pendingQueueDependencies: PendingQueueDependency[];
       mountScopeDependencies: MountScopeDependency[];
     }
   >();
@@ -106,6 +108,10 @@ function checkModelSliced(
     const group = groups.get(key);
     if (group) {
       group.properties.push(property);
+      group.pendingQueueDependencies = mergePendingQueueDependencies(
+        group.pendingQueueDependencies,
+        diagnostics?.pendingQueueDependencies,
+      );
       group.mountScopeDependencies = [
         ...mergeMountScopeDependencies(
           group.mountScopeDependencies,
@@ -118,6 +124,11 @@ function checkModelSliced(
         properties: [property],
         index: sliceIndex,
         mode,
+        pendingQueueDependencies: [
+          ...mergePendingQueueDependencies(
+            diagnostics?.pendingQueueDependencies,
+          ),
+        ],
         mountScopeDependencies: [
           ...mergeMountScopeDependencies(diagnostics?.mountScopeDependencies),
         ],
@@ -166,6 +177,9 @@ function checkModelSliced(
       edges: result.stats.edges,
       depth: result.stats.depth,
       mode: group.mode,
+      ...(group.pendingQueueDependencies.length > 0
+        ? { pendingQueueDependencies: group.pendingQueueDependencies }
+        : {}),
       ...compareModelEconomics(
         model,
         group.model,
@@ -276,4 +290,40 @@ function mergeDiagnostics(
   patch: CheckDiagnostics,
 ): CheckDiagnostics {
   return { ...existing, ...patch };
+}
+
+function mergePendingQueueDependencies(
+  ...groups: readonly (readonly PendingQueueDependency[] | undefined)[]
+): PendingQueueDependency[] {
+  const merged = new Map<string, PendingQueueDependency>();
+  for (const dependencies of groups) {
+    if (!dependencies) continue;
+    for (const entry of dependencies) {
+      const existing = merged.get(entry.varId);
+      if (!existing) {
+        merged.set(entry.varId, entry);
+        continue;
+      }
+      merged.set(entry.varId, {
+        varId: entry.varId,
+        reasons: [...new Set([...existing.reasons, ...entry.reasons])].sort(),
+        opIds:
+          existing.opIds || entry.opIds
+            ? [
+                ...new Set([...(existing.opIds ?? []), ...(entry.opIds ?? [])]),
+              ].sort()
+            : undefined,
+        continuations:
+          existing.continuations || entry.continuations
+            ? [
+                ...new Set([
+                  ...(existing.continuations ?? []),
+                  ...(entry.continuations ?? []),
+                ]),
+              ].sort()
+            : undefined,
+      });
+    }
+  }
+  return [...merged.values()].sort((a, b) => a.varId.localeCompare(b.varId));
 }

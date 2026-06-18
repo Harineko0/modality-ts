@@ -62,6 +62,28 @@ export function effectReads(effect: EffectIR): Set<string> {
   return reads;
 }
 
+export function effectReadsForModel(
+  model: Model,
+  effect: EffectIR,
+  transitionId?: string,
+): Set<string> {
+  const reads = new Set<string>();
+  const errors: string[] = [];
+  walkEffect(effect, (effectNode) => {
+    for (const read of exprReadsInEffect(effectNode)) reads.add(read);
+    if (effectNode.kind === "dequeue") {
+      const queue = resolvePendingQueueVar(
+        errors,
+        model,
+        effectNode.queue,
+        transitionId ?? "model",
+      );
+      if (queue) reads.add(queue.id);
+    }
+  });
+  return reads;
+}
+
 export function effectWrites(effect: EffectIR): Set<string> {
   const writes = new Set<string>();
   walkEffect(effect, (effectNode) => {

@@ -27,6 +27,7 @@ export type {
   CheckProgress,
   CheckResult,
   MountScopeDependency,
+  PendingQueueDependency,
   PropertyVerdict,
   SliceSummary,
 } from "./types.js";
