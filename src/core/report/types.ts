@@ -46,6 +46,22 @@ export type ReportVerdictStatus =
   | "vacuous-warning"
   | "error";
 
+export type ReportPropertyConfidenceLevel =
+  | "exact"
+  | "property-preserving"
+  | "over-approx"
+  | "manual"
+  | "bounded"
+  | "heuristic";
+
+export interface ReportPropertyConfidence {
+  level: ReportPropertyConfidenceLevel;
+  reasons: readonly string[];
+  caveatIds: readonly string[];
+  affectedTransitions: readonly string[];
+  affectedVars: readonly string[];
+}
+
 export interface ReportPropertyVerdict {
   property: string;
   status: ReportVerdictStatus;
@@ -53,6 +69,7 @@ export interface ReportPropertyVerdict {
   trace?: Trace;
   replayable?: boolean;
   replayBlockedReason?: string;
+  confidence?: ReportPropertyConfidence;
 }
 
 export interface CheckReportDiagnostics {
@@ -76,6 +93,11 @@ export interface CheckReportDiagnostics {
       prunedTopContributors?: readonly StateSpaceContributor[];
       retainedSystemVars?: readonly string[];
       prunedSystemVars?: readonly string[];
+      mountScopeDependencies?: readonly {
+        varId: string;
+        guardReads: readonly string[];
+        retainedBecause: readonly string[];
+      }[];
     }[];
   };
   search?: {

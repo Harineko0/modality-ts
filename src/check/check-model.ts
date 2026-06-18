@@ -3,6 +3,7 @@ import { prunedFieldPathsForSlice } from "modality-ts/core";
 import { compareModelEconomics } from "./slicing/contributors.js";
 import {
   canSliceAllProperties,
+  mergeMountScopeDependencies,
   propertySlicingSkipReason,
   sliceModelForCheckProperty,
 } from "./slicing/slice-model.js";
@@ -11,6 +12,7 @@ import type {
   CheckDiagnostics,
   CheckOptions,
   CheckResult,
+  MountScopeDependency,
   SliceSummary,
 } from "./types.js";
 
@@ -79,12 +81,17 @@ function checkModelSliced(
       properties: Property[];
       index: number;
       mode: SliceSummary["mode"];
+      mountScopeDependencies: MountScopeDependency[];
     }
   >();
   const sliceSummaries: SliceSummary[] = [];
   let sliceIndex = 0;
   for (const property of properties) {
-    const { model: slice, mode } = sliceModelForCheckProperty(model, property);
+    const {
+      model: slice,
+      mode,
+      diagnostics,
+    } = sliceModelForCheckProperty(model, property);
     const key = [
       slice.vars
         .map((decl) => decl.id)
@@ -99,12 +106,21 @@ function checkModelSliced(
     const group = groups.get(key);
     if (group) {
       group.properties.push(property);
+      group.mountScopeDependencies = [
+        ...mergeMountScopeDependencies(
+          group.mountScopeDependencies,
+          diagnostics?.mountScopeDependencies,
+        ),
+      ];
     } else {
       groups.set(key, {
         model: slice,
         properties: [property],
         index: sliceIndex,
         mode,
+        mountScopeDependencies: [
+          ...mergeMountScopeDependencies(diagnostics?.mountScopeDependencies),
+        ],
       });
       sliceIndex += 1;
     }
@@ -156,6 +172,9 @@ function checkModelSliced(
         20,
         prunedFieldPathsForSlice(model, group.model, group.properties),
       ),
+      ...(group.mountScopeDependencies.length > 0
+        ? { mountScopeDependencies: group.mountScopeDependencies }
+        : {}),
     });
   }
 

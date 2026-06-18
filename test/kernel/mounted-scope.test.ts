@@ -1,4 +1,8 @@
-import { checkModel, sliceModel } from "modality-ts/check";
+import {
+  checkModel,
+  sliceModel,
+  sliceModelForCheckProperty,
+} from "modality-ts/check";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
@@ -219,6 +223,144 @@ describe("mounted scopes", () => {
       "local:panel",
       "sys:slotA",
     ]);
+  });
+
+  it("retains only required mount guard vars for mount-local property reads", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "mount-local-guard-slice",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        ...systemVars(),
+        {
+          id: "local:panel",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(model, {
+      kind: "reachable",
+      name: "panelReachable",
+      predicate: eq(readVar("local:panel"), lit(true)),
+      reads: ["local:panel"],
+    });
+    expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
+      "local:panel",
+      "sys:route",
+    ]);
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:history");
+    expect(diagnostics?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:panel",
+        guardReads: ["sys:route"],
+        retainedBecause: ["property-read"],
+      },
+    ]);
+  });
+
+  it("retains mount-local state when a guard var is needed", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "mount-local-guard-reverse",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        ...systemVars(),
+        {
+          id: "sys:slotA",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "local:panel",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+        {
+          id: "local:slotPanel",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: {
+            kind: "mount-local",
+            id: "slot-a",
+            when: {
+              kind: "eq",
+              args: [read("sys:slotA"), { kind: "lit", value: true }],
+            },
+          },
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(model, {
+      kind: "always",
+      name: "onRouteA",
+      predicate: eq(readVar("sys:route"), lit("/a")),
+      reads: ["sys:route"],
+    });
+    expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
+      "local:panel",
+      "sys:route",
+    ]);
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("local:slotPanel");
+    expect(diagnostics?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:panel",
+        guardReads: ["sys:route"],
+        retainedBecause: ["guard-read:sys:route"],
+      },
+    ]);
+  });
+
+  it("includes mountScopeDependencies in sliced check diagnostics", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "mount-local-check-diagnostics",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        ...systemVars(),
+        {
+          id: "local:panel",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: routeMountScope("/a"),
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    const result = checkModel(
+      model,
+      [
+        reachable(model, eq(readVar("local:panel"), lit(true)), {
+          name: "panelReachable",
+          reads: ["local:panel"],
+        }),
+      ],
+      { slicing: true },
+    );
+    const summary = result.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:panel",
+        guardReads: ["sys:route"],
+        retainedBecause: ["property-read"],
+      },
+    ]);
+    expect(summary?.retainedSystemVars).toEqual(
+      expect.arrayContaining(["sys:route"]),
+    );
+    expect(summary?.prunedSystemVars).toEqual(
+      expect.arrayContaining(["sys:history", "sys:pending"]),
+    );
   });
 
   it("resets mount-local state on activation and disables off-mount transitions", () => {

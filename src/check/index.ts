@@ -26,6 +26,7 @@ export type {
   CheckOptions,
   CheckProgress,
   CheckResult,
+  MountScopeDependency,
   PropertyVerdict,
   SliceSummary,
 } from "./types.js";
