@@ -245,6 +245,58 @@ describe("validateCacheStorageProvider", () => {
   });
 });
 
+describe("observation providers", () => {
+  it("wraps active state source plugins as observation providers", () => {
+    const registry = createBuiltinModalityRegistry();
+    expect(
+      registry.adapters.observations.map((provider) => provider.id),
+    ).toEqual(expect.arrayContaining(["use-state", "jotai", "swr", "zustand"]));
+    expect(
+      registry.plugins.some(
+        (plugin) => plugin.kind === "observation" && plugin.id === "jotai",
+      ),
+    ).toBe(true);
+  });
+
+  it("wraps active navigation as an observation provider", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "react-router-dom": "^6.0.0" },
+    });
+    expect(
+      registry.adapters.observations.some(
+        (provider) => provider.id === "router-observation",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "observation" && plugin.id === "router-observation",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects invalid observation provider shape", () => {
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [
+          {
+            id: "broken",
+            packageNames: ["broken"],
+            discover: () => [],
+            writeChannels: () => [],
+            harness: {
+              setup: () => ({}),
+              observe: undefined as never,
+            },
+          },
+        ],
+      }),
+    ).toThrow(
+      "Invalid source plugin broken: harness.setup and harness.observe are required",
+    );
+  });
+});
+
 describe("builtin module-role and effect API registration", () => {
   it("registers Next navigation, module-role, and effect API providers", () => {
     const registry = createBuiltinModalityRegistry({
@@ -292,9 +344,9 @@ describe("builtin module-role and effect API registration", () => {
     expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
       "router-module-roles",
     ]);
-    expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual([
-      "router-effect-api",
-    ]);
+    expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
+      ["router-effect-api"],
+    );
     expect(registry.plugins.map((plugin) => plugin.kind).sort()).toEqual(
       expect.arrayContaining(["navigation", "module-roles", "effect-api"]),
     );
@@ -315,9 +367,9 @@ describe("builtin module-role and effect API registration", () => {
           plugin.kind === "effect-api" && plugin.id === "router-effect-api",
       ),
     ).toBe(true);
-    expect(
-      registry.plugins.every((plugin) => plugin.kind !== "router"),
-    ).toBe(true);
+    expect(registry.plugins.every((plugin) => plugin.kind !== "router")).toBe(
+      true,
+    );
   });
 });
 

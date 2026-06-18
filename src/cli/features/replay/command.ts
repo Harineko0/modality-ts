@@ -12,6 +12,13 @@ import {
   type ObservationSource,
 } from "modality-ts/cli/harness";
 import {
+  createBuiltinModalityRegistry,
+  navigationObservationId,
+  observationSourcesFromProviders,
+  setupObservationProviders,
+  type RegistrySummary,
+} from "modality-ts/cli/registry";
+import {
   canonicalJson,
   parseTraceArtifact,
   type ModelState,
@@ -27,6 +34,7 @@ export interface ReplayCommandOptions {
   mode?: "abstract" | "action";
   harnessPath?: string;
   reportPath?: string;
+  registry?: RegistrySummary;
   now?: Date;
 }
 
@@ -88,11 +96,27 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
     const harnessModule = await loadReplayHarness(options.harnessPath);
     await ensureDocument();
     const replayHarness = await harnessModule.renderModalityReplay(trace);
+    const registry = options.registry ?? createBuiltinModalityRegistry();
+    const observations = registry.adapters.observations;
+    const observationRuntime = setupObservationProviders(
+      observations,
+      trace.steps[0]?.pre ? { initialState: trace.steps[0].pre } : {},
+    );
+    const providerSources = observationSourcesFromProviders(
+      observations,
+      observationRuntime,
+    );
+    const navigation = registry.adapters.navigation;
+    const navigationHandles = navigation
+      ? observationRuntime.handlesByProviderId.get(
+          navigationObservationId(navigation),
+        )
+      : undefined;
     const sources = [
       harnessModule.observeModalityReplay
         ? harnessModule.observeModalityReplay(replayHarness)
         : domProjectionSource(),
-      ...(replayHarness.sources ?? []),
+      ...(replayHarness.sources ?? providerSources),
     ];
     const replayOptions = {
       inputValues: replayHarness.inputValues,
@@ -102,7 +126,13 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
     };
     const actor = createDomReplayActor({
       document: replayHarness.document,
-      navigate: replayHarness.navigate,
+      navigate:
+        replayHarness.navigate ??
+        (navigation && navigationHandles
+          ? (mode, to) => {
+              navigation.harness.navigate(navigationHandles, mode, to);
+            }
+          : undefined),
       resolve: replayHarness.resolve,
       focusRevalidate: replayHarness.focusRevalidate,
       timer: replayHarness.timer,

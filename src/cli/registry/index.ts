@@ -1,10 +1,18 @@
 import type { PluginProvenance } from "modality-ts/core";
+import {
+  observationSource,
+  type ObservationSource,
+} from "modality-ts/cli/harness";
 import type {
   CacheStorageProvider,
   DomainRefinementProvider,
   EffectApiProvider,
+  HarnessCtx,
+  HarnessHooks,
   ModuleRoleAdapter,
   NavigationAdapter,
+  ObservationProvider,
+  ObservedRead,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
@@ -32,7 +40,7 @@ export interface RegistryAdaptersBundle {
   cacheStorage: readonly CacheStorageProvider[];
   stateSources: readonly StateSourcePlugin[];
   domainRefinements: readonly DomainRefinementProvider[];
-  observations: readonly [];
+  observations: readonly ObservationProvider[];
 }
 
 export interface ModalityPluginRegistry {
@@ -203,6 +211,11 @@ export function createModalityRegistry(
   for (const provider of cacheStorageProviders)
     validateCacheStorageProvider(provider);
   if (options.routerPlugin) validateRouterPlugin(options.routerPlugin);
+  const observations = buildObservationProviders(
+    options.sourcePlugins,
+    options.routerPlugin,
+  );
+  for (const provider of observations) validateObservationProvider(provider);
   const sourcePluginIds = sortedUnique(
     options.sourcePlugins.map((plugin) => plugin.id),
     "source plugin",
@@ -219,6 +232,10 @@ export function createModalityRegistry(
     cacheStorageProviders.map((provider) => provider.id),
     "cache/storage provider",
   );
+  sortedUnique(
+    observations.map((provider) => provider.id),
+    "observation provider",
+  );
   return {
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
@@ -231,7 +248,7 @@ export function createModalityRegistry(
       cacheStorage: cacheStorageProviders,
       stateSources: options.sourcePlugins,
       domainRefinements: domainRefinementProviders,
-      observations: [],
+      observations,
     },
     plugins: [
       ...options.sourcePlugins.map((plugin) => ({
@@ -272,6 +289,12 @@ export function createModalityRegistry(
         id: provider.id,
         version: provider.version ?? "unknown",
         kind: "domain-refinement" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
+      ...observations.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "observation" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
     ].sort(
@@ -426,4 +449,115 @@ function sortedUnique(values: readonly string[], kind: string): string[] {
     seen.add(value);
   }
   return [...values].sort();
+}
+
+export interface ObservationProviderRuntime {
+  readonly handlesByProviderId: ReadonlyMap<string, HarnessHooks>;
+}
+
+export function observationProviderFromStateSource(
+  plugin: StateSourcePlugin,
+): ObservationProvider {
+  return {
+    id: plugin.id,
+    version: plugin.version,
+    packageNames: plugin.packageNames,
+    kind: "observation",
+    setup: (ctx) => plugin.harness.setup(ctx),
+    observe: (varId, handles) => plugin.harness.observe(varId, handles),
+    ...(plugin.harness.witness
+      ? {
+          witness: (domain, varId) => plugin.harness.witness?.(domain, varId),
+        }
+      : {}),
+  };
+}
+
+export function observationProviderFromNavigation(
+  navigation: NavigationAdapter,
+): ObservationProvider {
+  return {
+    id: navigationObservationId(navigation),
+    version: navigation.version,
+    packageNames: navigation.packageNames,
+    kind: "observation",
+    setup: (ctx) => navigation.harness.setup(ctx),
+    observe: (varId, handles) =>
+      observeNavigationVar(navigation, varId, handles),
+  };
+}
+
+export function navigationObservationId(navigation: NavigationAdapter): string {
+  return `${navigation.id}-observation`;
+}
+
+export function setupObservationProviders(
+  providers: readonly ObservationProvider[],
+  ctx: HarnessCtx & Record<string, unknown> = {},
+): ObservationProviderRuntime {
+  const handlesByProviderId = new Map<string, HarnessHooks>();
+  for (const provider of providers) {
+    handlesByProviderId.set(provider.id, provider.setup(ctx));
+  }
+  return { handlesByProviderId };
+}
+
+export function observationSourcesFromProviders(
+  providers: readonly ObservationProvider[],
+  runtime: ObservationProviderRuntime,
+): ObservationSource[] {
+  return providers.map((provider) =>
+    observationSource(provider.id, (varId) => {
+      const handles = runtime.handlesByProviderId.get(provider.id);
+      if (!handles) return "unobservable";
+      return provider.observe(varId, handles);
+    }),
+  );
+}
+
+export function replayBlockingReasonForUnobservableVars(
+  varIds: readonly string[],
+  providers: readonly ObservationProvider[],
+): string {
+  const providerIds = providers.map((provider) => provider.id).sort();
+  return `Unobservable model vars: ${varIds.join(", ")} (tried providers: ${providerIds.join(", ")})`;
+}
+
+function buildObservationProviders(
+  sourcePlugins: readonly StateSourcePlugin[],
+  navigation?: NavigationAdapter,
+): ObservationProvider[] {
+  return [
+    ...sourcePlugins.map(observationProviderFromStateSource),
+    ...(navigation ? [observationProviderFromNavigation(navigation)] : []),
+  ];
+}
+
+function observeNavigationVar(
+  navigation: NavigationAdapter,
+  varId: string,
+  handles: HarnessHooks,
+): ObservedRead | "unobservable" {
+  if (!varId.startsWith("sys:")) return "unobservable";
+  const observe = navigation.harness.observe as (
+    handles: HarnessHooks,
+    observedVarId?: string,
+  ) => ObservedRead | "unobservable";
+  return observe(handles, varId);
+}
+
+function validateObservationProvider(provider: ObservationProvider): void {
+  validateCommonPluginShape(provider, "observation provider");
+  if (provider.kind !== "observation")
+    throw new Error(
+      `Invalid observation provider ${provider.id}: kind must be "observation"`,
+    );
+  if (typeof provider.setup !== "function")
+    throw new Error(
+      `Invalid observation provider ${provider.id}: setup must be a function`,
+    );
+  if (typeof provider.observe !== "function")
+    throw new Error(
+      `Invalid observation provider ${provider.id}: observe must be a function`,
+    );
 }

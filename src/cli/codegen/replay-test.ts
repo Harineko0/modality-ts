@@ -1,8 +1,14 @@
 import { canonicalJson, type Trace } from "modality-ts/core";
+import type { ObservationProvider } from "modality-ts/extract/engine/spi";
+import { createBuiltinModalityRegistry } from "../registry/index.js";
 
 export interface ReplayTestArtifact {
   fileName: string;
   source: string;
+}
+
+export interface ReplayHarnessCodegenOptions {
+  observations?: readonly ObservationProvider[];
 }
 
 export function generateAbstractReplayTest(
@@ -75,11 +81,15 @@ export function generateActionReplayTest(
   };
 }
 
-export function generateReplayHarness(): ReplayTestArtifact {
+export function generateReplayHarness(
+  options: ReplayHarnessCodegenOptions = {},
+): ReplayTestArtifact {
+  void options;
   return {
     fileName: "modality.replay.harness.ts",
     source: [
       `import { createDeterministicReplayAsyncController, observationSource, type DeterministicReplayAsyncController, type ModalityReplayHarness, type ObservationSource } from "modality-ts/cli/harness";`,
+      `import { createBuiltinModalityRegistry, navigationObservationId, observationSourcesFromProviders, setupObservationProviders } from "modality-ts/cli/registry";`,
       `import type { Trace } from "modality-ts/core";`,
       ``,
       `declare global {`,
@@ -88,12 +98,27 @@ export function generateReplayHarness(): ReplayTestArtifact {
       ``,
       `export async function renderModalityReplay(trace: Trace): Promise<ModalityReplayHarness> {`,
       `  const replayAsync = createDeterministicReplayAsyncController();`,
+      `  const registry = createBuiltinModalityRegistry();`,
+      `  const observations = registry.adapters.observations;`,
+      `  const observationRuntime = setupObservationProviders(`,
+      `    observations,`,
+      `    trace.steps[0]?.pre ? { initialState: trace.steps[0].pre } : {},`,
+      `  );`,
+      `  const providerSources = observationSourcesFromProviders(observations, observationRuntime);`,
+      `  const navigation = registry.adapters.navigation;`,
+      `  const navigationHandles = navigation`,
+      `    ? observationRuntime.handlesByProviderId.get(navigationObservationId(navigation))`,
+      `    : undefined;`,
       `  const appHarness = await globalThis.__modalityRenderReplayApp?.(trace, replayAsync);`,
       `  return {`,
       `    document: globalThis.document,`,
       `    resolve: replayAsync.resolve,`,
       `    replayAsync,`,
       `    stabilize: async () => Promise.resolve(),`,
+      `    sources: providerSources,`,
+      `    navigate: navigation && navigationHandles`,
+      `      ? (mode, to) => { navigation.harness.navigate(navigationHandles, mode, to); }`,
+      `      : undefined,`,
       `    ...(appHarness ?? {})`,
       `  };`,
       `}`,

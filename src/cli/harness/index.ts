@@ -264,8 +264,14 @@ export class ObservableActionReplayDriver implements ReplayDriver {
   currentState(): ModelState {
     const observed = observeModelState(this.varIds, this.sources);
     if (observed.unobservable.length > 0) {
+      const providerIds = this.sources
+        .map((source) => source.id)
+        .filter((id): id is string => typeof id === "string")
+        .sort();
       throw new Error(
-        `Unobservable model vars: ${observed.unobservable.join(", ")}`,
+        providerIds.length > 0
+          ? `Unobservable model vars: ${observed.unobservable.join(", ")} (tried providers: ${providerIds.join(", ")})`
+          : `Unobservable model vars: ${observed.unobservable.join(", ")}`,
       );
     }
     return observed.state;

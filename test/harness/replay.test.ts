@@ -14,10 +14,11 @@ import {
   TraceBackedActionReplayDriver,
   witnessValue,
 } from "modality-ts/cli/harness";
-import * as jotaiHarness from "../../src/extract/sources/jotai/harness.js";
-import * as routerHarness from "../../src/extract/sources/router/harness.js";
-import * as swrHarness from "../../src/extract/sources/swr/harness.js";
-import * as useStateHarness from "../../src/extract/sources/use-state/harness.js";
+import {
+  createBuiltinModalityRegistry,
+  observationSourcesFromProviders,
+  setupObservationProviders,
+} from "modality-ts/cli/registry";
 
 const trace: Trace = {
   steps: [
@@ -188,37 +189,34 @@ describe("replayTrace", () => {
     });
   });
 
-  it("adapts source package harness observations into one model state", () => {
+  it("combines registry observation providers into a model state", () => {
     const atom = {};
-    const jotai = jotaiHarness.setup({
+    const registry = createBuiltinModalityRegistry();
+    const runtime = setupObservationProviders(registry.adapters.observations, {
+      initialState: { "sys:route": "/admin", "sys:history": ["/"] },
       atoms: { "atom:authAtom": atom },
       store: { get: () => "user" },
-    });
-    const router = routerHarness.setup({
-      initialState: { "sys:route": "/admin", "sys:history": ["/"] },
-    });
-    const swr = swrHarness.setup({
       cache: new Map([["api_user", { id: "u1" }]]),
-    });
-    const useState = useStateHarness.setup({
       probes: { "local:App.status": () => "saving" },
+      stores: {
+        useGate: { getState: () => ({ open: true }) },
+      },
     });
+    const sources = observationSourcesFromProviders(
+      registry.adapters.observations,
+      runtime,
+    );
 
     expect(
       observeModelState(
-        ["atom:authAtom", "sys:route", "swr:api_user:data", "local:App.status"],
         [
-          observationSource("jotai", (varId) =>
-            jotaiHarness.observe(varId, jotai),
-          ),
-          observationSource("router", (varId) =>
-            routerHarness.observe(router, varId),
-          ),
-          observationSource("swr", (varId) => swrHarness.observe(varId, swr)),
-          observationSource("use-state", (varId) =>
-            useStateHarness.observe(varId, useState),
-          ),
+          "atom:authAtom",
+          "sys:route",
+          "swr:api_user:data",
+          "local:App.status",
+          "zustand:useGate.open",
         ],
+        sources,
       ),
     ).toEqual({
       state: {
@@ -226,6 +224,7 @@ describe("replayTrace", () => {
         "sys:route": "/admin",
         "swr:api_user:data": { id: "u1" },
         "local:App.status": "saving",
+        "zustand:useGate.open": true,
       },
       unobservable: [],
     });
@@ -411,6 +410,44 @@ describe("replayTrace", () => {
     });
   });
 
+  it("classifies missing observation providers as a replay-blocking reason", async () => {
+    const registry = createBuiltinModalityRegistry();
+    const runtime = setupObservationProviders(
+      registry.adapters.observations,
+      {},
+    );
+    const sources = observationSourcesFromProviders(
+      registry.adapters.observations,
+      runtime,
+    );
+    const actionTrace: Trace = {
+      steps: [
+        {
+          transitionId: "login",
+          label: {
+            kind: "click",
+            locator: { kind: "role", role: "button", name: "Login" },
+          },
+          pre: { auth: "guest" },
+          post: { auth: "user" },
+          diff: { auth: { before: "guest", after: "user" } },
+        },
+      ],
+    };
+    const verdict = await replayTrace(
+      actionTrace,
+      new ObservableActionReplayDriver({}, ["auth"], sources),
+    );
+
+    expect(verdict).toMatchObject({
+      status: "inconclusive",
+      stepsRun: 0,
+      reason: expect.stringMatching(
+        /Unobservable model vars: auth \(tried providers: /,
+      ),
+    });
+  });
+
   it("classifies missing observable source state as inconclusive", async () => {
     const actionTrace: Trace = {
       steps: [
@@ -476,7 +513,7 @@ describe("replayTrace", () => {
     expect(verdict).toEqual({
       status: "inconclusive",
       stepsRun: 1,
-      reason: "Unobservable model vars: auth",
+      reason: "Unobservable model vars: auth (tried providers: auth)",
     });
   });
 

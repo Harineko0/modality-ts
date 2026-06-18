@@ -66,6 +66,10 @@
       "types": "./dist/cli/harness/index.d.ts",
       "default": "./dist/cli/harness/index.js"
     },
+    "./cli/registry": {
+      "types": "./dist/cli/registry/index.d.ts",
+      "default": "./dist/cli/registry/index.js"
+    },
     "./cli/runtime": {
       "types": "./dist/cli/runtime/index.d.ts",
       "default": "./dist/cli/runtime/index.js"

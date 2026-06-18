@@ -81,6 +81,9 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("observeModalityReplay");
     expect(artifact.source).toContain("ModalityReplayHarness");
     expect(artifact.source).toContain("data-modality-var");
+    expect(artifact.source).toContain("createBuiltinModalityRegistry");
+    expect(artifact.source).toContain("setupObservationProviders");
+    expect(artifact.source).toContain("observationSourcesFromProviders");
     expect(artifact.source).toContain("dom-projection");
     expect(artifact.source).toContain("__modalityRenderReplayApp");
     expect(artifact.source).toContain(

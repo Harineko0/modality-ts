@@ -380,3 +380,10 @@ export interface NavigationAdapter extends ModalityAdapterBase {
     ): Promise<void> | void;
   };
 }
+
+export interface ObservationProvider extends ModalityAdapterBase {
+  kind: "observation";
+  setup(ctx: HarnessCtx): HarnessHooks;
+  observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable";
+  witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
+}

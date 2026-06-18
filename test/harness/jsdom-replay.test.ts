@@ -8,12 +8,54 @@ import {
   createDomReplayActor,
   ObservableActionReplayDriver,
   observationSource,
+  observeModelState,
   replayTrace,
 } from "modality-ts/cli/harness";
+import {
+  createBuiltinModalityRegistry,
+  observationSourcesFromProviders,
+  setupObservationProviders,
+} from "modality-ts/cli/registry";
 
 describe("jsdom replay", () => {
   afterEach(() => {
     document.body.replaceChildren();
+  });
+
+  it("observes built-in route, useState, Jotai, SWR, and Zustand vars through registry providers", () => {
+    const atom = {};
+    const registry = createBuiltinModalityRegistry();
+    const runtime = setupObservationProviders(registry.adapters.observations, {
+      initialState: { "sys:route": "/checkout" },
+      atoms: { "atom:cartAtom": atom },
+      store: { get: () => "ready" },
+      cache: new Map([["api_user", { id: "u1" }]]),
+      probes: { "local:Checkout.status": () => "idle" },
+      stores: { checkout: { getState: () => ({ open: true }) } },
+    });
+    const sources = observationSourcesFromProviders(
+      registry.adapters.observations,
+      runtime,
+    );
+
+    expect(
+      observeModelState(
+        [
+          "sys:route",
+          "local:Checkout.status",
+          "atom:cartAtom",
+          "swr:api_user:data",
+          "zustand:checkout.open",
+        ],
+        sources,
+      ).state,
+    ).toEqual({
+      "sys:route": "/checkout",
+      "local:Checkout.status": "idle",
+      "atom:cartAtom": "ready",
+      "swr:api_user:data": { id: "u1" },
+      "zustand:checkout.open": true,
+    });
   });
 
   it("reproduces a concrete DOM trace through observable state", async () => {

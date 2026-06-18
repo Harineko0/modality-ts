@@ -289,6 +289,65 @@ describe("runReplayCommand", () => {
     });
   });
 
+  it("reports unobservable vars from action replay harnesses", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-replay-unobservable-"));
+    const tracePath = join(dir, "trace.json");
+    const harnessPath = join(dir, "harness.mjs");
+    const unobservableTrace: Trace = {
+      steps: [
+        {
+          transitionId: "tick",
+          label: { kind: "click", text: "Tick" },
+          pre: { counter: 0 },
+          post: { counter: 1 },
+          diff: { counter: { before: 0, after: 1 } },
+        },
+      ],
+    };
+    await writeFile(
+      tracePath,
+      JSON.stringify(traceArtifact(unobservableTrace)),
+      "utf8",
+    );
+    await writeFile(
+      harnessPath,
+      [
+        "export async function renderModalityReplay() {",
+        "  document.body.replaceChildren();",
+        "  return { document };",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runReplayCommand({
+      tracePath,
+      harnessPath,
+      mode: "action",
+      registry: {
+        sourcePluginIds: [],
+        sourcePlugins: [],
+        domainRefinementProviders: [],
+        plugins: [],
+        adapters: {
+          moduleRoles: [],
+          effectApis: [],
+          cacheStorage: [],
+          stateSources: [],
+          domainRefinements: [],
+          observations: [],
+        },
+      },
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    expect(result.exitCode).toBe(3);
+    expect(result.report.verdict).toMatchObject({
+      status: "inconclusive",
+      reason:
+        "Unobservable model vars: counter (tried providers: dom-projection)",
+    });
+  });
+
   it("rejects malformed trace artifacts without requiring state artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-replay-"));
     const tracePath = join(dir, "trace.json");
