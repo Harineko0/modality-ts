@@ -1,4 +1,8 @@
 import type { CheckResult, PropertyVerdict } from "modality-ts/check";
+import type {
+  ReportPropertyConfidence,
+  ReportPropertyVerdict,
+} from "modality-ts/core";
 import {
   colorize,
   formatArtifactLine,
@@ -23,6 +27,7 @@ export interface HumanCheckTargetResult {
   modelPath: string;
   propsPath: string;
   check: CheckResult;
+  reportVerdicts?: readonly ReportPropertyVerdict[];
   reportPath?: string;
   artifacts: readonly ArtifactPathEntry[];
   durationMs?: number;
@@ -163,12 +168,22 @@ function renderTargetRows(
   const symbol = formatStatusSymbol(kind, options);
   const duration =
     target.durationMs !== undefined ? ` ${formatMs(target.durationMs)}` : "";
+  const confidenceByProperty = new Map(
+    (target.reportVerdicts ?? []).map((verdict) => [
+      verdict.property,
+      verdict.confidence,
+    ]),
+  );
   lines.push(` ${symbol} ${target.propsPath}${duration}`);
   lines.push(`  ${formatTargetStats(target.check)}`);
   for (const verdict of target.check.verdicts) {
     lines.push(
       `  ${formatStatusSymbol(verdictStatusKind(verdict.status), options)} ${verdict.property} ${verdict.status}`,
     );
+    const confidence = confidenceByProperty.get(verdict.property);
+    if (confidence && confidence.level !== "exact") {
+      lines.push(`    ${formatCompactConfidence(confidence)}`);
+    }
     if (verdict.status === "violated" || verdict.status === "reachable") {
       lines.push(`    trace: ${traceSteps(verdict)}`);
     }
@@ -299,3 +314,9 @@ export function renderHumanCheckTargetHeader(
 }
 
 export type CheckOutputMode = "plain" | "color";
+
+export function formatCompactConfidence(
+  confidence: ReportPropertyConfidence,
+): string {
+  return `confidence=${confidence.level} reasons:${confidence.reasons.length}`;
+}

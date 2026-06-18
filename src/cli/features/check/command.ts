@@ -14,12 +14,16 @@ import {
   type CheckReport,
   canonicalJson,
   type DomainReportEntry,
+  type ExtractionCaveat,
   type Model,
+  type NumericReduction,
   type Property,
   type PropertyArtifact,
   type PropertyExport,
   type PropertyFactory,
   parseModelArtifact,
+  type ReportPropertyConfidence,
+  type ReportPropertyConfidenceLevel,
   type StateVarDecl,
   traceArtifact,
 } from "modality-ts/core";
@@ -39,6 +43,7 @@ import {
   mergeNumericReductions,
   numericCoiDroppedReductions,
   reductionsAffectingProperty,
+  worstNumericClaim,
 } from "../../../extract/engine/ts/numeric/abstraction.js";
 import {
   generateAbstractReplayTest,
@@ -48,6 +53,7 @@ import {
 import { loadAndApplyOverlay } from "../../overlay.js";
 import {
   type ArtifactPathEntry,
+  formatCompactConfidence,
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
 } from "./output.js";
@@ -180,7 +186,7 @@ export async function runCheckCommand(
       ? 2
       : 0,
     lines: [
-      ...renderCheckResult(check),
+      ...renderCheckResult(check, report.verdicts),
       ...tracePaths.map((path) => `trace=${path}`),
       ...replayTestPaths.map((path) => `replayTest=${path}`),
       ...actionReplayTestPaths.map((path) => `actionReplayTest=${path}`),
@@ -204,7 +210,7 @@ export function createCheckReport(
     modelId: model.id,
     generatedAt: now.toISOString(),
     verdicts: check.verdicts.map((verdict) =>
-      reportVerdict(verdict, model, properties, numericReductions),
+      reportVerdict(verdict, model, check, properties, numericReductions),
     ),
     stats: check.stats,
     vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
@@ -283,10 +289,20 @@ function sourceHashAssumptions(model: Model): string[] {
     .map(([file, hash]) => `sourceHash:${file}=${hash}`);
 }
 
-export function renderCheckResult(check: CheckResult): string[] {
+export function renderCheckResult(
+  check: CheckResult,
+  reportVerdicts: readonly CheckReport["verdicts"][number][] = [],
+): string[] {
+  const confidenceByProperty = new Map(
+    reportVerdicts.map((verdict) => [verdict.property, verdict.confidence]),
+  );
   const lines: string[] = [];
   for (const verdict of check.verdicts) {
     lines.push(`${verdict.property}: ${verdict.status}`);
+    const confidence = confidenceByProperty.get(verdict.property);
+    if (confidence && confidence.level !== "exact") {
+      lines.push(`  ${formatCompactConfidence(confidence)}`);
+    }
     if (verdict.status === "violated" || verdict.status === "reachable") {
       lines.push(
         `  trace steps: ${verdict.trace.steps.map((step) => step.transitionId).join(" -> ") || "(initial)"}`,
@@ -470,46 +486,240 @@ async function transpiledTypeScriptModule(path: string): Promise<string> {
   return copyPath;
 }
 
+function partitionExtractionCaveats(model: Model) {
+  const entries = model.metadata?.extractionCaveats?.entries ?? [];
+  return partitionCaveats(entries);
+}
+
+const CONFIDENCE_LEVEL_RANK: Record<ReportPropertyConfidenceLevel, number> = {
+  exact: 0,
+  "property-preserving": 1,
+  bounded: 2,
+  "over-approx": 3,
+  manual: 4,
+  heuristic: 5,
+};
+
+function pickConfidenceLevel(
+  candidates: readonly ReportPropertyConfidenceLevel[],
+): ReportPropertyConfidenceLevel {
+  return candidates.reduce(
+    (worst, level) =>
+      CONFIDENCE_LEVEL_RANK[level] > CONFIDENCE_LEVEL_RANK[worst]
+        ? level
+        : worst,
+    "exact" as ReportPropertyConfidenceLevel,
+  );
+}
+
+function sliceVarIds(
+  model: Model,
+  property: Property | undefined,
+): Set<string> {
+  if (!property) return new Set(model.vars.map((decl) => decl.id));
+  return new Set(
+    sliceModelForProperty(model, property).vars.map((decl) => decl.id),
+  );
+}
+
+function sliceTransitionIds(
+  model: Model,
+  property: Property | undefined,
+): Set<string> {
+  if (!property) {
+    return new Set(model.transitions.map((transition) => transition.id));
+  }
+  return new Set(
+    sliceModelForProperty(model, property).transitions.map(
+      (transition) => transition.id,
+    ),
+  );
+}
+
+function relevantModelSlackCaveats(
+  caveats: readonly ExtractionCaveat[],
+  sliceVars: ReadonlySet<string>,
+): ExtractionCaveat[] {
+  return caveats.filter((caveat) => sliceVars.has(caveat.id));
+}
+
+function relevantBoundHits(
+  boundHits: readonly string[],
+  sliceTransitions: ReadonlySet<string>,
+): string[] {
+  return boundHits.filter((hit) =>
+    [...sliceTransitions].some((transitionId) => hit.includes(transitionId)),
+  );
+}
+
+export function propertyConfidence(
+  model: Model,
+  check: CheckResult,
+  property: Property | undefined,
+  numericReductions: readonly NumericReduction[],
+): ReportPropertyConfidence | undefined {
+  const sliceVars = sliceVarIds(model, property);
+  const sliceTransitions = sliceTransitionIds(model, property);
+  const caveats = partitionExtractionCaveats(model);
+  const relevantReductions = reductionsAffectingProperty(
+    numericReductions,
+    property?.reads,
+  );
+  const manualTransitions = model.transitions
+    .filter(
+      (transition) =>
+        transition.confidence === "manual" &&
+        sliceTransitions.has(transition.id),
+    )
+    .map((transition) => transition.id);
+  const overApproxTransitions = model.transitions
+    .filter(
+      (transition) =>
+        transition.confidence === "over-approx" &&
+        sliceTransitions.has(transition.id),
+    )
+    .map((transition) => transition.id);
+  const modelSlack = relevantModelSlackCaveats(caveats.modelSlack, sliceVars);
+  const boundHits = relevantBoundHits(check.boundHits, sliceTransitions);
+  const searchLimited = check.diagnostics?.limits !== undefined;
+
+  const reasons: string[] = [];
+  const levelCandidates: ReportPropertyConfidenceLevel[] = [];
+
+  const worstReductionClaim = worstNumericClaim(relevantReductions);
+  if (worstReductionClaim === "heuristic") {
+    levelCandidates.push("heuristic");
+    reasons.push(
+      `Heuristic numeric reduction may hide relevant distinctions (${relevantReductions.length} reduction(s))`,
+    );
+  } else if (worstReductionClaim === "property-preserving") {
+    levelCandidates.push("property-preserving");
+    reasons.push(
+      `Property-preserving numeric reduction (${relevantReductions.length} reduction(s))`,
+    );
+  }
+
+  if (manualTransitions.length > 0) {
+    levelCandidates.push("manual");
+    reasons.push(
+      `Manual transition(s) retained in property slice: ${manualTransitions.join(", ")}`,
+    );
+  }
+
+  if (overApproxTransitions.length > 0) {
+    levelCandidates.push("over-approx");
+    reasons.push(
+      `Over-approx transition(s) retained in property slice: ${overApproxTransitions.join(", ")}`,
+    );
+  }
+
+  if (modelSlack.length > 0) {
+    levelCandidates.push("over-approx");
+    for (const caveat of modelSlack) {
+      reasons.push(`Model slack: ${caveat.reason}`);
+    }
+  }
+
+  if (boundHits.length > 0 || searchLimited) {
+    levelCandidates.push("bounded");
+    if (searchLimited) {
+      reasons.push(
+        `Search limit reached: ${check.diagnostics?.limits?.reason ?? "unknown"}`,
+      );
+    }
+    for (const hit of boundHits) {
+      reasons.push(`Bound hit: ${hit}`);
+    }
+  }
+
+  const level = pickConfidenceLevel(levelCandidates);
+  if (level === "exact") return undefined;
+
+  const affectedVars = [
+    ...new Set([
+      ...relevantReductions.map((reduction) => reduction.varId),
+      ...modelSlack.map((caveat) => caveat.id),
+    ]),
+  ].sort();
+
+  return {
+    level,
+    reasons,
+    caveatIds: modelSlack.map((caveat) => caveat.id).sort(),
+    affectedTransitions: [
+      ...new Set([...manualTransitions, ...overApproxTransitions]),
+    ].sort(),
+    affectedVars,
+  };
+}
+
+function attachConfidence(
+  verdict: CheckReport["verdicts"][number],
+  confidence: ReportPropertyConfidence | undefined,
+): CheckReport["verdicts"][number] {
+  if (!confidence) return verdict;
+  return { ...verdict, confidence };
+}
+
 function reportVerdict(
   verdict: PropertyVerdict,
-  _model: Model,
+  model: Model,
+  check: CheckResult,
   properties: readonly Property[],
-  numericReductions: readonly import("modality-ts/core").NumericReduction[],
+  numericReductions: readonly NumericReduction[],
 ): CheckReport["verdicts"][number] {
+  const property = properties.find((entry) => entry.name === verdict.property);
+  const confidence = propertyConfidence(
+    model,
+    check,
+    property,
+    numericReductions,
+  );
   if (verdict.status === "violated" || verdict.status === "reachable") {
-    return {
-      property: verdict.property,
-      status: verdict.status,
-      trace: verdict.trace,
-      ...(verdict.replayable === false
-        ? {
-            replayable: false,
-            replayBlockedReason: verdict.replayBlockedReason,
-          }
-        : {}),
-    };
+    return attachConfidence(
+      {
+        property: verdict.property,
+        status: verdict.status,
+        trace: verdict.trace,
+        ...(verdict.replayable === false
+          ? {
+              replayable: false,
+              replayBlockedReason: verdict.replayBlockedReason,
+            }
+          : {}),
+      },
+      confidence,
+    );
   }
   if (verdict.status === "error" || verdict.status === "vacuous-warning") {
-    return {
-      property: verdict.property,
-      status: verdict.status,
-      message: verdict.message,
-    };
+    return attachConfidence(
+      {
+        property: verdict.property,
+        status: verdict.status,
+        message: verdict.message,
+      },
+      confidence,
+    );
   }
-  const property = properties.find((entry) => entry.name === verdict.property);
   const relevant = reductionsAffectingProperty(
     numericReductions,
     property?.reads,
   );
   const downgraded = downgradeVerdictForReductions(verdict.status, relevant);
   if (downgraded.status === "vacuous-warning") {
-    return {
-      property: verdict.property,
-      status: downgraded.status,
-      message: downgraded.message,
-    };
+    return attachConfidence(
+      {
+        property: verdict.property,
+        status: downgraded.status,
+        message: downgraded.message,
+      },
+      confidence,
+    );
   }
-  return { property: verdict.property, status: verdict.status };
+  return attachConfidence(
+    { property: verdict.property, status: verdict.status },
+    confidence,
+  );
 }
 
 async function writeTraceArtifacts(
@@ -589,9 +799,4 @@ async function writeActionReplayTestArtifacts(
     onPath?.("actionReplayTest", path);
   }
   return paths;
-}
-
-function partitionExtractionCaveats(model: Model) {
-  const entries = model.metadata?.extractionCaveats?.entries ?? [];
-  return partitionCaveats(entries);
 }
