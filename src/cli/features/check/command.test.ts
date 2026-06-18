@@ -170,6 +170,7 @@ describe("runCheckCommand", () => {
         staleReads: [],
         unhandledRejections: [],
         unextractableHandlers: [],
+        modelSlack: [],
         domains: [
           { varId: "flag", domainKind: "bool", provenance: "system" },
           { varId: "payload", domainKind: "tokens", provenance: "system" },
@@ -547,6 +548,12 @@ describe("runCheckCommand", () => {
       reason: "Unextractable handler App.onClick",
       severity: "over-approx" as const,
     };
+    const modelSlack = {
+      kind: "model-slack" as const,
+      id: "local:App.payload",
+      reason: "Wide product domain (257 values) may enlarge search",
+      severity: "over-approx" as const,
+    };
     await writeFile(
       modelPath,
       JSON.stringify({
@@ -558,6 +565,7 @@ describe("runCheckCommand", () => {
               staleRead,
               unhandledRejection,
               unextractableHandler,
+              modelSlack,
             ],
           },
         },
@@ -577,6 +585,7 @@ describe("runCheckCommand", () => {
     expect(result.report.trustLedger.unextractableHandlers).toEqual([
       unextractableHandler,
     ]);
+    expect(result.report.trustLedger.modelSlack).toEqual([modelSlack]);
   });
 
   it("renders numeric reduction metadata and downgrades heuristic claims", async () => {

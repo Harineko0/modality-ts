@@ -1244,6 +1244,7 @@ function createExtractionReport(
     globalTaints: partitioned.globalTaints,
     staleReads: partitioned.staleReads,
     unhandledRejections: partitioned.unhandledRejections,
+    modelSlack: partitioned.modelSlack,
     domains: model.vars.map((decl) => ({
       varId: decl.id,
       domainKind: decl.domain.kind,

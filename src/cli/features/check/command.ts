@@ -208,35 +208,37 @@ export function createCheckReport(
     stats: check.stats,
     vacuityWarnings: [...check.vacuityWarnings, ...overlayWarnings].sort(),
     ...(check.diagnostics ? { diagnostics: check.diagnostics } : {}),
-    trustLedger: {
-      bounds: model.bounds,
-      plugins: model.metadata?.plugins ?? [],
-      assumptions: sourceHashAssumptions(model),
-      abstractions: model.vars
-        .filter(
-          (decl) =>
-            decl.domain.kind === "tokens" || decl.domain.kind === "lengthCat",
-        )
-        .map((decl) => `${decl.id}:${decl.domain.kind}`),
-      globalTaints: partitionExtractionCaveats(model).globalTaints,
-      staleReads: partitionExtractionCaveats(model).staleReads,
-      unhandledRejections:
-        partitionExtractionCaveats(model).unhandledRejections,
-      unextractableHandlers:
-        partitionExtractionCaveats(model).unextractableHandlers,
-      domains: model.vars
-        .map((decl) => domainReportEntry(model, decl))
-        .sort((left, right) => left.varId.localeCompare(right.varId)),
-      manualTransitions: model.transitions
-        .filter((transition) => transition.confidence === "manual")
-        .map((transition) => transition.id),
-      overApproxTransitions: model.transitions
-        .filter((transition) => transition.confidence === "over-approx")
-        .map((transition) => transition.id),
-      boundHits: check.boundHits,
-      ignoredVars,
-      numericReductions,
-    },
+    trustLedger: (() => {
+      const caveats = partitionExtractionCaveats(model);
+      return {
+        bounds: model.bounds,
+        plugins: model.metadata?.plugins ?? [],
+        assumptions: sourceHashAssumptions(model),
+        abstractions: model.vars
+          .filter(
+            (decl) =>
+              decl.domain.kind === "tokens" || decl.domain.kind === "lengthCat",
+          )
+          .map((decl) => `${decl.id}:${decl.domain.kind}`),
+        globalTaints: caveats.globalTaints,
+        staleReads: caveats.staleReads,
+        unhandledRejections: caveats.unhandledRejections,
+        unextractableHandlers: caveats.unextractableHandlers,
+        modelSlack: caveats.modelSlack,
+        domains: model.vars
+          .map((decl) => domainReportEntry(model, decl))
+          .sort((left, right) => left.varId.localeCompare(right.varId)),
+        manualTransitions: model.transitions
+          .filter((transition) => transition.confidence === "manual")
+          .map((transition) => transition.id),
+        overApproxTransitions: model.transitions
+          .filter((transition) => transition.confidence === "over-approx")
+          .map((transition) => transition.id),
+        boundHits: check.boundHits,
+        ignoredVars,
+        numericReductions,
+      };
+    })(),
   };
 }
 

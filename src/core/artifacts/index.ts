@@ -80,6 +80,8 @@ export function parseCheckReportArtifact(json: string): CheckReport {
     throw new Error("check report trustLedger missing unhandledRejections");
   if (!Array.isArray(value.trustLedger.unextractableHandlers))
     throw new Error("check report trustLedger missing unextractableHandlers");
+  if (!Array.isArray(value.trustLedger.modelSlack))
+    throw new Error("check report trustLedger missing modelSlack");
   if (!Array.isArray(value.verdicts))
     throw new Error("check report artifact missing verdicts");
   if (!isRecord(value.stats))
@@ -113,6 +115,8 @@ export function parseExtractionReportArtifact(json: string): ExtractionReport {
     throw new Error("extraction report artifact missing staleReads");
   if (!Array.isArray(value.unhandledRejections))
     throw new Error("extraction report artifact missing unhandledRejections");
+  if (!Array.isArray(value.modelSlack))
+    throw new Error("extraction report artifact missing modelSlack");
   if (!Array.isArray(value.domains))
     throw new Error("extraction report artifact missing domains");
   if (!isRecord(value.coverage))
