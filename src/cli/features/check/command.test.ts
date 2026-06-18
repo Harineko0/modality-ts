@@ -1385,3 +1385,211 @@ describe("runCheckCommand streaming output", () => {
     ).toBe(true);
   });
 });
+
+describe("property confidence reporting", () => {
+  it("includes confidence for over-approx transitions retained in the slice", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "over-approx",
+      affectedTransitions: ["setFlag"],
+    });
+    expect(
+      result.report.verdicts[0]?.confidence?.reasons.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("includes confidence for manual transitions retained in the slice", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const overlayPath = join(dir, "overlay.json");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+    await writeFile(
+      overlayPath,
+      JSON.stringify({
+        transitions: [
+          {
+            id: "setFlag",
+            cls: "user",
+            label: { kind: "click", text: "Manual" },
+            source: [],
+            guard: { kind: "lit", value: true },
+            effect: {
+              kind: "assign",
+              var: "flag",
+              expr: { kind: "lit", value: false },
+            },
+            reads: ["flag"],
+            writes: ["flag"],
+            confidence: "manual",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath, overlayPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "manual",
+      affectedTransitions: ["setFlag"],
+    });
+  });
+
+  it("includes confidence for relevant model-slack caveats", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const modelSlack = {
+      kind: "model-slack" as const,
+      id: "payload",
+      reason: "Wide product domain (257 values) may enlarge search",
+      severity: "over-approx" as const,
+    };
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        metadata: {
+          extractionCaveats: {
+            entries: [modelSlack],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "payloadKnown", predicate: { kind: "eq", args: [{ kind: "read", var: "payload" }, { kind: "lit", value: "tok1" }] }, reads: ["payload"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]?.confidence).toMatchObject({
+      level: "over-approx",
+      caveatIds: ["payload"],
+      affectedVars: ["payload"],
+    });
+    expect(result.report.verdicts[0]?.confidence?.reasons).toEqual(
+      expect.arrayContaining([
+        "Model slack: Wide product domain (257 values) may enlarge search",
+      ]),
+    );
+  });
+
+  it("preserves numeric reduction downgrade and includes confidence reasons", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        ...model(),
+        vars: [
+          ...model().vars,
+          {
+            id: "amount",
+            domain: { kind: "enum", values: ["validSmall", "aboveMax"] },
+            origin: "system",
+            scope: { kind: "global" },
+            initial: "validSmall",
+          },
+        ],
+        metadata: {
+          numericReductions: {
+            entries: [
+              {
+                varId: "amount",
+                kind: "input-class",
+                claim: "heuristic",
+                reason: "User-entered numeric input modeled as classes",
+              },
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+  {
+    kind: "always",
+    name: "amountKnown",
+    predicate: { kind: "eq", args: [{ kind: "read", var: "amount" }, { kind: "lit", value: "validSmall" }] },
+    reads: ["amount"],
+  },
+];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    expect(result.report.verdicts[0]).toMatchObject({
+      property: "amountKnown",
+      status: "vacuous-warning",
+      confidence: {
+        level: "heuristic",
+        affectedVars: ["amount"],
+      },
+    });
+    expect(
+      result.report.verdicts[0]?.confidence?.reasons.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows compact non-exact confidence in human output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagStartsFalseOnly", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "props.ts",
+          check: result.check,
+          reportVerdicts: result.report.verdicts,
+          artifacts: [],
+          durationMs: 5,
+        },
+      ],
+      {
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+        totalDurationMs: 12,
+      },
+    );
+    expect(lines.some((line) => line.includes("confidence=over-approx"))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes("reasons:"))).toBe(true);
+  });
+});
