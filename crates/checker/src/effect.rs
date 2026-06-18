@@ -128,10 +128,10 @@ fn apply_effect_inner(
             let mut states = vec![state.clone()];
             let saved_args = options.resolving_op_args.take();
             for effect in effects {
-                if let EffectIR::Dequeue { index } = effect {
+                if let EffectIR::Dequeue { queue, index } = effect {
                     if let Some(s) = states.first() {
                         if let Some(args) =
-                            pending_op_args_at(compiled, s, *index)
+                            pending_op_args_at(compiled, s, queue, *index)
                         {
                             options.resolving_op_args = Some(args);
                         }
@@ -148,13 +148,14 @@ fn apply_effect_inner(
             Ok(states)
         }
         EffectIR::Enqueue {
+            queue,
             op,
             continuation,
             args,
         } => {
             let pending_idx = compiled
-                .sys_pending_index
-                .ok_or_else(|| EffectError::TokenExhausted("sys:pending".into()))?;
+                .pending_queue_idx(queue.as_deref())
+                .map_err(EffectError::TokenExhausted)?;
             let pending = read_pending(state, pending_idx);
             if pending.len() >= compiled.model.bounds.max_pending as usize {
                 return Ok(vec![]);
@@ -174,10 +175,10 @@ fn apply_effect_inner(
             new_pending.push(Value::Object(op_obj));
             Ok(vec![state.with_var(pending_idx, Value::Array(new_pending))])
         }
-        EffectIR::Dequeue { index } => {
+        EffectIR::Dequeue { queue, index } => {
             let pending_idx = compiled
-                .sys_pending_index
-                .ok_or_else(|| EffectError::TokenExhausted("sys:pending".into()))?;
+                .pending_queue_idx(queue.as_deref())
+                .map_err(EffectError::TokenExhausted)?;
             let pending = read_pending(state, pending_idx);
             if *index >= pending.len() {
                 return Ok(vec![state.clone()]);
@@ -229,9 +230,10 @@ pub fn read_pending(state: &ModelState, pending_idx: usize) -> Vec<Value> {
 fn pending_op_args_at(
     compiled: &CompiledModel,
     state: &ModelState,
+    queue: &Option<String>,
     index: usize,
 ) -> Option<serde_json::Map<String, Value>> {
-    let pending_idx = compiled.sys_pending_index?;
+    let pending_idx = compiled.pending_queue_idx(queue.as_deref()).ok()?;
     let pending = read_pending(state, pending_idx);
     let op = pending.get(index)?;
     let Value::Object(op) = op else {
@@ -303,7 +305,7 @@ pub fn effect_contains_enqueue(effect: &EffectIR) -> bool {
 mod tests {
     use super::*;
     use crate::model::{
-        AbstractDomain, Bounds, ExprIR, InitialValue, Model, Scope, StateVarDecl,
+        AbstractDomain, Bounds, ExprIR, InitialValue, Model, Scope, StateVarDecl, Transition,
     };
     use serde_json::json;
     use std::collections::HashMap;
@@ -370,7 +372,7 @@ mod tests {
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
 
-                        role: None,
+                        role: Some(crate::model::SystemVarRole { kind: crate::model::SystemVarRoleKind::PendingQueue, group: None }),
                     },
                     StateVarDecl {
                         id: "x".into(),
@@ -436,7 +438,7 @@ mod tests {
     fn enqueue_respects_pending_cap() {
         let compiled = base_compiled();
         let state = blank_state(&compiled);
-        let pending_idx = compiled.sys_pending_index.unwrap();
+        let pending_idx = compiled.pending_queue_idx(None).unwrap();
         let full = state.with_var(
             pending_idx,
             json!([{
@@ -449,6 +451,7 @@ mod tests {
             &compiled,
             &full,
             &EffectIR::Enqueue {
+                queue: None,
                 op: "op".into(),
                 continuation: "c".into(),
                 args: HashMap::new(),
@@ -870,5 +873,253 @@ mod tests {
             .find(|post| post.get(count_idx) == &json!(0))
             .expect("dashboard mount-local should initialize when slot matches");
         assert_eq!(active.get(route_idx), &json!("/dashboard"));
+    }
+
+    #[test]
+    fn enqueue_dequeue_use_named_pending_queue_role() {
+        let compiled = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "system:asyncQueue".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::from([
+                                    (
+                                        "opId".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["op".into()],
+                                        },
+                                    ),
+                                    (
+                                        "continuation".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["c".into()],
+                                        },
+                                    ),
+                                    (
+                                        "args".into(),
+                                        AbstractDomain::Record {
+                                            fields: HashMap::new(),
+                                        },
+                                    ),
+                                ]),
+                            }),
+                            max_len: 1,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                        role: Some(crate::model::SystemVarRole {
+                            kind: crate::model::SystemVarRoleKind::PendingQueue,
+                            group: None,
+                        }),
+                    },
+                ],
+                transitions: vec![],
+                bounds: Bounds {
+                    max_depth: 1,
+                    max_pending: 1,
+                    max_internal_steps: 1,
+                },
+                metadata: None,
+            },
+            false,
+        )
+        .unwrap();
+        let state = blank_state(&compiled);
+        let queue_idx = compiled.pending_queue_idx(None).unwrap();
+        assert_eq!(compiled.model.vars[queue_idx].id, "system:asyncQueue");
+        let posts = apply_effect(
+            &compiled,
+            &state,
+            &EffectIR::Enqueue {
+                queue: None,
+                op: "op".into(),
+                continuation: "c".into(),
+                args: HashMap::from([(
+                    "token".into(),
+                    ExprIR::Lit {
+                        value: json!("x"),
+                    },
+                )]),
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        let queued = read_pending(&posts[0], queue_idx);
+        assert_eq!(queued.len(), 1);
+        let dequeued = apply_effect(
+            &compiled,
+            &posts[0],
+            &EffectIR::Dequeue {
+                queue: None,
+                index: 0,
+            },
+            &mut EvalOptions::default(),
+        )
+        .unwrap();
+        assert!(read_pending(&dequeued[0], queue_idx).is_empty());
+    }
+
+    #[test]
+    fn ambiguous_implicit_pending_queue_fails_validation() {
+        let result = CompiledModel::compile(
+            Model {
+                schema_version: 1,
+                id: "m".into(),
+                vars: vec![
+                    StateVarDecl {
+                        id: "sys:route".into(),
+                        domain: AbstractDomain::Enum {
+                            values: vec!["/".into()],
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!("/")),
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "sys:history".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Enum {
+                                values: vec!["/".into()],
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                        role: None,
+                    },
+                    StateVarDecl {
+                        id: "app:pendingA".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::from([
+                                    (
+                                        "opId".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["op".into()],
+                                        },
+                                    ),
+                                    (
+                                        "continuation".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["c".into()],
+                                        },
+                                    ),
+                                    (
+                                        "args".into(),
+                                        AbstractDomain::Record {
+                                            fields: HashMap::new(),
+                                        },
+                                    ),
+                                ]),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                        role: Some(crate::model::SystemVarRole {
+                            kind: crate::model::SystemVarRoleKind::PendingQueue,
+                            group: None,
+                        }),
+                    },
+                    StateVarDecl {
+                        id: "app:pendingB".into(),
+                        domain: AbstractDomain::BoundedList {
+                            inner: Box::new(AbstractDomain::Record {
+                                fields: HashMap::from([
+                                    (
+                                        "opId".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["op".into()],
+                                        },
+                                    ),
+                                    (
+                                        "continuation".into(),
+                                        AbstractDomain::Enum {
+                                            values: vec!["c".into()],
+                                        },
+                                    ),
+                                    (
+                                        "args".into(),
+                                        AbstractDomain::Record {
+                                            fields: HashMap::new(),
+                                        },
+                                    ),
+                                ]),
+                            }),
+                            max_len: 0,
+                        },
+                        origin: json!("system"),
+                        scope: Scope::Global,
+                        initial: InitialValue::Single(json!([])),
+                        role: Some(crate::model::SystemVarRole {
+                            kind: crate::model::SystemVarRoleKind::PendingQueue,
+                            group: None,
+                        }),
+                    },
+                ],
+                transitions: vec![Transition {
+                    id: "t1".into(),
+                    cls: "user".into(),
+                    label: json!({"kind":"click"}),
+                    source: vec![],
+                    guard: ExprIR::Lit {
+                        value: json!(true),
+                    },
+                    effect: EffectIR::Enqueue {
+                        queue: None,
+                        op: "op".into(),
+                        continuation: "c".into(),
+                        args: HashMap::new(),
+                    },
+                    reads: vec![],
+                    writes: vec!["app:pendingA".into()],
+                    confidence: "exact".into(),
+                    triggered_by: None,
+                    phase: None,
+                }],
+                bounds: Bounds {
+                    max_depth: 1,
+                    max_pending: 0,
+                    max_internal_steps: 1,
+                },
+                metadata: None,
+            },
+            false,
+        );
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("enqueue/dequeue queue is ambiguous"));
     }
 }

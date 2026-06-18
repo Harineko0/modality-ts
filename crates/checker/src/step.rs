@@ -1,7 +1,8 @@
 use crate::effect::read_pending;
-use crate::model::{CompiledModel, Transition};
+use crate::model::{CompiledModel, EffectIR, Transition};
 use crate::state::{values_equal, ModelState};
 use serde_json::Value;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct PendingOp {
@@ -33,8 +34,7 @@ pub fn facts(
     post: &ModelState,
     transition: &Transition,
 ) -> StepFacts {
-    let pending_idx = compiled.sys_pending_index;
-    let route_idx = compiled.sys_route_index;
+    let pending_idx = pending_queue_idx_for_transition(compiled, transition, pre, post);
     let before = read_pending_ops_with_idx(pre, pending_idx);
     let after = read_pending_ops_with_idx(post, pending_idx);
     let enqueued = after
@@ -46,6 +46,7 @@ pub fn facts(
         .find(|op| !after.iter().any(|c| same_op(c, op)))
         .cloned();
 
+    let route_idx = compiled.sys_route_index;
     let pre_route = route_idx.map(|idx| pre.get(idx).clone());
     let post_route = route_idx.map(|idx| post.get(idx).clone());
     let navigated = pre_route != post_route;
@@ -78,6 +79,55 @@ pub fn facts(
         navigated,
         navigated_to,
         op,
+    }
+}
+
+fn pending_queue_idx_for_transition(
+    compiled: &CompiledModel,
+    transition: &Transition,
+    pre: &ModelState,
+    post: &ModelState,
+) -> Option<usize> {
+    let mut queues = HashSet::new();
+    collect_pending_queues_from_effect(compiled, &transition.effect, &mut queues);
+    if queues.len() == 1 {
+        return queues.into_iter().next();
+    }
+    let changed: Vec<usize> = compiled
+        .pending_queue_var_indexes()
+        .into_iter()
+        .filter(|idx| read_pending(pre, *idx) != read_pending(post, *idx))
+        .collect();
+    match changed.len() {
+        0 => compiled.pending_queue_var_indexes().into_iter().next(),
+        1 => Some(changed[0]),
+        _ => changed.last().copied(),
+    }
+}
+
+fn collect_pending_queues_from_effect(
+    compiled: &CompiledModel,
+    effect: &EffectIR,
+    queues: &mut HashSet<usize>,
+) {
+    match effect {
+        EffectIR::Enqueue { queue, .. } | EffectIR::Dequeue { queue, .. } => {
+            if let Ok(idx) = compiled.pending_queue_idx(queue.as_deref()) {
+                queues.insert(idx);
+            }
+        }
+        EffectIR::If {
+            then, else_branch, ..
+        } => {
+            collect_pending_queues_from_effect(compiled, then, queues);
+            collect_pending_queues_from_effect(compiled, else_branch, queues);
+        }
+        EffectIR::Seq { effects } => {
+            for child in effects {
+                collect_pending_queues_from_effect(compiled, child, queues);
+            }
+        }
+        _ => {}
     }
 }
 

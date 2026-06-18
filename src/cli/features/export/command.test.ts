@@ -57,6 +57,7 @@ function model(): Model {
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {
@@ -530,6 +531,52 @@ describe("TLA export", () => {
     expect(resolve?.branches[0]?.next["sys:pending"]).toBe(
       "SubSeq(sys_pending, 1, 0) \\o SubSeq(sys_pending, 2, Len(sys_pending))",
     );
+  });
+
+  it("exports enqueue and dequeue against a non-sys pending queue role var", () => {
+    const base = assuranceModel();
+    const customPendingModel: Model = {
+      ...base,
+      vars: base.vars.map((decl) =>
+        decl.id === "sys:pending"
+          ? {
+              ...decl,
+              id: "app:pendingOps",
+              role: { kind: "pending-queue" as const },
+            }
+          : decl,
+      ),
+      transitions: base.transitions.map((transition) => ({
+        ...transition,
+        reads: transition.reads.map((id) =>
+          id === "sys:pending" ? "app:pendingOps" : id,
+        ),
+        writes: transition.writes.map((id) =>
+          id === "sys:pending" ? "app:pendingOps" : id,
+        ),
+        guard: JSON.parse(
+          JSON.stringify(transition.guard).replaceAll(
+            "sys:pending",
+            "app:pendingOps",
+          ),
+        ),
+        effect: JSON.parse(
+          JSON.stringify(transition.effect).replaceAll(
+            "sys:pending",
+            "app:pendingOps",
+          ),
+        ),
+      })),
+    };
+    const structured = generateTlaStructuredModel(customPendingModel, "CustomPending");
+    const submit = structured.transitions.find(
+      (transition) => transition.id === "submit",
+    );
+    expect(submit?.branches[0]?.next["app:pendingOps"]).toContain("Append(");
+    const resolve = structured.transitions.find(
+      (transition) => transition.id === "resolve",
+    );
+    expect(resolve?.branches[0]?.next["app:pendingOps"]).toContain("SubSeq(");
   });
 
   it("exports havoc as a finite-domain nondeterministic assignment", () => {

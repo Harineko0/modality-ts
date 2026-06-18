@@ -249,7 +249,8 @@ function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
         [env],
       );
     case "enqueue": {
-      const pending = envValue(env, "sys:pending");
+      const queueId = resolvePendingQueueId(model, effect.queue);
+      const pending = envValue(env, queueId);
       const args = tlaRecord(
         Object.fromEntries(
           Object.entries(effect.args).map(([key, expr]) => [
@@ -269,17 +270,18 @@ function effectBranches(model: Model, effect: EffectIR, env: TlaEnv): TlaEnv[] {
             env,
             `(Len(${pending}) < ${model.bounds.maxPending})`,
           ),
-          "sys:pending",
+          queueId,
           `Append(${pending}, ${op})`,
         ),
       ];
     }
     case "dequeue": {
-      const pending = envValue(env, "sys:pending");
+      const queueId = resolvePendingQueueId(model, effect.queue);
+      const pending = envValue(env, queueId);
       return [
         withValue(
           env,
-          "sys:pending",
+          queueId,
           `SubSeq(${pending}, 1, ${effect.index}) \\o SubSeq(${pending}, ${effect.index + 2}, Len(${pending}))`,
         ),
       ];
@@ -746,6 +748,33 @@ function tlaPath(path: readonly string[]): string {
         : `!.${tlaName(segment)}`,
     )
     .join("");
+}
+
+function resolvePendingQueueId(
+  model: Model,
+  explicitQueue: string | undefined,
+): string {
+  if (explicitQueue !== undefined) {
+    const decl = model.vars.find((candidate) => candidate.id === explicitQueue);
+    if (!decl || decl.role?.kind !== "pending-queue") {
+      throw new Error(
+        `TLA export pending queue ${explicitQueue} is not a pending-queue role var`,
+      );
+    }
+    return explicitQueue;
+  }
+  const queues = model.vars.filter((decl) => decl.role?.kind === "pending-queue");
+  if (queues.length === 1) {
+    const queue = queues[0];
+    if (!queue) throw new Error("TLA export missing pending-queue role var");
+    return queue.id;
+  }
+  if (queues.length === 0) {
+    throw new Error("TLA export enqueue/dequeue requires a pending-queue role var");
+  }
+  throw new Error(
+    "TLA export enqueue/dequeue queue is ambiguous; specify queue explicitly",
+  );
 }
 
 function tlaRecord(fields: Record<string, string>): string {

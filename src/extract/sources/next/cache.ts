@@ -9,6 +9,7 @@ import type {
 } from "modality-ts/core";
 import type { RouteInventory, RouteNode } from "modality-ts/extract/engine/spi";
 import { cacheDynamicRequestCaveat } from "../../engine/ts/caveats.js";
+import { PENDING_QUEUE_VAR } from "../../engine/ts/transition/statement-summary.js";
 import { NEXT_CACHE_DOMAIN, nextCacheVarId, nextTreeNodes } from "./routes.js";
 
 export type NextCacheKeyKind =
@@ -450,7 +451,7 @@ function createCacheRefreshTransitions(
         ],
       },
       reads: [varId],
-      writes: [varId, "sys:pending"],
+      writes: [varId, PENDING_QUEUE_VAR],
       confidence: "exact",
     },
     {
@@ -461,7 +462,7 @@ function createCacheRefreshTransitions(
       guard: {
         kind: "eq",
         args: [
-          { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+          { kind: "read", var: PENDING_QUEUE_VAR, path: ["0", "opId"] },
           { kind: "lit", value: refreshOp },
         ],
       },
@@ -469,8 +470,8 @@ function createCacheRefreshTransitions(
         kind: "seq",
         effects: [{ kind: "dequeue", index: 0 }, assignLit(varId, "fresh")],
       },
-      reads: ["sys:pending"],
-      writes: ["sys:pending", varId],
+      reads: [PENDING_QUEUE_VAR],
+      writes: [PENDING_QUEUE_VAR, varId],
       confidence: "exact",
     },
     {
@@ -481,7 +482,7 @@ function createCacheRefreshTransitions(
       guard: {
         kind: "eq",
         args: [
-          { kind: "read", var: "sys:pending", path: ["0", "opId"] },
+          { kind: "read", var: PENDING_QUEUE_VAR, path: ["0", "opId"] },
           { kind: "lit", value: refreshOp },
         ],
       },
@@ -489,8 +490,8 @@ function createCacheRefreshTransitions(
         kind: "seq",
         effects: [{ kind: "dequeue", index: 0 }, assignLit(varId, "error")],
       },
-      reads: ["sys:pending"],
-      writes: ["sys:pending", varId],
+      reads: [PENDING_QUEUE_VAR],
+      writes: [PENDING_QUEUE_VAR, varId],
       confidence: "exact",
     },
   ];

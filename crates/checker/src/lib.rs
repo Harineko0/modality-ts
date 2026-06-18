@@ -81,7 +81,7 @@ mod tests {
             "vars": [
                 { "id": "sys:route", "domain": { "kind": "enum", "values": ["/"] }, "origin": "system", "scope": { "kind": "global" }, "initial": "/" },
                 { "id": "sys:history", "domain": { "kind": "boundedList", "inner": { "kind": "enum", "values": ["/"] }, "maxLen": 0 }, "origin": "system", "scope": { "kind": "global" }, "initial": [] },
-                { "id": "sys:pending", "domain": { "kind": "boundedList", "inner": { "kind": "record", "fields": { "opId": { "kind": "enum", "values": ["op"] }, "continuation": { "kind": "enum", "values": ["c"] }, "args": { "kind": "record", "fields": {} } } }, "maxLen": 0 }, "origin": "system", "scope": { "kind": "global" }, "initial": [] },
+                { "id": "sys:pending", "domain": { "kind": "boundedList", "inner": { "kind": "record", "fields": { "opId": { "kind": "enum", "values": ["op"] }, "continuation": { "kind": "enum", "values": ["c"] }, "args": { "kind": "record", "fields": {} } } }, "maxLen": 0 }, "origin": "system", "scope": { "kind": "global" }, "role": { "kind": "pending-queue" }, "initial": [] },
                 { "id": "x", "domain": { "kind": "bool" }, "origin": { "file": "a.ts" }, "scope": { "kind": "global" }, "initial": false }
             ],
             "transitions": [{

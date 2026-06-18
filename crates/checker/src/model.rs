@@ -233,12 +233,18 @@ pub enum EffectIR {
     Seq { effects: Vec<EffectIR> },
     #[serde(rename = "enqueue")]
     Enqueue {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        queue: Option<String>,
         op: String,
         continuation: String,
         args: HashMap<String, ExprIR>,
     },
     #[serde(rename = "dequeue")]
-    Dequeue { index: usize },
+    Dequeue {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        queue: Option<String>,
+        index: usize,
+    },
     #[serde(rename = "navigate")]
     Navigate { mode: String, to: Option<ExprIR> },
     #[serde(rename = "opaque")]
@@ -455,7 +461,6 @@ pub struct CompiledModel {
     pub always_triggered_internal: Vec<usize>,
     pub sys_route_index: Option<usize>,
     pub sys_history_index: Option<usize>,
-    pub sys_pending_index: Option<usize>,
 }
 
 impl CompiledModel {
@@ -469,7 +474,6 @@ impl CompiledModel {
             .collect();
         let sys_route_index = var_index.get("sys:route").copied();
         let sys_history_index = var_index.get("sys:history").copied();
-        let sys_pending_index = var_index.get("sys:pending").copied();
 
         let vars: Vec<CompiledVar> = model
             .vars
@@ -565,8 +569,61 @@ impl CompiledModel {
             always_triggered_internal,
             sys_route_index,
             sys_history_index,
-            sys_pending_index,
         })
+    }
+
+    pub fn pending_queue_var_indexes(&self) -> Vec<usize> {
+        self.model
+            .vars
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, decl)| {
+                if decl
+                    .role
+                    .as_ref()
+                    .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
+                {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn pending_queue_idx(&self, explicit_queue: Option<&str>) -> Result<usize, String> {
+        if let Some(id) = explicit_queue {
+            let idx = *self
+                .var_index
+                .get(id)
+                .ok_or_else(|| format!("pending queue references unknown var {id}"))?;
+            let decl = &self.model.vars[idx];
+            if !decl
+                .role
+                .as_ref()
+                .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
+            {
+                return Err(format!("{id} is not a pending-queue role var"));
+            }
+            return Ok(idx);
+        }
+        let queues = self.pending_queue_var_indexes();
+        match queues.len() {
+            0 => Err("enqueue/dequeue requires a pending-queue role var".into()),
+            1 => Ok(queues[0]),
+            _ => Err(
+                "enqueue/dequeue queue is ambiguous; specify queue explicitly".into(),
+            ),
+        }
+    }
+
+    pub fn pending_queue_idx_for_effect(
+        &self,
+        queue: &Option<String>,
+        transition_id: &str,
+    ) -> Result<usize, String> {
+        self.pending_queue_idx(queue.as_deref())
+            .map_err(|error| format!("{transition_id}: {error}"))
     }
 
     pub fn transition(&self, idx: usize) -> &Transition {

@@ -49,7 +49,7 @@ export function validateModel(
     validateSystemVars(errors, varsById, model);
   }
   for (const transition of model.transitions)
-    validateTransition(errors, transition, varIds, varsById);
+    validateTransition(errors, transition, varIds, varsById, model);
   return { ok: errors.length === 0, errors };
 }
 
@@ -71,10 +71,8 @@ export function effectWrites(effect: EffectIR): Set<string> {
         writes.add(effectNode.var);
         break;
       case "enqueue":
-        writes.add("sys:pending");
-        break;
       case "dequeue":
-        writes.add("sys:pending");
+        if (effectNode.queue) writes.add(effectNode.queue);
         break;
       case "navigate":
         writes.add("sys:route");
@@ -88,6 +86,96 @@ export function effectWrites(effect: EffectIR): Set<string> {
     }
   });
   return writes;
+}
+
+export function effectWritesForModel(
+  errors: string[],
+  model: Model,
+  effect: EffectIR,
+  transitionId: string,
+): Set<string> {
+  const writes = new Set<string>();
+  walkEffect(effect, (effectNode) => {
+    switch (effectNode.kind) {
+      case "assign":
+      case "havoc":
+      case "choose":
+        writes.add(effectNode.var);
+        break;
+      case "enqueue":
+      case "dequeue": {
+        const queue = resolvePendingQueueVar(
+          errors,
+          model,
+          effectNode.queue,
+          transitionId,
+        );
+        if (queue) writes.add(queue.id);
+        break;
+      }
+      case "navigate":
+        writes.add("sys:route");
+        writes.add("sys:history");
+        break;
+      case "opaque":
+        for (const write of effectNode.ref.declaredWrites) writes.add(write);
+        break;
+      default:
+        break;
+    }
+  });
+  return writes;
+}
+
+function pendingQueueRoleVars(model: Model): StateVarDecl[] {
+  return model.vars.filter((decl) => decl.role?.kind === "pending-queue");
+}
+
+export function pendingQueueVar(
+  model: Model,
+  explicitQueue: string | undefined,
+  transitionId?: string,
+): StateVarDecl | undefined {
+  const errors: string[] = [];
+  const context = transitionId ?? "model";
+  return resolvePendingQueueVar(errors, model, explicitQueue, context);
+}
+
+function resolvePendingQueueVar(
+  errors: string[],
+  model: Model,
+  explicitQueue: string | undefined,
+  context: string,
+): StateVarDecl | undefined {
+  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
+  if (explicitQueue !== undefined) {
+    const decl = varsById.get(explicitQueue);
+    if (!decl) {
+      errors.push(
+        `${context}: pending queue references unknown var ${explicitQueue}`,
+      );
+      return undefined;
+    }
+    if (decl.role?.kind !== "pending-queue") {
+      errors.push(`${context}: ${explicitQueue} is not a pending-queue role var`);
+      return undefined;
+    }
+    return decl;
+  }
+  const queues = pendingQueueRoleVars(model);
+  if (queues.length === 0) {
+    errors.push(
+      `${context}: enqueue/dequeue requires a pending-queue role var`,
+    );
+    return undefined;
+  }
+  if (queues.length > 1) {
+    errors.push(
+      `${context}: enqueue/dequeue queue is ambiguous; specify queue explicitly`,
+    );
+    return undefined;
+  }
+  return queues[0];
 }
 
 export function exprReads(expr: ExprIR): Set<string> {
@@ -121,13 +209,12 @@ function validateSystemVars(
 ): void {
   const route = varsById.get("sys:route");
   const history = varsById.get("sys:history");
-  const pending = varsById.get("sys:pending");
 
   validateSystemDecl(errors, "sys:route", route);
   validateSystemDecl(errors, "sys:history", history);
-  validateSystemDecl(errors, "sys:pending", pending);
 
-  validateSystemVarShapes(errors, route, history, pending, model);
+  validateSystemVarShapes(errors, route, history, model);
+  validatePendingQueueRoles(errors, model);
 }
 
 function validatePresentSystemVars(
@@ -137,18 +224,44 @@ function validatePresentSystemVars(
 ): void {
   const route = varsById.get("sys:route");
   const history = varsById.get("sys:history");
-  const pending = varsById.get("sys:pending");
   if (route) validateSystemDecl(errors, "sys:route", route);
   if (history) validateSystemDecl(errors, "sys:history", history);
-  if (pending) validateSystemDecl(errors, "sys:pending", pending);
-  validateSystemVarShapes(errors, route, history, pending, model);
+  validateSystemVarShapes(errors, route, history, model);
+  validatePendingQueueRoles(errors, model);
+}
+
+function validatePendingQueueRoles(errors: string[], model: Model): void {
+  for (const decl of model.vars) {
+    if (decl.role?.kind !== "pending-queue") continue;
+    validatePendingQueueDecl(errors, decl, model);
+  }
+}
+
+function validatePendingQueueDecl(
+  errors: string[],
+  decl: StateVarDecl,
+  model: Model,
+): void {
+  if (decl.origin !== "system") {
+    errors.push(`${decl.id} must have system origin`);
+  }
+  if (decl.scope.kind !== "global") {
+    errors.push(`${decl.id} must have global scope`);
+  }
+  if (decl.domain.kind !== "boundedList") {
+    errors.push(`${decl.id} must use a boundedList domain`);
+    return;
+  }
+  if (decl.domain.maxLen !== model.bounds.maxPending) {
+    errors.push(`${decl.id} maxLen must match bounds.maxPending`);
+  }
+  validatePendingOpDomain(errors, decl.id, decl.domain.inner);
 }
 
 function validateSystemVarShapes(
   errors: string[],
   route: StateVarDecl | undefined,
   history: StateVarDecl | undefined,
-  pending: StateVarDecl | undefined,
   model: Model,
 ): void {
   if (route && route.domain.kind !== "enum") {
@@ -170,16 +283,6 @@ function validateSystemVarShapes(
         );
     }
   }
-  if (pending) {
-    if (pending.domain.kind !== "boundedList") {
-      errors.push("sys:pending must use a boundedList domain");
-    } else {
-      if (pending.domain.maxLen !== model.bounds.maxPending) {
-        errors.push("sys:pending maxLen must match bounds.maxPending");
-      }
-      validatePendingOpDomain(errors, pending.domain.inner);
-    }
-  }
 }
 
 function validateSystemDecl(
@@ -197,23 +300,24 @@ function validateSystemDecl(
 
 function validatePendingOpDomain(
   errors: string[],
+  varId: string,
   domain: AbstractDomain,
 ): void {
   if (domain.kind !== "record") {
-    errors.push("sys:pending items must use a record domain");
+    errors.push(`${varId} items must use a record domain`);
     return;
   }
   const { opId, continuation, args } = domain.fields;
-  if (!opId) errors.push("sys:pending item domain missing opId");
+  if (!opId) errors.push(`${varId} item domain missing opId`);
   else if (opId.kind !== "enum")
-    errors.push("sys:pending opId must use an enum domain");
+    errors.push(`${varId} opId must use an enum domain`);
   if (!continuation)
-    errors.push("sys:pending item domain missing continuation");
+    errors.push(`${varId} item domain missing continuation`);
   else if (continuation.kind !== "enum")
-    errors.push("sys:pending continuation must use an enum domain");
-  if (!args) errors.push("sys:pending item domain missing args");
+    errors.push(`${varId} continuation must use an enum domain`);
+  if (!args) errors.push(`${varId} item domain missing args`);
   else if (args.kind !== "record")
-    errors.push("sys:pending args must use a record domain");
+    errors.push(`${varId} args must use a record domain`);
 }
 
 function validateDecl(
@@ -400,6 +504,7 @@ function validateTransition(
   transition: Transition,
   varIds: Set<string>,
   varsById: Map<string, StateVarDecl>,
+  model: Model,
 ): void {
   const declaredReads = new Set(transition.reads);
   const declaredWrites = new Set(transition.writes);
@@ -420,7 +525,12 @@ function validateTransition(
         `${transition.id}: effect reads ${read} but reads does not declare it`,
       );
   }
-  const actualWrites = effectWrites(transition.effect);
+  const actualWrites = effectWritesForModel(
+    errors,
+    model,
+    transition.effect,
+    transition.id,
+  );
   for (const write of actualWrites) {
     if (!declaredWrites.has(write))
       errors.push(
@@ -428,7 +538,7 @@ function validateTransition(
       );
   }
   validateExprShape(errors, transition.id, transition.guard);
-  validateEffectShape(errors, transition.id, transition.effect);
+  validateEffectShape(errors, transition.id, transition.effect, model);
   validateExprReferences(errors, transition.id, transition.guard, varsById);
   walkEffect(transition.effect, (effectNode) => {
     for (const expr of effectExpressions(effectNode))
@@ -460,6 +570,7 @@ function validateEffectShape(
   errors: string[],
   transitionId: string,
   effect: EffectIR,
+  model: Model,
 ): void {
   walkEffect(effect, (node) => {
     switch (node.kind) {
@@ -480,17 +591,22 @@ function validateEffectShape(
         validateExprShape(errors, transitionId, node.expr);
         break;
       case "enqueue":
-        for (const expr of Object.values(node.args))
-          validateExprShape(errors, transitionId, expr);
-        break;
-      case "navigate":
-        if (node.to) validateExprShape(errors, transitionId, node.to);
-        break;
-      case "dequeue":
-        if (!Number.isInteger(node.index) || node.index < 0)
+      case "dequeue": {
+        const queueErrors: string[] = [];
+        resolvePendingQueueVar(queueErrors, model, node.queue, transitionId);
+        errors.push(...queueErrors);
+        if (node.kind === "enqueue") {
+          for (const expr of Object.values(node.args))
+            validateExprShape(errors, transitionId, expr);
+        } else if (!Number.isInteger(node.index) || node.index < 0) {
           errors.push(
             `${transitionId}: dequeue index must be a non-negative integer`,
           );
+        }
+        break;
+      }
+      case "navigate":
+        if (node.to) validateExprShape(errors, transitionId, node.to);
         break;
       default:
         break;

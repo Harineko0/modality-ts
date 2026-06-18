@@ -39,6 +39,7 @@ function baseModel(
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

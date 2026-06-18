@@ -22,7 +22,7 @@ import type {
   EffectSummary,
   SetterBinding,
 } from "../types.js";
-import { effectWriteVars, summarizeAsyncSegment } from "./effects.js";
+import { effectWriteVars, PENDING_QUEUE_VAR, summarizeAsyncSegment } from "./effects.js";
 import { valueExpr } from "./expressions.js";
 import {
   andGuard,
@@ -302,7 +302,7 @@ export function transitionsFromAsyncHandler(
     writes: uniqueStrings([
       ...startPreEffects.flatMap(effectWriteVars),
       ...(peeled.confirm ? [peeled.confirm.varId] : []),
-      "sys:pending",
+      PENDING_QUEUE_VAR,
     ]),
     confidence: confidenceForEffects(startPreEffects),
   };
@@ -316,9 +316,9 @@ export function transitionsFromAsyncHandler(
       kind: "seq",
       effects: [{ kind: "dequeue", index: 0 }, ...successEffects],
     },
-    reads: uniqueStrings(["sys:pending", ...successReads]),
+    reads: uniqueStrings([PENDING_QUEUE_VAR, ...successReads]),
     writes: [
-      ...new Set(["sys:pending", ...successEffects.flatMap(effectWriteVars)]),
+      ...new Set([PENDING_QUEUE_VAR, ...successEffects.flatMap(effectWriteVars)]),
     ],
     confidence: confidenceForEffects(successEffects),
   };
@@ -340,9 +340,9 @@ export function transitionsFromAsyncHandler(
         kind: "seq",
         effects: [{ kind: "dequeue", index: 0 }, ...catchEffects],
       },
-      reads: uniqueStrings(["sys:pending", ...catchReads]),
+      reads: uniqueStrings([PENDING_QUEUE_VAR, ...catchReads]),
       writes: [
-        ...new Set(["sys:pending", ...catchEffects.flatMap(effectWriteVars)]),
+        ...new Set([PENDING_QUEUE_VAR, ...catchEffects.flatMap(effectWriteVars)]),
       ],
       confidence: confidenceForEffects(catchEffects),
     };
@@ -757,9 +757,9 @@ export function transitionsFromSequentialAwait(
             ...tailEffects,
           ],
         },
-        reads: uniqueStrings(["sys:pending", ...tailReads]),
+        reads: uniqueStrings([PENDING_QUEUE_VAR, ...tailReads]),
         writes: uniqueStrings([
-          "sys:pending",
+          PENDING_QUEUE_VAR,
           ...tailEffects.flatMap(effectWriteVars),
         ]),
         confidence: confidenceForEffects(tailEffects),
@@ -778,9 +778,9 @@ export function transitionsFromSequentialAwait(
           kind: "seq",
           effects: [{ kind: "dequeue", index: 0 }, ...tailEffects],
         },
-        reads: uniqueStrings(["sys:pending", ...tailReads]),
+        reads: uniqueStrings([PENDING_QUEUE_VAR, ...tailReads]),
         writes: uniqueStrings([
-          "sys:pending",
+          PENDING_QUEUE_VAR,
           ...tailEffects.flatMap(effectWriteVars),
         ]),
         confidence: confidenceForEffects(tailEffects),
@@ -807,7 +807,7 @@ export function transitionsFromSequentialAwait(
       reads: preReads,
       writes: uniqueStrings([
         ...preEffects.flatMap(effectWriteVars),
-        "sys:pending",
+        PENDING_QUEUE_VAR,
       ]),
       confidence: confidenceForEffects(preEffects),
     },
@@ -825,9 +825,9 @@ export function transitionsFromSequentialAwait(
           ...secondEnqueueEffects,
         ],
       },
-      reads: uniqueStrings(["sys:pending", ...betweenReads]),
+      reads: uniqueStrings([PENDING_QUEUE_VAR, ...betweenReads]),
       writes: uniqueStrings([
-        "sys:pending",
+        PENDING_QUEUE_VAR,
         ...betweenEffects.flatMap(effectWriteVars),
       ]),
       confidence: confidenceForEffects(betweenEffects),
@@ -1133,7 +1133,7 @@ export function pendingIsAt(index: number, op: string): Transition["guard"] {
   return {
     kind: "eq",
     args: [
-      { kind: "read", var: "sys:pending", path: [String(index), "opId"] },
+      { kind: "read", var: PENDING_QUEUE_VAR, path: [String(index), "opId"] },
       { kind: "lit", value: op },
     ],
   };

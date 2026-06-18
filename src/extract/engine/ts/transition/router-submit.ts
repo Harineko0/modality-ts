@@ -14,7 +14,7 @@ import {
   containsAwaitedEffect,
   pendingIs,
 } from "./async.js";
-import { effectWriteVars, summarizeAsyncSegment } from "./effects.js";
+import { effectWriteVars, PENDING_QUEUE_VAR, summarizeAsyncSegment } from "./effects.js";
 import { valueExpr } from "./expressions.js";
 import {
   applyParsedGuard,
@@ -339,7 +339,7 @@ export function transitionsFromReactRouterForm(
       ],
     },
     reads: argReads,
-    writes: ["sys:pending"],
+    writes: [PENDING_QUEUE_VAR],
     confidence: "exact",
   };
   const successEffects: EffectIR[] = [{ kind: "dequeue", index: 0 }];
@@ -363,9 +363,9 @@ export function transitionsFromReactRouterForm(
     source: sourceAnchor,
     guard: pendingIs(op),
     effect: { kind: "seq", effects: successEffects },
-    reads: ["sys:pending"],
+    reads: [PENDING_QUEUE_VAR],
     writes: uniqueStrings([
-      "sys:pending",
+      PENDING_QUEUE_VAR,
       ...successEffects.flatMap(effectWriteVars),
     ]),
     confidence: "exact",
@@ -377,9 +377,9 @@ export function transitionsFromReactRouterForm(
     source: sourceAnchor,
     guard: pendingIs(op),
     effect: { kind: "seq", effects: errorEffects },
-    reads: ["sys:pending"],
+    reads: [PENDING_QUEUE_VAR],
     writes: uniqueStrings([
-      "sys:pending",
+      PENDING_QUEUE_VAR,
       ...errorEffects.flatMap(effectWriteVars),
     ]),
     confidence: "exact",
@@ -515,7 +515,7 @@ export function transitionsFromUseSubmitHandler(
     reads: preReads,
     writes: uniqueStrings([
       ...preEffects.flatMap(effectWriteVars),
-      "sys:pending",
+      PENDING_QUEUE_VAR,
     ]),
     confidence: confidenceForEffects(preEffects),
   };
@@ -540,9 +540,9 @@ export function transitionsFromUseSubmitHandler(
     source: sourceAnchor,
     guard: pendingIs(op),
     effect: { kind: "seq", effects: successEffects },
-    reads: ["sys:pending"],
+    reads: [PENDING_QUEUE_VAR],
     writes: uniqueStrings([
-      "sys:pending",
+      PENDING_QUEUE_VAR,
       ...successEffects.flatMap(effectWriteVars),
     ]),
     confidence: "exact",
@@ -554,9 +554,9 @@ export function transitionsFromUseSubmitHandler(
     source: sourceAnchor,
     guard: pendingIs(op),
     effect: { kind: "seq", effects: errorEffects },
-    reads: ["sys:pending"],
+    reads: [PENDING_QUEUE_VAR],
     writes: uniqueStrings([
-      "sys:pending",
+      PENDING_QUEUE_VAR,
       ...errorEffects.flatMap(effectWriteVars),
     ]),
     confidence: "exact",

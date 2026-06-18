@@ -1871,6 +1871,7 @@ function pendingVars(
       },
       origin: "system",
       scope: { kind: "global" },
+      role: { kind: "pending-queue" },
       initial: [],
     },
   ];

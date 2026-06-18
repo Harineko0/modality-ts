@@ -60,6 +60,7 @@ function baseModel(): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {
@@ -976,6 +977,165 @@ describe("validator", () => {
     };
     expect(validateModel(nonInternal).errors.join("\n")).toContain(
       "toggle: triggeredBy is only valid on internal transitions",
+    );
+  });
+
+  it("validates pending queue roles and effect queue resolution", () => {
+    const pendingOpDomain = {
+      kind: "boundedList" as const,
+      inner: {
+        kind: "record" as const,
+        fields: {
+          opId: { kind: "enum" as const, values: ["op"] },
+          continuation: { kind: "enum" as const, values: ["cont"] },
+          args: { kind: "record" as const, fields: {} },
+        },
+      },
+      maxLen: 1,
+    };
+    const routeVars = baseModel().vars.filter(
+      (decl) => decl.id === "sys:route" || decl.id === "sys:history",
+    );
+    const implicitQueueModel: Model = {
+      ...baseModel(),
+      vars: [
+        ...routeVars,
+        {
+          id: "app:asyncQueue",
+          domain: pendingOpDomain,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        ...baseModel().vars.filter((decl) =>
+          ["flag", "mode"].includes(decl.id),
+        ),
+      ],
+      transitions: [
+        {
+          id: "enqueueOp",
+          cls: "user",
+          label: { kind: "click", text: "Enqueue" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "enqueue",
+            op: "op",
+            continuation: "cont",
+            args: {},
+          },
+          reads: [],
+          writes: ["app:asyncQueue"],
+          confidence: "exact",
+        },
+      ],
+    };
+    expect(validateModel(implicitQueueModel).ok).toBe(true);
+
+    const explicitQueueModel: Model = {
+      ...implicitQueueModel,
+      transitions: [
+        {
+          ...implicitQueueModel.transitions[0]!,
+          effect: {
+            kind: "enqueue",
+            queue: "app:asyncQueue",
+            op: "op",
+            continuation: "cont",
+            args: {},
+          },
+        },
+      ],
+    };
+    expect(validateModel(explicitQueueModel).ok).toBe(true);
+
+    const ambiguousQueues: Model = {
+      ...implicitQueueModel,
+      vars: [
+        ...routeVars,
+        {
+          id: "app:pendingA",
+          domain: pendingOpDomain,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        {
+          id: "app:pendingB",
+          domain: pendingOpDomain,
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+    };
+    expect(validateModel(ambiguousQueues).errors.join("\n")).toContain(
+      "enqueueOp: enqueue/dequeue queue is ambiguous",
+    );
+
+    const noQueueRole: Model = {
+      ...baseModel(),
+      transitions: [
+        {
+          id: "enqueueOp",
+          cls: "user",
+          label: { kind: "click", text: "Enqueue" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "enqueue",
+            op: "op",
+            continuation: "cont",
+            args: {},
+          },
+          reads: [],
+          writes: ["sys:pending"],
+          confidence: "exact",
+        },
+      ],
+    };
+    noQueueRole.vars = noQueueRole.vars.map((decl) =>
+      decl.id === "sys:pending"
+        ? { ...decl, role: undefined }
+        : decl,
+    );
+    expect(validateModel(noQueueRole).errors.join("\n")).toContain(
+      "enqueueOp: enqueue/dequeue requires a pending-queue role var",
+    );
+
+    const badShape: Model = {
+      ...implicitQueueModel,
+      vars: implicitQueueModel.vars.map((decl) =>
+        decl.id === "app:asyncQueue"
+          ? {
+              ...decl,
+              domain: {
+                ...pendingOpDomain,
+                inner: {
+                  kind: "record" as const,
+                  fields: {
+                    opId: { kind: "enum" as const, values: ["op"] },
+                    continuation: { kind: "enum" as const, values: ["cont"] },
+                  },
+                },
+              },
+            }
+          : decl,
+      ),
+    };
+    expect(validateModel(badShape).errors.join("\n")).toContain(
+      "app:asyncQueue item domain missing args",
+    );
+
+    const badMaxLen: Model = {
+      ...implicitQueueModel,
+      bounds: { ...implicitQueueModel.bounds, maxPending: 2 },
+    };
+    expect(validateModel(badMaxLen).errors.join("\n")).toContain(
+      "app:asyncQueue maxLen must match bounds.maxPending",
     );
   });
 });

@@ -72,6 +72,7 @@ function checkoutModel(): Model {
         domain: { kind: "boundedList", inner: pendingOrder, maxLen: 2 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

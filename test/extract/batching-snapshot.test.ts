@@ -35,6 +35,7 @@ function countModel(effect: Model["transitions"][number]["effect"]): Model {
         },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

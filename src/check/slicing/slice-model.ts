@@ -141,7 +141,7 @@ export function sliceModelForTargetedStepProperty(
   }
 
   const executionVars = new Set(dependencyVars);
-  for (const varId of stepFactVars(property.predicate)) {
+  for (const varId of stepFactVars(model, property.predicate)) {
     executionVars.add(varId);
   }
   for (const id of targetIds) {
@@ -195,7 +195,7 @@ function canUseTargetedStepSlice(
   );
 }
 
-function stepFactVars(predicate: StepPredicateIR): string[] {
+function stepFactVars(model: Model, predicate: StepPredicateIR): string[] {
   const flat = "step" in predicate ? predicate.step : predicate;
   const vars: string[] = [];
   if (
@@ -204,12 +204,19 @@ function stepFactVars(predicate: StepPredicateIR): string[] {
     flat.opId !== undefined ||
     flat.continuation !== undefined
   ) {
-    vars.push("sys:pending");
+    const queueId = solePendingQueueVarId(model);
+    if (queueId) vars.push(queueId);
   }
   if (flat.navigated !== undefined || flat.navigatedTo !== undefined) {
     vars.push("sys:route");
   }
   return vars;
+}
+
+function solePendingQueueVarId(model: Model): string | undefined {
+  const queues = model.vars.filter((decl) => decl.role?.kind === "pending-queue");
+  if (queues.length === 1) return queues[0]?.id;
+  return queues[0]?.id;
 }
 
 function addRouteVarsForNeededRouteLocals(

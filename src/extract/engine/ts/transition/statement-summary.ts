@@ -367,6 +367,8 @@ export function uniqueSummariesByEffect(
   return out;
 }
 
+export const PENDING_QUEUE_VAR = "sys:pending";
+
 export function effectWriteVars(effect: EffectIR): string[] {
   if (
     effect.kind === "assign" ||
@@ -378,7 +380,7 @@ export function effectWriteVars(effect: EffectIR): string[] {
   if (effect.kind === "if")
     return [...effectWriteVars(effect.then), ...effectWriteVars(effect.else)];
   if (effect.kind === "enqueue" || effect.kind === "dequeue")
-    return ["sys:pending"];
+    return [effect.queue ?? PENDING_QUEUE_VAR];
   if (effect.kind === "navigate") return ["sys:route", "sys:history"];
   return [...effect.ref.declaredWrites];
 }

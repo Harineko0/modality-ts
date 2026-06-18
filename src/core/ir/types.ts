@@ -91,11 +91,12 @@ export type EffectIR =
   | { kind: "seq"; effects: readonly EffectIR[] }
   | {
       kind: "enqueue";
+      queue?: string;
       op: string;
       continuation: string;
       args: Record<string, ExprIR>;
     }
-  | { kind: "dequeue"; index: number }
+  | { kind: "dequeue"; queue?: string; index: number }
   | { kind: "navigate"; mode: "push" | "replace" | "back"; to?: ExprIR }
   | { kind: "opaque"; ref: OpaqueRef };
 

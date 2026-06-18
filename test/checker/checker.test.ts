@@ -77,6 +77,7 @@ function model(): Model {
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {
@@ -267,6 +268,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -344,6 +346,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -418,6 +421,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -666,6 +670,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -743,6 +748,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -832,6 +838,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -976,6 +983,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1085,6 +1093,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1165,6 +1174,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1495,6 +1505,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1596,6 +1607,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1744,6 +1756,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1859,6 +1872,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -1968,6 +1982,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2141,6 +2156,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2229,6 +2245,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2319,6 +2336,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
       ],
@@ -2416,6 +2434,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
       ],
@@ -2496,6 +2515,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2566,6 +2586,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2667,6 +2688,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2788,6 +2810,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2885,6 +2908,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -2996,6 +3020,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -3273,6 +3298,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -3331,6 +3357,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -3393,6 +3420,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -3592,6 +3620,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -3760,6 +3789,60 @@ describe("checker", () => {
     expect(transitionIds).not.toEqual(
       expect.arrayContaining(["spamPending0", "spamPending1", "navigateAway"]),
     );
+  });
+
+  it("keeps custom pending queue role ids in targeted alwaysStep slices", () => {
+    const m: Model = {
+      ...focusedAlwaysStepNoiseModel(),
+      vars: focusedAlwaysStepNoiseModel().vars.map((decl) =>
+        decl.id === "sys:pending"
+          ? {
+              ...decl,
+              id: "app:pendingOps",
+              role: { kind: "pending-queue" },
+            }
+          : decl,
+      ),
+      transitions: focusedAlwaysStepNoiseModel().transitions.map(
+        (transition) => ({
+          ...transition,
+          reads: transition.reads.map((id) =>
+            id === "sys:pending" ? "app:pendingOps" : id,
+          ),
+          writes: transition.writes.map((id) =>
+            id === "sys:pending" ? "app:pendingOps" : id,
+          ),
+          guard: JSON.parse(
+            JSON.stringify(transition.guard).replaceAll(
+              "sys:pending",
+              "app:pendingOps",
+            ),
+          ),
+          effect: JSON.parse(
+            JSON.stringify(transition.effect).replaceAll(
+              "sys:pending",
+              "app:pendingOps",
+            ),
+          ),
+        }),
+      ),
+    };
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: { ...stepTransitionId("submit"), ...stepEnqueued("POST") },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitEnqueueResetsDraftCustomQueue",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    expect(sliced.vars.map((decl) => decl.id)).toContain("app:pendingOps");
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:pending");
   });
 
   it("keeps positive targeted alwaysStep on the full model under slicing", () => {
@@ -4014,6 +4097,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -4159,6 +4243,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         ...toggleIds.map((id) => ({
@@ -4225,6 +4310,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -4302,6 +4388,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -4362,6 +4449,7 @@ describe("checker", () => {
           domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
           origin: "system",
           scope: { kind: "global" },
+          role: { kind: "pending-queue" },
           initial: [],
         },
         {
@@ -4484,6 +4572,7 @@ function highBranchingModel(): Model {
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 0 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

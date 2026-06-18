@@ -69,6 +69,7 @@ function todoModel(): Model {
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 3 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

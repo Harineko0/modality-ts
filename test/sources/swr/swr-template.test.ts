@@ -70,6 +70,7 @@ function model(): Model {
         domain: { kind: "boundedList", inner: pendingOp, maxLen: 2 },
         origin: "system",
         scope: { kind: "global" },
+        role: { kind: "pending-queue" },
         initial: [],
       },
       {

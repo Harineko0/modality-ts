@@ -1,6 +1,6 @@
 use crate::model::{
     AbstractDomain, CompiledModel, InitialValue, Model, NumericOverflowPolicy, StateVarDecl,
-    UNMOUNTED,
+    SystemVarRoleKind, UNMOUNTED,
 };
 use crate::navigation;
 use crate::state::ModelState;
@@ -56,7 +56,7 @@ pub fn validate_model_full(model: &Model, sliced: bool) -> ValidationResult {
     }
     let var_ids: HashSet<_> = model.vars.iter().map(|v| v.id.as_str()).collect();
     for transition in &model.transitions {
-        validate_transition(&mut errors, transition, &var_ids, &vars_by_id);
+        validate_transition(&mut errors, transition, &var_ids, &vars_by_id, model);
     }
     ValidationResult {
         ok: errors.is_empty(),
@@ -162,10 +162,21 @@ fn effect_reads(effect: &crate::model::EffectIR) -> Vec<String> {
     reads.into_iter().collect()
 }
 
-fn effect_writes(effect: &crate::model::EffectIR) -> Vec<String> {
+fn effect_writes_for_model(
+    errors: &mut Vec<String>,
+    model: &Model,
+    effect: &crate::model::EffectIR,
+    transition_id: &str,
+) -> Vec<String> {
     use crate::model::EffectIR;
     let mut writes = HashSet::new();
-    fn walk(effect: &EffectIR, writes: &mut HashSet<String>) {
+    fn walk(
+        effect: &EffectIR,
+        writes: &mut HashSet<String>,
+        errors: &mut Vec<String>,
+        model: &Model,
+        transition_id: &str,
+    ) {
         match effect {
             EffectIR::Assign { var, .. }
             | EffectIR::Havoc { var }
@@ -175,16 +186,21 @@ fn effect_writes(effect: &crate::model::EffectIR) -> Vec<String> {
             EffectIR::If {
                 then, else_branch, ..
             } => {
-                walk(then, writes);
-                walk(else_branch, writes);
+                walk(then, writes, errors, model, transition_id);
+                walk(else_branch, writes, errors, model, transition_id);
             }
             EffectIR::Seq { effects } => {
                 for child in effects {
-                    walk(child, writes);
+                    walk(child, writes, errors, model, transition_id);
                 }
             }
-            EffectIR::Enqueue { .. } | EffectIR::Dequeue { .. } => {
-                writes.insert("sys:pending".into());
+            EffectIR::Enqueue { queue, .. } | EffectIR::Dequeue { queue, .. } => {
+                match resolve_pending_queue_var(errors, model, queue.as_deref(), transition_id) {
+                    Some(decl) => {
+                        writes.insert(decl.id.clone());
+                    }
+                    None => {}
+                }
             }
             EffectIR::Navigate { .. } => {
                 writes.insert("sys:route".into());
@@ -197,8 +213,59 @@ fn effect_writes(effect: &crate::model::EffectIR) -> Vec<String> {
             }
         }
     }
-    walk(effect, &mut writes);
+    walk(effect, &mut writes, errors, model, transition_id);
     writes.into_iter().collect()
+}
+
+fn resolve_pending_queue_var<'a>(
+    errors: &mut Vec<String>,
+    model: &'a Model,
+    explicit_queue: Option<&str>,
+    context: &str,
+) -> Option<&'a StateVarDecl> {
+    let vars_by_id: std::collections::HashMap<_, _> =
+        model.vars.iter().map(|v| (v.id.as_str(), v)).collect();
+    if let Some(id) = explicit_queue {
+        let Some(decl) = vars_by_id.get(id) else {
+            errors.push(format!(
+                "{context}: pending queue references unknown var {id}"
+            ));
+            return None;
+        };
+        if !decl
+            .role
+            .as_ref()
+            .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
+        {
+            errors.push(format!("{context}: {id} is not a pending-queue role var"));
+            return None;
+        }
+        return Some(decl);
+    }
+    let queues: Vec<_> = model
+        .vars
+        .iter()
+        .filter(|decl| {
+            decl.role
+                .as_ref()
+                .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
+        })
+        .collect();
+    match queues.len() {
+        0 => {
+            errors.push(format!(
+                "{context}: enqueue/dequeue requires a pending-queue role var"
+            ));
+            None
+        }
+        1 => Some(queues[0]),
+        _ => {
+            errors.push(format!(
+                "{context}: enqueue/dequeue queue is ambiguous; specify queue explicitly"
+            ));
+            None
+        }
+    }
 }
 
 fn validate_system_vars(
@@ -206,12 +273,13 @@ fn validate_system_vars(
     vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
     model: &Model,
 ) {
-    for id in ["sys:route", "sys:history", "sys:pending"] {
+    for id in ["sys:route", "sys:history"] {
         if vars_by_id.get(id).is_none() {
             errors.push(format!("Missing required system var {id}"));
         }
     }
     validate_system_shapes(errors, vars_by_id, model);
+    validate_pending_queue_roles(errors, model);
 }
 
 fn validate_present_system_vars(
@@ -220,25 +288,84 @@ fn validate_present_system_vars(
     model: &Model,
 ) {
     validate_system_shapes(errors, vars_by_id, model);
+    validate_pending_queue_roles(errors, model);
+}
+
+fn validate_pending_queue_roles(errors: &mut Vec<String>, model: &Model) {
+    for decl in &model.vars {
+        if !decl
+            .role
+            .as_ref()
+            .is_some_and(|role| role.kind == SystemVarRoleKind::PendingQueue)
+        {
+            continue;
+        }
+        validate_pending_queue_decl(errors, decl, model);
+    }
+}
+
+fn validate_pending_queue_decl(
+    errors: &mut Vec<String>,
+    decl: &StateVarDecl,
+    model: &Model,
+) {
+    if decl.origin != json!("system") {
+        errors.push(format!("{} must have system origin", decl.id));
+    }
+    if !matches!(decl.scope, crate::model::Scope::Global) {
+        errors.push(format!("{} must have global scope", decl.id));
+    }
+    match &decl.domain {
+        AbstractDomain::BoundedList { max_len, inner } => {
+            if *max_len != model.bounds.max_pending {
+                errors.push(format!(
+                    "{} maxLen must match bounds.maxPending",
+                    decl.id
+                ));
+            }
+            validate_pending_op_domain(errors, &decl.id, inner);
+        }
+        _ => errors.push(format!("{} must use a boundedList domain", decl.id)),
+    }
+}
+
+fn validate_pending_op_domain(
+    errors: &mut Vec<String>,
+    var_id: &str,
+    domain: &AbstractDomain,
+) {
+    let AbstractDomain::Record { fields } = domain else {
+        errors.push(format!("{var_id} items must use a record domain"));
+        return;
+    };
+    let op_id = fields.get("opId");
+    let continuation = fields.get("continuation");
+    let args = fields.get("args");
+    if op_id.is_none() {
+        errors.push(format!("{var_id} item domain missing opId"));
+    } else if !matches!(op_id, Some(AbstractDomain::Enum { .. })) {
+        errors.push(format!("{var_id} opId must use an enum domain"));
+    }
+    if continuation.is_none() {
+        errors.push(format!("{var_id} item domain missing continuation"));
+    } else if !matches!(continuation, Some(AbstractDomain::Enum { .. })) {
+        errors.push(format!("{var_id} continuation must use an enum domain"));
+    }
+    if args.is_none() {
+        errors.push(format!("{var_id} item domain missing args"));
+    } else if !matches!(args, Some(AbstractDomain::Record { .. })) {
+        errors.push(format!("{var_id} args must use a record domain"));
+    }
 }
 
 fn validate_system_shapes(
     errors: &mut Vec<String>,
     vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
-    model: &Model,
+    _model: &Model,
 ) {
     if let Some(route) = vars_by_id.get("sys:route") {
         if !matches!(route.domain, AbstractDomain::Enum { .. }) {
             errors.push("sys:route must use an enum domain".into());
-        }
-    }
-    if let Some(pending) = vars_by_id.get("sys:pending") {
-        if let AbstractDomain::BoundedList { max_len, .. } = &pending.domain {
-            if *max_len != model.bounds.max_pending {
-                errors.push("sys:pending maxLen must match bounds.maxPending".into());
-            }
-        } else {
-            errors.push("sys:pending must use a boundedList domain".into());
         }
     }
 }
@@ -264,6 +391,7 @@ fn validate_transition(
     transition: &crate::model::Transition,
     var_ids: &HashSet<&str>,
     vars_by_id: &std::collections::HashMap<&str, &StateVarDecl>,
+    model: &Model,
 ) {
     let declared_reads: HashSet<_> = transition.reads.iter().map(|s| s.as_str()).collect();
     let declared_writes: HashSet<_> = transition.writes.iter().map(|s| s.as_str()).collect();
@@ -280,7 +408,7 @@ fn validate_transition(
             ));
         }
     }
-    for write in effect_writes(&transition.effect) {
+    for write in effect_writes_for_model(errors, model, &transition.effect, &transition.id) {
         if !declared_writes.contains(write.as_str()) {
             errors.push(format!(
                 "{}: effect writes {write} but writes does not declare it",
@@ -288,7 +416,34 @@ fn validate_transition(
             ));
         }
     }
+    validate_effect_queues(errors, model, &transition.effect, &transition.id);
     let _ = vars_by_id;
+}
+
+fn validate_effect_queues(
+    errors: &mut Vec<String>,
+    model: &Model,
+    effect: &crate::model::EffectIR,
+    transition_id: &str,
+) {
+    use crate::model::EffectIR;
+    match effect {
+        EffectIR::Enqueue { queue, .. } | EffectIR::Dequeue { queue, .. } => {
+            resolve_pending_queue_var(errors, model, queue.as_deref(), transition_id);
+        }
+        EffectIR::If {
+            then, else_branch, ..
+        } => {
+            validate_effect_queues(errors, model, then, transition_id);
+            validate_effect_queues(errors, model, else_branch, transition_id);
+        }
+        EffectIR::Seq { effects } => {
+            for child in effects {
+                validate_effect_queues(errors, model, child, transition_id);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn push_duplicates(errors: &mut Vec<String>, kind: &str, ids: &[String]) {
@@ -664,16 +819,6 @@ mod tests {
                 AbstractDomain::BoundedList {
                     inner: Box::new(AbstractDomain::Enum {
                         values: vec!["/".into()],
-                    }),
-                    max_len: 0,
-                },
-                json!([]),
-            ),
-            minimal_decl(
-                "sys:pending",
-                AbstractDomain::BoundedList {
-                    inner: Box::new(AbstractDomain::Record {
-                        fields: std::collections::HashMap::new(),
                     }),
                     max_len: 0,
                 },
