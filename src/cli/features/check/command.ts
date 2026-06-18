@@ -214,7 +214,7 @@ export function createCheckReport(
       return {
         bounds: model.bounds,
         plugins: model.metadata?.plugins ?? [],
-        assumptions: sourceHashAssumptions(model),
+        assumptions: trustLedgerAssumptions(model),
         abstractions: model.vars
           .filter(
             (decl) =>
@@ -275,6 +275,13 @@ function domainReportEntry(
             ? "default-token"
             : "type-derived"),
   };
+}
+
+function trustLedgerAssumptions(model: Model): string[] {
+  return [
+    `bound:maxPending=${model.bounds.maxPending}`,
+    ...sourceHashAssumptions(model),
+  ];
 }
 
 function sourceHashAssumptions(model: Model): string[] {

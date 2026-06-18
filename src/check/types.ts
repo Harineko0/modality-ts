@@ -33,6 +33,13 @@ export interface CheckProgress {
   edges: number;
 }
 
+export interface PendingQueueDependency {
+  varId: string;
+  reasons: readonly string[];
+  opIds?: readonly string[];
+  continuations?: readonly string[];
+}
+
 export interface SliceSummary {
   index: number;
   properties: readonly string[];
@@ -48,6 +55,7 @@ export interface SliceSummary {
   prunedTopContributors?: readonly StateSpaceContributor[];
   retainedSystemVars?: readonly string[];
   prunedSystemVars?: readonly string[];
+  pendingQueueDependencies?: readonly PendingQueueDependency[];
 }
 
 export type EdgeRecordingMode =
