@@ -101,3 +101,71 @@ CI gate                 → check (fail on violation reproduced or on trust-ledg
 ```
 
 Failure policy in CI deserves one explicit rule: a **violated property whose replay is `not-reproduced`** fails CI *softly* (annotation, not red) by default — it is a model maintenance task, and making it red trains teams to delete properties. A reproduced violation is red. Teams can harden this once their model stabilizes.
+
+## 8. Repository conformance matrix and real-app canaries
+
+The `modality-ts` repository maintains two manifest-driven validation layers beyond
+per-app `modality ci`:
+
+### Conformance matrix
+
+`test/conformance/matrix.json` is the semantic conformance matrix:
+
+- **Rows** are behavioral capabilities (`features`), not library marketing names.
+- **Columns** are framework/library/source targets (`targets`) such as `react-use-state`
+  or `react-router`.
+- A **supported** cell requires at least one canonical fixture under
+  `test/conformance/fixtures/<fixture-id>/`.
+
+Fixture workflow:
+
+1. add or extend a feature row in `matrix.json`;
+2. add a canonical fixture with `fixture.json` and a minimal app under
+   `test/conformance/fixtures/<fixture-id>/`;
+3. wire the fixture id into the supported cell for the relevant target column;
+4. run `rtk pnpm ci:conformance`.
+
+The runner (`tools/conformance/runner.ts`) calls the public CLI command wrappers
+(`runExtractCommand`, `runCheckCommand`, `runConformCommand`) and writes a
+`ConformanceMatrixReport` to a temp directory — never under fixture roots.
+
+### Real-app canaries
+
+`test/canaries/canaries.json` lists local example apps and planned canary slots.
+Canaries find **missing abstraction boundaries** — they are not the design oracle.
+A canary failure should point back to a fixture gap, a matrix row, or a plan family
+via structured `classifications` in the `CanaryRunReport`.
+
+Run `rtk pnpm ci:canaries` for all active canaries. `rtk pnpm ci:examples` is a
+compatibility alias for the demo-app seeded-bug acceptance canary.
+
+### Thresholds, budgets, and classifications
+
+Thresholds, state-space budgets, accepted caveats, and failure classifications live
+in manifests — not in CLI flags or runner hard-coding. Shared gate helpers under
+`tools/shared-gates/` implement one threshold and budget comparison path for both
+runners.
+
+Failure categories and suggested follow-up plan families:
+
+| Category | Typical follow-up |
+| --- | --- |
+| `missing-semantic-abstraction` | semantic TypeScript foundation |
+| `missing-adapter-capability` | adapter SPI |
+| `syntax-recognition-gap` | framework-neutral IR/checker |
+| `incorrect-ir-or-checker` | conformance matrix |
+| `state-space-budget` | state-space economics |
+| `environment-or-project-integration` | effects/async environment |
+| `explicit-unsupported-behavior` | trust-ledger docs |
+| `fixture-or-canary-invalid` | real-app canary |
+
+Budget failures classify as `state-space-budget`. Manifest-owned budget fields
+include states, edges, depth, frontier, dominant var values, state-space bits, top
+contributor bits, and pending queue length (via bound hits).
+
+### Public CLI surface
+
+`modality matrix` and `modality canary` are deliberately **not** exposed. Matrix and
+canary manifests are repo-maintainer configuration; package users run
+`modality extract`, `modality check`, `modality ci`, `modality conform`, and
+`modality replay` on their own projects.

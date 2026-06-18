@@ -81,3 +81,32 @@ pnpm phase7
 
 See [Checker correctness](../soundness/checker-correctness.md) and
 [Exporting to TLA+](./exporting-to-tla.md).
+
+## Repository maintainer workflows
+
+Inside the `modality-ts` repository, conformance and canary infrastructure runs
+through `pnpm` scripts — not through additional `modality` CLI commands. The matrix
+and canary manifests (`test/conformance/matrix.json`, `test/canaries/canaries.json`)
+are repo-maintainer configuration; they are not published as a public API.
+
+| Script | Purpose |
+| --- | --- |
+| `pnpm ci:conformance` | run supported canonical fixtures; write a `ConformanceMatrixReport` |
+| `pnpm ci:canaries` | run active real-app canaries; write a `CanaryRunReport` |
+| `pnpm ci:examples` | compatibility entrypoint for the demo-app seeded-bug canary |
+
+Narrow selectors pass through to the underlying runners:
+
+```bash
+rtk pnpm ci:conformance -- --fixture state-local-setter-batch
+rtk pnpm ci:canaries -- --canary examples-demo-app
+```
+
+**CLI decision:** `modality matrix` and `modality canary` are deliberately omitted.
+Package users outside this repo should use `modality extract`, `modality check`,
+`modality ci`, `modality conform`, and `modality replay` on their own apps. Matrix
+and canary orchestration stays in `tools/` with manifests as the source of truth for
+thresholds, budgets, caveats, and failure classifications.
+
+See [Conformance & replay](../architecture/conformance-and-replay.md) for matrix
+rows, fixtures, canaries, and how failures are classified.

@@ -69,6 +69,29 @@ prompt to slice the property, tighten the model, or raise the limit deliberately
 diagnostics report the dominant variables (those with the most distinct observed
 values) so you know what blew up.
 
+### Manifest-owned state-space budgets
+
+Inside the `modality-ts` repository, conformance fixtures and real-app canaries declare
+state-space budgets in their manifests (`fixture.json` or `canaries.json`). Shared gate
+helpers compare check and extraction reports against these caps:
+
+| Budget field | Report source |
+| --- | --- |
+| `maxStates` | `checkReport.stats.states` |
+| `maxEdges` | `checkReport.stats.edges` |
+| `maxDepth` | `checkReport.stats.depth` |
+| `maxFrontier` | `checkReport.diagnostics.search.maxFrontier` |
+| `maxDominantVarValues` | `checkReport.diagnostics.dominantVars` |
+| `maxStateSpaceBits` | `extractionReport.stateContributors.totalBits` |
+| `maxTopContributorBits` | `extractionReport.stateContributors.topVars[0].bits` |
+| `maxBoundHits` | `checkReport.trustLedger.boundHits` |
+
+When any budget fails, runners classify the failure as `state-space-budget` and point
+to the dominant contributors in the report. Active canaries without an explicit budget
+must document `budgetNotApplicableReason` in the manifest.
+
+Run `rtk pnpm ci:conformance` and `rtk pnpm ci:canaries` to exercise these gates in CI.
+
 ## Where AI is allowed — a bright line
 
 `modality-ts` permits AI assistance only on the **additive** side:

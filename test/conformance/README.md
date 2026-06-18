@@ -32,3 +32,6 @@ Canonical fixtures live under `test/conformance/fixtures/`. See
 
 `rtk pnpm ci:conformance` runs supported fixtures through
 `tools/conformance/runner.ts` and writes a `ConformanceMatrixReport`.
+
+There is no `modality matrix` CLI command. Matrix orchestration is a
+repo-maintainer workflow only; see `docs/guides/ci-integration.md`.

@@ -115,3 +115,69 @@ One explicit rule: a **violated property whose replay is `not-reproduced`** fail
 *softly* (annotation, not red) by default — it is a model-maintenance task, and making it
 red trains teams to delete properties. A **reproduced** violation is red. Teams harden
 this once their model stabilizes. See [CI integration](../guides/ci-integration.md).
+
+## Repository conformance matrix
+
+Inside the `modality-ts` repository, semantic capabilities are tracked in
+`test/conformance/matrix.json`:
+
+- **Rows** (`features`) name behavioral contracts — e.g. local setter batching, scope
+  mount reset, routing location assignment.
+- **Columns** (`targets`) name adapter or library columns — e.g. `react-use-state`,
+  `react-router`, `zod`.
+- **Supported** cells require at least one canonical fixture under
+  `test/conformance/fixtures/<fixture-id>/`.
+
+### Adding a row, fixture, and cell
+
+1. Add a feature row describing the capability.
+2. Add a target column when a new source or type-library adapter ships (architecture
+   tests require every builtin adapter to appear as a column).
+3. Author a minimal fixture app and `fixture.json` with thresholds, budgets, and
+   semantic expectations.
+4. Mark the cell `supported` and list the fixture id.
+5. Run `rtk pnpm ci:conformance`.
+
+The conformance runner uses public CLI command wrappers and writes
+`ConformanceMatrixReport` artifacts to temp directories outside fixture roots.
+
+## Real-app canaries
+
+`test/canaries/canaries.json` drives `rtk pnpm ci:canaries`. Canaries exercise local
+example apps to find **missing abstraction boundaries** — they are planning signals,
+not the primary debugging workflow for every real-app issue.
+
+When a canary fails, read the `CanaryRunReport` classifications: they name a failure
+category and suggested plan family. Follow up by adding or extending a canonical
+fixture and matrix row when the gap is semantic, not by special-casing the runner.
+
+`rtk pnpm ci:examples` remains the compatibility entrypoint for the demo-app
+seeded-bug acceptance canary; thresholds and expectations live in the manifest.
+
+## Thresholds, budgets, and failure classifications
+
+Manifests own threshold and budget fields. Runners delegate comparison to shared gate
+helpers in `tools/shared-gates/` — there is no duplicate threshold logic in
+compatibility entrypoints.
+
+| Failure category | Meaning | Suggested plan family |
+| --- | --- | --- |
+| `missing-semantic-abstraction` | behavior not yet modeled abstractly | semantic-typescript-foundation |
+| `missing-adapter-capability` | SPI gap for a library | adapter-spi |
+| `syntax-recognition-gap` | extraction does not see the syntax | framework-neutral-ir-checker |
+| `incorrect-ir-or-checker` | wrong IR or checker semantics | conformance-matrix |
+| `state-space-budget` | manifest state-space budget exceeded | state-space-economics |
+| `environment-or-project-integration` | project layout, deps, harness | effects-async-environment |
+| `explicit-unsupported-behavior` | documented unsupported surface | trust-ledger-docs |
+| `fixture-or-canary-invalid` | broken manifest or fixture wiring | real-app-canary |
+
+Budget failures always classify as `state-space-budget`. Manifest budgets may cap
+states, edges, depth, frontier, dominant var values, state-space bits, top contributor
+bits, and bound hits.
+
+## Runner boundary
+
+Conformance and canary runners under `tools/` must not import private adapter
+internals (`src/extract/sources/*` implementation modules). They orchestrate through
+`src/cli/*.ts` command wrappers and read structured report artifacts. Architecture
+tests enforce this boundary.

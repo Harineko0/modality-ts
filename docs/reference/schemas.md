@@ -99,6 +99,63 @@ See [The trust ledger](../soundness/trust-ledger.md). The `diagnostics` block
 (`slicing` / `search` / `limits` / `dominantVars`) is documented in
 [Diagnostics & search limits](../guides/diagnostics-and-search-limits.md).
 
+## `conformance-matrix-report.json`
+
+Emitted by `pnpm ci:conformance` (`tools/conformance/runner.ts`):
+
+```ts
+interface ConformanceMatrixReport {
+  schemaVersion: 1;
+  kind: "conformance-matrix-report";
+  generatedAt: string;
+  matrixId: string;
+  fixtureResults: readonly {
+    fixtureId: string;
+    status: "pass" | "fail" | "skipped" | "error";
+    featureIds: readonly string[];
+    targetIds: readonly string[];
+    thresholds?: readonly ReportThresholdResult[];
+    budgets?: readonly ReportStateSpaceBudgetResult[];
+    acceptedCaveats?: readonly string[];
+    unacceptedCaveats?: readonly string[];
+    reportPaths?: Readonly<Record<string, string>>;
+  }[];
+  classifications?: readonly CanaryFailureClassification[];
+  reportPath?: string;
+}
+```
+
+Reports are written to a temp directory by default. Pass `--report <path>` to
+`ci:conformance` to pin the output location.
+
+## `canary-run-report.json`
+
+Emitted by `pnpm ci:canaries` and `pnpm ci:examples` (`tools/canary/runner.ts`):
+
+```ts
+interface CanaryRunReport {
+  schemaVersion: 1;
+  kind: "canary-run-report";
+  generatedAt: string;
+  manifestId: string;
+  canaryResults: readonly {
+    canaryId: string;
+    status: "pass" | "fail" | "skipped" | "error";
+    thresholds?: readonly ReportThresholdResult[];
+    budgets?: readonly ReportStateSpaceBudgetResult[];
+    acceptedCaveats?: readonly string[];
+    unacceptedCaveats?: readonly string[];
+    reportPaths?: Readonly<Record<string, string>>;
+  }[];
+  classifications: readonly CanaryFailureClassification[];
+  reportPath?: string;
+}
+```
+
+`CanaryFailureClassification` records `category`, `severity`, `evidence`, and
+`suggestedPlanFamily` for failed canaries and fixtures. See
+[Conformance & replay](../architecture/conformance-and-replay.md#thresholds-budgets-and-failure-classifications).
+
 ## Replay report
 
 `modality replay` emits a `ReplayReport` with a verdict status of

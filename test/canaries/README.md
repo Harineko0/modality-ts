@@ -28,3 +28,6 @@ and write a `CanaryRunReport`.
 
 `rtk pnpm ci:canaries` runs active canaries. `rtk pnpm ci:examples` delegates
 to the same runner for the demo-app acceptance canary.
+
+There is no `modality canary` CLI command. Canary orchestration is a
+repo-maintainer workflow only; see `docs/guides/ci-integration.md`.

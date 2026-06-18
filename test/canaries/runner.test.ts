@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -233,5 +233,19 @@ describe("canary runner", () => {
         expect(selectedIds).not.toContain(canary.id);
       }
     }
+  });
+
+  it("keeps generated artifacts outside canary app roots", async () => {
+    const canaryRoot = join(repoRoot, "examples/demo-app");
+    const before = await readdir(canaryRoot);
+    await runCanarySuite({
+      repoRoot,
+      manifestPath,
+      canaryId: "examples-demo-app",
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const after = await readdir(canaryRoot);
+    expect(after).toEqual(before);
+    expect(after).not.toContain(".modality");
   });
 });

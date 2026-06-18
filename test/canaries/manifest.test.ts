@@ -324,4 +324,18 @@ describe("canary manifest", () => {
       ],
     });
   });
+
+  it("requires complete gate policy fields on every active canary", async () => {
+    const manifest = await readCanaryManifest(manifestPath);
+    const active = selectActiveCanaries(manifest);
+    expect(active.length).toBeGreaterThan(0);
+    for (const canary of active) {
+      expect(Object.keys(canary.thresholds).length).toBeGreaterThan(0);
+      expect(
+        canary.budgets !== undefined || canary.budgetNotApplicableReason !== undefined,
+      ).toBe(true);
+      expect(Array.isArray(canary.acceptedCaveats)).toBe(true);
+      expect(Array.isArray(canary.knownUnsupported)).toBe(true);
+    }
+  });
 });
