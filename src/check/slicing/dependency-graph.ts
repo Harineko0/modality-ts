@@ -1,12 +1,19 @@
 import {
   effectReadsForModel,
   exprReads,
+  initialValues,
   mountGuardForScope,
 } from "modality-ts/core";
-import type { ExprIR, Model, StateVarDecl, Transition } from "modality-ts/core";
+import type {
+  ExprIR,
+  Model,
+  ModelState,
+  StateVarDecl,
+  Transition,
+  Value,
+} from "modality-ts/core";
 import { evalStatePredicate, StatePredicateEvalError } from "modality-ts/core";
 import type { MountScopeDependency } from "../types.js";
-import { modelInitialStates } from "../model-api.js";
 import {
   analyzeDirectionalPredicate,
   type DirectionalPredicateAnalysis,
@@ -188,7 +195,7 @@ export function computeTargetedStepSliceClosure(
 
   for (const id of input.targetTransitionIds) {
     const transition = graph.transitionsById.get(id);
-    if (!transition || targetGuardEnabledAtInitial(graph.model, transition)) {
+    if (!transition || targetGuardEnabledAtInitial(graph, transition)) {
       continue;
     }
     const guardAnalysis = analyzeDirectionalPredicate(transition.guard);
@@ -468,14 +475,55 @@ function walkEffect(
   }
 }
 
+const MAX_DECLARED_INITIAL_GUARD_STATES = 1024;
+
 function targetGuardEnabledAtInitial(
-  model: Model,
+  graph: ModelDependencyGraph,
   transition: Transition,
 ): boolean {
+  const guardReads = [...exprReads(transition.guard)];
+  const alternatives: Value[][] = [];
+  for (const varId of guardReads) {
+    const decl = graph.varsById.get(varId);
+    if (!decl) return false;
+    alternatives.push([...initialValues(decl.domain, decl.initial)]);
+  }
+  const productSize = alternatives.reduce(
+    (size, values) => size * values.length,
+    1,
+  );
+  if (productSize > MAX_DECLARED_INITIAL_GUARD_STATES) return false;
+  if (guardReads.length === 0) {
+    return evalGuardAtDeclaredInitialState(transition.guard, {});
+  }
+  const indices = new Array<number>(guardReads.length).fill(0);
+  let hasMore = true;
+  while (hasMore) {
+    const state: ModelState = {};
+    for (let index = 0; index < guardReads.length; index++) {
+      state[guardReads[index]!] = alternatives[index]![indices[index]!]!;
+    }
+    if (evalGuardAtDeclaredInitialState(transition.guard, state)) {
+      return true;
+    }
+    let carry = guardReads.length - 1;
+    while (carry >= 0) {
+      indices[carry]! += 1;
+      if (indices[carry]! < alternatives[carry]!.length) break;
+      indices[carry] = 0;
+      carry -= 1;
+    }
+    hasMore = carry >= 0;
+  }
+  return false;
+}
+
+function evalGuardAtDeclaredInitialState(
+  guard: ExprIR,
+  state: ModelState,
+): boolean {
   try {
-    return modelInitialStates(model).some((state) =>
-      evalStatePredicate(transition.guard, state),
-    );
+    return evalStatePredicate(guard, state);
   } catch (error) {
     if (error instanceof StatePredicateEvalError) return false;
     throw error;
