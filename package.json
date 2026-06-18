@@ -1,6 +1,6 @@
 {
   "name": "modality-ts",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "description": "Model-checking-based testing tools for React state-transition bugs.",
   "license": "MIT",
   "repository": {
