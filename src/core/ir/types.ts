@@ -230,8 +230,8 @@ export interface StepPredicateFlat {
   labelKind?: string;
   enqueued?: string;
   resolved?: readonly [string, string?];
-  navigated?: boolean;
-  navigatedTo?: string;
+  changed?: string;
+  changedTo?: { var: string; value: Value };
   opId?: string;
   continuation?: string;
   opArgs?: Record<string, unknown>;

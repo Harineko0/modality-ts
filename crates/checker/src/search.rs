@@ -368,6 +368,7 @@ fn explore_depth_parallel(
         let step = facts(compiled, pre, &edge.post_state, transition);
         let post_id = visited.id_of(&edge.post_canon);
         graph.record_with_ids(
+            compiled,
             properties,
             pre_canon,
             &edge.post_canon,
@@ -1115,8 +1116,8 @@ mod tests {
                 label_kind: None,
                 enqueued: None,
                 resolved: None,
-                navigated: None,
-                navigated_to: None,
+                changed: None,
+                changed_to: None,
                 op_id: None,
                 continuation: None,
                 op_args: None,

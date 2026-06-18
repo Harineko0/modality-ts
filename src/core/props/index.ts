@@ -8,6 +8,7 @@ import type {
   StepPredicateIR,
   Value,
 } from "../ir/types.js";
+import { effectReads, effectWrites, exprReads } from "../ir/validator.js";
 
 export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
 export type {
@@ -30,8 +31,8 @@ export interface StepFacts {
   transition: import("../ir/types.js").Transition;
   enqueued(op: string): boolean;
   resolved(op: string, outcome?: string): boolean;
-  navigated(): boolean;
-  navigatedTo(route: string): boolean;
+  changed(varId: string): boolean;
+  changedTo(varId: string, value: Value): boolean;
   op?: { id: string; continuation?: string; args: Record<string, unknown> };
 }
 
@@ -93,6 +94,14 @@ export function stepTransitionId(transitionId: string): StepPredicateFlat {
 
 export function stepAny(): StepPredicateFlat {
   return {};
+}
+
+export function stepChanged(varId: string): StepPredicateFlat {
+  return { changed: varId };
+}
+
+export function stepChangedTo(varId: string, value: Value): StepPredicateFlat {
+  return { changedTo: { var: varId, value } };
 }
 
 export function always(
@@ -230,20 +239,24 @@ function inferReads(
         if (varIds.has(expr.domainOf)) reads.add(expr.domainOf);
         break;
       case "transitionEnabled": {
-        reads.add("sys:route");
         const transition = model.transitions.find(
           (candidate) => candidate.id === expr.transitionId,
         );
         if (transition) {
+          for (const id of exprReads(transition.guard)) reads.add(id);
+          for (const id of effectReads(transition.effect)) reads.add(id);
+          for (const id of effectWrites(transition.effect)) reads.add(id);
           for (const id of transition.reads) reads.add(id);
           for (const id of transition.writes) reads.add(id);
         }
         break;
       }
       case "transitionEnabledPrefix": {
-        reads.add("sys:route");
         for (const transition of model.transitions) {
           if (!transition.id.startsWith(expr.prefix)) continue;
+          for (const id of exprReads(transition.guard)) reads.add(id);
+          for (const id of effectReads(transition.effect)) reads.add(id);
+          for (const id of effectWrites(transition.effect)) reads.add(id);
           for (const id of transition.reads) reads.add(id);
           for (const id of transition.writes) reads.add(id);
         }
@@ -261,9 +274,18 @@ function inferReads(
   if ("step" in predicate) {
     if (predicate.pre) walkExpr(predicate.pre);
     if (predicate.post) walkExpr(predicate.post);
+    for (const id of inferStepFactReads(predicate.step)) reads.add(id);
     return [...reads];
   }
+  for (const id of inferStepFactReads(predicate)) reads.add(id);
   return [...reads];
+}
+
+function inferStepFactReads(flat: StepPredicateFlat): string[] {
+  const reads: string[] = [];
+  if (flat.changed) reads.push(flat.changed);
+  if (flat.changedTo) reads.push(flat.changedTo.var);
+  return reads;
 }
 
 function propertyEnabledTransitions(

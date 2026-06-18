@@ -270,14 +270,21 @@ pub struct Model {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChangedToPredicate {
+    pub var: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StepPredicateIR {
     pub transition_id: Option<String>,
     pub transition_class: Option<String>,
     pub label_kind: Option<String>,
     pub enqueued: Option<String>,
     pub resolved: Option<Vec<String>>,
-    pub navigated: Option<bool>,
-    pub navigated_to: Option<String>,
+    pub changed: Option<String>,
+    pub changed_to: Option<ChangedToPredicate>,
     pub op_id: Option<String>,
     pub continuation: Option<String>,
     pub op_args: Option<serde_json::Map<String, Value>>,

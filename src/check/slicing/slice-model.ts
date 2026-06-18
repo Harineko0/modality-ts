@@ -1,4 +1,4 @@
-import { exprReads } from "modality-ts/core";
+import { effectReads, effectWrites, exprReads } from "modality-ts/core";
 import type { Model, Property, StepPredicateIR } from "modality-ts/core";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
@@ -207,8 +207,11 @@ function stepFactVars(model: Model, predicate: StepPredicateIR): string[] {
     const queueId = solePendingQueueVarId(model);
     if (queueId) vars.push(queueId);
   }
-  if (flat.navigated !== undefined || flat.navigatedTo !== undefined) {
-    vars.push("sys:route");
+  if (flat.changed !== undefined) {
+    vars.push(flat.changed);
+  }
+  if (flat.changedTo !== undefined) {
+    vars.push(flat.changedTo.var);
   }
   return vars;
 }
@@ -248,9 +251,17 @@ export function enabledTransitionVars(
       (candidate) => candidate.id === id,
     );
     if (!transition) continue;
-    vars.add("sys:route");
+    for (const read of exprReads(transition.guard)) vars.add(read);
+    for (const read of effectReads(transition.effect)) vars.add(read);
+    for (const write of effectWrites(transition.effect)) vars.add(write);
     for (const read of transition.reads) vars.add(read);
     for (const write of transition.writes) vars.add(write);
+  }
+  for (const decl of model.vars) {
+    if (!vars.has(decl.id)) continue;
+    if (decl.scope.kind === "mount-local") {
+      for (const read of exprReads(decl.scope.when)) vars.add(read);
+    }
   }
   return [...vars].sort();
 }

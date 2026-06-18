@@ -314,6 +314,36 @@ describe("artifact parsers", () => {
         }),
       ),
     ).toHaveLength(1);
+    expect(
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "changedToOk",
+              predicate: {
+                changedTo: { var: "app:location", value: "/checkout" },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toHaveLength(1);
+    expect(() =>
+      parsePropertyArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          properties: [
+            {
+              kind: "alwaysStep",
+              name: "oldNavigatedTo",
+              predicate: { navigatedTo: "/checkout" },
+            },
+          ],
+        }),
+      ),
+    ).toThrow("unknown step predicate key navigatedTo");
   });
 
   it("accepts transitionEnabledPrefix expression artifacts", () => {

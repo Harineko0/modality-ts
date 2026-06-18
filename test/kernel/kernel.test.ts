@@ -14,6 +14,8 @@ import {
   notExpr,
   reachableFrom,
   readVar,
+  stepChanged,
+  stepChangedTo,
   stepEnqueued,
   validateModel,
   validateValue,
@@ -1190,6 +1192,50 @@ describe("property DSL", () => {
       reads: [],
     });
     expect(property.enabledTransitions).toEqual(["toggle"]);
+  });
+
+  it("builds changed-var step predicate helpers", () => {
+    expect(stepChanged("app:location")).toEqual({ changed: "app:location" });
+    expect(stepChangedTo("app:location", "/checkout")).toEqual({
+      changedTo: { var: "app:location", value: "/checkout" },
+    });
+  });
+
+  it("does not infer route reads for transitionEnabled without route dependency", () => {
+    const model: Model = {
+      ...baseModel(),
+      vars: [
+        ...baseModel().vars.filter((decl) => decl.id !== "sys:route"),
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "toggle",
+          cls: "user",
+          label: { kind: "click", text: "Toggle" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "flag",
+            expr: { kind: "lit", value: true },
+          },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(model, enabled(model, "toggle"), {
+      name: "toggleEnabled",
+    });
+    expect(property.reads).toEqual(["flag"]);
   });
 
   it("emits transitionEnabledPrefix IR for suffixed transition families", () => {

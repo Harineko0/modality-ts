@@ -40,6 +40,7 @@ impl GraphRecording {
 
     pub fn record_with_ids(
         &mut self,
+        compiled: &crate::model::CompiledModel,
         properties: &[crate::model::PropertyIR],
         pre_canon: &[u8],
         post_canon: &[u8],
@@ -56,7 +57,16 @@ impl GraphRecording {
                     .iter()
                     .filter_map(|p| match p {
                         crate::model::PropertyIR::LeadsToWithin { name, trigger, .. } => {
-                            if crate::step::matches_step_predicate(step, pre, post, trigger) {
+                            if crate::step::matches_step_predicate(
+                                compiled,
+                                step,
+                                pre,
+                                post,
+                                trigger,
+                                name,
+                            )
+                            .unwrap_or(false)
+                            {
                                 Some(name.clone())
                             } else {
                                 None

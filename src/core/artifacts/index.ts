@@ -321,8 +321,8 @@ const STEP_PREDICATE_FLAT_KEYS = new Set<keyof StepPredicateFlat>([
   "labelKind",
   "enqueued",
   "resolved",
-  "navigated",
-  "navigatedTo",
+  "changed",
+  "changedTo",
   "opId",
   "continuation",
   "opArgs",
@@ -394,11 +394,22 @@ function assertSerializableStepPredicateFlat(
   if (value.enqueued !== undefined && typeof value.enqueued !== "string") {
     throw new Error(`${path}.enqueued must be a string`);
   }
-  if (
-    value.navigatedTo !== undefined &&
-    typeof value.navigatedTo !== "string"
-  ) {
-    throw new Error(`${path}.navigatedTo must be a string`);
+  if (value.changed !== undefined) {
+    if (typeof value.changed !== "string" || value.changed.length === 0) {
+      throw new Error(`${path}.changed must be a non-empty string`);
+    }
+  }
+  if (value.changedTo !== undefined) {
+    if (!isRecord(value.changedTo)) {
+      throw new Error(`${path}.changedTo must be an object`);
+    }
+    if (
+      typeof value.changedTo.var !== "string" ||
+      value.changedTo.var.length === 0
+    ) {
+      throw new Error(`${path}.changedTo.var must be a non-empty string`);
+    }
+    assertJsonValue(value.changedTo.value, `${path}.changedTo.value`);
   }
   if (value.opId !== undefined && typeof value.opId !== "string") {
     throw new Error(`${path}.opId must be a string`);
@@ -408,9 +419,6 @@ function assertSerializableStepPredicateFlat(
     typeof value.continuation !== "string"
   ) {
     throw new Error(`${path}.continuation must be a string`);
-  }
-  if (value.navigated !== undefined && typeof value.navigated !== "boolean") {
-    throw new Error(`${path}.navigated must be a boolean`);
   }
   if (value.resolved !== undefined) {
     if (!Array.isArray(value.resolved)) {
@@ -532,6 +540,30 @@ function assertNoFunctions(value: unknown, path: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertJsonValue(value: unknown, path: string): void {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      assertJsonValue(entry, `${path}[${index}]`);
+    }
+    return;
+  }
+  if (isRecord(value)) {
+    for (const [key, entry] of Object.entries(value)) {
+      assertJsonValue(entry, `${path}.${key}`);
+    }
+    return;
+  }
+  throw new Error(`${path} must be a JSON-serializable value`);
 }
 
 function assertNonEmptyString(value: unknown, path: string): void {

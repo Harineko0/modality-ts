@@ -24,6 +24,7 @@ import {
   reachableFrom,
   readVar,
   stepAny,
+  stepChangedTo,
   stepEnqueued,
   stepTransitionId,
   UNMOUNTED,
@@ -2332,7 +2333,7 @@ describe("checker", () => {
     expect(result.verdicts[0]?.status).toBe("verified-within-bounds");
   });
 
-  it("exposes generic navigation step facts", () => {
+  it("exposes generic changed-var step facts", () => {
     const m: Model = {
       schemaVersion: 1,
       id: "navigation-step-facts",
@@ -2360,6 +2361,13 @@ describe("checker", () => {
           role: { kind: "pending-queue" },
           initial: [],
         },
+        {
+          id: "draft",
+          domain: { kind: "enum", values: ["empty", "nonEmpty"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "empty",
+        },
       ],
       transitions: [
         {
@@ -2373,22 +2381,58 @@ describe("checker", () => {
           writes: ["sys:route", "sys:history"],
           confidence: "exact",
         },
+        {
+          id: "markDraft",
+          cls: "user",
+          label: { kind: "click", text: "Mark draft" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "assign",
+            var: "draft",
+            expr: lit("nonEmpty"),
+          },
+          reads: ["draft"],
+          writes: ["draft"],
+          confidence: "exact",
+        },
       ],
     };
 
-    const result = checkModel(m, [
+    const navigationResult = checkModel(m, [
       alwaysStep(
         m,
         {
           negate: true,
-          step: { transitionId: "pushB", navigated: false },
+          step: {
+            transitionId: "pushB",
+            ...stepChangedTo("sys:route", "/a"),
+          },
         },
         { name: "pushReportsNavigation", reads: ["sys:route"] },
       ),
     ]);
-    expect(result.verdicts[0]).toMatchObject({
+    expect(navigationResult.verdicts[0]).toMatchObject({
       status: "verified-within-bounds",
       property: "pushReportsNavigation",
+    });
+
+    const draftResult = checkModel(m, [
+      alwaysStep(
+        m,
+        {
+          negate: true,
+          step: {
+            transitionId: "markDraft",
+            ...stepChangedTo("draft", "empty"),
+          },
+        },
+        { name: "draftChangeTracked", reads: ["draft"] },
+      ),
+    ]);
+    expect(draftResult.verdicts[0]).toMatchObject({
+      status: "verified-within-bounds",
+      property: "draftChangeTracked",
     });
   });
 
@@ -2467,6 +2511,15 @@ describe("checker", () => {
           source: [],
           guard: lit(true),
           effect: pushRoute("/b", ["/a", "/b"], 0),
+          reads: ["sys:route", "sys:history"],
+          writes: ["sys:route", "sys:history"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const result = checkModel(m, [
+      reachable(m, eq(readVar("sys:route"), lit("/b")), {
+        name: "pushedB",
         reads: ["sys:route"],
       }),
     ]);
@@ -3798,6 +3851,71 @@ describe("checker", () => {
     expect(transitionIds).not.toEqual(
       expect.arrayContaining(["spamPending0", "spamPending1", "navigateAway"]),
     );
+  });
+
+  it("keeps changed-var step facts in targeted alwaysStep slices", () => {
+    const m = focusedAlwaysStepNoiseModel();
+    const property = alwaysStep(
+      m,
+      {
+        negate: true,
+        step: {
+          ...stepTransitionId("submit"),
+          ...stepChangedTo("sys:route", "/b"),
+        },
+        post: eq(readVar("draft"), lit("nonEmpty")),
+      },
+      {
+        name: "submitRouteChange",
+        reads: ["draft"],
+        enabledTransitions: ["submit"],
+      },
+    );
+    const sliced = sliceModelForCheckProperty(m, property).model;
+    expect(sliced.vars.map((decl) => decl.id)).toContain("sys:route");
+  });
+
+  it("does not pull route vars for transitionEnabled without route dependency", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "enabled-no-route",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+      ],
+      transitions: [
+        {
+          id: "toggle",
+          cls: "user",
+          label: { kind: "click", text: "Toggle" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "flag", expr: lit(true) },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(model, notExpr(enabled(model, "toggle")), {
+      name: "toggleUnavailable",
+      reads: [],
+    });
+    const sliced = sliceModel(model, property.reads ?? []);
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:route");
   });
 
   it("keeps custom pending queue role ids in targeted alwaysStep slices", () => {
