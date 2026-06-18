@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    {
+      "id": "state.local.setter-batching",
+      "title": "Local state setter batching within a transition",
+      "layer": "react-semantics",
+      "contract": "official-docs",
+      "requiredFixtures": ["state-local-setter-batch"]
+    },
+    {
+      "id": "state.local.functional-updater",
+      "title": "Functional updater snapshots for local state",
+      "layer": "react-semantics",
+      "contract": "official-docs",
+      "requiredFixtures": ["state-local-setter-batch"]
+    },
+    {
+      "id": "scope.mount-local.reset",
+      "title": "Mount-local scope reset on remount",
+      "layer": "react-semantics",
+      "contract": "core-spec",
+      "requiredFixtures": ["scope-mount-reset"]
+    },
+    {
+      "id": "effects.cleanup-order",
+      "title": "Effect cleanup ordering relative to commits",
+      "layer": "effect-api",
+      "contract": "official-docs",
+      "requiredFixtures": []
+    },
+    {
+      "id": "effects.stale-closure-read",
+      "title": "Stale closure reads in effect bodies",
+      "layer": "effect-api",
+      "contract": "official-docs",
+      "requiredFixtures": []
+    },
+    {
+      "id": "async.pending-op.args",
+      "title": "Pending async operation argument modeling",
+      "layer": "effect-api",
+      "contract": "core-spec",
+      "requiredFixtures": []
+    },
+    {
+      "id": "async.timer-cancellation",
+      "title": "Timer scheduling and cancellation",
+      "layer": "effect-api",
+      "contract": "fixture",
+      "requiredFixtures": []
+    },
+    {
+      "id": "react.suspense-transition",
+      "title": "Suspense and concurrent transition boundaries",
+      "layer": "react-semantics",
+      "contract": "official-docs",
+      "requiredFixtures": []
+    },
+    {
+      "id": "domains.numeric.abstraction",
+      "title": "Numeric domain abstraction and reduction",
+      "layer": "schema-domain",
+      "contract": "core-spec",
+      "requiredFixtures": []
+    },
+    {
+      "id": "domains.schema.numeric-bounds",
+      "title": "Schema-derived numeric bounds",
+      "layer": "schema-domain",
+      "contract": "adapter-spi",
+      "requiredFixtures": []
+    },
+    {
+      "id": "domains.schema.refinements",
+      "title": "Type-library schema refinements",
+      "layer": "schema-domain",
+      "contract": "adapter-spi",
+      "requiredFixtures": []
+    },
+    {
+      "id": "routing.location-assignment",
+      "title": "Route location assignment transitions",
+      "layer": "routing",
+      "contract": "adapter-spi",
+      "requiredFixtures": ["routing-location-assign"]
+    },
+    {
+      "id": "routing.mount-scope-reset",
+      "title": "Route mount scope reset on navigation",
+      "layer": "routing",
+      "contract": "adapter-spi",
+      "requiredFixtures": ["scope-mount-reset"]
+    },
+    {
+      "id": "state.external.atom-read",
+      "title": "External atom read and write channels",
+      "layer": "state-source",
+      "contract": "adapter-spi",
+      "requiredFixtures": []
+    },
+    {
+      "id": "state.external.store-snapshot",
+      "title": "External store snapshot semantics",
+      "layer": "state-source",
+      "contract": "adapter-spi",
+      "requiredFixtures": []
+    },
+    {
+      "id": "state.external.remote-cache",
+      "title": "Remote cache source transitions",
+      "layer": "state-source",
+      "contract": "adapter-spi",
+      "requiredFixtures": []
+    },
+    {
+      "id": "reports.structured-caveats",
+      "title": "Structured caveat reporting in trust ledger",
+      "layer": "reporting",
+      "contract": "core-spec",
+      "requiredFixtures": []
+    },
+    {
+      "id": "reports.state-space-contributors",
+      "title": "State-space contributor reporting",
+      "layer": "reporting",
+      "contract": "core-spec",
+      "requiredFixtures": []
+    },
+    {
+      "id": "conform.walk-replay",
+      "title": "Conform walk generation and replay",
+      "layer": "replay-observation",
+      "contract": "fixture",
+      "requiredFixtures": []
+    },
+    {
+      "id": "slicing.unrelated-vars-pruned",
+      "title": "Unrelated variable pruning under slicing",
+      "layer": "checker",
+      "contract": "core-spec",
+      "requiredFixtures": []
+    }
+  ],
+  "targets": [
+    { "id": "core", "title": "Core IR and checker" },
+    { "id": "typescript", "title": "TypeScript extraction" },
+    {
+      "id": "react-use-state",
+      "title": "React useState",
+      "adapterId": "use-state"
+    },
+    {
+      "id": "react-router",
+      "title": "React Router",
+      "adapterId": "router"
+    },
+    {
+      "id": "next-app-router",
+      "title": "Next.js App Router",
+      "adapterId": "next"
+    },
+    {
+      "id": "next-pages-router",
+      "title": "Next.js Pages Router",
+      "adapterId": "next"
+    },
+    { "id": "jotai", "title": "Jotai", "adapterId": "jotai" },
+    { "id": "swr", "title": "SWR", "adapterId": "swr" },
+    { "id": "zustand", "title": "Zustand", "adapterId": "zustand" },
+    { "id": "zod", "title": "Zod", "adapterId": "zod" },
+    { "id": "arktype", "title": "Arktype", "adapterId": "arktype" }
+  ],
+  "fixtures": [
+    {
+      "id": "state-local-setter-batch",
+      "featureIds": [
+        "state.local.setter-batching",
+        "state.local.functional-updater"
+      ],
+      "targetIds": ["react-use-state", "core"],
+      "root": "test/conformance/fixtures/state-local-setter-batch",
+      "notes": "Planned in 260617-22-2"
+    },
+    {
+      "id": "scope-mount-reset",
+      "featureIds": ["scope.mount-local.reset", "routing.mount-scope-reset"],
+      "targetIds": ["react-use-state", "react-router", "core"],
+      "root": "test/conformance/fixtures/scope-mount-reset",
+      "notes": "Planned in 260617-22-2"
+    },
+    {
+      "id": "routing-location-assign",
+      "featureIds": ["routing.location-assignment"],
+      "targetIds": ["react-router", "next-app-router", "next-pages-router"],
+      "root": "test/conformance/fixtures/routing-location-assign",
+      "notes": "Planned in 260617-22-2"
+    }
+  ],
+  "cells": [
+    {
+      "featureId": "state.local.setter-batching",
+      "targetId": "core",
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
+    },
+    {
+      "featureId": "state.local.setter-batching",
+      "targetId": "react-use-state",
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
+    },
+    {
+      "featureId": "state.local.setter-batching",
+      "targetId": "jotai",
+      "status": "not-applicable",
+      "fixtures": []
+    },
+    {
+      "featureId": "state.local.functional-updater",
+      "targetId": "react-use-state",
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
+    },
+    {
+      "featureId": "scope.mount-local.reset",
+      "targetId": "core",
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
+    },
+    {
+      "featureId": "scope.mount-local.reset",
+      "targetId": "react-use-state",
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
+    },
+    {
+      "featureId": "effects.cleanup-order",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "effects.stale-closure-read",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "async.pending-op.args",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "async.timer-cancellation",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "react.suspense-transition",
+      "targetId": "core",
+      "status": "unsupported",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.numeric.abstraction",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.numeric.abstraction",
+      "targetId": "typescript",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.schema.numeric-bounds",
+      "targetId": "zod",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.schema.numeric-bounds",
+      "targetId": "arktype",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.schema.refinements",
+      "targetId": "zod",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "domains.schema.refinements",
+      "targetId": "arktype",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "routing.location-assignment",
+      "targetId": "react-router",
+      "status": "supported",
+      "fixtures": ["routing-location-assign"]
+    },
+    {
+      "featureId": "routing.location-assignment",
+      "targetId": "next-app-router",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "routing.location-assignment",
+      "targetId": "next-pages-router",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "routing.mount-scope-reset",
+      "targetId": "react-router",
+      "status": "supported",
+      "fixtures": ["scope-mount-reset"]
+    },
+    {
+      "featureId": "state.external.atom-read",
+      "targetId": "jotai",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "state.external.store-snapshot",
+      "targetId": "zustand",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "state.external.remote-cache",
+      "targetId": "swr",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "reports.structured-caveats",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "reports.state-space-contributors",
+      "targetId": "core",
+      "status": "supported",
+      "fixtures": ["state-local-setter-batch"]
+    },
+    {
+      "featureId": "conform.walk-replay",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    },
+    {
+      "featureId": "slicing.unrelated-vars-pruned",
+      "targetId": "core",
+      "status": "partial",
+      "fixtures": []
+    }
+  ]
+}

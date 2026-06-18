@@ -188,12 +188,118 @@ export interface ExtractionReport {
   }[];
 }
 
+export type CanaryFailureCategory =
+  | "missing-semantic-abstraction"
+  | "missing-adapter-capability"
+  | "syntax-recognition-gap"
+  | "incorrect-ir-or-checker"
+  | "state-space-budget"
+  | "environment-or-project-integration"
+  | "explicit-unsupported-behavior"
+  | "fixture-or-canary-invalid";
+
+export interface CanaryFailureClassification {
+  canaryId: string;
+  fixtureId?: string;
+  category: CanaryFailureCategory;
+  severity: "blocker" | "action-required" | "accepted";
+  evidence: readonly string[];
+  suggestedPlanFamily: string;
+}
+
+export type ReportGateStatus = "pass" | "fail" | "skipped";
+
+export interface ReportThresholdResult {
+  id: string;
+  status: ReportGateStatus;
+  expected?: number;
+  actual?: number;
+  evidence?: readonly string[];
+  message?: string;
+}
+
+export interface ReportStateSpaceBudgetResult {
+  id: string;
+  status: ReportGateStatus;
+  maxStates?: number;
+  actualStates?: number;
+  maxEdges?: number;
+  actualEdges?: number;
+  maxFrontier?: number;
+  actualFrontier?: number;
+  maxDepth?: number;
+  actualDepth?: number;
+  expected?: number;
+  actual?: number;
+  evidence?: readonly string[];
+  message?: string;
+}
+
+export type ReportResultStatus = "pass" | "fail" | "skipped" | "error";
+
+export interface ConformanceFixtureResult {
+  fixtureId: string;
+  status: ReportResultStatus;
+  featureIds: readonly string[];
+  targetIds: readonly string[];
+  thresholds?: readonly ReportThresholdResult[];
+  budgets?: readonly ReportStateSpaceBudgetResult[];
+  acceptedCaveats?: readonly string[];
+  unacceptedCaveats?: readonly string[];
+  reportPaths?: Readonly<Record<string, string>>;
+}
+
+export interface ConformanceMatrixReport {
+  schemaVersion: 1;
+  kind: "conformance-matrix-report";
+  generatedAt: string;
+  matrixId: string;
+  fixtureResults: readonly ConformanceFixtureResult[];
+  thresholdResults?: readonly ReportThresholdResult[];
+  budgetResults?: readonly ReportStateSpaceBudgetResult[];
+  acceptedCaveats?: readonly string[];
+  unacceptedCaveats?: readonly string[];
+  classifications?: readonly CanaryFailureClassification[];
+  reportPath?: string;
+}
+
+export interface CanaryResult {
+  canaryId: string;
+  status: ReportResultStatus;
+  thresholds?: readonly ReportThresholdResult[];
+  budgets?: readonly ReportStateSpaceBudgetResult[];
+  acceptedCaveats?: readonly string[];
+  unacceptedCaveats?: readonly string[];
+  reportPaths?: Readonly<Record<string, string>>;
+}
+
+export interface CanaryRunReport {
+  schemaVersion: 1;
+  kind: "canary-run-report";
+  generatedAt: string;
+  manifestId: string;
+  canaryResults: readonly CanaryResult[];
+  thresholdResults?: readonly ReportThresholdResult[];
+  budgetResults?: readonly ReportStateSpaceBudgetResult[];
+  acceptedCaveats?: readonly string[];
+  unacceptedCaveats?: readonly string[];
+  classifications: readonly CanaryFailureClassification[];
+  reportPath?: string;
+}
+
 export interface ConformReport {
   schemaVersion: 1;
   kind: "conform-report";
   generatedAt: string;
   mode?: "abstract" | "action";
   harnessPath?: string;
+  fixtureId?: string;
+  featureIds?: readonly string[];
+  targetIds?: readonly string[];
+  thresholds?: {
+    minPassRate?: number;
+    minTransitionPassRate?: number;
+  };
   walks: readonly {
     id: string;
     status: ReplayVerdictStatus;

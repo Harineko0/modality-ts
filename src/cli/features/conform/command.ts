@@ -46,6 +46,13 @@ export interface ConformCommandOptions {
   seed?: number;
   mode?: "abstract" | "action";
   harnessPath?: string;
+  fixtureId?: string;
+  featureIds?: readonly string[];
+  targetIds?: readonly string[];
+  thresholds?: {
+    minPassRate?: number;
+    minTransitionPassRate?: number;
+  };
   now?: Date;
 }
 
@@ -92,6 +99,12 @@ export async function runConformCommand(
     options.now ?? new Date(),
     mode,
     options.harnessPath,
+    {
+      fixtureId: options.fixtureId,
+      featureIds: options.featureIds,
+      targetIds: options.targetIds,
+      thresholds: options.thresholds,
+    },
   );
   if (options.reportPath) {
     await mkdir(dirname(options.reportPath), { recursive: true });
@@ -328,6 +341,15 @@ function createConformReport(
   now: Date,
   mode: "abstract" | "action",
   harnessPath: string | undefined,
+  metadata: {
+    fixtureId?: string;
+    featureIds?: readonly string[];
+    targetIds?: readonly string[];
+    thresholds?: {
+      minPassRate?: number;
+      minTransitionPassRate?: number;
+    };
+  } = {},
 ): ConformReport {
   const walks = verdicts.map(({ id, verdict }) => ({ id, ...verdict }));
   const reproduced = walks.filter(
@@ -345,6 +367,10 @@ function createConformReport(
     generatedAt: now.toISOString(),
     mode,
     ...(harnessPath ? { harnessPath } : {}),
+    ...(metadata.fixtureId ? { fixtureId: metadata.fixtureId } : {}),
+    ...(metadata.featureIds ? { featureIds: metadata.featureIds } : {}),
+    ...(metadata.targetIds ? { targetIds: metadata.targetIds } : {}),
+    ...(metadata.thresholds ? { thresholds: metadata.thresholds } : {}),
     walks,
     metrics: {
       total: walks.length,
@@ -411,6 +437,13 @@ function renderConformReport(report: ConformReport): string[] {
     `conform: total=${report.metrics.total} reproduced=${report.metrics.reproduced} notReproduced=${report.metrics.notReproduced} inconclusive=${report.metrics.inconclusive}`,
     `mode=${report.mode ?? "abstract"}`,
     ...(report.harnessPath ? [`harness=${report.harnessPath}`] : []),
+    ...(report.fixtureId ? [`fixture=${report.fixtureId}`] : []),
+    ...(report.featureIds?.length
+      ? [`features=${report.featureIds.join(",")}`]
+      : []),
+    ...(report.targetIds?.length
+      ? [`targets=${report.targetIds.join(",")}`]
+      : []),
     `passRate=${report.metrics.passRate}`,
   ];
 }

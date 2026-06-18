@@ -1,0 +1,38 @@
+{
+  "id": "routing-location-assign",
+  "featureIds": ["routing.location-assignment"],
+  "targetIds": ["react-router", "next-app-router", "next-pages-router"],
+  "root": "test/conformance/fixtures/routing-location-assign",
+  "sourcePaths": ["app/App.tsx"],
+  "propsPaths": ["app/app.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 25
+  },
+  "expectations": {
+    "transitionIds": ["App.onClick.navigate._settings", "App.onClick.count"],
+    "navigateTargets": ["/settings"],
+    "vars": [
+      {
+        "id": "sys:route",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}

@@ -35,6 +35,15 @@ export function renderHumanConformResult(
   if (input.report.harnessPath) {
     lines.push(`  - harness ${input.report.harnessPath}`);
   }
+  if (input.report.fixtureId) {
+    lines.push(`  - fixture ${input.report.fixtureId}`);
+  }
+  if (input.report.featureIds?.length) {
+    lines.push(`  - features ${input.report.featureIds.join(", ")}`);
+  }
+  if (input.report.targetIds?.length) {
+    lines.push(`  - targets ${input.report.targetIds.join(", ")}`);
+  }
   lines.push("");
   lines.push(formatSummaryLabel("Duration", formatDuration(input.durationMs)));
   if (input.reportPath) {

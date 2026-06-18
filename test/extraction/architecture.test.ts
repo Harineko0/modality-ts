@@ -619,6 +619,46 @@ describe("extraction architecture surface", () => {
   });
 });
 
+describe("conformance and canary runner boundaries", () => {
+  const repoRoot = resolve(testDir, "../..");
+  const runnerRoots = [
+    resolve(repoRoot, "tools/conformance"),
+    resolve(repoRoot, "tools/canary"),
+    resolve(repoRoot, "tools/shared-gates"),
+  ];
+  const runnerEntrypoints = [
+    resolve(repoRoot, "tools/conformance-ci.ts"),
+    resolve(repoRoot, "tools/canary-ci.ts"),
+    resolve(repoRoot, "tools/examples-ci.ts"),
+  ];
+  const allowedCliWrappers = new Set([
+    "../../src/cli/check.ts",
+    "../../src/cli/ci.ts",
+    "../../src/cli/conform.ts",
+    "../../src/cli/extract.ts",
+    "../../src/cli/replay.ts",
+  ]);
+
+  it("keeps runners and shared gates off private adapter and feature internals", async () => {
+    const files = [
+      ...(await Promise.all(runnerRoots.map((dir) => sourceFiles(dir)))).flat(),
+      ...runnerEntrypoints,
+    ];
+    const violations: string[] = [];
+
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (isForbiddenRunnerImport(specifier, allowedCliWrappers)) {
+          violations.push(`${relativeToRepo(file)} imports ${specifier}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+});
+
 async function collectPatternViolations(
   rootDir: string,
   patterns: readonly RegExp[],
@@ -661,4 +701,36 @@ function importSpecifiers(text: string): string[] {
 
 function relativeToSrc(path: string): string {
   return path.slice(srcDir.length + 1);
+}
+
+function relativeToRepo(path: string): string {
+  return path.slice(resolve(testDir, "../..").length + 1);
+}
+
+function isForbiddenRunnerImport(
+  specifier: string,
+  allowedCliWrappers: ReadonlySet<string>,
+): boolean {
+  if (allowedCliWrappers.has(specifier)) return false;
+  if (specifier.startsWith("./") || specifier.startsWith("../")) {
+    if (!specifier.includes("/src/") && !specifier.includes("src/")) return false;
+    if (specifier.includes("src/cli/features")) return true;
+    if (specifier.includes("src/extract/sources")) return true;
+    if (
+      specifier.includes("src/extract/engine") &&
+      !specifier.includes("src/extract/engine/spi")
+    ) {
+      return true;
+    }
+    return false;
+  }
+  if (specifier.includes("extract/sources")) return true;
+  if (
+    specifier.includes("extract/engine") &&
+    !specifier.includes("extract/engine/spi")
+  ) {
+    return true;
+  }
+  if (specifier.includes("cli/features")) return true;
+  return false;
 }

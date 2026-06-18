@@ -196,7 +196,29 @@ cli/features         → everything above (features/* additionally: never each o
 examples/*           → cli, runtime, harness (as a real app would)
 ```
 
-Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`extract/sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/cli/types/`, and the "features don't import features" rule. Violations fail the build — architecture that is only documented decays in months.
+Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`extract/sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/cli/types/`, the "features don't import features" rule, and conformance/canary runner import boundaries (§7.1). Violations fail the build — architecture that is only documented decays in months.
+
+### 7.1 Conformance and canary runner boundary
+
+Repository conformance and canary runners live under `tools/conformance/`,
+`tools/canary/`, and `tools/shared-gates/`. They are maintainer orchestration — not
+part of the published `modality` CLI surface.
+
+Rules:
+
+- Runners call public CLI command wrappers (`src/cli/check.ts`, `extract.ts`,
+  `conform.ts`, `ci.ts`, `replay.ts`) and read structured report artifacts.
+- Runners must **not** import private adapter internals (`src/extract/sources/*`
+  implementation modules) or feature-slice internals (`src/cli/features/*`).
+- Threshold, budget, caveat, and classification logic is shared through
+  `tools/shared-gates/` so `ci:conformance`, `ci:canaries`, and `ci:examples` do not
+  duplicate comparison code.
+- Generated artifacts are written to temp directories outside fixture and canary app
+  roots.
+
+`pnpm ci:conformance`, `pnpm ci:canaries`, and `pnpm ci:examples` are the documented
+maintainer entrypoints. There is no `modality matrix` or `modality canary` command —
+matrix and canary manifests are repo-internal configuration.
 
 Two asymmetries worth stating explicitly:
 

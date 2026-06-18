@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "manifestId": "repo-canaries",
+  "canaries": [
+    {
+      "id": "examples-demo-app",
+      "title": "Demo app seeded-bug acceptance",
+      "status": "active",
+      "kind": "react-app",
+      "root": "examples/demo-app",
+      "packageManager": "pnpm",
+      "dependencyFacts": [
+        {
+          "packageName": "jotai",
+          "expectedRange": "^2.0.0",
+          "source": "package-json"
+        },
+        {
+          "packageName": "swr",
+          "expectedRange": "^2.0.0",
+          "source": "package-json"
+        }
+      ],
+      "extract": {
+        "sourcePaths": ["App.tsx"],
+        "packageJsonPath": "package.json",
+        "effectApis": ["api.placeOrder"]
+      },
+      "check": {
+        "propsPaths": ["app.props.ts"]
+      },
+      "thresholds": {
+        "minCoverageExactOrOverlay": 1
+      },
+      "budgetNotApplicableReason": "Seeded-bug demo validates violation reproduction, not state-space caps.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.placeOrder"
+        }
+      ],
+      "knownUnsupported": [],
+      "expectations": {
+        "violatedPropertyCount": 3,
+        "violatedPropertyNames": [
+          "noDoubleSubmit",
+          "guestCannotReachAdmin",
+          "guestDoesNotSeeUserCache"
+        ],
+        "minReproducedReplayCount": 2,
+        "maxOverlayLines": 100,
+        "expectedCiExitCode": 2,
+        "ciOutputMustInclude": [
+          "violations=3 errors=0",
+          "determinism=passed",
+          "source-freshness=passed"
+        ]
+      }
+    },
+    {
+      "id": "examples-todo-app",
+      "title": "Todo app local-state workflow",
+      "status": "active",
+      "kind": "react-app",
+      "root": "examples/todo-app",
+      "packageManager": "pnpm",
+      "dependencyFacts": [
+        {
+          "packageName": "jotai",
+          "expectedRange": "^2.0.0",
+          "source": "package-json"
+        },
+        {
+          "packageName": "swr",
+          "expectedRange": "^2.0.0",
+          "source": "package-json"
+        }
+      ],
+      "extract": {
+        "sourcePaths": ["App.tsx"],
+        "packageJsonPath": "package.json",
+        "effectApis": ["api.createTodo", "api.fetchTodos"]
+      },
+      "check": {
+        "propsPaths": ["app.props.ts"]
+      },
+      "thresholds": {
+        "minCoverageExactOrOverlay": 1
+      },
+      "budgetNotApplicableReason": "Workflow canary without an explicit state-space budget gate.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.createTodo"
+        },
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.fetchTodos"
+        }
+      ],
+      "knownUnsupported": []
+    },
+    {
+      "id": "examples-checkout-app",
+      "title": "Checkout workflow canary",
+      "status": "active",
+      "kind": "react-app",
+      "root": "examples/checkout-app",
+      "packageManager": "pnpm",
+      "dependencyFacts": [
+        {
+          "packageName": "react",
+          "expectedRange": "^18.0.0",
+          "source": "package-json"
+        }
+      ],
+      "extract": {
+        "sourcePaths": ["App.tsx"],
+        "packageJsonPath": "package.json",
+        "effectApis": ["api.submitOrder", "api.fetchQuote"]
+      },
+      "check": {
+        "propsPaths": ["app.props.ts"]
+      },
+      "thresholds": {
+        "minCoverageExactOrOverlay": 1
+      },
+      "budgetNotApplicableReason": "Workflow canary without an explicit state-space budget gate.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.submitOrder"
+        },
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.fetchQuote"
+        }
+      ],
+      "knownUnsupported": []
+    },
+    {
+      "id": "planned-react-router-app",
+      "title": "React Router app canary",
+      "status": "planned",
+      "kind": "react-router-app",
+      "root": "examples/planned/react-router-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local React Router example app is checked in yet."]
+    },
+    {
+      "id": "planned-next-app-router-app",
+      "title": "Next App Router canary",
+      "status": "planned",
+      "kind": "next-app-router-app",
+      "root": "examples/planned/next-app-router-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local Next App Router example app is checked in yet."]
+    },
+    {
+      "id": "planned-next-pages-router-app",
+      "title": "Next Pages Router canary",
+      "status": "planned",
+      "kind": "next-pages-router-app",
+      "root": "examples/planned/next-pages-router-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local Next Pages Router example app is checked in yet."]
+    },
+    {
+      "id": "planned-external-store-app",
+      "title": "External store app canary",
+      "status": "planned",
+      "kind": "external-store-app",
+      "root": "examples/planned/external-store-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local external-store example app is checked in yet."]
+    },
+    {
+      "id": "planned-schema-form-app",
+      "title": "Schema/forms app canary",
+      "status": "planned",
+      "kind": "schema-form-app",
+      "root": "examples/planned/schema-form-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local schema/forms example app is checked in yet."]
+    },
+    {
+      "id": "planned-server-action-app",
+      "title": "Server actions/effect API canary",
+      "status": "planned",
+      "kind": "server-action-app",
+      "root": "examples/planned/server-action-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local server-action example app is checked in yet."]
+    },
+    {
+      "id": "planned-tsconfig-layout-app",
+      "title": "Unusual tsconfig/module-layout canary",
+      "status": "planned",
+      "kind": "tsconfig-layout-app",
+      "root": "examples/planned/tsconfig-layout-app",
+      "dependencyFacts": [],
+      "extract": {},
+      "thresholds": {},
+      "acceptedCaveats": [],
+      "knownUnsupported": ["No local tsconfig-layout example app is checked in yet."]
+    }
+  ]
+}
