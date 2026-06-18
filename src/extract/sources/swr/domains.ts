@@ -4,13 +4,11 @@ import type {
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import {
+  compilerBackedTypeAliases,
   inferDomainFromTypeNode,
-  typeAliasDeclarations,
 } from "modality-ts/extract/engine/spi";
-import { inferDomainFromTypeNodeSemanticDetailed } from "../../engine/ts/type-domains.js";
-import type * as ts from "typescript";
-
-export { typeAliasDeclarations };
+import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
+import * as ts from "typescript";
 
 export function inferPayloadDomain(
   typeArg: ts.TypeNode | undefined,
@@ -19,21 +17,22 @@ export function inferPayloadDomain(
   sourceFile?: ts.SourceFile,
   domainRefinements?: readonly DomainRefinementProvider[],
 ): AbstractDomain {
-  const astDomain = inferDomainFromTypeNode(typeArg, typeAliases);
-  if (!typeArg || !types?.checker) {
+  if (!typeArg) return { kind: "tokens", count: 1 };
+  const fallbackAliases = compilerBackedTypeAliases(
+    sourceFile ??
+      ts.createSourceFile("unknown.ts", "", ts.ScriptTarget.Latest, true),
+    types,
+  );
+  const astDomain = inferDomainFromTypeNode(typeArg, fallbackAliases);
+  if (!types?.checker) {
     return astDomain;
   }
-  const semanticDomain = inferDomainFromTypeNodeSemanticDetailed(
-    typeArg,
-    {
-      checker: types.checker,
-      sourceFile: types.sourceFile ?? sourceFile,
-      typeAliases,
-      domainRefinements,
-    },
-    new Set(),
-    { domainRefinements },
-  ).domain;
+  const semanticDomain = inferDomainSemantic(typeArg, {
+    checker: types.checker,
+    sourceFile: types.sourceFile ?? sourceFile,
+    domainRefinements,
+    typeAliases: fallbackAliases,
+  }).domain;
   if (isUninformativeDomain(astDomain) && semanticDomain.kind !== "tokens") {
     return semanticDomain;
   }

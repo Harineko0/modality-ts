@@ -6,8 +6,13 @@ import {
   isUseStateCall,
   propertyName,
 } from "./ast.js";
-import { customHookDeclarationName } from "./components.js";
+import {
+  customHookDeclarationName,
+  resolveCustomHookEntry,
+  type CustomHookRegistry,
+} from "./components.js";
 import { inferUseStateDomain } from "./domains.js";
+import type { SemanticTypeContext } from "../spi/index.js";
 import type {
   ContextBindings,
   CustomHookDecl,
@@ -38,11 +43,40 @@ export function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
   };
 }
 
+export function resolveSetterBinding(
+  setters: ReadonlyMap<string, SetterBinding>,
+  nameOrIdentifier: string | ts.Identifier,
+  types?: SemanticTypeContext,
+): SetterBinding | undefined {
+  if (typeof nameOrIdentifier !== "string" && types?.localSymbolKey) {
+    const symbolKey = types.localSymbolKey(nameOrIdentifier);
+    if (symbolKey) {
+      const bySymbol = setters.get(symbolKey);
+      if (bySymbol) return bySymbol;
+    }
+  }
+  const name =
+    typeof nameOrIdentifier === "string"
+      ? nameOrIdentifier
+      : nameOrIdentifier.text;
+  return setters.get(name);
+}
+
 export function bindSetter(
   setters: Map<string, SetterBinding>,
   symbolName: string,
   setter: SetterBinding,
 ): void {
+  const primaryKey = setter.symbolKey ?? symbolName;
+  setters.set(scopedSetterKey(setter.component, primaryKey), setter);
+  if (setter.symbolKey) {
+    setters.set(scopedSetterKey(setter.component, symbolName), setter);
+    const currentByKey = setters.get(setter.symbolKey);
+    if (!currentByKey || currentByKey.varId === setter.varId) {
+      setters.set(setter.symbolKey, setter);
+    }
+    return;
+  }
   setters.set(scopedSetterKey(setter.component, symbolName), setter);
   const current = setters.get(symbolName);
   if (!current || current.varId === setter.varId) {
@@ -185,6 +219,8 @@ export function bindContextHookObjectDeclaration(
   node: ts.Node,
   contextBindings: ContextBindings,
   setters: Map<string, SetterBinding>,
+  customHooks?: CustomHookRegistry,
+  types?: SemanticTypeContext,
 ): void {
   if (
     !ts.isVariableDeclaration(node) ||
@@ -194,9 +230,12 @@ export function bindContextHookObjectDeclaration(
     !ts.isIdentifier(node.initializer.expression)
   )
     return;
-  const hook = contextBindings.hookReturns.get(
-    node.initializer.expression.text,
-  );
+  const callee = node.initializer.expression;
+  let hook = contextBindings.hookReturns.get(callee.text);
+  if (!hook && customHooks) {
+    const entry = resolveCustomHookEntry(customHooks, callee, types);
+    if (entry) hook = contextBindings.hookReturns.get(entry.displayName);
+  }
   if (!hook) return;
   for (const element of node.name.elements) {
     if (!ts.isIdentifier(element.name)) continue;

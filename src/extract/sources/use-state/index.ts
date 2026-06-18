@@ -9,7 +9,8 @@ import type {
 import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
-  typeAliasDeclarations,
+  compilerBackedTypeAliases,
+  useStateCallForSemanticInference,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import * as harness from "./harness.js";
@@ -67,7 +68,7 @@ function discoverUseState(
   domainRefinements?: readonly DomainRefinementProvider[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
   const providerComponents = providerComponentNames(source);
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node, componentName: string | undefined): void => {
@@ -83,8 +84,14 @@ function discoverUseState(
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const componentId = component ?? "Anonymous";
         const varId = `local:${componentId}.${stateName.name.text}`;
-        const domain = inferUseStateDomainSemanticDetailed(
+        const callForInference = useStateCallForSemanticInference(
           node.initializer,
+          source,
+          types,
+          varId,
+        );
+        const domain = inferUseStateDomainSemanticDetailed(
+          callForInference,
           typeAliases,
           source,
           varId,
@@ -100,7 +107,7 @@ function discoverUseState(
             ? { kind: "global" }
             : { kind: "route-local", route },
           initial: initialValueForUseState(
-            node.initializer,
+            callForInference,
             domain,
             source,
             varId,
@@ -117,7 +124,12 @@ function discoverUseState(
             ...(setterName &&
             ts.isBindingElement(setterName) &&
             ts.isIdentifier(setterName.name)
-              ? { setterName: setterName.name.text }
+              ? {
+                  setterName: setterName.name.text,
+                  ...(types?.localSymbolKey?.(setterName.name)
+                    ? { setterSymbolKey: types.localSymbolKey(setterName.name) }
+                    : {}),
+                }
               : {}),
             ...(isNumericSeedUseState(node.initializer)
               ? { numericSeed: true }
@@ -145,6 +157,9 @@ function discoverUseStateWriteChannels(
         id: `${decl.id}.setter`,
         varId: decl.var.id,
         symbolName: setterName,
+        ...(typeof decl.metadata?.setterSymbolKey === "string"
+          ? { symbolKey: decl.metadata.setterSymbolKey }
+          : {}),
         source: decl.origin as SourceAnchor,
       },
     ];

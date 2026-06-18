@@ -58,13 +58,21 @@ divergence at that step, closing the loop with
 ## The observation problem
 
 The violated predicate is over *model* state; the test must read its concrete
-counterpart. Observability differs by source:
+counterpart. Replay and conformance consume **observation providers** from the
+registry bundle: each active state source and navigation adapter is wrapped as an
+`ObservationProvider` that exposes `setup`, `observe(varId)`, and optional
+`witness` hooks. Generated replay harnesses call providers in deterministic
+registry order and use the first non-`unobservable` read; when every provider
+returns `unobservable`, replay reports a blocking reason that names the var id
+and the providers that were tried.
+
+Observability differs by source:
 
 | Source | Observation mechanism | Fidelity |
 | --- | --- | --- |
-| Jotai / Zustand | the harness owns the store: `store.get(...)` / `store.getState()` | direct, full |
+| Jotai / Zustand | observation provider delegates to harness store reads | direct, full |
 | SWR cache | harness-provided cache `Map`, inspectable per key | direct, full |
-| route | router test API / `MemoryRouter` | direct, full |
+| route | navigation observation provider / router test API | direct, full |
 | `sys:pending` | parked-MSW bookkeeping | direct, full |
 | `useState` | **not externally observable** | indirect |
 

@@ -31,6 +31,18 @@ describe("modality plugin registry", () => {
         {
           id: "swr",
           version: "1.2.3",
+          kind: "observation",
+          packageNames: ["swr"],
+        },
+        {
+          id: "use-state",
+          version: "1.2.3",
+          kind: "observation",
+          packageNames: ["use-state"],
+        },
+        {
+          id: "swr",
+          version: "1.2.3",
           kind: "state-source",
           packageNames: ["swr"],
         },
@@ -97,10 +109,40 @@ describe("modality plugin registry", () => {
           packageNames: ["zod"],
         },
         {
-          id: "router",
-          kind: "router",
+          id: "router-effect-api",
+          kind: "effect-api",
           version: "0.1.0",
           packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "router-module-roles",
+          kind: "module-roles",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "router",
+          kind: "navigation",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "router-observation",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
+          id: "swr",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["swr"],
+        },
+        {
+          id: "use-state",
+          kind: "observation",
+          version: "0.1.0",
+          packageNames: ["react"],
         },
         {
           id: "swr",
@@ -128,11 +170,23 @@ describe("modality plugin registry", () => {
       }),
     ).toMatchObject({
       routerPluginId: "next",
+      adapters: {
+        moduleRoles: [expect.objectContaining({ id: "next-module-roles" })],
+        effectApis: [expect.objectContaining({ id: "next-effect-api" })],
+      },
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
-          kind: "router",
+          kind: "navigation",
           packageNames: ["next"],
+        }),
+        expect.objectContaining({
+          id: "next-module-roles",
+          kind: "module-roles",
+        }),
+        expect.objectContaining({
+          id: "next-effect-api",
+          kind: "effect-api",
         }),
       ]),
     });
@@ -156,6 +210,8 @@ describe("modality plugin registry", () => {
       domainRefinementProviders: [expect.objectContaining({ id: "arktype" })],
       plugins: [
         { id: "arktype", kind: "domain-refinement" },
+        { id: "jotai", kind: "observation" },
+        { id: "use-state", kind: "observation" },
         { id: "jotai", kind: "state-source" },
         { id: "use-state", kind: "state-source" },
       ],

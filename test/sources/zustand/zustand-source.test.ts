@@ -552,6 +552,14 @@ describe("Zustand source plugin", () => {
       checker: semanticProject.checker,
       sourceFile,
       getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      symbolAt: (node: ts.Node) => semanticProject.symbolAt(node),
+      aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
     };
     const decls = zustandSource().discover({
       sourceText: source,
@@ -569,6 +577,58 @@ describe("Zustand source plugin", () => {
       domain: { kind: "boundedInt", min: 0, max: 0 },
       initial: 0,
     });
+  });
+
+  it("recognizes store creators through import aliases and local barrels", () => {
+    const barrelPath = "/project/zustand.ts";
+    const statePath = "/project/state.ts";
+    const barrelText = `export { create } from "zustand";`;
+    const source = `import { create as makeStore } from "./zustand.js";
+export const useCounter = makeStore(() => ({ count: 0 }));`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: barrelPath, text: barrelText },
+      { path: statePath, text: source },
+    ]);
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile: semanticProject.getSourceFile(statePath),
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
+    };
+    const decls = zustandSource().discover({
+      sourceText: source,
+      fileName: statePath,
+      route: "/",
+      types,
+    });
+    expect(decls.some((decl) => decl.id === "zustand:useCounter.count")).toBe(
+      true,
+    );
+  });
+
+  it("keeps syntax-only zustand import fallback without semantic context", () => {
+    const source = `
+      import { create } from 'zustand';
+      export const useCounter = create(() => ({ count: 0 }));
+    `;
+    expect(
+      zustandSource().discover({
+        sourceText: source,
+        fileName: "state.ts",
+        route: "/",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zustand:useCounter.count" }),
+      ]),
+    );
   });
 });
 

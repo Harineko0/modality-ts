@@ -2,11 +2,16 @@ import * as ts from "typescript";
 import { isExtractableHandler, startsUppercase } from "../ast.js";
 import {
   componentName,
+  emptyComponentRegistry,
   handlerExpression,
   isForwardablePropName,
   isIntrinsicJsxAttribute,
+  jsxTagIdentifier,
   jsxTagName,
+  resolveComponentEntry,
+  type ComponentRegistry,
 } from "../components.js";
+import type { SemanticTypeContext } from "../../spi/index.js";
 import type { Locator } from "modality-ts/core";
 import type {
   ComponentDecl,
@@ -47,7 +52,7 @@ export function resolveComponentPropTriggers(
   source: ts.SourceFile,
   component: ComponentDecl,
   propName: string,
-  components: Map<string, ComponentDecl>,
+  components: ComponentRegistry,
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
   options: {
@@ -55,6 +60,7 @@ export function resolveComponentPropTriggers(
     depth?: number;
     maxDepth?: number;
   } = {},
+  types?: SemanticTypeContext,
 ): ComponentPropTrigger[] {
   const visited = options.visited ?? new Set<string>();
   const depth = options.depth ?? 0;
@@ -103,8 +109,10 @@ export function resolveComponentPropTriggers(
         isForwardablePropName(attrName) &&
         !isIntrinsicJsxAttribute(node)
       ) {
-        const childTag = jsxTagName(node);
-        const childComponent = childTag ? components.get(childTag) : undefined;
+        const childTag = jsxTagIdentifier(node) ?? jsxTagName(node);
+        const childComponent = childTag
+          ? resolveComponentEntry(components, childTag, types)?.decl
+          : undefined;
         if (childTag && childComponent && expression) {
           const handler = handlerExpression(expression, localHandlers);
           if (
@@ -119,8 +127,10 @@ export function resolveComponentPropTriggers(
               source,
               componentLabel,
             );
-            const occurrence = childOccurrence.get(childTag) ?? 0;
-            childOccurrence.set(childTag, occurrence + 1);
+            const childTagName =
+              typeof childTag === "string" ? childTag : childTag.text;
+            const occurrence = childOccurrence.get(childTagName) ?? 0;
+            childOccurrence.set(childTagName, occurrence + 1);
             const childTriggers = resolveComponentPropTriggers(
               source,
               childComponent,
@@ -129,14 +139,15 @@ export function resolveComponentPropTriggers(
               setters,
               warnings,
               { visited: new Set(visited), depth: depth + 1, maxDepth },
+              types,
             );
             for (const [index, childTrigger] of childTriggers.entries()) {
               const pathSuffix =
                 childTriggers.length > 1
-                  ? `${childTag}.${occurrence}.${index}`
+                  ? `${childTagName}.${occurrence}.${index}`
                   : occurrence > 0
-                    ? `${childTag}.${occurrence}`
-                    : childTag;
+                    ? `${childTagName}.${occurrence}`
+                    : childTagName;
               triggers.push({
                 attr: childTrigger.attr,
                 locator: childTrigger.locator,
@@ -194,11 +205,14 @@ export function componentPropTrigger(
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
 ): { attr: string; locator?: Locator; guard?: ParsedGuard } | undefined {
+  const label = componentName(component) ?? "Anonymous";
+  const registry = emptyComponentRegistry();
+  registry.byDisplayName.set(label, { displayName: label, decl: component });
   const triggers = resolveComponentPropTriggers(
     source,
     component,
     propName,
-    new Map([[componentName(component) ?? "Anonymous", component]]),
+    registry,
     setters,
     warnings,
   );
@@ -328,13 +342,16 @@ function locatorForJsxHostElement(
 export function componentPropDeferredToChildTrigger(
   source: ts.SourceFile,
   node: ts.JsxAttribute,
-  components: Map<string, ComponentDecl>,
+  components: ComponentRegistry,
   setters: Map<string, SetterBinding>,
   warnings: ExtractionWarning[],
+  types?: SemanticTypeContext,
 ): boolean {
   if (!ts.isIdentifier(node.name)) return false;
-  const tag = jsxTagName(node);
-  const callee = tag ? components.get(tag) : undefined;
+  const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
+  const callee = tag
+    ? resolveComponentEntry(components, tag, types)?.decl
+    : undefined;
   if (!callee) return false;
   return (
     resolveComponentPropTriggers(
@@ -344,6 +361,8 @@ export function componentPropDeferredToChildTrigger(
       components,
       setters,
       warnings,
+      {},
+      types,
     ).length > 0
   );
 }
@@ -362,10 +381,11 @@ export function forwardsComponentProp(
   node: ts.JsxAttribute,
   handlers: Map<string, ExtractableHandler>,
   component: ComponentDecl | undefined,
-  components?: Map<string, ComponentDecl>,
+  components?: ComponentRegistry,
   setters?: Map<string, SetterBinding>,
   source?: ts.SourceFile,
   warnings?: ExtractionWarning[],
+  types?: SemanticTypeContext,
 ): boolean {
   if (!component || !node.initializer) return false;
   const expression = ts.isJsxExpression(node.initializer)
@@ -389,6 +409,8 @@ export function forwardsComponentProp(
               components,
               setters,
               warnings,
+              {},
+              types,
             ).length > 0,
         );
     }

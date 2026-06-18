@@ -10,12 +10,13 @@ import {
   isAtomCreatorCall,
   resolveJotaiImports,
 } from "./imports.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   classifyAtomCall,
   classifyFamilyInstance,
   staticFamilyParam,
-  typeAliasDeclarations,
 } from "./domains.js";
+import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
 import { atomVarId, familyVarId } from "./ids.js";
 import { metadataToRecord } from "./types.js";
 import {
@@ -43,20 +44,7 @@ function sourceFileForDiscovery(
   fileName: string,
   types?: SemanticTypeContext,
 ): ts.SourceFile {
-  if (
-    types?.sourceFile &&
-    types.sourceFile.fileName === fileName &&
-    types.sourceFile.text === sourceText
-  ) {
-    return types.sourceFile;
-  }
-  return ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  return semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
 }
 
 export function discoverJotaiAtomsDetailed(
@@ -68,7 +56,7 @@ export function discoverJotaiAtomsDetailed(
   options?: { skipStoreDuplication?: boolean },
 ): DiscoverJotaiResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
-  const imports = resolveJotaiImports(source);
+  const imports = resolveJotaiImports(source, types);
   const componentStoreScopes = discoverComponentStoreScopes(source, imports);
   const hasStoreScopeWork =
     componentStoreScopes.size > 0 && relatedFragments !== undefined;
@@ -76,7 +64,7 @@ export function discoverJotaiAtomsDetailed(
     return emptyDiscoverResult();
   }
 
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
   const warnings: { message: string; source?: SourceAnchor }[] = [];
   const atomMetadata = new Map<
     string,

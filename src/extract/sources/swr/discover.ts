@@ -5,23 +5,19 @@ import type {
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
-import { inferPayloadDomain, typeAliasDeclarations } from "./domains.js";
+import { inferPayloadDomain } from "./domains.js";
+import {
+  collectSemanticNamedImports,
+  compilerBackedTypeAliases,
+} from "modality-ts/extract/engine/spi";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 
 function sourceFileForDiscovery(
   sourceText: string,
   fileName: string,
   types?: SemanticTypeContext,
 ): ts.SourceFile {
-  if (types?.sourceFile && types.sourceFile.fileName === fileName) {
-    return types.sourceFile;
-  }
-  return ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  return semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
 }
 
 export function discoverSwrHooks(
@@ -31,9 +27,9 @@ export function discoverSwrHooks(
   domainRefinements?: readonly DomainRefinementProvider[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
-  const useSwrNames = useSwrImportNames(source);
+  const useSwrNames = useSwrImportNames(source, types);
   if (useSwrNames.size === 0) return [];
-  const typeAliases = typeAliasDeclarations(source);
+  const typeAliases = compilerBackedTypeAliases(source, types);
 
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node): void => {
@@ -73,7 +69,29 @@ export function discoverSwrHooks(
   return decls;
 }
 
-export function useSwrImportNames(source: ts.SourceFile): Set<string> {
+export const SWR_MODULES = new Set(["swr"]);
+const SWR_ALLOWED_EXPORTS = new Set(["useSWR", "default"]);
+
+export function useSwrImportNames(
+  source: ts.SourceFile,
+  types?: SemanticTypeContext,
+): Set<string> {
+  if (types?.checker) {
+    const names = new Set<string>();
+    for (const resolved of collectSemanticNamedImports(
+      source,
+      SWR_MODULES,
+      SWR_ALLOWED_EXPORTS,
+      types,
+    )) {
+      names.add(resolved.localName);
+    }
+    return names;
+  }
+  return useSwrImportNamesSyntax(source);
+}
+
+function useSwrImportNamesSyntax(source: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   for (const statement of source.statements) {
     if (

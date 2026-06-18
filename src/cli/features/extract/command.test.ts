@@ -15,6 +15,12 @@ import {
 } from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
 import { renderHumanExtractTargets } from "./output.js";
+import { createBuiltinModalityRegistry } from "../../registry/index.js";
+import { sourceWithReachableImports } from "./project.js";
+import {
+  createSemanticProject,
+  loadSemanticProjectConfig,
+} from "../../../extract/engine/ts/semantic-project.js";
 
 const repoRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -32,6 +38,101 @@ async function mkSchemaExtractTemp(prefix: string): Promise<string> {
 }
 
 describe("runExtractCommand", () => {
+  it("wires module-role and effect API providers from registry adapters", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { next: "^15.0.0" },
+    });
+    expect(registry.adapters.moduleRoles.map((adapter) => adapter.kind)).toEqual(
+      ["module-roles"],
+    );
+    expect(registry.adapters.effectApis.map((provider) => provider.kind)).toEqual(
+      ["effect-api"],
+    );
+    expect(
+      registry.adapters.cacheStorage.map((provider) => provider.kind),
+    ).toEqual(["cache-storage"]);
+  });
+
+  it("merges Next cache/storage provider fragments into extracted model", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-cache-"));
+    const sourcePath = join(dir, "actions.ts");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { next: "^15.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+        "use server";
+        import { updateTag } from "next/cache";
+        export async function save() {
+          updateTag("posts");
+        }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.some((decl) => decl.id === "sys:next:cache:tag:posts"),
+    ).toBe(true);
+    expect(
+      model.transitions.some((transition) =>
+        transition.id.includes("updateTag"),
+      ),
+    ).toBe(true);
+    expect(
+      model.metadata?.plugins?.some(
+        (plugin) =>
+          plugin.kind === "cache-storage" && plugin.id === "next-cache-storage",
+      ),
+    ).toBe(true);
+    expect(result.pluginLabels.some((label) => label.includes("cache-storage"))).toBe(
+      true,
+    );
+  });
+
+  it("omits cache vars when Next cache/storage provider is not registered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-cache-"));
+    const sourcePath = join(dir, "actions.ts");
+    const modelPath = join(dir, "model.json");
+    const packageJsonPath = join(dir, "package.json");
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+        "use server";
+        import { updateTag } from "next/cache";
+        export async function save() {
+          updateTag("posts");
+        }
+      `,
+      "utf8",
+    );
+
+    await runExtractCommand({
+      sourcePath,
+      modelPath,
+      packageJsonPath,
+    });
+    const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
+    expect(
+      model.vars.some((decl) => decl.id.startsWith("sys:next:cache:")),
+    ).toBe(false);
+  });
+
   it("writes model and extraction report artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
@@ -90,7 +191,14 @@ describe("runExtractCommand", () => {
     ).toEqual([
       ["domain-refinement", "arktype", "0.1.0"],
       ["domain-refinement", "zod", "0.1.0"],
-      ["router", "router", "0.1.0"],
+      ["effect-api", "router-effect-api", "0.1.0"],
+      ["module-roles", "router-module-roles", "0.1.0"],
+      ["navigation", "router", "0.1.0"],
+      ["observation", "jotai", "0.1.0"],
+      ["observation", "router-observation", "0.1.0"],
+      ["observation", "swr", "0.1.0"],
+      ["observation", "use-state", "0.1.0"],
+      ["observation", "zustand", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "swr", "0.1.0"],
       ["state-source", "use-state", "0.1.0"],
@@ -486,13 +594,13 @@ describe("runExtractCommand", () => {
     const caveat = {
       kind: "global-taint" as const,
       id: "local:App.saveStatus",
-      reason: "Global taint local:App.saveStatus",
+      reason: "global-taint:local:App.saveStatus",
       severity: "unsound-risk" as const,
       source: expect.objectContaining({
         file: expect.stringMatching(/App\.tsx$/),
       }),
     };
-    expect(report.warnings).toContain("Global taint local:App.saveStatus");
+    expect(report.warnings).toContain("global-taint:local:App.saveStatus");
     expect(report.globalTaints).toEqual([caveat]);
     expect(result.model.metadata?.extractionCaveats?.entries).toEqual([caveat]);
   });
@@ -927,7 +1035,9 @@ describe("runExtractCommand", () => {
     expect(
       reactOnly.model.vars.some((decl) => decl.id === "atom:authAtom"),
     ).toBe(false);
-    expect(reactOnly.lines).toContain("plugins=state-source:use-state@0.1.0");
+    expect(reactOnly.lines).toContain(
+      "plugins=observation:use-state@0.1.0,state-source:use-state@0.1.0",
+    );
     expect(reactOnly.report.warnings).toEqual([]);
 
     await writeFile(
@@ -944,7 +1054,7 @@ describe("runExtractCommand", () => {
       withJotai.model.vars.some((decl) => decl.id === "atom:authAtom"),
     ).toBe(true);
     expect(withJotai.lines).toContain(
-      "plugins=state-source:jotai@0.1.0,state-source:use-state@0.1.0",
+      "plugins=observation:jotai@0.1.0,observation:use-state@0.1.0,state-source:jotai@0.1.0,state-source:use-state@0.1.0",
     );
     expect(withJotai.report.warnings).toEqual([]);
   });
@@ -1015,7 +1125,9 @@ describe("runExtractCommand", () => {
     expect(result.model.vars.some((decl) => decl.id === "atom:authAtom")).toBe(
       false,
     );
-    expect(result.lines).toContain("plugins=state-source:use-state@0.1.0");
+    expect(result.lines).toContain(
+      "plugins=observation:use-state@0.1.0,state-source:use-state@0.1.0",
+    );
   });
 
   it("loads modality config for route, bounds, effect APIs, package manifest, and plugin controls", async () => {
@@ -1087,7 +1199,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
-      "plugins=router:router@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect-api:router-effect-api@0.1.0,module-roles:router-module-roles@0.1.0,navigation:router@0.1.0,observation:router-observation@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
     );
   });
 
@@ -1414,7 +1526,7 @@ describe("runExtractCommand", () => {
     const caveat = {
       kind: "global-taint" as const,
       id: "jotai:getDefaultStore",
-      reason: "Global taint jotai:getDefaultStore",
+      reason: "global-taint:jotai:getDefaultStore",
       severity: "unsound-risk" as const,
       source: expect.objectContaining({
         file: expect.stringMatching(/App\.tsx$/),
@@ -1432,7 +1544,7 @@ describe("runExtractCommand", () => {
         confidence: "exact",
       }),
     );
-    expect(report.warnings).toContain("Global taint jotai:getDefaultStore");
+    expect(report.warnings).toContain("global-taint:jotai:getDefaultStore");
     expect(report.globalTaints).toEqual([caveat]);
     expect(result.model.metadata?.extractionCaveats?.entries).toEqual([caveat]);
   });
@@ -3000,7 +3112,7 @@ describe("runExtractCommand", () => {
     expect(statusAtom?.domain).toEqual({
       kind: "record",
       fields: {
-        status: { kind: "enum", values: ["open", "closed"] },
+        status: { kind: "enum", values: ["closed", "open"] },
       },
     });
   });
@@ -4659,6 +4771,227 @@ export default [route('/', 'routes/home.tsx')];`,
       line: 5,
       column: 15,
     });
+  });
+});
+
+describe("compiler-backed project surface", () => {
+  async function surfaceWithResolver(
+    dir: string,
+    files: Record<string, string>,
+    entryPath: string,
+  ) {
+    for (const [relativePath, text] of Object.entries(files)) {
+      const absolutePath = join(dir, relativePath);
+      await mkdir(dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, text, "utf8");
+    }
+    const resolvedEntry = resolve(join(dir, entryPath));
+    const entryText = await readFile(resolvedEntry, "utf8");
+    const config = loadSemanticProjectConfig(dir);
+    const resolver = createSemanticProject(
+      [{ path: resolvedEntry, text: entryText }],
+      config,
+    );
+    return sourceWithReachableImports(
+      [{ path: resolvedEntry, text: entryText }],
+      resolver,
+    );
+  }
+
+  it("resolves path alias imports through the compiler resolver", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-alias-"));
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: { "~/*": ["./src/*"] },
+          },
+        }),
+        "src/ui/Button.tsx": `
+          export function Button(props: { onClick: () => void }) {
+            return <button onClick={props.onClick}>Tap</button>;
+          }
+        `,
+        "src/App.tsx": `
+          import { useState } from 'react';
+          import { Button } from '~/ui/Button';
+          export function App() {
+            const [open, setOpen] = useState(false);
+            return <Button onClick={() => setOpen(true)} />;
+          }
+        `,
+      },
+      "src/App.tsx",
+    );
+    const button = result.sources.find((entry) =>
+      entry.path.endsWith("ui/Button.tsx"),
+    );
+    expect(button?.included).toBe(true);
+    expect(button?.interactionText).toContain("onClick");
+  });
+
+  it("resolves extensionless relative imports through the compiler resolver", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-surface-extensionless-"),
+    );
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": "{}",
+        "lib/utils.ts": `
+          export function helper(onDone: () => void) {
+            return <button onClick={onDone}>Done</button>;
+          }
+        `,
+        "App.tsx": `
+          import { useState } from 'react';
+          import { helper } from './lib/utils';
+          export function App() {
+            const [done, setDone] = useState(false);
+            return helper(() => setDone(true));
+          }
+        `,
+      },
+      "App.tsx",
+    );
+    const utils = result.sources.find((entry) =>
+      entry.path.endsWith("utils.ts"),
+    );
+    expect(utils?.included).toBe(true);
+    expect(utils?.interactionText).toContain("onClick");
+  });
+
+  it("resolves NodeNext .js specifiers to .ts sources through the compiler resolver", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-nodenext-"));
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "package.json": JSON.stringify({ type: "module" }),
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            module: "nodenext",
+            moduleResolution: "nodenext",
+          },
+        }),
+        "foo.ts": `
+          export function Foo(props: { onClick: () => void }) {
+            return <button onClick={props.onClick}>Tap</button>;
+          }
+        `,
+        "App.tsx": `
+          import { useState } from 'react';
+          import { Foo } from './foo.js';
+          export function App() {
+            const [open, setOpen] = useState(false);
+            return <Foo onClick={() => setOpen(true)} />;
+          }
+        `,
+      },
+      "App.tsx",
+    );
+    const foo = result.sources.find((entry) => entry.path.endsWith("foo.ts"));
+    expect(foo?.included).toBe(true);
+    expect(foo?.interactionText).toContain("onClick");
+  });
+
+  it("follows re-exports from aliased modules through the compiler resolver", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-reexport-"));
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: { "~/*": ["./src/*"] },
+          },
+        }),
+        "src/components/Child.tsx": `
+          import { useState } from 'react';
+          export function Child() {
+            const [count, setCount] = useState(0);
+            return <button onClick={() => setCount(1)}>Count</button>;
+          }
+        `,
+        "src/components/index.ts": `export { Child } from "./Child";`,
+        "src/Home.tsx": `
+          import { Child } from '~/components';
+          export function Home() {
+            return <Child />;
+          }
+        `,
+      },
+      "src/Home.tsx",
+    );
+    const child = result.sources.find((entry) =>
+      entry.path.endsWith("components/Child.tsx"),
+    );
+    expect(child?.interactionText).toContain("onClick");
+  });
+
+  it("excludes type-only imports from the interaction surface", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-type-only-"));
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: { "~/*": ["./src/*"] },
+          },
+        }),
+        "src/lib/phase.ts": `
+          export type Phase = 'alpha' | 'beta';
+          export async function serverHelper() {
+            await fetch('https://example.com/server');
+          }
+        `,
+        "src/Route.tsx": `
+          import { useState } from 'react';
+          import type { Phase } from '~/lib/phase';
+          export function Route() {
+            const [phase, setPhase] = useState<Phase>('alpha');
+            return <button onClick={() => setPhase('beta')}>Next</button>;
+          }
+        `,
+      },
+      "src/Route.tsx",
+    );
+    const phase = result.sources.find((entry) =>
+      entry.path.endsWith("lib/phase.ts"),
+    );
+    expect(phase?.interactionText).not.toContain("serverHelper");
+    expect(phase?.interactionText).not.toContain("fetch");
+    expect(result.effectApis).not.toContain("GET https://example.com/server");
+    expect(
+      result.sources.find((entry) => entry.path.endsWith("Route.tsx"))
+        ?.interactionText,
+    ).toContain("onClick");
+  });
+
+  it("reports unresolved modules with source file, specifier, and import kind", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-surface-unresolved-"));
+    const result = await surfaceWithResolver(
+      dir,
+      {
+        "tsconfig.json": "{}",
+        "App.tsx": `
+          import { useState } from 'react';
+          import { Missing } from './missing';
+          export function App() {
+            const [open, setOpen] = useState(false);
+            return <button onClick={() => setOpen(true)}>{Missing}</button>;
+          }
+        `,
+      },
+      "App.tsx",
+    );
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Unresolved import "\.\/missing" in .*App\.tsx/),
+      ]),
+    );
   });
 });
 

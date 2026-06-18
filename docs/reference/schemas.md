@@ -27,6 +27,18 @@ interface Model {
 }
 ```
 
+`PluginProvenance.kind` distinguishes active adapter capabilities:
+
+| Kind | Provider |
+| --- | --- |
+| `navigation` | active `NavigationAdapter` |
+| `module-roles` | `ModuleRoleAdapter` |
+| `effect-api` | `EffectApiProvider` |
+| `cache-storage` | `CacheStorageProvider` |
+| `observation` | synthesized `ObservationProvider` |
+| `state-source` | `StateSourcePlugin` |
+| `domain-refinement` | `DomainRefinementProvider` |
+
 A `Transition` is `{ id, cls, label, source, guard, effect, reads, writes, confidence,
 triggeredBy?, phase? }`. See the [IR](../architecture/ir.md) and
 [Transitions](../concepts/transitions.md). Serialization is canonically ordered so the

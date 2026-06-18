@@ -9,7 +9,7 @@ import {
   runExtractionPipeline,
   type StateSourcePlugin,
 } from "modality-ts/extract";
-import type { RouterPlugin } from "modality-ts/extract/engine/spi";
+import type { NavigationAdapter } from "modality-ts/extract/engine/spi";
 import { locationVars } from "../../src/extract/sources/router/routes.js";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
@@ -162,7 +162,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "router",
       packageNames: ["router"],
       discoverRoutes: async () => inventory,
@@ -202,7 +202,7 @@ describe("extraction architecture surface", () => {
       router: {
         id: "router",
         version: "unknown",
-        kind: "router",
+        kind: "navigation",
         packageNames: ["router"],
       },
     });
@@ -237,7 +237,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "route-tree",
       packageNames: ["next"],
       discoverRoutes: async () => inventory,
@@ -375,6 +375,24 @@ describe("extraction architecture surface", () => {
     }
   });
 
+  it("extraction engine does not import built-in source slices", async () => {
+    const engineDir = resolve(srcDir, "extract/engine");
+    const files = await sourceFiles(engineDir);
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (
+          specifier.includes("extract/sources") ||
+          specifier.includes("/sources/")
+        ) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("extraction engine does not import type-library adapters", async () => {
     const engineDir = resolve(srcDir, "extract/engine");
     const files = await sourceFiles(engineDir);
@@ -383,6 +401,40 @@ describe("extraction architecture surface", () => {
       const text = await readFile(file, "utf8");
       for (const specifier of importSpecifiers(text)) {
         if (specifier.includes("type-libraries")) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("CLI extraction code does not import private built-in adapter modules", async () => {
+    const cliExtractDir = resolve(srcDir, "cli/features/extract");
+    const files = await sourceFiles(cliExtractDir);
+    const violations: string[] = [];
+    const allowedPublicPrefixes = [
+      "modality-ts/extract/sources/next",
+      "modality-ts/extract/sources/router",
+    ];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (
+          specifier.includes("extract/sources/next/") ||
+          specifier.endsWith("/next/cache.js") ||
+          specifier.endsWith("/next/cache") ||
+          specifier.includes("extract/sources/router/") ||
+          specifier.match(/extract\/sources\/next\/[^"']+\.js$/) ||
+          specifier.match(/\.\.\/.*\/extract\/sources\/(next|router)\//)
+        ) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+          continue;
+        }
+        if (
+          (specifier.startsWith("../../../extract/sources/next") ||
+            specifier.startsWith("../../../extract/sources/router")) &&
+          !allowedPublicPrefixes.some((prefix) => specifier === prefix)
+        ) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
         }
       }
@@ -513,6 +565,58 @@ describe("extraction architecture surface", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not reference obsolete adapter SPI names in active source", async () => {
+    const forbidden = [
+      new RegExp(`\\b${["Router", "Plugin"].join("")}\\b`),
+      new RegExp(`\\b${["router", "Source"].join("")}\\b`),
+      new RegExp(`\\b${["with", "Server", "Effect", "Discovery"].join("")}\\b`),
+      new RegExp(`\\b${["plugin", "Safety", "Warning"].join("")}\\b`),
+      new RegExp(
+        `\\b${["validate", "Router", "Plugin"].join("")}\\b`,
+      ),
+    ];
+    const violations = await collectPatternViolations(srcDir, forbidden);
+    expect(violations).toEqual([]);
+  });
+
+  it("does not branch extraction flow on navigation adapter ids", async () => {
+    const forbidden = [
+      new RegExp(
+        `${["adapter", ".id === \"next\""].join("")}`,
+      ),
+      new RegExp(
+        `${["adapter", ".id === \"router\""].join("")}`,
+      ),
+      new RegExp(`${["routerAdapter", ".id ==="].join("")}`),
+    ];
+    const violations = await collectPatternViolations(srcDir, forbidden);
+    expect(violations).toEqual([]);
+  });
+
+  it("does not parse warning message prefixes to recover caveats", async () => {
+    const files = await sourceFiles(srcDir);
+    const globalTaintPrefix = ["Global", " taint "].join("");
+    const forbidden = [
+      new RegExp(`\\b${["plugin", "Safety", "Warning"].join("")}\\b`),
+      /unextractableHandlerFromWarning/,
+      new RegExp(
+        `startsWith\\(\\s*["']${globalTaintPrefix.replace(/ /g, " ")}`,
+      ),
+      /startsWith\(\s*["']global-taint:/,
+      /\^Unextractable handler /,
+    ];
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const pattern of forbidden) {
+        if (pattern.test(text)) {
+          violations.push(`${relativeToSrc(file)}: ${pattern}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });
 
 describe("conformance and canary runner boundaries", () => {
@@ -554,6 +658,23 @@ describe("conformance and canary runner boundaries", () => {
     expect(violations).toEqual([]);
   });
 });
+
+async function collectPatternViolations(
+  rootDir: string,
+  patterns: readonly RegExp[],
+): Promise<string[]> {
+  const files = await sourceFiles(rootDir);
+  const violations: string[] = [];
+  for (const file of files) {
+    const text = await readFile(file, "utf8");
+    for (const pattern of patterns) {
+      if (pattern.test(text)) {
+        violations.push(`${relativeToSrc(file)}: ${pattern}`);
+      }
+    }
+  }
+  return violations;
+}
 
 async function sourceFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });

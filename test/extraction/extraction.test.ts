@@ -11,7 +11,7 @@ import {
   readVar,
 } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  NavigationAdapter,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
@@ -3984,7 +3984,8 @@ describe("useState inventory", () => {
     );
     const confirmVar = "sys:confirm:App.onClick.api.deleteDefinition";
     const start = result.transitions.find(
-      (transition) => transition.id === "App.onClick.api.deleteDefinition.start",
+      (transition) =>
+        transition.id === "App.onClick.api.deleteDefinition.start",
     );
     const declined = result.transitions.find(
       (transition) =>
@@ -4005,8 +4006,7 @@ describe("useState inventory", () => {
       start?.effect.kind === "seq" &&
         start.effect.effects.some(
           (effect) =>
-            effect.kind === "enqueue" &&
-            effect.op === "api.deleteDefinition",
+            effect.kind === "enqueue" && effect.op === "api.deleteDefinition",
         ),
     ).toBe(true);
     expect(
@@ -4265,7 +4265,7 @@ describe("useState inventory", () => {
   });
 
   it("uses custom router plugins to summarize navigation calls", () => {
-    const routerPlugin: RouterPlugin = {
+    const routerPlugin: NavigationAdapter = {
       id: "custom-router",
       packageNames: ["custom-router"],
       discoverRoutes: async () => ({ routes: [] }),
@@ -4364,7 +4364,7 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Global taint local:App.saveStatus",
+      "global-taint:local:App.saveStatus",
     );
   });
 
@@ -4382,7 +4382,7 @@ describe("useState inventory", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(result.warnings.map((warning) => warning.message)).toContain(
-      "Global taint local:App.saveStatus",
+      "global-taint:local:App.saveStatus",
     );
   });
 
@@ -5676,5 +5676,46 @@ describe("environment callbacks", () => {
       kind: "timer",
       key: "App.setTimeout.saveStatus",
     });
+  });
+});
+
+describe("component and hook registry fallback", () => {
+  it("resolves supplemental components and hooks by display name without semantic context", () => {
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const appText = `import { Child } from "./Child.js";
+import { useCounter } from "./useCounter.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const result = extractReactSourceTransitions(appText, {
+      fileName: "App.tsx",
+      route: "/",
+      relatedFragments: [
+        { sourceText: childText, fileName: "Child.tsx" },
+        { sourceText: hookText, fileName: "useCounter.ts" },
+        { sourceText: appText, fileName: "App.tsx" },
+      ],
+    });
+
+    expect(result.vars.some((decl) => decl.id === "local:App.count")).toBe(
+      true,
+    );
+    expect(result.vars.some((decl) => decl.id === "local:App.done")).toBe(true);
+    expect(
+      result.transitions.some(
+        (transition) =>
+          transition.id.includes("onClick") ||
+          transition.id.includes("onDone") ||
+          transition.id.includes("done"),
+      ),
+    ).toBe(true);
   });
 });

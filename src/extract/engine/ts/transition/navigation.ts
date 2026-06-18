@@ -263,13 +263,13 @@ export function applyLowerNavigation(
     effect: EffectIR;
     reads: readonly string[];
     writes: readonly string[];
-    confidence: "exact" | "over-approx";
+    confidence: Transition["confidence"];
   },
 ): {
   effect: EffectIR;
   reads: readonly string[];
   writes: readonly string[];
-  confidence: "exact" | "over-approx";
+  confidence: Transition["confidence"];
 } {
   if (!adapter?.lowerNavigation || !inventory) return fallback;
   const lowered = adapter.lowerNavigation(intent, { inventory, routePatterns });

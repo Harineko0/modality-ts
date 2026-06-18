@@ -58,7 +58,7 @@ describe("runExtractCommand next.js", () => {
 
     expect(result.model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "router", id: "next" }),
+        expect.objectContaining({ kind: "navigation", id: "next" }),
       ]),
     );
     expect(
@@ -416,7 +416,7 @@ describe("builtin registry next selection", () => {
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
-          kind: "router",
+          kind: "navigation",
           packageNames: ["next"],
         }),
       ]),

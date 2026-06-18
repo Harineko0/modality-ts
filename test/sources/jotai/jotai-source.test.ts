@@ -186,8 +186,17 @@ describe("Jotai source plugin", () => {
       }),
     ).toEqual([
       {
-        message: "Global taint jotai:getDefaultStore",
+        message: "global-taint:jotai:getDefaultStore",
         source: { file: "state.ts", line: 2, column: 16 },
+        caveat: {
+          kind: "global-taint",
+          id: "jotai:getDefaultStore",
+          reason: "global-taint:jotai:getDefaultStore",
+          source: { file: "state.ts", line: 2, column: 16 },
+          severity: "unsound-risk",
+        },
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "jotai" },
       },
     ]);
   });
@@ -567,6 +576,14 @@ describe("Jotai source plugin", () => {
       checker: semanticProject.checker,
       sourceFile,
       getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      symbolAt: (node: ts.Node) => semanticProject.symbolAt(node),
+      aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
     };
     const decls = jotaiSource().discover({
       sourceText: source,
@@ -616,6 +633,14 @@ describe("Jotai source plugin", () => {
       checker: semanticProject.checker,
       sourceFile,
       getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      symbolAt: (node: ts.Node) => semanticProject.symbolAt(node),
+      aliasedSymbolAt: (node: ts.Node) => semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: ts.Symbol) => semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: ts.Node) => semanticProject.localSymbolKey(node),
     };
     const decls = jotaiSource().discover({
       sourceText: appText,
@@ -630,5 +655,58 @@ describe("Jotai source plugin", () => {
     expect(
       decls.some((decl) => decl.id === "atom:countAtom@store:myStore"),
     ).toBe(true);
+  });
+
+  it("recognizes atom creators through import aliases and local barrels", () => {
+    const barrelPath = "/project/jotai.ts";
+    const statePath = "/project/state.ts";
+    const barrelText = `export { atom } from "jotai";`;
+    const source = `import { atom as makeAtom } from "./jotai.js";
+export const countAtom = makeAtom(0);`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: barrelPath, text: barrelText },
+      { path: statePath, text: source },
+    ]);
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile: semanticProject.getSourceFile(statePath),
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      aliasedSymbolAt: (node: import("typescript").Node) =>
+        semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: import("typescript").Symbol) =>
+        semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: import("typescript").Node) =>
+        semanticProject.localSymbolKey(node),
+    };
+    const decls = jotaiSource().discover({
+      sourceText: source,
+      fileName: statePath,
+      route: "/",
+      types,
+    });
+    expect(decls.some((decl) => decl.id === "atom:countAtom")).toBe(true);
+  });
+
+  it("keeps syntax-only jotai import fallback without semantic context", () => {
+    const source = `
+      import { atom } from 'jotai';
+      export const countAtom = atom(0);
+    `;
+    expect(
+      jotaiSource().discover({
+        sourceText: source,
+        fileName: "state.ts",
+        route: "/",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "atom:countAtom", kind: "jotai/atom" }),
+      ]),
+    );
   });
 });

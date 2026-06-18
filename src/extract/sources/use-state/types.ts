@@ -21,7 +21,7 @@ export interface UseStateExtractionOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly import("../../engine/spi/index.js").WriteChannel[];
   sourcePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];
-  routerPlugin?: import("../../engine/spi/index.js").RouterPlugin;
+  routerPlugin?: import("../../engine/spi/index.js").NavigationAdapter;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
   bounds?: Pick<import("modality-ts/core").Bounds, "maxDepth">;
 }

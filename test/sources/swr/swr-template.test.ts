@@ -21,6 +21,7 @@ import {
   swrWindowView,
 } from "modality-ts/extract/sources/swr";
 import { observe, setup } from "../../../src/extract/sources/swr/harness.js";
+import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
@@ -655,5 +656,69 @@ describe("SWR template", () => {
         confidence: "exact",
       }),
     );
+  });
+
+  it("recognizes useSWR through import aliases and local barrels", () => {
+    const barrelPath = "/project/swr.ts";
+    const appPath = "/project/App.tsx";
+    const barrelText = `export { default as useSWR } from "swr";`;
+    const source = `import { useSWR as useData } from "./swr.js";
+export function App() {
+  const { data } = useData('/api/todos', fetcher);
+  return data?.length;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: barrelPath, text: barrelText },
+      { path: appPath, text: source },
+    ]);
+    const types = {
+      program: semanticProject.program,
+      checker: semanticProject.checker,
+      sourceFile: semanticProject.getSourceFile(appPath),
+      getSourceFile: (name: string) => semanticProject.getSourceFile(name),
+      canonicalFileName: (name: string) =>
+        semanticProject.canonicalFileName(name),
+      resolveModuleName: (specifier: string, containingFile: string) =>
+        semanticProject.resolveModuleName(specifier, containingFile),
+      symbolAt: (node: import("typescript").Node) =>
+        semanticProject.symbolAt(node),
+      aliasedSymbolAt: (node: import("typescript").Node) =>
+        semanticProject.aliasedSymbolAt(node),
+      symbolKey: (symbol: import("typescript").Symbol) =>
+        semanticProject.symbolKey(symbol),
+      localSymbolKey: (node: import("typescript").Node) =>
+        semanticProject.localSymbolKey(node),
+    };
+    const decls = swrSource().discover({
+      sourceText: source,
+      fileName: appPath,
+      route: "/",
+      types,
+    });
+    expect(decls).toEqual([
+      expect.objectContaining({
+        id: "swr:api_todos",
+        kind: "swr/useSWR",
+      }),
+    ]);
+  });
+
+  it("keeps syntax-only swr import fallback without semantic context", () => {
+    const source = `
+      import useSWR from 'swr';
+      export function App() {
+        const { data } = useSWR('/api/todos', fetcher);
+        return data?.length;
+      }
+    `;
+    expect(
+      swrSource().discover({
+        sourceText: source,
+        fileName: "App.tsx",
+        route: "/",
+      }),
+    ).toEqual([
+      expect.objectContaining({ id: "swr:api_todos", kind: "swr/useSWR" }),
+    ]);
   });
 });

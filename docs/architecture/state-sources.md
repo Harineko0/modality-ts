@@ -27,7 +27,8 @@ interface StateSourcePlugin {
   domainHints?(decl, ctx): AbstractDomain | undefined; // P2: library-specific domains
   writeChannels(ctx): WriteChannel[];                // P5: every write API of this source
   summarizeWrite?(call, ctx): EffectIR | "unsupported"; // P4: translate a write call
-  safetyWarnings?(ctx): ExtractionCaveat[];
+  safetyWarnings?(ctx): ExtractionWarning[];          // structured warnings with optional caveat,
+                                                      // confidence, and producer metadata
   template?(decl, options): TemplateFragment;        // library-behaviour model (SWR: yes)
 
   // ── replay (jsdom; from 'modality-ts/extract/sources/*/harness') ────
@@ -89,6 +90,26 @@ src/extract/sources/jotai/
 the app's dependencies, and config can disable any of them
 (`--disable-plugin <id>`). Third-party plugins are ordinary npm packages exporting a
 `StateSourcePlugin`; the registry validates the contract shape at load.
+
+## Adapter capabilities beyond state sources
+
+Built-in framework adapters compose several **orthogonal capabilities** through
+the CLI registry bundle (`RegistryAdaptersBundle`):
+
+| Capability | Interface | Responsibility |
+| --- | --- | --- |
+| Navigation | `NavigationAdapter` | route discovery, navigation classification/lowering, location vars, mount scopes, navigation harness |
+| Module roles | `ModuleRoleAdapter` | server/client/shared classification, entry exports, import-edge context, server-only exclusion |
+| Effect APIs | `EffectApiProvider` | discover server actions, route handlers, and other nondeterministic async surfaces |
+| Cache/storage | `CacheStorageProvider` | framework cache vars and invalidation transitions (Next.js today) |
+| Observation | `ObservationProvider` | replay `setup` / `observe` / optional `witness` for state sources and navigation |
+| Domain refinement | `DomainRefinementProvider` | schema-driven finite domains (Zod, ArkType) |
+
+Exactly one `NavigationAdapter` is active per app. Module-role, effect-API, and
+cache/storage providers may register in parallel when their `packageNames`
+match app dependencies. Observation providers are synthesized from active state
+sources and navigation. See [Navigation](./navigation.md) and
+[Conformance & replay](./conformance-and-replay.md).
 
 ## Capability matrix
 

@@ -1,6 +1,6 @@
 import type { StateVarDecl } from "modality-ts/core";
 import type {
-  RouterPlugin,
+  NavigationAdapter,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
@@ -19,7 +19,7 @@ export interface SwrExtractionOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: RouterPlugin;
+  routerPlugin?: NavigationAdapter;
 }
 
 export function extractSwrSkeleton(

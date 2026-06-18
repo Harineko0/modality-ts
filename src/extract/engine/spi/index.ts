@@ -6,9 +6,11 @@ import type {
   Locator,
   ModelState,
   NumericReduction,
+  PluginProvenance,
   SourceAnchor,
   StateVarDecl,
   TemplateFragment,
+  Transition,
   Value,
 } from "modality-ts/core";
 import type * as ts from "typescript";
@@ -29,13 +31,22 @@ export interface DomainRefinementResolution {
   reductions?: NumericReduction[];
 }
 
-export interface DomainRefinementProvider {
+export interface ModalityAdapterBase {
   id: string;
   version?: string;
   packageNames: readonly string[];
+}
+
+export interface DomainRefinementProvider extends ModalityAdapterBase {
   refineDomain(
     ctx: DomainRefinementContext,
   ): DomainRefinementResolution | undefined;
+}
+
+export interface ResolvedModuleName {
+  fileName: string;
+  sourceFile?: ts.SourceFile;
+  isExternal: boolean;
 }
 
 export interface SemanticTypeContext {
@@ -43,17 +54,36 @@ export interface SemanticTypeContext {
   checker: ts.TypeChecker;
   sourceFile?: ts.SourceFile;
   getSourceFile(fileName: string): ts.SourceFile | undefined;
+  canonicalFileName?(fileName: string): string;
+  resolveModuleName?(
+    specifier: string,
+    containingFile: string,
+  ): ResolvedModuleName | undefined;
+  symbolAt?(node: ts.Node): ts.Symbol | undefined;
+  aliasedSymbolAt?(node: ts.Node): ts.Symbol | undefined;
+  symbolKey?(symbol: ts.Symbol): string;
+  localSymbolKey?(node: ts.Node): string | undefined;
 }
 
 export {
+  compilerBackedTypeAliases,
   firstValue,
   inferDomainFromTypeNode,
+  inferDomainSemantic,
   inferUseStateDomain,
   inferUseStateDomainDetailed,
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   typeAliasDeclarations,
+  useStateCallForSemanticInference,
 } from "../ts/domains.js";
+
+export {
+  collectSemanticNamedImports,
+  resolveSemanticNamedExport,
+  type ResolvedSemanticImport,
+  type SemanticImportContext,
+} from "../ts/semantic-imports.js";
 
 export interface SourceDecl {
   id: string;
@@ -66,13 +96,19 @@ export interface SourceDecl {
 export interface WriteChannel {
   id: string;
   varId: string;
+  /** Local display / syntax-only fallback identity for the setter. */
   symbolName: string;
+  /** Stable checker symbol identity when semantic extraction is available. */
+  symbolKey?: string;
   source: SourceAnchor;
 }
 
 export interface ExtractionWarning {
   message: string;
   source?: SourceAnchor;
+  caveat?: ExtractionCaveat;
+  confidence?: Transition["confidence"];
+  producer?: { kind: PluginProvenance["kind"]; id: string };
 }
 
 export interface CallSite {
@@ -190,10 +226,7 @@ export interface ProbeWalk {
   steps: readonly string[];
 }
 
-export interface StateSourcePlugin {
-  id: string;
-  version?: string;
-  packageNames: readonly string[];
+export interface StateSourcePlugin extends ModalityAdapterBase {
   discover(ctx: DiscoverCtx): readonly SourceDecl[];
   domainHints?(decl: SourceDecl, ctx: TypeCtx): AbstractDomain | undefined;
   writeChannels(ctx: ChannelCtx): readonly WriteChannel[];
@@ -264,16 +297,77 @@ export interface EffectApiDiscoveryCtx {
   inventory?: RouteInventory;
 }
 
+export interface EffectApiSurfaceCtx {
+  fileName: string;
+  sourceText: string;
+  route?: RouteNode;
+  classification: ModuleClassification;
+  entryExports: readonly ModuleEntryExport[];
+  isManifest: boolean;
+  surface?: ModuleExtractionSurface;
+}
+
 export interface DiscoveredEffectApi {
   opId: string;
   source: { file: string; line: number; column: number };
   warning?: string;
+  caveats?: readonly ExtractionCaveat[];
+  confidence?: Transition["confidence"];
+  producer?: { kind: PluginProvenance["kind"]; id: string };
 }
 
-export interface NavigationAdapter {
-  id: string;
-  version?: string;
-  packageNames: readonly string[];
+export interface ModuleRoleAdapter extends ModalityAdapterBase {
+  kind: "module-roles";
+  classifyModule(ctx: ModuleRoleCtx): ModuleClassification;
+  moduleEntryExports(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
+  classifyImportEdge(ctx: ImportEdgeCtx): ImportEdgeContext;
+  isServerOnlyModule(
+    fileName: string,
+    classification?: ModuleClassification,
+  ): boolean;
+  shouldDiscoverEffectApis?(ctx: EffectApiSurfaceCtx): boolean;
+}
+
+export interface EffectApiProvider extends ModalityAdapterBase {
+  kind: "effect-api";
+  discoverEffectApis(
+    ctx: EffectApiDiscoveryCtx,
+  ): readonly DiscoveredEffectApi[];
+}
+
+export interface CacheStorageDiscoveryCtx {
+  rootDir?: string;
+  files: readonly { path: string; text: string }[];
+  inventory?: RouteInventory;
+  options: ResolvedOptions;
+}
+
+export interface CacheStorageFragment {
+  vars: readonly StateVarDecl[];
+  transitions: readonly import("modality-ts/core").Transition[];
+  caveats: readonly ExtractionCaveat[];
+  reductions?: readonly NumericReduction[];
+  warnings?: readonly string[];
+}
+
+export interface CacheStorageProvider extends ModalityAdapterBase {
+  kind: "cache-storage";
+  discoverCacheStorage(ctx: CacheStorageDiscoveryCtx): CacheStorageFragment;
+}
+
+export interface NavigationLoweringCtx {
+  inventory: RouteInventory;
+  routePatterns: readonly string[];
+}
+
+export interface NavigationLoweringResult {
+  effect: EffectIR;
+  reads: readonly string[];
+  writes: readonly string[];
+  confidence: Transition["confidence"];
+}
+
+export interface NavigationAdapter extends ModalityAdapterBase {
   discoverRoutes(ctx: RouteDiscoveryCtx): Promise<RouteInventory>;
   classifyNavigationCall(
     callee: string,
@@ -287,13 +381,6 @@ export interface NavigationAdapter {
     componentName: string,
     inventory: RouteInventory,
   ): string | undefined;
-  classifyModule?(ctx: ModuleRoleCtx): ModuleClassification;
-  moduleEntryExports?(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
-  classifyImportEdge?(ctx: ImportEdgeCtx): ImportEdgeContext;
-  isServerOnlyModule?(fileName: string): boolean;
-  discoverEffectApis?(
-    ctx: EffectApiDiscoveryCtx,
-  ): readonly DiscoveredEffectApi[];
   locationVars(
     inventory: RouteInventory,
     options: ResolvedOptions,
@@ -305,16 +392,8 @@ export interface NavigationAdapter {
   ): readonly StateVarDecl[];
   lowerNavigation?(
     intent: NavIntent,
-    ctx: {
-      inventory: RouteInventory;
-      routePatterns: readonly string[];
-    },
-  ): {
-    effect: EffectIR;
-    reads: readonly string[];
-    writes: readonly string[];
-    confidence?: "exact" | "over-approx";
-  };
+    ctx: NavigationLoweringCtx,
+  ): NavigationLoweringResult;
   mountScopeForComponent?(
     componentName: string,
     inventory: RouteInventory,
@@ -330,5 +409,9 @@ export interface NavigationAdapter {
   };
 }
 
-/** @deprecated use NavigationAdapter */
-export type RouterPlugin = NavigationAdapter;
+export interface ObservationProvider extends ModalityAdapterBase {
+  kind: "observation";
+  setup(ctx: HarnessCtx): HarnessHooks;
+  observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable";
+  witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
+}

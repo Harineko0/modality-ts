@@ -1,10 +1,14 @@
 import * as ts from "typescript";
 import type {
   CallSite,
+  ExtractionWarning,
   M0Ctx,
   WriteChannel,
+  SemanticTypeContext,
 } from "modality-ts/extract/engine/spi";
-import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
+import type { EffectIR, Value } from "modality-ts/core";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { propertyName } from "../../engine/ts/ast.js";
 import { isStoreCreatorCall, resolveZustandImports } from "./imports.js";
 import { anchor, discoverZustandStoresDetailed } from "./discover.js";
@@ -14,7 +18,7 @@ import { metadataFromRecord } from "./types.js";
 
 export interface ZustandWriteDiscovery {
   channels: WriteChannel[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: ExtractionWarning[];
   setterFixedEffects: Map<string, EffectIR>;
   resettableVarIds: Set<string>;
 }
@@ -22,25 +26,26 @@ export interface ZustandWriteDiscovery {
 export function discoverZustandWriteChannels(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): WriteChannel[] {
-  return discoverZustandWritesDetailed(sourceText, fileName).channels;
+  return discoverZustandWritesDetailed(sourceText, fileName, types).channels;
 }
 
 export function discoverZustandWritesDetailed(
   sourceText: string,
   fileName = "state.ts",
+  types?: SemanticTypeContext,
 ): ZustandWriteDiscovery {
-  const source = ts.createSourceFile(
-    fileName,
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const imports = resolveZustandImports(source);
-  const discovery = discoverZustandStoresDetailed(sourceText, fileName);
+  const imports = resolveZustandImports(source, types);
+  const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];
-  const warnings: { message: string; source?: SourceAnchor }[] = [
+  const warnings: ExtractionWarning[] = [
     ...discovery.warnings,
   ];
   const setterFixedEffects = new Map<string, EffectIR>();
@@ -363,29 +368,43 @@ type ExprIR = import("modality-ts/core").ExprIR;
 export function discoverZustandSafetyWarnings(
   sourceText: string,
   fileName = "state.ts",
-): { message: string; source?: SourceAnchor }[] {
-  const source = ts.createSourceFile(
-    fileName,
+  types?: SemanticTypeContext,
+): ExtractionWarning[] {
+  const source = semanticSourceFileFor(
     sourceText,
-    ts.ScriptTarget.Latest,
-    true,
+    fileName,
+    types,
     ts.ScriptKind.TSX,
   );
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
-  const discovery = discoverZustandStoresDetailed(sourceText, fileName);
+  const warnings: ExtractionWarning[] = [];
+  const discovery = discoverZustandStoresDetailed(sourceText, fileName, types);
   warnings.push(...discovery.warnings);
-  const writeDiscovery = discoverZustandWritesDetailed(sourceText, fileName);
+  const writeDiscovery = discoverZustandWritesDetailed(
+    sourceText,
+    fileName,
+    types,
+  );
   warnings.push(...writeDiscovery.warnings);
 
   for (const decl of discovery.decls) {
     const metadata = metadataFromRecord(decl.metadata);
     if (metadata?.storageKind === "localStorage" && !hasWindowGuard(source)) {
+      const src =
+        decl.origin === "system" || decl.origin === "library-template"
+          ? undefined
+          : decl.origin;
+      const caveat = modelSlackCaveat(
+        `zustand:${metadata.storeName}.${metadata.field}.${metadata.storageKind}`,
+        `Zustand SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.storeName}.${metadata.field}`,
+        src,
+        "unsound-risk",
+      );
       warnings.push({
-        message: `Zustand SSR-unsafe unguarded ${metadata.storageKind} access for ${metadata.storeName}.${metadata.field}`,
-        source:
-          decl.origin === "system" || decl.origin === "library-template"
-            ? undefined
-            : decl.origin,
+        message: caveat.reason,
+        ...(src ? { source: src } : {}),
+        caveat,
+        confidence: "over-approx",
+        producer: { kind: "state-source", id: "zustand" },
       });
     }
   }
@@ -410,11 +429,9 @@ function hasWindowGuard(source: ts.SourceFile): boolean {
   return found;
 }
 
-function dedupeWarnings(
-  warnings: { message: string; source?: SourceAnchor }[],
-): { message: string; source?: SourceAnchor }[] {
+function dedupeWarnings(warnings: ExtractionWarning[]): ExtractionWarning[] {
   const seen = new Set<string>();
-  const result: { message: string; source?: SourceAnchor }[] = [];
+  const result: ExtractionWarning[] = [];
   for (const warning of warnings) {
     const key = `${warning.message}:${warning.source?.line ?? ""}`;
     if (seen.has(key)) continue;
