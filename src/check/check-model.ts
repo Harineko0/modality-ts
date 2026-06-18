@@ -1,4 +1,5 @@
 import type { Model, Property } from "modality-ts/core";
+import { compareModelEconomics } from "./slicing/contributors.js";
 import { sliceModelForCheckProperty } from "./slicing/slice-model.js";
 import { runRustCheck } from "./native.js";
 import type {
@@ -136,6 +137,7 @@ function checkModelSliced(
       edges: result.stats.edges,
       depth: result.stats.depth,
       mode: group.mode,
+      ...compareModelEconomics(model, group.model),
     });
   }
 
