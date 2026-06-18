@@ -163,6 +163,13 @@ Budget failures classify as `state-space-budget`. Manifest-owned budget fields
 include states, edges, depth, frontier, dominant var values, state-space bits, top
 contributor bits, and pending queue length (via bound hits).
 
+Canaries and conformance fixtures compare **contributor budgets** (`stateContributors`
+from extraction reports, per-slice economics from check reports) and **accepted caveats**
+(manifest `acceptedCaveats` vs report caveat ids) — not only pass/fail verdicts. A
+fixture may pass all properties yet fail a budget cap or introduce an unaccepted
+`model-slack` caveat; runners surface these through `thresholdResults`, `budgetResults`,
+`acceptedCaveats`, and `unacceptedCaveats` in matrix and canary reports.
+
 ### Public CLI surface
 
 `modality matrix` and `modality canary` are deliberately **not** exposed. Matrix and

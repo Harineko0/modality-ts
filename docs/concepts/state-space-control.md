@@ -46,6 +46,54 @@ These preserve the meaning of the verdict.
    tradition. The report says "verified for up to 2 concurrent requests" — never just
    "verified".
 
+### State-space contributors
+
+Every variable contributes `log₂(|domain|)` bits to the model's theoretical state
+space. Extraction reports `stateContributors` with `totalBits`, ranked `topVars`, and
+`bySource` provenance. Check reports echo per-slice economics in
+`diagnostics.slicing.sliceSummaries`: `retainedBits`, `prunedBits`,
+`topContributors`, and `prunedTopContributors`. Use these to see which domains dominate
+before tightening bounds or refining overlays.
+
+### Per-property slice economics
+
+[Per-property slicing](#sound-reductions) drops variables and transitions outside the
+property's cone of influence. Each slice summary records what survived and what was
+pruned:
+
+- `retainedBits` / `prunedBits` — bit budget kept vs dropped for this slice.
+- `topContributors` / `prunedTopContributors` — ranked vars with domain kind, scope,
+  origin, and optional `prunedFieldPaths`.
+- `retainedSystemVars` / `prunedSystemVars` — adapter-owned vars (route, pending queue,
+  cache entries) kept or dropped.
+
+A property about local form state should show `sys:pending` and `sys:history` under
+`prunedSystemVars` unless the property reads async step facts (`enqueued`, `resolved`,
+`opId`, `opArgs`).
+
+### Route, mount, and pending-queue pruning
+
+Role-bearing system vars enter a slice only when a kept transition or property read
+needs them:
+
+- **Pending queue** (`role: pending-queue`) — retained when step predicates observe
+  `enqueued`, `resolved`, `opId`, or `opArgs`; otherwise pruned. Slice summaries list
+  `pendingQueueDependencies` with `reasons`, `opIds`, and `continuations` when retained.
+- **Route / history** (`location-current`, `location-history`) — retained when the
+  property or a kept transition reads them; mount-local vars retain only their guard
+  dependencies (`mountScopeDependencies` explains `guardReads` and `retainedBecause`).
+- **Mount-local state** — inactive at `⊥` when unmounted; slicing keeps mount guards
+  (`sys:route`, slot predicates) only when the scoped var or a guard read is in the cone.
+
+### Field-pruning metadata vs domain pruning
+
+Record fields unread by any guard, effect, or property collapse into the record's
+token identity during extraction. `model.metadata.fieldPruning` and
+`extractionReport.fieldPruning` document which paths were kept vs pruned per var
+(`reason`: `unread`, `property-unrelated`, or `bounded-record`). This is **metadata
+about** pruning — the IR domain already reflects the pruned shape. Per-slice
+`prunedFieldPaths` on contributors show field-level drops visible in check diagnostics.
+
 ### Numeric reductions
 
 Wide finite numeric domains are tamed with explicit, **claim-tagged** reductions

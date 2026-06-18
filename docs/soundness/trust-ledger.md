@@ -18,7 +18,7 @@ flowchart TD
   ledger --> plugins["plugins<br/>id + version + packages that produced the model"]
   ledger --> assum["assumptions<br/>declared environment constraints"]
   ledger --> abstr["abstractions<br/>domain provenance per var"]
-  ledger --> caveats["typed caveats<br/>global-taint · stale-read · unhandled-rejection · unextractable · model-slack"]
+  ledger --> caveats["typed caveats<br/>global-taint · stale-read · unhandled-rejection · unextractable · model-slack<br/>(structured at extraction; warnings are display-only)"]
   ledger --> txns["transition lists<br/>manual · over-approx"]
   ledger --> hits["boundHits<br/>which bounds actually bit"]
   ledger --> num["numericReductions<br/>each with a soundness claim"]
@@ -35,6 +35,7 @@ flowchart TD
 | `staleReads` | continuations reading vars that may have changed since enqueue |
 | `unhandledRejections` | error paths with no continuation (often a real bug) |
 | `unextractableHandlers` | handlers that need an overlay; their transitions are missing or `havoc`'d |
+| `modelSlack` | wide domains, unprovable array lengths, field-pruning over-approximations, and other search-enlarging caveats |
 | `manualTransitions` / `overApproxTransitions` | which transitions are human-supplied vs over-approximated |
 | `boundHits` | which bounds *actually* bit this run (a bound that never binds adds no caveat) |
 | `numericReductions` | each finite-numeric reduction with its claim (`exact` / `property-preserving` / `heuristic`) |
@@ -56,12 +57,22 @@ domain. Effect-operation provenance (where a network operation was discovered) i
 too. The point is to make the question "how much of my app is actually modeled, and how
 precisely?" answerable from one file.
 
+## Warnings vs structured caveats
+
+Extraction and check reports carry both typed `ExtractionCaveat` arrays and parallel
+`warnings: string[]` for human terminal output. **Warning strings are not machine-readable
+trust data.** Trust-affecting facts (`global-taint`, `model-slack`, `unextractable`, …)
+must be created as structured caveats at the extraction site and partitioned into the
+ledger fields. Production report code must not parse warning prefixes or regex-match
+`warning.message` to recover caveat identity — see [the E1 invariant](./e1-invariant.md).
+
 ## Using the ledger in CI
 
 Because caveats are [typed and severity-tagged](./e1-invariant.md), CI can gate on
 *changes* to the ledger rather than treating it as advisory prose:
 
 - a **new** `global-taint` or `unsound-risk` caveat → fail (the model just got weaker);
+- a **new or removed** `modelSlack` entry → fail (`modality ci` compares caveat ids);
 - a drop in conformance pass-rate per transition → fail (the model drifted from the app);
 - a stale model hash (code changed under an unregenerated model) → fail.
 

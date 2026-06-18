@@ -86,3 +86,17 @@ Extraction caveats are not free-text; they have kinds —
 and a severity (`info` / `over-approx` / `unsound-risk`). This lets CI gate on, say, a
 *new* `unsound-risk` caveat appearing, rather than treating all warnings alike. See
 [the trust ledger](./trust-ledger.md).
+
+## Structured at creation, not recovered from warnings
+
+Trust-affecting caveats must be emitted as `ExtractionCaveat` objects when the
+extractor or adapter detects the condition — at the same site that would previously have
+logged a warning string. The human-readable `warnings` array in extraction reports is a
+display mirror only.
+
+Production report-building code must **not** parse warning strings, match warning
+prefixes, or regex-scan `warning.message` to recover caveat kind, id, or severity.
+Partitioning into `globalTaints`, `modelSlack`, `unextractableHandlers`, and related
+ledger fields reads exclusively from `model.metadata.extractionCaveats.entries` (and
+structured warning records created alongside them). Architecture tests enforce this
+invariant under `test/extraction/architecture.test.ts`.

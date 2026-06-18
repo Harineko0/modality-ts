@@ -50,12 +50,48 @@ compact summaries):
   state/edge/depth counts, and the skip reason when slicing was unavailable for a
   property (e.g. untargeted or positive `alwaysStep` and `leadsToWithin` use full-model
   search). Negated targeted `alwaysStep` slices report `mode: "targetedStep"` in
-  `sliceSummaries`.
+  `sliceSummaries`. Each summary may also include:
+  - `retainedBits` / `prunedBits` — theoretical bit budget kept vs dropped.
+  - `topContributors` / `prunedTopContributors` — ranked state-space contributors
+    (`varId`, `domainKind`, `bits`, `scope`, `origin`, optional `prunedFieldPaths`).
+  - `retainedSystemVars` / `prunedSystemVars` — adapter-owned vars kept or pruned.
+  - `pendingQueueDependencies` — when a pending-queue var is retained, with `reasons`,
+    `opIds`, and `continuations`.
+  - `mountScopeDependencies` — mount-local vars with `guardReads` and `retainedBecause`.
 - **search** — max and final frontier size, expanded depths, elapsed time.
-- **limits** — the reason a run stopped early and which limit bound.
+- **limits** — the reason a run stopped early and which limit bound (`maxStates`,
+  `maxEdges`, `maxFrontier`, `memoryGuardBytes`). A limit hit produces an `error` verdict
+  and may downgrade property `confidence.level` to `bounded`.
 - **dominantVars** — the variables with the most distinct observed values. This is your
   first clue to *what* exploded: a `dominantVars` entry with a huge distinct-value count
   is a domain to [refine or reduce](./refining-domains-and-overlays.md).
+
+### Property confidence
+
+Each verdict may carry `confidence` when the property slice retains non-exact
+transitions, model-slack caveats, numeric reductions, bound hits, or search limits:
+
+| Level | Typical cause |
+| --- | --- |
+| `exact` | no downgrade factors in the slice |
+| `property-preserving` | numeric reduction tagged property-preserving |
+| `over-approx` | over-approx/manual transitions or model-slack caveats in slice |
+| `manual` | manual transitions in slice |
+| `bounded` | configured bound or search limit bit during this run |
+| `heuristic` | heuristic numeric reduction |
+
+Terminal output prints a compact line when confidence is not exact, for example
+`confidence=over-approx reasons:2`. The full `reasons`, `caveatIds`,
+`affectedTransitions`, and `affectedVars` arrays are in `report.json`.
+
+### Bound hits vs configured bounds
+
+`model.bounds` (`maxDepth`, `maxPending`, `maxInternalSteps`) defines what the model
+*assumes*. `trustLedger.boundHits` lists bounds that **actually bit** during the run
+(for example `maxPending reached` or token exhaustion). A configured bound that never
+binds does not appear in `boundHits` — it added no caveat. Distinguish these from
+CLI search limits in `diagnostics.limits`, which stop exploration early and yield
+`error` verdicts.
 
 ## A worked tightening loop
 

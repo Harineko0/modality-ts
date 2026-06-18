@@ -175,8 +175,12 @@ Transition/var ids must survive `modality extract` re-runs or overlays rot. Id =
 Emitted on every extract; embedded in check reports:
 
 - per-handler classification: `exact` / `over-approx (reasons)` / `unextractable (reason)` / `overlay`;
-- structured extraction caveats (`ExtractionCaveat[]` with kinds `global-taint`, `stale-read`, `unhandled-rejection`, `unextractable`, `model-slack`) emitted at warning sites and partitioned for the trust ledger;
+- structured extraction caveats (`ExtractionCaveat[]` with kinds `global-taint`, `stale-read`, `unhandled-rejection`, `unextractable`, `model-slack`) **created at the warning site** and stored in `model.metadata.extractionCaveats.entries`, then partitioned into typed report arrays;
+- `modelSlack` caveats for wide finite domains, unprovable array lengths, field-pruning over-approximations, and other search-enlarging conditions;
+- `fieldPruning` metadata (`keptPaths`, `prunedPaths`, `reason`, `confidence`) when record fields are collapsed;
+- `stateContributors` (`totalBits`, `topVars`, `bySource`) from the shared contributor helper used by check diagnostics;
 - domain table with abstraction provenance (type-derived / default-token / overlay-refined);
+- parallel `warnings: string[]` for terminal display — **not** parsed to recover caveat identity in production code;
 - coverage: % of discovered handlers exact+overlay, count of ignored vars;
 - everything the verification claim is conditional on, in one place.
 

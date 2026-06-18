@@ -23,7 +23,21 @@ interface Model {
     domainProvenance?: Record<string, "overlay-refined">;
     extractionCaveats?: { entries: ExtractionCaveat[] };
     numericReductions?: { entries: NumericReduction[] };
+    fieldPruning?: FieldPruningMetadata;
   };
+}
+
+interface FieldPruningEntry {
+  varId: string;
+  keptPaths: string[][];
+  prunedPaths: string[][];
+  reason: "unread" | "property-unrelated" | "bounded-record";
+  source?: SourceAnchor;
+  confidence: "exact" | "over-approx";
+}
+
+interface FieldPruningMetadata {
+  entries: FieldPruningEntry[];
 }
 ```
 
@@ -90,6 +104,19 @@ interface ReportPropertyVerdict {
   trace?: Trace;
   replayable?: boolean;
   replayBlockedReason?: string;
+  confidence?: ReportPropertyConfidence;
+}
+
+type ReportPropertyConfidenceLevel =
+  | "exact" | "property-preserving" | "over-approx"
+  | "manual" | "bounded" | "heuristic";
+
+interface ReportPropertyConfidence {
+  level: ReportPropertyConfidenceLevel;
+  reasons: string[];
+  caveatIds: string[];
+  affectedTransitions: string[];
+  affectedVars: string[];
 }
 ```
 
@@ -98,18 +125,122 @@ interface ReportPropertyVerdict {
 ```ts
 interface ReportTrustLedger {
   bounds; plugins; assumptions; abstractions;
-  globalTaints; staleReads; unhandledRejections; unextractableHandlers; // typed caveats
+  globalTaints; staleReads; unhandledRejections; unextractableHandlers;
+  modelSlack;                    // typed caveats for wide domains, field pruning, etc.
   domains;                       // per-var kind + provenance
   manualTransitions; overApproxTransitions;
-  boundHits;                     // which bounds actually bit
+  boundHits;                     // which bounds actually bit this run
   ignoredVars;
   numericReductions;             // each with a soundness claim
 }
 ```
 
-See [The trust ledger](../soundness/trust-ledger.md). The `diagnostics` block
-(`slicing` / `search` / `limits` / `dominantVars`) is documented in
+`boundHits` lists bounds that **actually bit** during the run (for example
+`maxPending reached`, token exhaustion). Configured bounds in `model.bounds` that
+never bound are omitted — they are assumptions, not events.
+
+### Check diagnostics (`diagnostics`)
+
+```ts
+interface CheckReportDiagnostics {
+  slicing?: {
+    enabled: boolean;
+    slices?: number;
+    skipped?: boolean;
+    skipReason?: string;
+    sliceSummaries?: {
+      index: number;
+      properties: string[];
+      vars: number;
+      transitions: number;
+      states: number;
+      edges: number;
+      depth: number;
+      mode?: "state" | "targetedStep" | "full";
+      retainedBits?: number;
+      prunedBits?: number;
+      topContributors?: StateSpaceContributor[];
+      prunedTopContributors?: StateSpaceContributor[];
+      retainedSystemVars?: string[];
+      prunedSystemVars?: string[];
+      pendingQueueDependencies?: {
+        varId: string;
+        reasons: string[];
+        opIds?: string[];
+        continuations?: string[];
+      }[];
+      mountScopeDependencies?: {
+        varId: string;
+        guardReads: string[];
+        retainedBecause: string[];
+      }[];
+    }[];
+  };
+  search?: { maxFrontier; finalFrontier; expandedDepths; elapsedMs? };
+  limits?: { reason; maxStates?; maxEdges?; maxFrontier?; memoryGuardBytes? };
+  dominantVars?: { varId: string; distinctValues: number }[];
+}
+
+interface StateSpaceContributor {
+  varId: string;
+  domainKind: string;
+  bits: number;                  // log₂(domain cardinality), rounded
+  scope: string;                 // "global" or "mount:<id>"
+  origin: string;
+  prunedFieldPaths?: string[][];
+}
+```
+
+See [The trust ledger](../soundness/trust-ledger.md). Slice economics and
+confidence output are documented in
 [Diagnostics & search limits](../guides/diagnostics-and-search-limits.md).
+
+## `extraction-report.json`
+
+Emitted by `modality extract`:
+
+```ts
+interface ExtractionReport {
+  schemaVersion: 1;
+  kind: "extraction-report";
+  generatedAt: string;
+  sourceFiles: string[];
+  plugins: PluginProvenance[];
+  handlers: {
+    id: string;
+    classification: "exact" | "over-approx" | "unextractable" | "overlay";
+    reasons: string[];
+  }[];
+  globalTaints: ExtractionCaveat[];
+  staleReads: ExtractionCaveat[];
+  unhandledRejections: ExtractionCaveat[];
+  modelSlack: ExtractionCaveat[];
+  domains: DomainReportEntry[];
+  coarseDomains?: { varId: string; paths: string[] }[];
+  fieldPruning?: FieldPruningMetadata;
+  stateContributors?: StateSpaceContributors;
+  routeCoverage?: RouteCoverage;
+  coverage: {
+    handlersTotal; exactOrOverlay; unextractable; ignoredVars;
+    percentExactOrOverlay;
+  };
+  warnings: string[];            // human-readable mirror of structured caveats
+  assumptions?: string[];
+  numericReductions?: NumericReduction[];
+  effectOperations?: { opId; source?; line?; column?; origin }[];
+}
+
+interface StateSpaceContributors {
+  totalBits: number;
+  topVars: StateSpaceContributor[];
+  bySource: { source: string; bits: number }[];
+}
+```
+
+Structured caveats in `globalTaints`, `modelSlack`, and related arrays are the
+machine-readable trust data. The parallel `warnings` strings are for terminal
+display only — production code must not parse them to recover caveat identity.
+See [the E1 invariant](../soundness/e1-invariant.md).
 
 ## `conformance-matrix-report.json`
 

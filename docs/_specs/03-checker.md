@@ -90,7 +90,14 @@ No trace minimization pass is needed for `always` (BFS minimality); `leadsToWith
 
 ## 8. Reporting
 
-Per run: verdict per property (`verified-within-bounds` / `violated (n traces)` / `vacuous-warning` / `error`), the **trust ledger** (bounds, abstractions, assumptions, over-approx/manual/taint lists from the extraction report), state-space stats (states, edges, depth reached, bound-hit events — e.g., token exhaustion, pending-cap saturation: each bound that *bit* is listed, since a bound that never binds adds no caveat), and optional **diagnostics** (slicing summary — slice count, per-slice var/transition counts, skip reason when slicing is unavailable; search summary — max/final frontier, expanded depths; limit reason when a configured `maxStates` / `maxFrontier` / `maxEdges` / `memoryGuard` stops search early; top dominant vars by distinct observed values). Output: human terminal rendering (compact `slicing=...` / `search-limit=...` lines when relevant) + `report.json` (CI artifact, schema-versioned; `diagnostics` is an optional additive field on schema version 1).
+Per run: verdict per property (`verified-within-bounds` / `violated (n traces)` / `vacuous-warning` / `error`), optional **property confidence** (`ReportPropertyConfidence`: `level` ∈ `exact` | `property-preserving` | `over-approx` | `manual` | `bounded` | `heuristic`, plus `reasons`, `caveatIds`, `affectedTransitions`, `affectedVars`), the **trust ledger** (bounds, abstractions, assumptions, typed caveat partitions including `modelSlack`, over-approx/manual/taint lists from the extraction report), state-space stats (states, edges, depth reached, bound-hit events — e.g., token exhaustion, pending-cap saturation: each bound that *bit* is listed, since a bound that never binds adds no caveat), and optional **diagnostics**:
+
+- **slicing summary** — slice count, per-slice var/transition/state/edge/depth counts, `mode` (`state` / `targetedStep` / `full`), skip reason when slicing is unavailable; **slice economics** (`retainedBits`, `prunedBits`, `topContributors`, `prunedTopContributors`, `retainedSystemVars`, `prunedSystemVars`); **pending-queue retention** (`pendingQueueDependencies` with `reasons`, `opIds`, `continuations` when a `pending-queue` role var is kept); **mount-scope retention** (`mountScopeDependencies` with `guardReads`, `retainedBecause`).
+- **search summary** — max/final frontier, expanded depths, elapsed time.
+- **limits** — reason when configured `maxStates` / `maxFrontier` / `maxEdges` / `memoryGuard` stops search early (error verdict, may set confidence `bounded`).
+- **dominantVars** — top vars by distinct observed values during search.
+
+Output: human terminal rendering (compact `slicing=...` / `search-limit=...` / `confidence=<level> reasons:<n>` lines when relevant) + `report.json` (CI artifact, schema-versioned; `diagnostics` and per-verdict `confidence` are optional additive fields on schema version 1).
 
 ## 9. Correctness assurance for the checker itself
 
