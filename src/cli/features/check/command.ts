@@ -249,7 +249,7 @@ function collectCheckNumericReductions(
 ): CheckReport["trustLedger"]["numericReductions"] {
   const coiReductions = properties.flatMap((property) => {
     if (!property.reads) return [];
-    const sliced = sliceModelForProperty(model, property);
+    const sliced = sliceModelForProperty(model, property).model;
     return numericCoiDroppedReductions(model, sliced, property.reads);
   });
   return mergeNumericReductions(

@@ -33,6 +33,12 @@ export interface CheckProgress {
   edges: number;
 }
 
+export interface MountScopeDependency {
+  varId: string;
+  guardReads: readonly string[];
+  retainedBecause: readonly string[];
+}
+
 export interface SliceSummary {
   index: number;
   properties: readonly string[];
@@ -48,6 +54,7 @@ export interface SliceSummary {
   prunedTopContributors?: readonly StateSpaceContributor[];
   retainedSystemVars?: readonly string[];
   prunedSystemVars?: readonly string[];
+  mountScopeDependencies?: readonly MountScopeDependency[];
 }
 
 export type EdgeRecordingMode =

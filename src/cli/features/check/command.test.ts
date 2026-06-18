@@ -760,6 +760,85 @@ describe("runCheckCommand", () => {
     expect(summary?.mode).toBeDefined();
   });
 
+  it("embeds mount-scope and route system var diagnostics in sliced check report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const twoRoutes = { kind: "enum", values: ["/a", "/b"] };
+    await writeFile(
+      modelPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "route-mount-cli",
+        bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+        vars: [
+          {
+            id: "sys:route",
+            domain: twoRoutes,
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-current" },
+            initial: "/a",
+          },
+          {
+            id: "sys:history",
+            domain: { kind: "boundedList", inner: twoRoutes, maxLen: 2 },
+            origin: "system",
+            scope: { kind: "global" },
+            role: { kind: "location-history" },
+            initial: [],
+          },
+          {
+            id: "local:panel",
+            domain: { kind: "bool" },
+            origin: "system",
+            scope: {
+              kind: "mount-local",
+              id: "route-a",
+              when: {
+                kind: "eq",
+                args: [
+                  { kind: "read", var: "sys:route" },
+                  { kind: "lit", value: "/a" },
+                ],
+              },
+            },
+            initial: false,
+          },
+        ],
+        transitions: [],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "reachable", name: "panelReachable", predicate: { kind: "eq", args: [{ kind: "read", var: "local:panel" }, { kind: "lit", value: true }] }, reads: ["local:panel"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const summary = result.report.diagnostics?.slicing?.sliceSummaries?.[0];
+    expect(summary?.mountScopeDependencies).toEqual([
+      {
+        varId: "local:panel",
+        guardReads: ["sys:route"],
+        retainedBecause: ["property-read"],
+      },
+    ]);
+    expect(summary?.retainedSystemVars).toEqual(
+      expect.arrayContaining(["sys:route"]),
+    );
+    expect(summary?.prunedSystemVars).toEqual(
+      expect.arrayContaining(["sys:history"]),
+    );
+  });
+
   it("uses slicing by default when property reads are declared", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
     const modelPath = join(dir, "model.json");
