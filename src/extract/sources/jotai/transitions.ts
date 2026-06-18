@@ -51,7 +51,14 @@ export function extractJotaiSkeleton(
   const safetyWarnings = discoverJotaiSafetyWarnings(sourceText, fileName);
   const discoveryWarnings = discovery.warnings.map((warning) => ({
     message: warning.message,
-    ...(warning.source ? { line: warning.source.line } : {}),
+    ...(warning.source
+      ? {
+          line: warning.source.line,
+          column: warning.source.column,
+          source: warning.source,
+        }
+      : {}),
+    ...(warning.caveat ? { caveat: warning.caveat } : {}),
   }));
   const { transitions, warnings = [] } = extractSharedReactTransitions({
     sourceText,

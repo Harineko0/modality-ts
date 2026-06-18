@@ -5,6 +5,7 @@ import type {
   DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import {
   isMiddlewareCall,
   isStoreCreatorCall,
@@ -32,7 +33,7 @@ export interface UnwrappedCreator {
 
 export interface DiscoverZustandResult {
   decls: SourceDecl[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: ZustandDiscoveryWarning[];
   storeNames: Set<string>;
   storeFields: Map<string, Set<string>>;
   storeActions: Map<
@@ -45,6 +46,31 @@ export interface DiscoverZustandResult {
     string,
     Map<string, import("modality-ts/core").Value>
   >;
+}
+
+interface ZustandDiscoveryWarning {
+  message: string;
+  source?: SourceAnchor;
+  caveat?: import("modality-ts/core").ExtractionCaveat;
+}
+
+function dynamicStoreFieldWarning(
+  source: ts.SourceFile,
+  fileName: string,
+  storeName: string,
+  node: ts.Node,
+): ZustandDiscoveryWarning {
+  const src = anchor(source, fileName, node);
+  const message = "Zustand dynamic store field unsupported";
+  return {
+    message,
+    source: src,
+    caveat: modelSlackCaveat(
+      `zustand:${storeName}.dynamic-field`,
+      message,
+      src,
+    ),
+  };
 }
 
 export function discoverZustandStores(
@@ -73,7 +99,7 @@ export function discoverZustandStoresDetailed(
   if (imports.storeCreators.size === 0) return emptyDiscoverResult();
 
   const typeAliases = compilerBackedTypeAliases(source, types);
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: ZustandDiscoveryWarning[] = [];
   const storeNames = new Set<string>();
   const storeFields = new Map<string, Set<string>>();
   const storeActions = new Map<
@@ -183,7 +209,7 @@ function processCombineStore(
     string,
     Map<string, import("modality-ts/core").Value>
   >,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
   domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
@@ -235,7 +261,7 @@ function processStoreObject(
     string,
     Map<string, import("modality-ts/core").Value>
   >,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
   domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
@@ -284,7 +310,7 @@ function emitStateFieldsFromObject(
     string,
     Map<string, import("modality-ts/core").Value>
   >,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
   domainRefinements?: readonly DomainRefinementProvider[],
 ): void {
@@ -296,27 +322,24 @@ function emitStateFieldsFromObject(
 
   for (const prop of objectLiteral.properties) {
     if (ts.isSpreadAssignment(prop)) {
-      warnings.push({
-        message: "Zustand dynamic store field unsupported",
-        source: anchor(source, fileName, prop),
-      });
+      warnings.push(
+        dynamicStoreFieldWarning(source, fileName, storeName, prop),
+      );
       continue;
     }
     if (!ts.isPropertyAssignment(prop)) {
       if (ts.isShorthandPropertyAssignment(prop)) {
-        warnings.push({
-          message: "Zustand dynamic store field unsupported",
-          source: anchor(source, fileName, prop),
-        });
+        warnings.push(
+          dynamicStoreFieldWarning(source, fileName, storeName, prop),
+        );
       }
       continue;
     }
     const name = propertyNameFromMember(prop.name);
     if (!name) {
-      warnings.push({
-        message: "Zustand dynamic store field unsupported",
-        source: anchor(source, fileName, prop),
-      });
+      warnings.push(
+        dynamicStoreFieldWarning(source, fileName, storeName, prop),
+      );
       continue;
     }
     if (isActionFunction(prop.initializer)) continue;
@@ -394,7 +417,7 @@ function collectActionsFromObject(
 function resolveCreatorArgument(
   storeCall: ts.CallExpression,
   imports: ReturnType<typeof resolveZustandImports>,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ZustandDiscoveryWarning[],
   source: ts.SourceFile,
   fileName: string,
 ): UnwrappedCreator | undefined {
@@ -418,7 +441,7 @@ function storeCreatorArgument(
 function unwrapMiddlewareChain(
   expr: ts.Expression,
   imports: ReturnType<typeof resolveZustandImports>,
-  warnings: { message: string; source?: SourceAnchor }[],
+  warnings: ZustandDiscoveryWarning[],
   source: ts.SourceFile,
   fileName: string,
   middleware: string[] = [],

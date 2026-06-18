@@ -10,6 +10,7 @@ import {
   isAtomCreatorCall,
   resolveJotaiImports,
 } from "./imports.js";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   classifyAtomCall,
@@ -27,9 +28,15 @@ import { discoverComponentStoreScopes } from "./stores.js";
 
 export interface DiscoverJotaiResult {
   decls: SourceDecl[];
-  warnings: { message: string; source?: SourceAnchor }[];
+  warnings: JotaiDiscoveryWarning[];
   atomNames: Set<string>;
   atomMetadata: Map<string, ReturnType<typeof classifyAtomCall>["metadata"]>;
+}
+
+interface JotaiDiscoveryWarning {
+  message: string;
+  source?: SourceAnchor;
+  caveat?: import("modality-ts/core").ExtractionCaveat;
 }
 
 export function discoverJotaiAtoms(
@@ -65,7 +72,7 @@ export function discoverJotaiAtomsDetailed(
   }
 
   const typeAliases = compilerBackedTypeAliases(source, types);
-  const warnings: { message: string; source?: SourceAnchor }[] = [];
+  const warnings: JotaiDiscoveryWarning[] = [];
   const atomMetadata = new Map<
     string,
     ReturnType<typeof classifyAtomCall>["metadata"]
@@ -96,9 +103,16 @@ export function discoverJotaiAtomsDetailed(
         );
         atomMetadata.set(atomName, classification.metadata);
         if (classification.warning) {
+          const src = anchor(source, fileName, node);
+          const caveat = modelSlackCaveat(
+            `jotai:${atomName}`,
+            classification.warning,
+            src,
+          );
           warnings.push({
             message: classification.warning,
-            source: anchor(source, fileName, node),
+            source: src,
+            caveat,
           });
         }
       } else {
@@ -114,9 +128,16 @@ export function discoverJotaiAtomsDetailed(
         atomNames.add(atomName);
         atomMetadata.set(atomName, classification.metadata);
         if (classification.warning) {
+          const src = anchor(source, fileName, node);
+          const caveat = modelSlackCaveat(
+            `jotai:${atomName}`,
+            classification.warning,
+            src,
+          );
           warnings.push({
             message: classification.warning,
-            source: anchor(source, fileName, node),
+            source: src,
+            caveat,
           });
         }
         if (classification.emitVar) {
@@ -136,9 +157,16 @@ export function discoverJotaiAtomsDetailed(
       if (!paramArg) return;
       const staticParam = staticFamilyParam(paramArg);
       if (!staticParam) {
+        const src = anchor(source, fileName, node);
+        const message = `Jotai dynamic atom family param unsupported for ${familyName}`;
         warnings.push({
-          message: `Jotai dynamic atom family param unsupported for ${familyName}`,
-          source: anchor(source, fileName, node),
+          message,
+          source: src,
+          caveat: modelSlackCaveat(
+            `jotai:${familyName}.family-param`,
+            message,
+            src,
+          ),
         });
       } else {
         const familyCall = familyFactories.get(familyName);

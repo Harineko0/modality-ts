@@ -517,9 +517,17 @@ function resolveAtomVarId(
     const param = atomArg.arguments[0];
     const staticParam = param ? staticFamilyParam(param) : undefined;
     if (!staticParam) {
+      const src = anchor(source, fileName, atomArg);
+      const message = `Jotai dynamic atom family param unsupported for ${atomArg.expression.text}`;
+      const caveat = modelSlackCaveat(
+        `jotai:${atomArg.expression.text}.family-param`,
+        message,
+        src,
+      );
       warnings.push({
-        message: `Jotai dynamic atom family param unsupported for ${atomArg.expression.text}`,
-        source: anchor(source, fileName, atomArg),
+        message,
+        source: src,
+        caveat,
       });
       return undefined;
     }

@@ -1,7 +1,10 @@
 import { join } from "node:path";
 import * as ts from "typescript";
 import type { Transition, Value } from "modality-ts/core";
+import type { ExtractionCaveat } from "modality-ts/core";
 import type { RouteInventory } from "modality-ts/extract/engine/spi";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import type { ExtractionWarning } from "../../engine/ts/types.js";
 import { safeId } from "../../engine/ts/ids.js";
 import { routeMountGuard } from "../../engine/ts/routes.js";
 import { locationEffect } from "../../engine/ts/transition/navigation.js";
@@ -39,6 +42,25 @@ export interface NextParsedConfig {
   cacheComponents?: boolean;
   serverActionsAllowedOrigins?: readonly string[];
   warnings: string[];
+  caveats: ExtractionCaveat[];
+}
+
+interface ConfigWarningSink {
+  warnings: string[];
+  caveats: ExtractionCaveat[];
+}
+
+function createConfigWarningSink(): ConfigWarningSink {
+  return { warnings: [], caveats: [] };
+}
+
+function pushConfigSlack(
+  sink: ConfigWarningSink,
+  id: string,
+  message: string,
+): void {
+  sink.warnings.push(message);
+  sink.caveats.push(modelSlackCaveat(id, message));
 }
 
 const NEXT_CONFIG_NAMES = [
@@ -106,7 +128,7 @@ function arrayLiteralElements(
 
 function resolveConfigValue(
   node: ts.Expression | undefined,
-  warnings: string[],
+  sink: ConfigWarningSink,
   context: string,
 ): ts.Expression | undefined {
   if (!node) return undefined;
@@ -131,7 +153,7 @@ function resolveConfigValue(
     if (ts.isBlock(body)) {
       for (const statement of body.statements) {
         if (ts.isReturnStatement(statement) && statement.expression) {
-          return resolveConfigValue(statement.expression, warnings, context);
+          return resolveConfigValue(statement.expression, sink, context);
         }
       }
     }
@@ -139,11 +161,13 @@ function resolveConfigValue(
   if (ts.isFunctionDeclaration(node) && node.body) {
     for (const statement of node.body.statements) {
       if (ts.isReturnStatement(statement) && statement.expression) {
-        return resolveConfigValue(statement.expression, warnings, context);
+        return resolveConfigValue(statement.expression, sink, context);
       }
     }
   }
-  warnings.push(
+  pushConfigSlack(
+    sink,
+    `next-config:static-parse:${context}`,
     `Could not statically parse ${context} in next.config; using defaults`,
   );
   return undefined;
@@ -151,13 +175,13 @@ function resolveConfigValue(
 
 function extractConfigObject(
   sourceFile: ts.SourceFile,
-  warnings: string[],
+  sink: ConfigWarningSink,
 ): ts.ObjectLiteralExpression | undefined {
   for (const statement of sourceFile.statements) {
     if (ts.isExportAssignment(statement) && statement.expression) {
       const resolved = resolveConfigValue(
         statement.expression,
-        warnings,
+        sink,
         "default export",
       );
       if (resolved && ts.isObjectLiteralExpression(resolved)) return resolved;
@@ -167,7 +191,7 @@ function extractConfigObject(
         if (decl.initializer) {
           const resolved = resolveConfigValue(
             decl.initializer,
-            warnings,
+            sink,
             "config variable",
           );
           if (resolved && ts.isObjectLiteralExpression(resolved))
@@ -195,26 +219,34 @@ function extractConfigObject(
     ) {
       const resolved = resolveConfigValue(
         statement.expression.right,
-        warnings,
+        sink,
         "module.exports",
       );
       if (resolved && ts.isObjectLiteralExpression(resolved)) return resolved;
     }
   }
-  warnings.push("Could not find a static next.config object literal");
+  pushConfigSlack(
+    sink,
+    "next-config:no-object-literal",
+    "Could not find a static next.config object literal",
+  );
   return undefined;
 }
 
 function parseRedirectEntry(
   node: ts.Expression,
-  warnings: string[],
+  sink: ConfigWarningSink,
 ): NextConfigRedirect | undefined {
   if (!ts.isObjectLiteralExpression(node)) return undefined;
   const props = objectLiteralProperties(node);
   const source = stringLiteralValue(props.get("source"));
   const destination = stringLiteralValue(props.get("destination"));
   if (!source || !destination) {
-    warnings.push("Skipping redirect entry without static source/destination");
+    pushConfigSlack(
+      sink,
+      "next-config:redirect-skipped",
+      "Skipping redirect entry without static source/destination",
+    );
     return undefined;
   }
   return {
@@ -228,14 +260,18 @@ function parseRedirectEntry(
 
 function parseRewriteEntry(
   node: ts.Expression,
-  warnings: string[],
+  sink: ConfigWarningSink,
 ): NextConfigRewrite | undefined {
   if (!ts.isObjectLiteralExpression(node)) return undefined;
   const props = objectLiteralProperties(node);
   const source = stringLiteralValue(props.get("source"));
   const destination = stringLiteralValue(props.get("destination"));
   if (!source || !destination) {
-    warnings.push("Skipping rewrite entry without static source/destination");
+    pushConfigSlack(
+      sink,
+      "next-config:rewrite-skipped",
+      "Skipping rewrite entry without static source/destination",
+    );
     return undefined;
   }
   return { source, destination };
@@ -243,7 +279,7 @@ function parseRewriteEntry(
 
 function parseHeaderEntry(
   node: ts.Expression,
-  warnings: string[],
+  _sink: ConfigWarningSink,
 ): NextConfigHeader | undefined {
   if (!ts.isObjectLiteralExpression(node)) return undefined;
   const props = objectLiteralProperties(node);
@@ -265,9 +301,9 @@ function parseHeaderEntry(
 
 function parseI18n(
   node: ts.Expression | undefined,
-  warnings: string[],
+  sink: ConfigWarningSink,
 ): NextConfigI18n | undefined {
-  const resolved = resolveConfigValue(node, warnings, "i18n");
+  const resolved = resolveConfigValue(node, sink, "i18n");
   if (!resolved || !ts.isObjectLiteralExpression(resolved)) return undefined;
   const props = objectLiteralProperties(resolved);
   const defaultLocale = stringLiteralValue(props.get("defaultLocale"));
@@ -276,7 +312,11 @@ function parseI18n(
     .map((entry) => stringLiteralValue(entry))
     .filter((entry): entry is string => entry !== undefined);
   if (!defaultLocale || locales.length === 0) {
-    warnings.push("Skipping i18n config without static locales/defaultLocale");
+    pushConfigSlack(
+      sink,
+      "next-config:i18n-skipped",
+      "Skipping i18n config without static locales/defaultLocale",
+    );
     return undefined;
   }
   return { defaultLocale, locales };
@@ -284,9 +324,9 @@ function parseI18n(
 
 function parseServerActions(
   node: ts.Expression | undefined,
-  warnings: string[],
+  sink: ConfigWarningSink,
 ): string[] | undefined {
-  const resolved = resolveConfigValue(node, warnings, "serverActions");
+  const resolved = resolveConfigValue(node, sink, "serverActions");
   if (!resolved || !ts.isObjectLiteralExpression(resolved)) return undefined;
   const props = objectLiteralProperties(resolved);
   const originsNode = props.get("allowedOrigins");
@@ -298,10 +338,10 @@ function parseServerActions(
 
 function parseRouteRules(
   node: ts.Expression | undefined,
-  warnings: string[],
+  sink: ConfigWarningSink,
   kind: "redirects" | "rewrites" | "headers",
 ): ts.Expression[] {
-  const resolved = resolveConfigValue(node, warnings, kind);
+  const resolved = resolveConfigValue(node, sink, kind);
   if (!resolved) return [];
   if (ts.isArrayLiteralExpression(resolved)) return [...resolved.elements];
   return [];
@@ -311,31 +351,28 @@ export function parseNextConfig(
   sourceText: string,
   fileName = "next.config.ts",
 ): NextParsedConfig {
-  const warnings: string[] = [];
+  const sink = createConfigWarningSink();
   const sourceFile = parseSource(sourceText, fileName);
-  const configObject = extractConfigObject(sourceFile, warnings);
+  const configObject = extractConfigObject(sourceFile, sink);
   if (!configObject) {
     return {
       redirects: [],
       rewrites: [],
       headers: [],
-      warnings,
+      warnings: sink.warnings,
+      caveats: sink.caveats,
     };
   }
   const props = objectLiteralProperties(configObject);
 
-  const redirects = parseRouteRules(
-    props.get("redirects"),
-    warnings,
-    "redirects",
-  )
-    .map((entry) => parseRedirectEntry(entry, warnings))
+  const redirects = parseRouteRules(props.get("redirects"), sink, "redirects")
+    .map((entry) => parseRedirectEntry(entry, sink))
     .filter((entry): entry is NextConfigRedirect => entry !== undefined);
-  const rewrites = parseRouteRules(props.get("rewrites"), warnings, "rewrites")
-    .map((entry) => parseRewriteEntry(entry, warnings))
+  const rewrites = parseRouteRules(props.get("rewrites"), sink, "rewrites")
+    .map((entry) => parseRewriteEntry(entry, sink))
     .filter((entry): entry is NextConfigRewrite => entry !== undefined);
-  const headers = parseRouteRules(props.get("headers"), warnings, "headers")
-    .map((entry) => parseHeaderEntry(entry, warnings))
+  const headers = parseRouteRules(props.get("headers"), sink, "headers")
+    .map((entry) => parseHeaderEntry(entry, sink))
     .filter((entry): entry is NextConfigHeader => entry !== undefined);
 
   const pageExtensions = arrayLiteralElements(props.get("pageExtensions"))
@@ -352,8 +389,8 @@ export function parseNextConfig(
     redirects,
     rewrites,
     headers,
-    ...(parseI18n(props.get("i18n"), warnings)
-      ? { i18n: parseI18n(props.get("i18n"), warnings) }
+    ...(parseI18n(props.get("i18n"), sink)
+      ? { i18n: parseI18n(props.get("i18n"), sink) }
       : {}),
     ...(pageExtensions.length > 0 ? { pageExtensions } : {}),
     ...(booleanLiteralValue(props.get("typedRoutes")) !== undefined
@@ -362,15 +399,16 @@ export function parseNextConfig(
     ...(booleanLiteralValue(props.get("cacheComponents")) !== undefined
       ? { cacheComponents: booleanLiteralValue(props.get("cacheComponents")) }
       : {}),
-    ...(parseServerActions(props.get("serverActions"), warnings)
+    ...(parseServerActions(props.get("serverActions"), sink)
       ? {
           serverActionsAllowedOrigins: parseServerActions(
             props.get("serverActions"),
-            warnings,
+            sink,
           ),
         }
       : {}),
-    warnings,
+    warnings: sink.warnings,
+    caveats: sink.caveats,
   };
 }
 
@@ -509,16 +547,45 @@ function applyBasePath(basePath: string | undefined, path: string): string {
 }
 
 export function configSecurityWarnings(config: NextParsedConfig): string[] {
-  const warnings = [...config.warnings];
+  return [
+    ...new Set([
+      ...config.warnings,
+      ...configSecurityStructuredWarnings(config).map(
+        (warning) => warning.message,
+      ),
+    ]),
+  ].sort();
+}
+
+function configSecurityStructuredWarnings(
+  config: NextParsedConfig,
+): ExtractionWarning[] {
+  const warnings: ExtractionWarning[] = [];
   if (config.rewrites.length > 0) {
-    warnings.push(
-      "next.config rewrites are over-approximated as replace navigations",
-    );
+    const message =
+      "next.config rewrites are over-approximated as replace navigations";
+    warnings.push({
+      message,
+      caveat: modelSlackCaveat(
+        "next-config:rewrites-over-approximated",
+        message,
+      ),
+    });
   }
   if (config.serverActionsAllowedOrigins?.length) {
-    warnings.push(
-      `next.config serverActions.allowedOrigins=${config.serverActionsAllowedOrigins.join(",")}`,
-    );
+    warnings.push({
+      message: `next.config serverActions.allowedOrigins=${config.serverActionsAllowedOrigins.join(",")}`,
+    });
   }
-  return [...new Set(warnings)].sort();
+  return warnings;
+}
+
+export function nextConfigExtractionWarnings(
+  config: NextParsedConfig,
+): ExtractionWarning[] {
+  const fromParse = config.warnings.map((message, index) => ({
+    message,
+    caveat: config.caveats[index],
+  }));
+  return [...fromParse, ...configSecurityStructuredWarnings(config)];
 }
