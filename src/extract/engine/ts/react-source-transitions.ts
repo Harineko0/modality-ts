@@ -130,6 +130,11 @@ import {
   reactEffectWritesModeledState,
 } from "./transition/effects.js";
 import {
+  componentRegistryForPrimary,
+  customHookRegistryForPrimary,
+  type ReactExtractionProjectSummary,
+} from "./react-extraction-project-summary.js";
+import {
   bindReactRouterActionDataRead,
   discoverUseSubmitBindings,
   isReactRouterFormElement,
@@ -158,6 +163,7 @@ export interface ReactSourceTransitionOptions {
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
   domainRefinements?: readonly DomainRefinementProvider[];
+  projectSummary?: ReactExtractionProjectSummary;
 }
 
 export interface ReactSourceTransitionResult {
@@ -183,7 +189,9 @@ export function extractReactSourceTransitions(
           true,
           ts.ScriptKind.TSX,
         );
-  const typeAliases = collectProjectTypeAliases(source, options);
+  const typeAliases = options.projectSummary
+    ? new Map(options.projectSummary.typeAliases)
+    : collectProjectTypeAliases(source, options);
   const vars: StateVarDecl[] = options.stateVars ? [...options.stateVars] : [];
   const transitions: Transition[] = [];
   const warnings: ExtractionWarning[] = [];
@@ -195,22 +203,21 @@ export function extractReactSourceTransitions(
   const routerPlugin = options.routerPlugin;
   const inventory = options.inventory;
   const setters = new Map<string, SetterBinding>();
-  const contextBindings = discoverContextBindings(
-    source,
-    fileName,
-    route,
-    typeAliases,
-  );
-  for (const relatedSource of relatedDiscoverySourceFiles(source, options)) {
-    mergeContextBindings(
-      contextBindings,
-      discoverContextBindings(
-        relatedSource,
-        relatedSource.fileName,
-        route,
-        typeAliases,
-      ),
-    );
+  const contextBindings = options.projectSummary
+    ? cloneContextBindings(options.projectSummary.contextBindings)
+    : discoverContextBindings(source, fileName, route, typeAliases);
+  if (!options.projectSummary) {
+    for (const relatedSource of relatedDiscoverySourceFiles(source, options)) {
+      mergeContextBindings(
+        contextBindings,
+        discoverContextBindings(
+          relatedSource,
+          relatedSource.fileName,
+          route,
+          typeAliases,
+        ),
+      );
+    }
   }
   const globalTaints = new Set<string>();
   let timerCounter = 0;
@@ -231,26 +238,35 @@ export function extractReactSourceTransitions(
     submitBindings,
     modeledSubmitHandlers,
   });
-  const relatedSourceFiles = relatedDiscoverySourceFiles(source, options);
-  const supplementalSources = (options.relatedFragments ?? [])
-    .filter((fragment) => fragment.fileName !== fileName)
-    .map((fragment) => ({
-      sourceText: fragment.sourceText,
-      fileName: fragment.fileName,
-    }));
-  const components = buildComponentRegistry(source, {
-    ...(options.types ? { types: options.types } : {}),
-    primaryFileName: fileName,
-    relatedSourceFiles,
-    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
-  });
+  const relatedSourceFiles = options.projectSummary
+    ? options.projectSummary.relatedSourceFiles
+    : relatedDiscoverySourceFiles(source, options);
+  const supplementalSources = supplementalSourcesForRegistry(
+    options.relatedFragments ?? [],
+    fileName,
+    options.types,
+  );
+  const components = options.projectSummary
+    ? componentRegistryForPrimary(options.projectSummary, source, options.types)
+    : buildComponentRegistry(source, {
+        ...(options.types ? { types: options.types } : {}),
+        primaryFileName: fileName,
+        relatedSourceFiles,
+        ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
+      });
   const componentDisplayMap = componentRegistryDisplayMap(components);
-  const customHooks = buildCustomHookRegistry(source, {
-    ...(options.types ? { types: options.types } : {}),
-    primaryFileName: fileName,
-    relatedSourceFiles,
-    ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
-  });
+  const customHooks = options.projectSummary
+    ? customHookRegistryForPrimary(
+        options.projectSummary,
+        source,
+        options.types,
+      )
+    : buildCustomHookRegistry(source, {
+        ...(options.types ? { types: options.types } : {}),
+        primaryFileName: fileName,
+        relatedSourceFiles,
+        ...(supplementalSources.length > 0 ? { supplementalSources } : {}),
+      });
   const statefulListComponents = detectStatefulListComponents(
     source,
     components,
@@ -1184,6 +1200,31 @@ function collectProjectTypeAliases(
     }
   }
   return aliases;
+}
+
+function supplementalSourcesForRegistry(
+  relatedFragments: readonly { sourceText: string; fileName: string }[],
+  primaryFileName: string,
+  types?: SemanticTypeContext,
+): { sourceText: string; fileName: string }[] {
+  return relatedFragments
+    .filter((fragment) => fragment.fileName !== primaryFileName)
+    .map((fragment) => ({
+      sourceText: fragment.sourceText,
+      fileName: fragment.fileName,
+    }));
+}
+
+function cloneContextBindings(bindings: ContextBindings): ContextBindings {
+  const hookReturns = new Map<string, Map<string, SetterBinding>>();
+  for (const [hook, fields] of bindings.hookReturns) {
+    hookReturns.set(hook, new Map(fields));
+  }
+  return {
+    vars: [...bindings.vars],
+    setters: new Map(bindings.setters),
+    hookReturns,
+  };
 }
 
 function mergeContextBindings(

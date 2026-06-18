@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
@@ -10,6 +10,8 @@ import {
   buildComponentRegistry,
   buildCustomHookRegistry,
 } from "../../src/extract/engine/ts/components.js";
+import * as components from "../../src/extract/engine/ts/components.js";
+import { buildReactExtractionProjectSummary } from "../../src/extract/engine/ts/react-extraction-project-summary.js";
 import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
@@ -1043,6 +1045,205 @@ export function App() {
         transition.id.includes("onClick"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("extraction project summary cache", () => {
+  it("matches uncached extraction when reusing a prebuilt project summary", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child } from "./Child.js";
+import { useCounter } from "./useCounter.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  const [done, setDone] = useState(false);
+  return (
+    <>
+      <button onClick={() => setCount(count + 1)}>{count}</button>
+      <Child onDone={() => setDone(true)} />
+    </>
+  );
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+    const relatedFragments = [
+      { sourceText: hookText, fileName: hookPath },
+      { sourceText: childText, fileName: childPath },
+      { sourceText: appText, fileName: appPath },
+    ];
+    const projectSummary = buildReactExtractionProjectSummary({
+      discoverFragments: relatedFragments,
+      relatedFragments,
+      types,
+      route: "/",
+    });
+    const uncached = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments,
+    });
+    const cached = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      types,
+      relatedFragments,
+      projectSummary,
+    });
+    expect(cached.vars.map((decl) => decl.id).sort()).toEqual(
+      uncached.vars.map((decl) => decl.id).sort(),
+    );
+    expect(cached.transitions.map((transition) => transition.id).sort()).toEqual(
+      uncached.transitions.map((transition) => transition.id).sort(),
+    );
+    expect(cached.warnings.map((warning) => warning.message).sort()).toEqual(
+      uncached.warnings.map((warning) => warning.message).sort(),
+    );
+  });
+
+  it("builds component and custom-hook registries once per project summary", () => {
+    const hookPath = resolve(projectRoot, "useCounter.ts");
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const hookText = `export function useCounter() {
+  const [count, setCount] = useState(0);
+  return [count, setCount] as const;
+}`;
+    const childText = `export function Child() { return null; }`;
+    const appText = `import { Child } from "./Child.js";
+import { useCounter } from "./useCounter.js";
+export function App() {
+  const [count, setCount] = useCounter();
+  return <Child />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: hookPath, text: hookText },
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+    const relatedFragments = [
+      { sourceText: hookText, fileName: hookPath },
+      { sourceText: childText, fileName: childPath },
+      { sourceText: appText, fileName: appPath },
+    ];
+    const buildComponentSpy = vi.spyOn(components, "buildComponentRegistry");
+    const buildHookSpy = vi.spyOn(components, "buildCustomHookRegistry");
+    const projectSummary = buildReactExtractionProjectSummary({
+      discoverFragments: relatedFragments,
+      relatedFragments,
+      types,
+      route: "/",
+    });
+    expect(buildComponentSpy).toHaveBeenCalledTimes(1);
+    expect(buildHookSpy).toHaveBeenCalledTimes(1);
+    buildComponentSpy.mockClear();
+    buildHookSpy.mockClear();
+    for (const fragment of relatedFragments) {
+      extractReactSourceTransitions(fragment.sourceText, {
+        fileName: fragment.fileName,
+        route: "/",
+        types,
+        relatedFragments,
+        projectSummary,
+      });
+    }
+    expect(buildComponentSpy).toHaveBeenCalledTimes(0);
+    expect(buildHookSpy).toHaveBeenCalledTimes(0);
+    buildComponentSpy.mockRestore();
+    buildHookSpy.mockRestore();
+  });
+
+  it("keeps supplemental registry inputs on semantic project SourceFile objects", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child } from "./Child.js";
+export function App() {
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const semanticProject = createSemanticProjectForTest([
+      { path: childPath, text: childText },
+      { path: appPath, text: appText },
+    ]);
+    const types = semanticTypesFor(semanticProject, appPath);
+    const relatedFragments = [
+      { sourceText: childText, fileName: childPath },
+      { sourceText: appText, fileName: appPath },
+    ];
+    const discoverFragments = [
+      { sourceText: appText, fileName: appPath },
+      { sourceText: childText, fileName: childPath },
+    ];
+    const buildComponentSpy = vi.spyOn(components, "buildComponentRegistry");
+    buildReactExtractionProjectSummary({
+      discoverFragments,
+      relatedFragments,
+      types,
+      route: "/",
+    });
+    expect(buildComponentSpy).toHaveBeenCalledTimes(1);
+    const options = buildComponentSpy.mock.calls[0]?.[1];
+    expect(options?.supplementalSources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fileName: childPath }),
+      ]),
+    );
+    expect(
+      options?.types?.getSourceFile?.(childPath)?.fileName,
+    ).toBe(childPath);
+    buildComponentSpy.mockRestore();
+  });
+
+  it("keeps syntax-only supplemental fallback without a semantic project", () => {
+    const childPath = resolve(projectRoot, "Child.tsx");
+    const appPath = resolve(projectRoot, "App.tsx");
+    const childText = `export function Child({ onDone }: { onDone: () => void }) {
+  return <button onClick={onDone}>done</button>;
+}`;
+    const appText = `import { Child } from "./Child.js";
+export function App() {
+  const [done, setDone] = useState(false);
+  return <Child onDone={() => setDone(true)} />;
+}`;
+    const relatedFragments = [
+      { sourceText: childText, fileName: childPath },
+      { sourceText: appText, fileName: appPath },
+    ];
+    const projectSummary = buildReactExtractionProjectSummary({
+      discoverFragments: relatedFragments,
+      relatedFragments,
+      route: "/",
+    });
+    const uncached = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      relatedFragments,
+    });
+    const cached = extractReactSourceTransitions(appText, {
+      fileName: appPath,
+      route: "/",
+      relatedFragments,
+      projectSummary,
+    });
+    expect(cached.transitions.map((transition) => transition.id).sort()).toEqual(
+      uncached.transitions.map((transition) => transition.id).sort(),
+    );
   });
 });
 

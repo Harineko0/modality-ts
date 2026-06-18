@@ -2,6 +2,9 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, parse, relative, resolve } from "node:path";
 import {
   runExtractionPipeline,
+  runPluginDiscoveryPhase,
+  discoveryRelatedFragments,
+  semanticTypeContextForFile,
   type ExtractionPipelineResult,
 } from "modality-ts/extract";
 import type { Bounds } from "modality-ts/core";
@@ -31,6 +34,7 @@ import {
   type SemanticProject,
   type SemanticProjectConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
+import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
 import type { RegistrySummary } from "../../registry/index.js";
 import {
   type EffectApiProvenanceEntry,
@@ -246,6 +250,28 @@ export function runProjectExtractionPipeline(
       ...options,
     });
   }
+  const pipelineOptions = {
+    sourceText: "",
+    fileName: project.entryFile,
+    discoverFragments,
+    semanticProject: project.semanticProject,
+    ...options,
+  };
+  const relatedFragments = discoveryRelatedFragments(
+    pipelineOptions,
+    discoverFragments,
+  );
+  const fragmentTypes = semanticTypeContextForFile(
+    project.semanticProject,
+    discoverFragments[0]!.fileName,
+  );
+  const projectSummary = buildReactExtractionProjectSummary({
+    discoverFragments,
+    relatedFragments,
+    ...(fragmentTypes ? { types: fragmentTypes } : {}),
+    route: options.route,
+  });
+  const sharedDiscovery = runPluginDiscoveryPhase(pipelineOptions);
   return mergeExtractionPipelineResults(
     fragments.map((fragment) =>
       runExtractionPipeline({
@@ -253,6 +279,8 @@ export function runProjectExtractionPipeline(
         fileName: fragment.path,
         discoverFragments,
         semanticProject: project.semanticProject,
+        sharedDiscovery,
+        projectSummary,
         ...options,
       }),
     ),
@@ -260,6 +288,7 @@ export function runProjectExtractionPipeline(
       sourceText: "",
       fileName: project.entryFile,
       semanticProject: project.semanticProject,
+      sharedDiscovery,
       ...options,
     }),
   );

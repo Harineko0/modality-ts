@@ -286,6 +286,38 @@ function collectRelatedSourceFiles(
   return files;
 }
 
+export function componentRegistryWithPrimaryDisplay(
+  shared: ComponentRegistry,
+  primary: ts.SourceFile,
+  types?: SemanticTypeContext,
+): ComponentRegistry {
+  const registry: ComponentRegistry = {
+    bySymbolKey: new Map(shared.bySymbolKey),
+    byDisplayName: new Map(shared.byDisplayName),
+  };
+  populateComponentRegistryFromSource(registry, primary, {
+    types,
+    primaryFileName: primary.fileName,
+  });
+  return registry;
+}
+
+export function customHookRegistryWithPrimaryDisplay(
+  shared: CustomHookRegistry,
+  primary: ts.SourceFile,
+  types?: SemanticTypeContext,
+): CustomHookRegistry {
+  const registry: CustomHookRegistry = {
+    bySymbolKey: new Map(shared.bySymbolKey),
+    byDisplayName: new Map(shared.byDisplayName),
+  };
+  populateCustomHookRegistryFromSource(registry, primary, {
+    types,
+    primaryFileName: primary.fileName,
+  });
+  return registry;
+}
+
 export function buildComponentRegistry(
   primary: ts.SourceFile,
   options: RegistryBuildOptions = {},
@@ -303,13 +335,15 @@ export function buildComponentRegistry(
     });
   }
   for (const supplemental of options.supplementalSources ?? []) {
-    const supplementalSource = ts.createSourceFile(
-      supplemental.fileName ?? primary.fileName,
-      supplemental.sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
+    const supplementalSource =
+      options.types?.getSourceFile?.(supplemental.fileName ?? primary.fileName) ??
+      ts.createSourceFile(
+        supplemental.fileName ?? primary.fileName,
+        supplemental.sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
     populateComponentRegistryFromSource(registry, supplementalSource, {
       primaryFileName: populateOptions.primaryFileName,
       syntaxOnlyMerge: true,
@@ -335,13 +369,15 @@ export function buildCustomHookRegistry(
     });
   }
   for (const supplemental of options.supplementalSources ?? []) {
-    const supplementalSource = ts.createSourceFile(
-      supplemental.fileName ?? primary.fileName,
-      supplemental.sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
+    const supplementalSource =
+      options.types?.getSourceFile?.(supplemental.fileName ?? primary.fileName) ??
+      ts.createSourceFile(
+        supplemental.fileName ?? primary.fileName,
+        supplemental.sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
     populateCustomHookRegistryFromSource(registry, supplementalSource, {
       primaryFileName: populateOptions.primaryFileName,
       syntaxOnlyMerge: true,
