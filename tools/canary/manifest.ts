@@ -1,10 +1,20 @@
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
-  CanaryBudgets,
-  CanarySeededBugExpectations,
-  CanaryThresholds,
-} from "./assertions.js";
+  AcceptedCaveatRef,
+  SharedBudgets,
+  SharedThresholds,
+} from "../shared-gates/types.js";
+import {
+  hasSharedBudgets,
+  validateAcceptedCaveatRef,
+  validateSharedBudgets,
+  validateSharedThresholds,
+} from "../shared-gates/validate.js";
+import type { CanarySeededBugExpectations } from "./assertions.js";
+
+export type CanaryThresholds = SharedThresholds;
+export type CanaryBudgets = SharedBudgets;
 
 export type CanaryStatus = "active" | "planned";
 
@@ -26,10 +36,7 @@ export interface CanaryDependencyFact {
   source: "package-json" | "lockfile";
 }
 
-export interface CanaryAcceptedCaveat {
-  id: string;
-  kind: string;
-}
+export type CanaryAcceptedCaveat = AcceptedCaveatRef;
 
 export interface CanaryDefinition {
   id: string;
@@ -65,6 +72,7 @@ export interface CanaryDefinition {
   thresholds: CanaryThresholds;
   acceptedCaveats: readonly CanaryAcceptedCaveat[];
   knownUnsupported: readonly string[];
+  budgetNotApplicableReason?: string;
   expectations?: CanarySeededBugExpectations;
   budgets?: CanaryBudgets;
 }
@@ -248,12 +256,20 @@ function parseCanaryDefinition(value: unknown, path: string): CanaryDefinition {
       : {}),
     thresholds: parseThresholds(value.thresholds, `${path}.thresholds`),
     acceptedCaveats: value.acceptedCaveats.map((entry, index) =>
-      parseAcceptedCaveat(entry, `${path}.acceptedCaveats[${index}]`),
+      validateAcceptedCaveatRef(entry, `${path}.acceptedCaveats[${index}]`),
     ),
     knownUnsupported: assertStringArray(
       value.knownUnsupported,
       `${path}.knownUnsupported`,
     ),
+    ...(value.budgetNotApplicableReason !== undefined
+      ? {
+          budgetNotApplicableReason: assertNonEmptyStringValue(
+            value.budgetNotApplicableReason,
+            `${path}.budgetNotApplicableReason`,
+          ),
+        }
+      : {}),
     ...(value.expectations
       ? { expectations: parseExpectations(value.expectations, `${path}.expectations`) }
       : {}),
@@ -358,29 +374,14 @@ function parseThresholds(
   value: Record<string, unknown>,
   path: string,
 ): CanaryThresholds {
-  for (const key of [
-    "minCoverageExactOrOverlay",
-    "minConformPassRate",
-    "minTransitionPassRate",
-  ] as const) {
-    if (value[key] !== undefined) {
-      assertPassRate(value[key], `${path}.${key}`);
-    }
-  }
-  return value as CanaryThresholds;
+  return validateSharedThresholds(value, path);
 }
 
 function parseBudgets(
   value: unknown,
   path: string,
 ): CanaryBudgets {
-  if (!isRecord(value)) throw new Error(`${path} must be an object`);
-  for (const key of ["maxStates", "maxEdges", "maxFrontier", "memoryGuardMb"] as const) {
-    if (value[key] !== undefined) {
-      assertPositiveInteger(value[key], `${path}.${key}`);
-    }
-  }
-  return value as CanaryBudgets;
+  return validateSharedBudgets(value, path);
 }
 
 function parseExpectations(
@@ -402,21 +403,6 @@ function parseExpectations(
   return value as CanarySeededBugExpectations;
 }
 
-function parseAcceptedCaveat(
-  value: unknown,
-  path: string,
-): CanaryAcceptedCaveat {
-  if (!isRecord(value)) throw new Error(`${path} must be an object`);
-  assertNonEmptyString(value.id, `${path}.id`);
-  assertNonEmptyString(value.kind, `${path}.kind`);
-  if ("message" in value || "pattern" in value || "regex" in value) {
-    throw new Error(`${path} must use stable kind and id, not free-form matching`);
-  }
-  return {
-    id: value.id,
-    kind: value.kind,
-  };
-}
 
 function validateAcceptedCaveats(canary: CanaryDefinition): void {
   for (const [index, caveat] of canary.acceptedCaveats.entries()) {
@@ -432,10 +418,25 @@ function assertActiveThresholds(canary: CanaryDefinition): void {
   const hasThreshold =
     canary.thresholds.minCoverageExactOrOverlay !== undefined ||
     canary.thresholds.minConformPassRate !== undefined ||
-    canary.thresholds.minTransitionPassRate !== undefined;
+    canary.thresholds.minTransitionPassRate !== undefined ||
+    canary.thresholds.maxUnextractable !== undefined ||
+    canary.thresholds.maxGlobalTaints !== undefined ||
+    canary.thresholds.maxUnhandledRejections !== undefined ||
+    canary.thresholds.maxStaleReads !== undefined ||
+    canary.thresholds.minRouteCoverage !== undefined;
   if (!hasThreshold) {
     throw new Error(`active canary ${canary.id} must define at least one threshold`);
   }
+  assertActiveBudgets(canary);
+}
+
+function assertActiveBudgets(canary: CanaryDefinition): void {
+  if (hasSharedBudgets(canary.budgets) || canary.budgetNotApplicableReason) {
+    return;
+  }
+  throw new Error(
+    `active canary ${canary.id} must define budgets or budgetNotApplicableReason`,
+  );
 }
 
 async function assertPathExists(path: string, label: string): Promise<void> {
@@ -462,6 +463,11 @@ function assertNonEmptyString(value: unknown, path: string): void {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${path} must be a non-empty string`);
   }
+}
+
+function assertNonEmptyStringValue(value: unknown, path: string): string {
+  assertNonEmptyString(value, path);
+  return value;
 }
 
 function assertStringArray(value: unknown, path: string): readonly string[] {

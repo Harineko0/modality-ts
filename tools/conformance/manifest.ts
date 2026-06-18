@@ -1,10 +1,20 @@
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type {
-  FixtureBudgets,
-  FixtureSemanticExpectations,
-  FixtureThresholds,
-} from "./assertions.js";
+  AcceptedCaveatRef,
+  SharedBudgets,
+  SharedThresholds,
+} from "../shared-gates/types.js";
+import {
+  validateAcceptedCaveatRef,
+  validateSharedBudgets,
+  validateSharedThresholds,
+} from "../shared-gates/validate.js";
+import type { FixtureSemanticExpectations } from "./assertions.js";
+
+export type FixtureThresholds = SharedThresholds;
+export type FixtureBudgets = SharedBudgets;
+export type FixtureAcceptedCaveat = AcceptedCaveatRef;
 
 export type ConformanceFeatureLayer =
   | "typescript"
@@ -53,9 +63,14 @@ export interface ConformanceMatrixCell {
   acceptedCaveats?: readonly string[];
   minCoverageExactOrOverlay?: number;
   minConformPassRate?: number;
+  minTransitionPassRate?: number;
   maxStates?: number;
   maxEdges?: number;
+  maxDepth?: number;
   maxFrontier?: number;
+  maxDominantVarValues?: number;
+  maxStateSpaceBits?: number;
+  maxTopContributorBits?: number;
   notes?: string;
 }
 
@@ -99,6 +114,7 @@ export interface ConformanceFixtureManifest {
   };
   thresholds?: FixtureThresholds;
   budgets?: FixtureBudgets;
+  acceptedCaveats?: readonly FixtureAcceptedCaveat[];
   expectations?: FixtureSemanticExpectations;
 }
 
@@ -219,23 +235,27 @@ export function parseConformanceMatrixManifest(
         `cell ${cell.featureId}/${cell.targetId}.minConformPassRate`,
       );
     }
-    if (cell.maxStates !== undefined) {
-      assertPositiveInteger(
-        cell.maxStates,
-        `cell ${cell.featureId}/${cell.targetId}.maxStates`,
+    if (cell.minTransitionPassRate !== undefined) {
+      assertPassRate(
+        cell.minTransitionPassRate,
+        `cell ${cell.featureId}/${cell.targetId}.minTransitionPassRate`,
       );
     }
-    if (cell.maxEdges !== undefined) {
-      assertPositiveInteger(
-        cell.maxEdges,
-        `cell ${cell.featureId}/${cell.targetId}.maxEdges`,
-      );
-    }
-    if (cell.maxFrontier !== undefined) {
-      assertPositiveInteger(
-        cell.maxFrontier,
-        `cell ${cell.featureId}/${cell.targetId}.maxFrontier`,
-      );
+    for (const key of [
+      "maxStates",
+      "maxEdges",
+      "maxDepth",
+      "maxFrontier",
+      "maxDominantVarValues",
+      "maxStateSpaceBits",
+      "maxTopContributorBits",
+    ] as const) {
+      if (cell[key] !== undefined) {
+        assertPositiveInteger(
+          cell[key],
+          `cell ${cell.featureId}/${cell.targetId}.${key}`,
+        );
+      }
     }
   }
 
@@ -328,8 +348,26 @@ export function parseConformanceFixtureManifest(
     ...(value.extract ? { extract: value.extract as ConformanceFixtureManifest["extract"] } : {}),
     ...(value.check ? { check: value.check as ConformanceFixtureManifest["check"] } : {}),
     ...(value.conform ? { conform: value.conform as ConformanceFixtureManifest["conform"] } : {}),
-    ...(value.thresholds ? { thresholds: value.thresholds as FixtureThresholds } : {}),
-    ...(value.budgets ? { budgets: value.budgets as FixtureBudgets } : {}),
+    ...(value.thresholds
+      ? {
+          thresholds: validateSharedThresholds(
+            value.thresholds as Record<string, unknown>,
+            "fixture.thresholds",
+          ),
+        }
+      : {}),
+    ...(value.budgets
+      ? {
+          budgets: validateSharedBudgets(value.budgets, "fixture.budgets"),
+        }
+      : {}),
+    ...(value.acceptedCaveats
+      ? {
+          acceptedCaveats: (value.acceptedCaveats as unknown[]).map((entry, index) =>
+            validateAcceptedCaveatRef(entry, `fixture.acceptedCaveats[${index}]`),
+          ),
+        }
+      : {}),
     ...(value.expectations
       ? { expectations: value.expectations as FixtureSemanticExpectations }
       : {}),

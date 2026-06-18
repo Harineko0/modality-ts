@@ -12,14 +12,14 @@ import { runCiCommand } from "../../src/cli/ci.ts";
 import { runConformCommand } from "../../src/cli/conform.ts";
 import { runExtractCommand } from "../../src/cli/extract.ts";
 import { runReplayCommand } from "../../src/cli/replay.ts";
+import { evaluateAcceptedCaveats } from "../shared-gates/caveats.js";
 import {
-  assertConformPassRate,
-  assertCoverageThreshold,
   assertSeededBugExpectations,
   assertStateSpaceBudget,
-  assertTransitionPassRates,
+  assertThresholds,
   type ThresholdAssertionResult,
 } from "./assertions.js";
+import { classifyCanaryFailure } from "./classify.js";
 import {
   readCanaryManifest,
   selectActiveCanaries,
@@ -75,6 +75,7 @@ export async function runCanarySuite(
     options.reportPath ?? join(artifactRoot, "canary-run-report.json");
   const lines: string[] = [];
   const canaryResults: CanaryRunReport["canaryResults"] = [];
+  const classifications: CanaryRunReport["classifications"] = [];
 
   try {
     for (const canary of selected) {
@@ -115,12 +116,10 @@ export async function runCanarySuite(
         now,
       });
 
-      const thresholdResults: ThresholdAssertionResult[] = [
-        assertCoverageThreshold(
-          extracted.report,
-          canary.thresholds.minCoverageExactOrOverlay,
-        ),
-      ];
+      const thresholdResults: ThresholdAssertionResult[] = assertThresholds({
+        extractionReport: extracted.report,
+        thresholds: coverageThresholds(canary.thresholds),
+      });
 
       let checkReport: CheckReport | undefined;
       if (canary.check) {
@@ -157,21 +156,26 @@ export async function runCanarySuite(
         });
         conformReport = conformed.report;
         thresholdResults.push(
-          assertConformPassRate(
+          ...assertThresholds({
+            extractionReport: extracted.report,
             conformReport,
-            canary.thresholds.minConformPassRate,
-          ),
-          assertTransitionPassRates(
-            conformReport,
-            canary.thresholds.minTransitionPassRate,
-          ),
+            thresholds: conformThresholds(canary.thresholds),
+          }),
         );
       }
 
       const budgetResults = assertStateSpaceBudget(
         checkReport,
         canary.budgets ?? resolveCheckBudgets(canary),
+        extracted.report,
       );
+
+      const caveatOutcome = evaluateAcceptedCaveats({
+        extractionReport: extracted.report,
+        checkReport,
+        acceptedCaveats: canary.acceptedCaveats,
+        knownUnsupported: canary.knownUnsupported,
+      });
 
       const reproducedReplayCount = checkReport
         ? await countReproducedReplays(tracesDir, now)
@@ -205,10 +209,14 @@ export async function runCanarySuite(
         (entry) => entry.status === "fail",
       );
       const failedBudgets = budgetResults.filter((entry) => entry.status === "fail");
+      const coveragePassed = !failedThresholds.some(
+        (entry) => entry.id === "minCoverageExactOrOverlay",
+      );
       const status =
         expectationFailures.length > 0 ||
         failedThresholds.length > 0 ||
-        failedBudgets.length > 0
+        failedBudgets.length > 0 ||
+        caveatOutcome.status === "fail"
           ? "fail"
           : "pass";
 
@@ -217,12 +225,31 @@ export async function runCanarySuite(
         status,
         thresholds: thresholdResults,
         budgets: budgetResults,
+        acceptedCaveats: caveatOutcome.acceptedCaveats,
+        unacceptedCaveats: caveatOutcome.unacceptedCaveats,
         reportPaths: {
           extract: extractReportPath,
           ...(checkReport ? { check: checkReportPath } : {}),
           ...(conformReport ? { conform: conformReportPath } : {}),
         },
       });
+
+      if (status !== "pass") {
+        classifications.push(
+          ...classifyCanaryFailure({
+            canaryId: canary.id,
+            status,
+            extractionReport: extracted.report,
+            conformReport,
+            checkReport,
+            thresholdResults,
+            budgetResults,
+            caveatOutcome,
+            knownUnsupported: canary.knownUnsupported,
+            fixtureCoveragePassed: coveragePassed,
+          }),
+        );
+      }
 
       if (status === "pass") {
         lines.push(`canary ${canary.id}: pass`);
@@ -240,6 +267,12 @@ export async function runCanarySuite(
             lines.push(`canary ${canary.id}: ${failure.message}`);
           }
         }
+        for (const caveat of caveatOutcome.unacceptedCaveats) {
+          lines.push(`canary ${canary.id}: unaccepted caveat ${caveat}`);
+        }
+        for (const caveat of caveatOutcome.missingRequiredCaveats) {
+          lines.push(`canary ${canary.id}: missing required caveat ${caveat}`);
+        }
       }
     }
 
@@ -251,6 +284,7 @@ export async function runCanarySuite(
       manifest,
       now,
       canaryResults,
+      classifications,
       selectedCanaryCount: selected.length,
     });
   } catch (error) {
@@ -263,9 +297,32 @@ export async function runCanarySuite(
       manifest,
       now,
       canaryResults,
+      classifications,
       selectedCanaryCount: selected.length,
     });
   }
+}
+
+function coverageThresholds(
+  thresholds: CanaryDefinition["thresholds"],
+): CanaryDefinition["thresholds"] {
+  return {
+    minCoverageExactOrOverlay: thresholds.minCoverageExactOrOverlay,
+    maxUnextractable: thresholds.maxUnextractable,
+    maxGlobalTaints: thresholds.maxGlobalTaints,
+    maxUnhandledRejections: thresholds.maxUnhandledRejections,
+    maxStaleReads: thresholds.maxStaleReads,
+    minRouteCoverage: thresholds.minRouteCoverage,
+  };
+}
+
+function conformThresholds(
+  thresholds: CanaryDefinition["thresholds"],
+): CanaryDefinition["thresholds"] {
+  return {
+    minConformPassRate: thresholds.minConformPassRate,
+    minTransitionPassRate: thresholds.minTransitionPassRate,
+  };
 }
 
 function resolveSearchLimits(canary: CanaryDefinition) {
@@ -362,6 +419,7 @@ async function finalize(input: {
   manifest: CanaryManifest;
   now: Date;
   canaryResults: CanaryRunReport["canaryResults"];
+  classifications: CanaryRunReport["classifications"];
   selectedCanaryCount: number;
 }): Promise<CanaryRunnerResult> {
   const report: CanaryRunReport = {
@@ -370,7 +428,7 @@ async function finalize(input: {
     generatedAt: input.now.toISOString(),
     manifestId: input.manifest.manifestId,
     canaryResults: input.canaryResults,
-    classifications: [],
+    classifications: input.classifications,
     reportPath: input.reportPath,
   };
   await mkdir(dirname(input.reportPath), { recursive: true });
@@ -403,6 +461,14 @@ async function invalidManifestResult(
     },
     now,
     canaryResults: [],
+    classifications: [
+      ...classifyCanaryFailure({
+        canaryId: options.canaryId ?? "invalid",
+        status: "error",
+        manifestInvalid: true,
+        integrationError: message,
+      }),
+    ],
     selectedCanaryCount: 0,
   });
 }

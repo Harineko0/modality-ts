@@ -32,7 +32,13 @@
       "thresholds": {
         "minCoverageExactOrOverlay": 1
       },
-      "acceptedCaveats": [],
+      "budgetNotApplicableReason": "Seeded-bug demo validates violation reproduction, not state-space caps.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.placeOrder"
+        }
+      ],
       "knownUnsupported": [],
       "expectations": {
         "violatedPropertyCount": 3,
@@ -81,7 +87,17 @@
       "thresholds": {
         "minCoverageExactOrOverlay": 1
       },
-      "acceptedCaveats": [],
+      "budgetNotApplicableReason": "Workflow canary without an explicit state-space budget gate.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.createTodo"
+        },
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.fetchTodos"
+        }
+      ],
       "knownUnsupported": []
     },
     {
@@ -109,7 +125,17 @@
       "thresholds": {
         "minCoverageExactOrOverlay": 1
       },
-      "acceptedCaveats": [],
+      "budgetNotApplicableReason": "Workflow canary without an explicit state-space budget gate.",
+      "acceptedCaveats": [
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.submitOrder"
+        },
+        {
+          "kind": "unhandled-rejection",
+          "id": "App.onClick.api.fetchQuote"
+        }
+      ],
       "knownUnsupported": []
     },
     {

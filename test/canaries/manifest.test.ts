@@ -204,6 +204,7 @@ describe("canary manifest", () => {
               extract: { sourcePaths: ["App.tsx"] },
               check: { propsPaths: ["app.props.ts"] },
               thresholds: { minCoverageExactOrOverlay: 1 },
+              budgetNotApplicableReason: "test",
               acceptedCaveats: [
                 { id: "stale-read", kind: "stale-read", message: "ignore me" },
               ],
@@ -213,6 +214,83 @@ describe("canary manifest", () => {
         }),
       ),
     ).toThrow(/stable kind and id/);
+  });
+
+  it("rejects invalid thresholds and budgets", () => {
+    expect(() =>
+      parseCanaryManifest(
+        JSON.stringify({
+          schemaVersion: 1,
+          manifestId: "broken",
+          canaries: [
+            {
+              id: "broken-canary",
+              title: "Broken",
+              status: "active",
+              kind: "react-app",
+              root: "examples/demo-app",
+              dependencyFacts: [],
+              extract: { sourcePaths: ["App.tsx"] },
+              check: { propsPaths: ["app.props.ts"] },
+              thresholds: { minCoverageExactOrOverlay: 2 },
+              budgetNotApplicableReason: "test",
+              acceptedCaveats: [],
+              knownUnsupported: [],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/between 0 and 1/);
+    expect(() =>
+      parseCanaryManifest(
+        JSON.stringify({
+          schemaVersion: 1,
+          manifestId: "broken",
+          canaries: [
+            {
+              id: "broken-canary",
+              title: "Broken",
+              status: "active",
+              kind: "react-app",
+              root: "examples/demo-app",
+              dependencyFacts: [],
+              extract: { sourcePaths: ["App.tsx"] },
+              check: { propsPaths: ["app.props.ts"] },
+              thresholds: { minCoverageExactOrOverlay: 1 },
+              budgets: { maxStates: 0 },
+              acceptedCaveats: [],
+              knownUnsupported: [],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/positive integer/);
+  });
+
+  it("rejects active canaries without budgets or rationale", () => {
+    expect(() =>
+      parseCanaryManifest(
+        JSON.stringify({
+          schemaVersion: 1,
+          manifestId: "broken",
+          canaries: [
+            {
+              id: "broken-canary",
+              title: "Broken",
+              status: "active",
+              kind: "react-app",
+              root: "examples/demo-app",
+              dependencyFacts: [],
+              extract: { sourcePaths: ["App.tsx"] },
+              check: { propsPaths: ["app.props.ts"] },
+              thresholds: { minCoverageExactOrOverlay: 1 },
+              acceptedCaveats: [],
+              knownUnsupported: [],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/budgets or budgetNotApplicableReason/);
   });
 
   it("excludes planned canaries from default selection", async () => {

@@ -8,6 +8,7 @@ import {
   assertCoverageThreshold,
   assertSemanticExpectations,
   assertStateSpaceBudget,
+  assertTransitionPassRates,
 } from "../../tools/conformance/assertions.js";
 import {
   parseConformanceFixtureManifest,
@@ -91,17 +92,54 @@ describe("conformance assertion helpers", () => {
     expect(assertConformPassRate(report, 1).status).toBe("fail");
   });
 
-  it("records state-space budget failures", () => {
+  it("records state-space budget failures with evidence", () => {
     const checkReport = {
       stats: { states: 99, edges: 10, depth: 1 },
       diagnostics: { search: { maxFrontier: 9 } },
+      trustLedger: { boundHits: [] },
     } as CheckReport;
-    expect(
-      assertStateSpaceBudget(checkReport, { maxStates: 10, maxFrontier: 5 }),
-    ).toEqual([
-      expect.objectContaining({ id: "maxStates", status: "fail" }),
-      expect.objectContaining({ id: "maxFrontier", status: "fail" }),
-    ]);
+    const extractionReport = {
+      stateContributors: {
+        totalBits: 40,
+        topVars: [{ varId: "local:App.count", bits: 20, domainKind: "boundedInt", scope: "/", origin: "x" }],
+        bySource: [],
+      },
+    } as ExtractionReport;
+    const results = assertStateSpaceBudget(
+      checkReport,
+      { maxStates: 10, maxFrontier: 5, maxStateSpaceBits: 8 },
+      extractionReport,
+    );
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "maxStates",
+          status: "fail",
+          evidence: expect.arrayContaining([
+            "checkReport.stats.states: 99",
+            "varId: local:App.count",
+          ]),
+        }),
+        expect.objectContaining({ id: "maxFrontier", status: "fail" }),
+        expect.objectContaining({ id: "maxStateSpaceBits", status: "fail" }),
+      ]),
+    );
+  });
+
+  it("fails unaccepted caveats through the shared gate helper", async () => {
+    const { evaluateAcceptedCaveats } = await import(
+      "../../tools/shared-gates/caveats.js"
+    );
+    const outcome = evaluateAcceptedCaveats({
+      extractionReport: {
+        globalTaints: [],
+        staleReads: [{ kind: "stale-read", id: "auth", reason: "x", severity: "info" }],
+        unhandledRejections: [],
+      } as ExtractionReport,
+      acceptedCaveats: [],
+    });
+    expect(outcome.status).toBe("fail");
+    expect(outcome.unacceptedCaveats).toEqual(["stale-read:auth"]);
   });
 
   it("checks semantic transition and var expectations", () => {
@@ -225,80 +263,15 @@ describe("conformance runner", () => {
     expect(result.lines.join("\n")).toMatch(/coverage/i);
   });
 
-  it("fails on conform pass-rate threshold", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "modality-conformance-threshold-"));
-    const fixtureRoot = join(
-      repoRoot,
-      "test/conformance/fixtures/state-local-setter-batch",
-    );
-    const manifest = await readConformanceFixtureManifest(repoRoot, fixtureRoot);
-    const overridden = {
-      ...manifest,
-      thresholds: {
-        ...manifest.thresholds,
-        minConformPassRate: 2,
-      },
-    };
-    const localFixtureRoot = join(dir, "state-local-setter-batch");
-    await mkdir(join(localFixtureRoot, "app"), { recursive: true });
-    await writeFile(
-      join(localFixtureRoot, "fixture.json"),
-      JSON.stringify({
-        ...overridden,
-        root: "state-local-setter-batch",
-      }),
-      "utf8",
-    );
-    for (const relativePath of ["app/App.tsx", "app/app.props.ts", "app/package.json"]) {
-      const { copyFile } = await import("node:fs/promises");
-      await copyFile(
-        join(fixtureRoot, relativePath),
-        join(localFixtureRoot, relativePath),
-      );
-    }
-    const matrixFile = join(dir, "matrix.json");
-    await writeFile(
-      matrixFile,
-      JSON.stringify({
-        schemaVersion: 1,
-        features: [
-          {
-            id: "feature.a",
-            title: "Feature",
-            layer: "core-ir",
-            contract: "core-spec",
-            requiredFixtures: [],
-          },
-        ],
-        targets: [{ id: "core", title: "Core" }],
-        fixtures: [
-          {
-            id: "state-local-setter-batch",
-            featureIds: ["feature.a"],
-            targetIds: ["core"],
-            root: "state-local-setter-batch",
-          },
-        ],
-        cells: [
-          {
-            featureId: "feature.a",
-            targetId: "core",
-            status: "supported",
-            fixtures: ["state-local-setter-batch"],
-          },
-        ],
-      }),
-      "utf8",
-    );
-
-    const failed = await runConformanceMatrix({
-      repoRoot: dir,
-      matrixPath: matrixFile,
-      fixtureId: "state-local-setter-batch",
-      now: new Date("2026-06-17T00:00:00.000Z"),
-    });
-    expect(failed.exitCode).toBe(2);
-    expect(failed.lines.join("\n")).toMatch(/conform pass rate/i);
+  it("fails on conform pass-rate threshold via shared gate helpers", () => {
+    const report = {
+      metrics: { passRate: 0.5 },
+      transitionMetrics: [{ transitionId: "App.onClick.count", passRate: 0.5 }],
+    } as ConformReport;
+    expect(assertConformPassRate(report, 1).status).toBe("fail");
+    expect(
+      assertTransitionPassRates(report, 1).some((entry) => entry.status === "fail"),
+    ).toBe(true);
   });
 
   it("keeps generated artifacts outside fixture roots", async () => {

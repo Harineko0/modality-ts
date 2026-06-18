@@ -214,6 +214,7 @@ export interface ReportThresholdResult {
   status: ReportGateStatus;
   expected?: number;
   actual?: number;
+  evidence?: readonly string[];
   message?: string;
 }
 
@@ -226,6 +227,11 @@ export interface ReportStateSpaceBudgetResult {
   actualEdges?: number;
   maxFrontier?: number;
   actualFrontier?: number;
+  maxDepth?: number;
+  actualDepth?: number;
+  expected?: number;
+  actual?: number;
+  evidence?: readonly string[];
   message?: string;
 }
 

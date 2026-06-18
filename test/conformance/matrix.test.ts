@@ -154,6 +154,41 @@ describe("conformance matrix manifest", () => {
       ),
     ).toThrow("supported cell feature.a/core must name at least one fixture");
   });
+
+  it("validates threshold and budget fields on matrix cells", () => {
+    expect(() =>
+      parseConformanceMatrixManifest(
+        JSON.stringify({
+          ...minimalMatrix(),
+          cells: [
+            {
+              featureId: "feature.a",
+              targetId: "core",
+              status: "partial",
+              fixtures: [],
+              minCoverageExactOrOverlay: 1.5,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/minCoverageExactOrOverlay/);
+    expect(() =>
+      parseConformanceMatrixManifest(
+        JSON.stringify({
+          ...minimalMatrix(),
+          cells: [
+            {
+              featureId: "feature.a",
+              targetId: "core",
+              status: "partial",
+              fixtures: [],
+              maxStates: 0,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/maxStates/);
+  });
 });
 
 describe("parseConformanceMatrixReportArtifact", () => {

@@ -10,14 +10,14 @@ import {
 import { runCheckCommand } from "../../src/cli/check.ts";
 import { runConformCommand } from "../../src/cli/conform.ts";
 import { runExtractCommand } from "../../src/cli/extract.ts";
+import { evaluateAcceptedCaveats } from "../shared-gates/caveats.js";
 import {
-  assertConformPassRate,
-  assertCoverageThreshold,
   assertSemanticExpectations,
   assertStateSpaceBudget,
-  assertTransitionPassRates,
+  assertThresholds,
   type ThresholdAssertionResult,
 } from "./assertions.js";
+import { classifyConformanceFailure } from "../canary/classify.js";
 import {
   loadConformanceFixtureManifests,
   readConformanceMatrixManifest,
@@ -60,10 +60,14 @@ export async function runConformanceMatrix(
     options.reportPath ?? join(artifactRoot, "conformance-matrix-report.json");
   const lines: string[] = [];
   const fixtureResults: ConformanceMatrixReport["fixtureResults"] = [];
+  const classifications: NonNullable<
+    ConformanceMatrixReport["classifications"]
+  > = [];
 
   try {
     for (const fixture of selected) {
       const fixtureRoot = resolve(options.repoRoot, fixture.root);
+      const cellStatus = resolveFixtureCellStatus(matrix, fixture.id);
       try {
         await validateConformanceFixturePaths(fixtureRoot, fixture);
       } catch (error) {
@@ -74,6 +78,15 @@ export async function runConformanceMatrix(
           featureIds: fixture.featureIds,
           targetIds: fixture.targetIds,
         });
+        classifications.push(
+          ...classifyConformanceFailure({
+            canaryId: fixture.id,
+            fixtureId: fixture.id,
+            status: "error",
+            manifestInvalid: true,
+            integrationError: message,
+          }),
+        );
         lines.push(`fixture ${fixture.id}: invalid (${message})`);
         return finalize({
           exitCode: 3,
@@ -82,6 +95,7 @@ export async function runConformanceMatrix(
           matrix,
           now,
           fixtureResults,
+          classifications,
           selectedFixtureCount: selected.length,
         });
       }
@@ -118,12 +132,10 @@ export async function runConformanceMatrix(
         now,
       });
 
-      const thresholdResults: ThresholdAssertionResult[] = [
-        assertCoverageThreshold(
-          extracted.report,
-          fixture.thresholds?.minCoverageExactOrOverlay,
-        ),
-      ];
+      const thresholdResults: ThresholdAssertionResult[] = assertThresholds({
+        extractionReport: extracted.report,
+        thresholds: coverageThresholds(fixture.thresholds),
+      });
       const semanticFailures = assertSemanticExpectations(
         extracted.model,
         extracted.report,
@@ -161,18 +173,30 @@ export async function runConformanceMatrix(
         });
         conformReport = conformed.report;
         thresholdResults.push(
-          assertConformPassRate(
+          ...assertThresholds({
+            extractionReport: extracted.report,
             conformReport,
-            fixture.thresholds?.minConformPassRate,
-          ),
-          assertTransitionPassRates(
-            conformReport,
-            fixture.thresholds?.minTransitionPassRate,
-          ),
+            thresholds: conformThresholds(fixture.thresholds),
+          }),
         );
       }
 
-      const budgetResults = assertStateSpaceBudget(checkReport, fixture.budgets);
+      const budgetResults = assertStateSpaceBudget(
+        checkReport,
+        fixture.budgets,
+        extracted.report,
+      );
+      const acceptedCaveatRefs = [
+        ...(fixture.acceptedCaveats ?? []),
+        ...resolveCellAcceptedCaveats(matrix, fixture.id),
+      ];
+      const caveatOutcome = evaluateAcceptedCaveats({
+        extractionReport: extracted.report,
+        checkReport,
+        acceptedCaveats: acceptedCaveatRefs,
+        allowUnaccepted: cellStatus === "partial",
+      });
+
       const failedThresholds = thresholdResults.filter(
         (entry) => entry.status === "fail",
       );
@@ -182,7 +206,8 @@ export async function runConformanceMatrix(
       const status =
         semanticFailures.length > 0 ||
         failedThresholds.length > 0 ||
-        failedBudgets.length > 0
+        failedBudgets.length > 0 ||
+        caveatOutcome.status === "fail"
           ? "fail"
           : "pass";
 
@@ -193,12 +218,30 @@ export async function runConformanceMatrix(
         targetIds: fixture.targetIds,
         thresholds: thresholdResults,
         budgets: budgetResults,
+        acceptedCaveats: caveatOutcome.acceptedCaveats,
+        unacceptedCaveats: caveatOutcome.unacceptedCaveats,
         reportPaths: {
           extract: extractReportPath,
           ...(checkReport ? { check: checkReportPath } : {}),
           ...(conformReport ? { conform: conformReportPath } : {}),
         },
       });
+
+      if (status !== "pass") {
+        classifications.push(
+          ...classifyConformanceFailure({
+            canaryId: fixture.id,
+            fixtureId: fixture.id,
+            status,
+            extractionReport: extracted.report,
+            conformReport,
+            checkReport,
+            thresholdResults,
+            budgetResults,
+            caveatOutcome,
+          }),
+        );
+      }
 
       if (status === "pass") {
         lines.push(`fixture ${fixture.id}: pass`);
@@ -216,6 +259,12 @@ export async function runConformanceMatrix(
             lines.push(`fixture ${fixture.id}: ${failure.message}`);
           }
         }
+        for (const caveat of caveatOutcome.unacceptedCaveats) {
+          lines.push(`fixture ${fixture.id}: unaccepted caveat ${caveat}`);
+        }
+        for (const caveat of caveatOutcome.missingRequiredCaveats) {
+          lines.push(`fixture ${fixture.id}: missing required caveat ${caveat}`);
+        }
       }
     }
 
@@ -229,6 +278,7 @@ export async function runConformanceMatrix(
       matrix,
       now,
       fixtureResults,
+      classifications,
       selectedFixtureCount: selected.length,
     });
   } catch (error) {
@@ -241,6 +291,7 @@ export async function runConformanceMatrix(
       matrix,
       now,
       fixtureResults,
+      classifications,
       selectedFixtureCount: selected.length,
     });
   }
@@ -312,6 +363,57 @@ function selectFixtures(
   });
 }
 
+function resolveFixtureCellStatus(
+  matrix: ConformanceMatrixManifest,
+  fixtureId: string,
+): ConformanceMatrixManifest["cells"][number]["status"] | undefined {
+  for (const cell of matrix.cells) {
+    if (cell.fixtures.includes(fixtureId)) return cell.status;
+  }
+  return undefined;
+}
+
+function resolveCellAcceptedCaveats(
+  matrix: ConformanceMatrixManifest,
+  fixtureId: string,
+): { id: string; kind: string }[] {
+  const accepted: { id: string; kind: string }[] = [];
+  for (const cell of matrix.cells) {
+    if (!cell.fixtures.includes(fixtureId)) continue;
+    for (const entry of cell.acceptedCaveats ?? []) {
+      const [kind, id] = entry.includes(":")
+        ? (entry.split(":", 2) as [string, string])
+        : ["accepted", entry];
+      accepted.push({ kind, id });
+    }
+  }
+  return accepted;
+}
+
+function coverageThresholds(
+  thresholds: ConformanceFixtureManifest["thresholds"],
+): ConformanceFixtureManifest["thresholds"] {
+  if (!thresholds) return undefined;
+  return {
+    minCoverageExactOrOverlay: thresholds.minCoverageExactOrOverlay,
+    maxUnextractable: thresholds.maxUnextractable,
+    maxGlobalTaints: thresholds.maxGlobalTaints,
+    maxUnhandledRejections: thresholds.maxUnhandledRejections,
+    maxStaleReads: thresholds.maxStaleReads,
+    minRouteCoverage: thresholds.minRouteCoverage,
+  };
+}
+
+function conformThresholds(
+  thresholds: ConformanceFixtureManifest["thresholds"],
+): ConformanceFixtureManifest["thresholds"] {
+  if (!thresholds) return undefined;
+  return {
+    minConformPassRate: thresholds.minConformPassRate,
+    minTransitionPassRate: thresholds.minTransitionPassRate,
+  };
+}
+
 async function finalize(input: {
   exitCode: number;
   reportPath: string;
@@ -319,6 +421,7 @@ async function finalize(input: {
   matrix: ConformanceMatrixManifest;
   now: Date;
   fixtureResults: ConformanceMatrixReport["fixtureResults"];
+  classifications: NonNullable<ConformanceMatrixReport["classifications"]>;
   selectedFixtureCount: number;
 }): Promise<ConformanceRunnerResult> {
   const report: ConformanceMatrixReport = {
@@ -327,6 +430,9 @@ async function finalize(input: {
     generatedAt: input.now.toISOString(),
     matrixId: "repo-matrix",
     fixtureResults: input.fixtureResults,
+    ...(input.classifications.length > 0
+      ? { classifications: input.classifications }
+      : {}),
     reportPath: input.reportPath,
   };
   await mkdir(dirname(input.reportPath), { recursive: true });

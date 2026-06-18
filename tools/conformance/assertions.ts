@@ -5,20 +5,21 @@ import type {
   ExtractionReport,
   ExprIR,
   Model,
-  ReportGateStatus,
 } from "modality-ts/core";
+import { evaluateStateSpaceBudgets } from "../shared-gates/budgets.js";
+import {
+  evaluateConformThresholds,
+  evaluateCoverageThresholds,
+} from "../shared-gates/thresholds.js";
+import type {
+  GateBudgetResult,
+  GateThresholdResult,
+  SharedBudgets,
+  SharedThresholds,
+} from "../shared-gates/types.js";
 
-export interface FixtureThresholds {
-  minCoverageExactOrOverlay?: number;
-  minConformPassRate?: number;
-  minTransitionPassRate?: number;
-}
-
-export interface FixtureBudgets {
-  maxStates?: number;
-  maxEdges?: number;
-  maxFrontier?: number;
-}
+export type FixtureThresholds = SharedThresholds;
+export type FixtureBudgets = SharedBudgets;
 
 export interface FixtureSemanticExpectations {
   transitionIds?: readonly string[];
@@ -42,164 +43,69 @@ export interface AssertionFailure {
   message: string;
 }
 
-export interface ThresholdAssertionResult {
-  id: string;
-  status: ReportGateStatus;
-  expected?: number;
-  actual?: number;
-  message?: string;
-}
-
-export interface BudgetAssertionResult {
-  id: string;
-  status: ReportGateStatus;
-  maxStates?: number;
-  actualStates?: number;
-  maxEdges?: number;
-  actualEdges?: number;
-  maxFrontier?: number;
-  actualFrontier?: number;
-  message?: string;
-}
+export type ThresholdAssertionResult = GateThresholdResult;
+export type BudgetAssertionResult = GateBudgetResult;
 
 export function assertCoverageThreshold(
   report: ExtractionReport,
   threshold: number | undefined,
 ): ThresholdAssertionResult {
-  const id = "minCoverageExactOrOverlay";
   if (threshold === undefined) {
-    return { id, status: "skipped" };
+    return { id: "minCoverageExactOrOverlay", status: "skipped" };
   }
-  const actual = report.coverage.percentExactOrOverlay;
-  const status = actual >= threshold ? "pass" : "fail";
-  return {
-    id,
-    status,
-    expected: threshold,
-    actual,
-    ...(status === "fail"
-      ? {
-          message: `coverage ${actual} below threshold ${threshold}`,
-        }
-      : {}),
-  };
+  return (
+    evaluateCoverageThresholds(report, {
+      minCoverageExactOrOverlay: threshold,
+    })[0] ?? { id: "minCoverageExactOrOverlay", status: "skipped" }
+  );
 }
 
 export function assertConformPassRate(
   report: ConformReport | undefined,
   threshold: number | undefined,
 ): ThresholdAssertionResult {
-  const id = "minConformPassRate";
   if (threshold === undefined) {
-    return { id, status: "skipped" };
+    return { id: "minConformPassRate", status: "skipped" };
   }
-  if (!report) {
-    return {
-      id,
-      status: "fail",
-      expected: threshold,
-      message: "conform report missing",
-    };
-  }
-  const actual = report.metrics.passRate;
-  const status = actual >= threshold ? "pass" : "fail";
-  return {
-    id,
-    status,
-    expected: threshold,
-    actual,
-    ...(status === "fail"
-      ? {
-          message: `conform pass rate ${actual} below threshold ${threshold}`,
-        }
-      : {}),
-  };
+  return (
+    evaluateConformThresholds(report, { minConformPassRate: threshold })[0] ?? {
+      id: "minConformPassRate",
+      status: "skipped",
+    }
+  );
 }
 
 export function assertTransitionPassRates(
   report: ConformReport | undefined,
   threshold: number | undefined,
-): ThresholdAssertionResult {
-  const id = "minTransitionPassRate";
-  if (threshold === undefined) {
-    return { id, status: "skipped" };
-  }
-  if (!report) {
-    return {
-      id,
-      status: "fail",
-      expected: threshold,
-      message: "conform report missing",
-    };
-  }
-  const actual = report.transitionMetrics.length
-    ? Math.min(...report.transitionMetrics.map((entry) => entry.passRate))
-    : 1;
-  const status = actual >= threshold ? "pass" : "fail";
-  return {
-    id,
-    status,
-    expected: threshold,
-    actual,
-    ...(status === "fail"
-      ? {
-          message: `minimum transition pass rate ${actual} below threshold ${threshold}`,
-        }
-      : {}),
-  };
+): ThresholdAssertionResult[] {
+  if (threshold === undefined) return [];
+  return evaluateConformThresholds(report, {
+    minTransitionPassRate: threshold,
+  });
+}
+
+export function assertThresholds(input: {
+  extractionReport: ExtractionReport;
+  conformReport?: ConformReport;
+  thresholds?: FixtureThresholds;
+}): ThresholdAssertionResult[] {
+  return [
+    ...evaluateCoverageThresholds(input.extractionReport, input.thresholds),
+    ...evaluateConformThresholds(input.conformReport, input.thresholds),
+  ];
 }
 
 export function assertStateSpaceBudget(
   checkReport: CheckReport | undefined,
   budgets: FixtureBudgets | undefined,
+  extractionReport?: ExtractionReport,
 ): BudgetAssertionResult[] {
-  if (!budgets) return [];
-  const stats = checkReport?.stats;
-  const search = checkReport?.diagnostics?.search;
-  const results: BudgetAssertionResult[] = [];
-  if (budgets.maxStates !== undefined) {
-    const actualStates = stats?.states ?? 0;
-    results.push({
-      id: "maxStates",
-      status: actualStates <= budgets.maxStates ? "pass" : "fail",
-      maxStates: budgets.maxStates,
-      actualStates,
-      ...(actualStates > budgets.maxStates
-        ? {
-            message: `state count ${actualStates} exceeds budget ${budgets.maxStates}`,
-          }
-        : {}),
-    });
-  }
-  if (budgets.maxEdges !== undefined) {
-    const actualEdges = stats?.edges ?? 0;
-    results.push({
-      id: "maxEdges",
-      status: actualEdges <= budgets.maxEdges ? "pass" : "fail",
-      maxEdges: budgets.maxEdges,
-      actualEdges,
-      ...(actualEdges > budgets.maxEdges
-        ? {
-            message: `edge count ${actualEdges} exceeds budget ${budgets.maxEdges}`,
-          }
-        : {}),
-    });
-  }
-  if (budgets.maxFrontier !== undefined) {
-    const actualFrontier = search?.maxFrontier ?? 0;
-    results.push({
-      id: "maxFrontier",
-      status: actualFrontier <= budgets.maxFrontier ? "pass" : "fail",
-      maxFrontier: budgets.maxFrontier,
-      actualFrontier,
-      ...(actualFrontier > budgets.maxFrontier
-        ? {
-            message: `frontier ${actualFrontier} exceeds budget ${budgets.maxFrontier}`,
-          }
-        : {}),
-    });
-  }
-  return results;
+  return evaluateStateSpaceBudgets({
+    checkReport,
+    extractionReport,
+    budgets,
+  });
 }
 
 export function assertSemanticExpectations(

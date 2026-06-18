@@ -7,6 +7,10 @@ import {
   assertCoverageThreshold,
   assertSeededBugExpectations,
 } from "../../tools/canary/assertions.js";
+import {
+  classifyCanaryFailure,
+  classifyEveryCategoryFixtures,
+} from "../../tools/canary/classify.js";
 import { parseCanaryManifest } from "../../tools/canary/manifest.js";
 import { runCanarySuite } from "../../tools/canary/runner.js";
 import type { CheckReport, ExtractionReport } from "modality-ts/core";
@@ -80,7 +84,70 @@ describe("canary runner", () => {
     ]);
   });
 
-  it("fails and records a threshold result for a synthetic canary manifest", async () => {
+  it("classifies state-space budget failures", () => {
+    const classifications = classifyCanaryFailure({
+      canaryId: "tiny-canary",
+      status: "fail",
+      budgetResults: [
+        {
+          id: "maxStates",
+          status: "fail",
+          evidence: ["checkReport.stats.states: 120", "budget.maxStates: 50"],
+          message: "state count 120 exceeds budget 50",
+        },
+      ],
+    });
+    expect(classifications).toEqual([
+      expect.objectContaining({
+        category: "state-space-budget",
+        suggestedPlanFamily: "state-space-economics",
+      }),
+    ]);
+  });
+
+  it("covers every classification category synthetically", () => {
+    const categories = classifyEveryCategoryFixtures()
+      .map((entry) => entry.category)
+      .sort();
+    expect(categories).toEqual([
+      "environment-or-project-integration",
+      "explicit-unsupported-behavior",
+      "fixture-or-canary-invalid",
+      "incorrect-ir-or-checker",
+      "missing-adapter-capability",
+      "missing-semantic-abstraction",
+      "state-space-budget",
+      "syntax-recognition-gap",
+    ]);
+  });
+
+  it("records accepted and unaccepted caveats", async () => {
+    const { evaluateAcceptedCaveats } = await import(
+      "../../tools/shared-gates/caveats.js"
+    );
+    const accepted = evaluateAcceptedCaveats({
+      extractionReport: {
+        globalTaints: [{ kind: "global-taint", id: "x", reason: "y", severity: "info" }],
+        staleReads: [],
+        unhandledRejections: [],
+      } as ExtractionReport,
+      acceptedCaveats: [{ kind: "global-taint", id: "x" }],
+    });
+    expect(accepted.status).toBe("pass");
+    expect(accepted.acceptedCaveats).toEqual(["global-taint:x"]);
+
+    const rejected = evaluateAcceptedCaveats({
+      extractionReport: {
+        globalTaints: [{ kind: "global-taint", id: "y", reason: "z", severity: "info" }],
+        staleReads: [],
+        unhandledRejections: [],
+      } as ExtractionReport,
+      acceptedCaveats: [],
+    });
+    expect(rejected.unacceptedCaveats).toEqual(["global-taint:y"]);
+  });
+
+  it("includes classifications for failing canaries", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-canary-runner-"));
     const canaryRoot = join(dir, "tiny-canary");
     await mkdir(join(canaryRoot, "app"), { recursive: true });
@@ -123,6 +190,7 @@ describe("canary runner", () => {
             },
             check: { propsPaths: ["app/app.props.ts"] },
             thresholds: { minCoverageExactOrOverlay: 1 },
+            budgetNotApplicableReason: "Synthetic threshold-only canary.",
             acceptedCaveats: [],
             knownUnsupported: [],
           },
@@ -147,6 +215,7 @@ describe("canary runner", () => {
       ]),
     );
     expect(result.lines.join("\n")).toMatch(/coverage/i);
+    expect(result.report.classifications.length).toBeGreaterThan(0);
   });
 
   it("does not run planned canaries by default", async () => {
