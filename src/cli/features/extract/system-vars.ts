@@ -69,23 +69,27 @@ function pendingVars(
   const enqueues = transitions.flatMap((transition) =>
     enqueueOps(transition.effect),
   );
-  const opValues = new Set(effectApis.map(canonicalOp));
+  const opValues = new Set<string>();
   const continuationValues = new Set<string>();
   const argFields: Record<string, StateVarDecl["domain"]> = {};
   const varsById = new Map(vars.map((decl) => [decl.id, decl]));
-  for (const op of effectApis) {
-    const canonical = canonicalOp(op);
-    continuationValues.add(`App.onClick.${canonical}.cont`);
-    continuationValues.add(`App.onSubmit.${canonical}.cont`);
-    continuationValues.add(`App.onChange.${canonical}.cont`);
-  }
-  for (const enqueue of enqueues) {
-    const op = canonicalOp(enqueue.op);
-    opValues.add(op);
-    continuationValues.add(enqueue.continuation);
-    for (const [name, expr] of Object.entries(enqueue.args)) {
-      const domain = pendingArgDomain(expr, varsById);
-      if (domain) argFields[name] = mergeArgDomains(argFields[name], domain);
+  if (enqueues.length > 0) {
+    for (const enqueue of enqueues) {
+      const op = canonicalOp(enqueue.op);
+      opValues.add(op);
+      continuationValues.add(enqueue.continuation);
+      for (const [name, expr] of Object.entries(enqueue.args)) {
+        const domain = pendingArgDomain(expr, varsById);
+        if (domain) argFields[name] = mergeArgDomains(argFields[name], domain);
+      }
+    }
+  } else {
+    for (const op of effectApis) {
+      const canonical = canonicalOp(op);
+      opValues.add(canonical);
+      continuationValues.add(`App.onClick.${canonical}.cont`);
+      continuationValues.add(`App.onSubmit.${canonical}.cont`);
+      continuationValues.add(`App.onChange.${canonical}.cont`);
     }
   }
   if (opValues.size === 0) opValues.add("noop");

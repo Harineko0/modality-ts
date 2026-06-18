@@ -522,6 +522,107 @@ describe("runExtractCommand", () => {
     });
   });
 
+  it("narrows pending continuations to concrete enqueues when they exist", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'done'>('idle');
+        return <button onClick={async () => {
+          setStatus('done');
+          await api.save();
+        }}>Save</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      effectApis: ["api.save"],
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    expect(pendingVar?.domain).toMatchObject({
+      kind: "boundedList",
+      inner: {
+        kind: "record",
+        fields: {
+          opId: { kind: "enum", values: ["api.save"] },
+          continuation: {
+            kind: "enum",
+            values: ["App.onClick.api.save.cont"],
+          },
+        },
+      },
+    });
+    const continuationValues =
+      pendingVar?.domain.kind === "boundedList"
+        ? (
+            pendingVar.domain.inner as {
+              fields: { continuation: { values: string[] } };
+            }
+          ).fields.continuation.values
+        : [];
+    for (const synthetic of [
+      "App.onSubmit.api.save.cont",
+      "App.onChange.api.save.cont",
+    ]) {
+      expect(continuationValues).not.toContain(synthetic);
+    }
+  });
+
+  it("falls back to configured effect API pending domains when no enqueues exist", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [status, setStatus] = useState<'idle' | 'saving'>('idle');
+        return <button onClick={() => setStatus('saving')}>Save</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      effectApis: ["api.save"],
+      now: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    const pendingVar = result.model.vars.find(
+      (decl) => decl.id === "sys:pending",
+    );
+    expect(pendingVar?.domain).toMatchObject({
+      kind: "boundedList",
+      inner: {
+        kind: "record",
+        fields: {
+          opId: { kind: "enum", values: ["api.save"] },
+          continuation: {
+            kind: "enum",
+            values: expect.arrayContaining([
+              "App.onClick.api.save.cont",
+              "App.onSubmit.api.save.cont",
+              "App.onChange.api.save.cont",
+            ]),
+          },
+        },
+      },
+    });
+  });
+
   it("types pending op args from extracted effect API snapshots", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");
