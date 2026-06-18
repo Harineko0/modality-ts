@@ -1,6 +1,16 @@
 import * as ts from "typescript";
-import type { ExprIR } from "modality-ts/core";
+import type { ExprIR, StateVarScope } from "modality-ts/core";
 import { literalValue } from "./ast.js";
+
+export function routeMountScope(
+  routePattern: string | undefined,
+): StateVarScope {
+  return {
+    kind: "mount-local",
+    id: `route:${routePattern ?? "<unknown>"}`,
+    when: routeMountGuard(routePattern),
+  };
+}
 
 export function routeMountGuard(routePattern: string | undefined): ExprIR {
   return routePattern

@@ -1,4 +1,5 @@
 import * as ts from "typescript";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
 import { emitAppModel } from "../../src/cli/codegen/model.js";
@@ -31,7 +32,7 @@ describe("emitAppModel", () => {
           id: "local:App.items",
           domain: { kind: "lengthCat" },
           origin: { file: "App.tsx", line: 2, column: 3 },
-          scope: { kind: "route-local", route: "/" },
+          scope: routeMountScope("/"),
           initial: "0",
         },
       ],

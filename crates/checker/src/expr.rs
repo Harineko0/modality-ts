@@ -954,6 +954,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("/")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:history".into(),
@@ -966,6 +968,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:pending".into(),
@@ -978,6 +982,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "x".into(),
@@ -985,6 +991,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(initial.clone()),
+
+                        role: None,
                     },
                 ],
                 transitions: vec![Transition {
@@ -1087,6 +1095,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("/")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:history".into(),
@@ -1099,6 +1109,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:pending".into(),
@@ -1111,6 +1123,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "count".into(),
@@ -1122,6 +1136,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!(initial)),
+
+                        role: None,
                     },
                 ],
                 transitions: vec![],

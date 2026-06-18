@@ -68,14 +68,36 @@ pub enum InitialValue {
     Many(Vec<Value>),
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SystemVarRoleKind {
+    #[serde(rename = "pending-queue")]
+    PendingQueue,
+    #[serde(rename = "location-current")]
+    LocationCurrent,
+    #[serde(rename = "location-history")]
+    LocationHistory,
+    #[serde(rename = "tree-slot")]
+    TreeSlot,
+    #[serde(rename = "boundary-phase")]
+    BoundaryPhase,
+    #[serde(rename = "cache-entry")]
+    CacheEntry,
+    Environment,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemVarRole {
+    pub kind: SystemVarRoleKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Scope {
     Global,
-    #[serde(rename = "route-local")]
-    RouteLocal {
-        route: String,
-    },
     #[serde(rename = "mount-local")]
     MountLocal {
         id: String,
@@ -91,6 +113,8 @@ pub struct StateVarDecl {
     pub origin: Value,
     pub scope: Scope,
     pub initial: InitialValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<SystemVarRole>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -414,7 +438,7 @@ pub struct CompiledVar {
 pub struct CompiledTransition {
     pub write_indexes: Vec<usize>,
     pub triggered_by_indexes: Vec<usize>,
-    pub route_local_var_indexes: Vec<usize>,
+    pub mount_local_var_indexes: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -478,7 +502,7 @@ impl CompiledModel {
                 .chain(write_indexes.iter())
                 .copied()
                 .collect();
-            let route_local_var_indexes = vars
+            let mount_local_var_indexes = vars
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, compiled_var)| {
@@ -492,7 +516,7 @@ impl CompiledModel {
             transitions.push(CompiledTransition {
                 write_indexes,
                 triggered_by_indexes,
-                route_local_var_indexes,
+                mount_local_var_indexes,
             });
         }
 
@@ -597,17 +621,6 @@ fn validate_no_opaque(effect: &EffectIR, transition_id: &str) -> Result<(), Stri
 pub fn mount_guard_for_scope(scope: &Scope) -> Option<ExprIR> {
     match scope {
         Scope::Global => None,
-        Scope::RouteLocal { route, .. } => Some(ExprIR::Eq {
-            args: vec![
-                ExprIR::Read {
-                    var: "sys:route".into(),
-                    path: None,
-                },
-                ExprIR::Lit {
-                    value: serde_json::Value::String(route.clone()),
-                },
-            ],
-        }),
         Scope::MountLocal { when, .. } => Some(when.clone()),
     }
 }
@@ -617,7 +630,7 @@ pub fn transition_locals_mounted(
     transition_idx: usize,
     state: &crate::state::ModelState,
 ) -> bool {
-    for &var_idx in &compiled.transitions[transition_idx].route_local_var_indexes {
+    for &var_idx in &compiled.transitions[transition_idx].mount_local_var_indexes {
         if let Some(guard) = &compiled.vars[var_idx].mount_guard {
             if !crate::expr::mount_guard_holds(compiled, state, guard) {
                 return false;
@@ -625,15 +638,6 @@ pub fn transition_locals_mounted(
         }
     }
     true
-}
-
-#[allow(dead_code)]
-pub fn route_local_mounted(
-    compiled: &CompiledModel,
-    transition_idx: usize,
-    state: &crate::state::ModelState,
-) -> bool {
-    transition_locals_mounted(compiled, transition_idx, state)
 }
 
 #[cfg(test)]
@@ -657,6 +661,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!("/a")),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:history".into(),
@@ -669,6 +675,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:pending".into(),
@@ -681,6 +689,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "local:panel".into(),
@@ -701,6 +711,8 @@ mod tests {
                         },
                     },
                     initial: InitialValue::Single(json!(true)),
+
+                    role: None,
                 },
             ],
             transitions: vec![Transition {
@@ -751,6 +763,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!("/")),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:history".into(),
@@ -763,6 +777,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:pending".into(),
@@ -775,6 +791,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
             ],
             transitions: vec![Transition {

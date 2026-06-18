@@ -29,7 +29,17 @@
     "vars": [
       {
         "id": "local:Home.count",
-        "scope": { "kind": "route-local", "route": "/" },
+        "scope": {
+          "kind": "mount-local",
+          "id": "route:/",
+          "when": {
+            "kind": "eq",
+            "args": [
+              { "kind": "read", "var": "sys:route" },
+              { "kind": "lit", "value": "/" }
+            ]
+          }
+        },
         "domainKind": "boundedInt"
       },
       {

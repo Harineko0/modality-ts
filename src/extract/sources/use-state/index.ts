@@ -13,6 +13,7 @@ import {
   useStateCallForSemanticInference,
 } from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
+import { routeMountScope } from "../../engine/ts/routes.js";
 import * as harness from "./harness.js";
 
 export function useStateSource(): StateSourcePlugin {
@@ -105,7 +106,7 @@ function discoverUseState(
           origin,
           scope: providerComponents.has(componentId)
             ? { kind: "global" }
-            : { kind: "route-local", route },
+            : routeMountScope(route),
           initial: initialValueForUseState(
             callForInference,
             domain,

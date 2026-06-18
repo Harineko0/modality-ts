@@ -1,3 +1,4 @@
+import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import type { ExprIR, Model, Value } from "modality-ts/core";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
@@ -69,14 +70,14 @@ export function todoHandModel(): Model {
         id: "local:App.draft",
         domain: { kind: "enum", values: ["empty", "nonEmpty"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/" },
+        scope: routeMountScope("/"),
         initial: "empty",
       },
       {
         id: "local:App.saveStatus",
         domain: { kind: "enum", values: ["idle", "posting", "failed"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/" },
+        scope: routeMountScope("/"),
         initial: "idle",
       },
       {

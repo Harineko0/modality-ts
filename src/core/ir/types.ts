@@ -36,8 +36,19 @@ export interface SourceAnchor {
 
 export type StateVarScope =
   | { kind: "global" }
-  | { kind: "route-local"; route: string }
   | { kind: "mount-local"; id: string; when: ExprIR };
+
+export interface SystemVarRole {
+  kind:
+    | "pending-queue"
+    | "location-current"
+    | "location-history"
+    | "tree-slot"
+    | "boundary-phase"
+    | "cache-entry"
+    | "environment";
+  group?: string;
+}
 
 export interface StateVarDecl {
   id: string;
@@ -45,6 +56,7 @@ export interface StateVarDecl {
   origin: SourceAnchor | "system" | "library-template";
   scope: StateVarScope;
   initial: Value | readonly Value[];
+  role?: SystemVarRole;
 }
 
 export type ExprIR =

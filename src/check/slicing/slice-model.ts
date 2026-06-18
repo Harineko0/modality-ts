@@ -219,12 +219,6 @@ function addRouteVarsForNeededRouteLocals(
   let changed = false;
   for (const decl of model.vars) {
     if (!neededVars.has(decl.id)) continue;
-    if (decl.scope.kind === "route-local") {
-      if (!neededVars.has("sys:route")) {
-        neededVars.add("sys:route");
-        changed = true;
-      }
-    }
     if (decl.scope.kind === "mount-local") {
       for (const read of exprReads(decl.scope.when)) {
         if (!neededVars.has(read)) {

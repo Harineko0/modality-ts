@@ -1152,11 +1152,7 @@ function buildStateContributors(
     const cardinality = domainCardinality(decl.domain);
     const bits = cardinality < 1 ? 0 : round2(Math.log2(cardinality));
     const scope =
-      decl.scope.kind === "global"
-        ? "global"
-        : decl.scope.kind === "route-local"
-          ? decl.scope.route
-          : `mount:${decl.scope.id}`;
+      decl.scope.kind === "global" ? "global" : `mount:${decl.scope.id}`;
     const origin =
       typeof decl.origin === "string" ? decl.origin : decl.origin.file;
     return {

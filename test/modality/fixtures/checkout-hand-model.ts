@@ -1,3 +1,4 @@
+import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import type { ExprIR, Model, Value } from "modality-ts/core";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
@@ -84,21 +85,21 @@ export function checkoutHandModel(): Model {
         id: "local:App.auth",
         domain: { kind: "enum", values: ["guest", "user"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "guest",
       },
       {
         id: "local:App.userId",
         domain: { kind: "enum", values: ["none", "u1"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "none",
       },
       {
         id: "local:App.plan",
         domain: { kind: "enum", values: ["none", "starter", "pro"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "none",
       },
       {
@@ -108,7 +109,7 @@ export function checkoutHandModel(): Model {
           values: ["missing", "loading", "valid", "invalid"],
         },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "missing",
       },
       {
@@ -118,21 +119,21 @@ export function checkoutHandModel(): Model {
           values: ["plan", "billing", "review", "success"],
         },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "plan",
       },
       {
         id: "local:App.paymentMethod",
         domain: { kind: "enum", values: ["none", "valid"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "none",
       },
       {
         id: "local:App.submitStatus",
         domain: { kind: "enum", values: ["idle", "submitting", "failed"] },
         origin: "system",
-        scope: { kind: "route-local", route: "/checkout" },
+        scope: routeMountScope("/checkout"),
         initial: "idle",
       },
     ],

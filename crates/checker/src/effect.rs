@@ -322,6 +322,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("/")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:history".into(),
@@ -334,6 +336,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:pending".into(),
@@ -365,6 +369,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "x".into(),
@@ -372,6 +378,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!(false)),
+
+                        role: None,
                     },
                 ],
                 transitions: vec![],
@@ -468,6 +476,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("/")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:history".into(),
@@ -480,6 +490,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:pending".into(),
@@ -492,6 +504,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "count".into(),
@@ -499,6 +513,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(initial.clone()),
+
+                        role: None,
                     },
                 ],
                 transitions: vec![],
@@ -664,6 +680,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("/")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:history".into(),
@@ -676,6 +694,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:pending".into(),
@@ -688,6 +708,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!([])),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "sys:next:slot:children".into(),
@@ -701,6 +723,8 @@ mod tests {
                         origin: json!("system"),
                         scope: Scope::Global,
                         initial: InitialValue::Single(json!("__none")),
+
+                        role: None,
                     },
                     StateVarDecl {
                         id: "local:Dashboard.count".into(),
@@ -740,6 +764,8 @@ mod tests {
                             },
                         },
                         initial: InitialValue::Single(json!(0)),
+
+                        role: None,
                     },
                 ],
                 transitions: vec![],

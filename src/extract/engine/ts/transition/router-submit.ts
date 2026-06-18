@@ -1,6 +1,7 @@
 import * as ts from "typescript";
 import { callName, lineAndColumn } from "../ast.js";
 import { safeId, uniqueStrings } from "../ids.js";
+import { routeMountScope } from "../routes.js";
 import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
 import type {
   BoundExpr,
@@ -88,7 +89,7 @@ export function reactRouterActionDataVarDecl(
     domain: { kind: "enum", values: ["none", "success", "error"] },
     initial: "none",
     origin: origin ?? "system",
-    scope: { kind: "route-local", route },
+    scope: routeMountScope(route),
   };
 }
 

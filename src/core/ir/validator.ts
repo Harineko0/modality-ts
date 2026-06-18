@@ -427,7 +427,6 @@ function validateTransition(
         `${transition.id}: effect writes ${write} but writes does not declare it`,
       );
   }
-  validateRouteLocalWrites(errors, transition, actualWrites, varsById);
   validateExprShape(errors, transition.id, transition.guard);
   validateEffectShape(errors, transition.id, transition.effect);
   validateExprReferences(errors, transition.id, transition.guard, varsById);
@@ -455,98 +454,6 @@ function validateTriggeredBy(
     if (!varIds.has(id))
       errors.push(`${transition.id}: triggeredBy references unknown var ${id}`);
   }
-}
-
-function validateRouteLocalWrites(
-  errors: string[],
-  transition: Transition,
-  actualWrites: Set<string>,
-  varsById: Map<string, StateVarDecl>,
-): void {
-  const routeLocalWrites = [...actualWrites]
-    .map((id) => varsById.get(id))
-    .filter(
-      (
-        decl,
-      ): decl is StateVarDecl & {
-        scope: { kind: "route-local"; route: string };
-      } => decl?.scope.kind === "route-local",
-    );
-  if (routeLocalWrites.length === 0) return;
-  const routes = [
-    ...new Set(routeLocalWrites.map((decl) => decl.scope.route)),
-  ].sort();
-  if (routes.length > 1)
-    errors.push(
-      `${transition.id}: writes route-local vars for multiple routes: ${routes.join(", ")}`,
-    );
-  validateRouteLocalWriteOrder(
-    errors,
-    transition.id,
-    transition.effect,
-    varsById,
-  );
-}
-
-function validateRouteLocalWriteOrder(
-  errors: string[],
-  transitionId: string,
-  effect: EffectIR,
-  varsById: Map<string, StateVarDecl>,
-): void {
-  const routeLocalWriteAfterNavigation = (
-    node: EffectIR,
-    afterNavigation: boolean,
-  ): boolean => {
-    switch (node.kind) {
-      case "assign":
-      case "havoc":
-      case "choose":
-        if (
-          afterNavigation &&
-          varsById.get(node.var)?.scope.kind === "route-local"
-        ) {
-          errors.push(
-            `${transitionId}: writes route-local vars after navigating`,
-          );
-        }
-        return afterNavigation;
-      case "opaque":
-        if (
-          afterNavigation &&
-          node.ref.declaredWrites.some(
-            (id) => varsById.get(id)?.scope.kind === "route-local",
-          )
-        ) {
-          errors.push(
-            `${transitionId}: writes route-local vars after navigating`,
-          );
-        }
-        return afterNavigation;
-      case "navigate":
-        return true;
-      case "if": {
-        const thenAfter = routeLocalWriteAfterNavigation(
-          node.then,
-          afterNavigation,
-        );
-        const elseAfter = routeLocalWriteAfterNavigation(
-          node.else,
-          afterNavigation,
-        );
-        return thenAfter || elseAfter;
-      }
-      case "seq": {
-        let current = afterNavigation;
-        for (const child of node.effects)
-          current = routeLocalWriteAfterNavigation(child, current);
-        return current;
-      }
-      default:
-        return afterNavigation;
-    }
-  };
-  routeLocalWriteAfterNavigation(effect, false);
 }
 
 function validateEffectShape(

@@ -1,4 +1,5 @@
 import { checkModel } from "modality-ts/check";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
   andExpr,
@@ -98,20 +99,15 @@ describe("useState inventory", () => {
         "local:App.draft",
         { kind: "enum", values: ["empty", "nonEmpty"] },
         "empty",
-        { kind: "route-local", route: "/" },
+        routeMountScope("/"),
       ],
       [
         "local:App.saveStatus",
         { kind: "enum", values: ["idle", "posting", "failed"] },
         "idle",
-        { kind: "route-local", route: "/" },
+        routeMountScope("/"),
       ],
-      [
-        "local:App.items",
-        { kind: "lengthCat" },
-        "0",
-        { kind: "route-local", route: "/" },
-      ],
+      ["local:App.items", { kind: "lengthCat" }, "0", routeMountScope("/")],
     ]);
   });
 
@@ -726,7 +722,7 @@ describe("useState inventory", () => {
             id: "local:App.saveStatus",
             domain: { kind: "enum", values: ["idle", "posting"] },
             origin: { file: "App.tsx", line: 4, column: 15 },
-            scope: { kind: "route-local", route: "/" },
+            scope: routeMountScope("/"),
             initial: "idle",
           },
         ],
@@ -1390,14 +1386,14 @@ describe("useState inventory", () => {
               maxLen: 2,
             },
             origin: { file: "App.tsx", line: 3, column: 15 },
-            scope: { kind: "route-local", route: "/" },
+            scope: routeMountScope("/"),
             initial: [],
           },
           {
             id: "local:App.selected",
             domain: { kind: "enum", values: ["none", "a", "b"] },
             origin: { file: "App.tsx", line: 4, column: 15 },
-            scope: { kind: "route-local", route: "/" },
+            scope: routeMountScope("/"),
             initial: "none",
           },
         ],

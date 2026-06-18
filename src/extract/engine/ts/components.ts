@@ -15,6 +15,7 @@ import {
   useStateCallForSemanticInference,
   initialValueForUseStateDetailed,
 } from "./domains.js";
+import { routeMountScope } from "./routes.js";
 import type {
   SemanticTypeContext,
   DomainRefinementProvider,
@@ -479,7 +480,7 @@ export function inlineCustomHookState(
     id: varId,
     domain: summary.domain,
     origin: { file: fileName, ...lineAndColumn(source, node) },
-    scope: scope ?? { kind: "route-local", route },
+    scope: scope ?? routeMountScope(route),
     initial: summary.initial,
   };
   vars.push(decl);

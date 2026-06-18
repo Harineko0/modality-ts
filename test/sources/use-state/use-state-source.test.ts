@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import * as ts from "typescript";
 import { inferDomainFromTypeNode } from "modality-ts/extract/engine";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
@@ -126,7 +127,7 @@ describe("useState source plugin", () => {
           id: "local:App.status",
           domain: { kind: "enum", values: ["idle", "posting"] },
           origin: { file: "App.tsx", line: 4, column: 15 },
-          scope: { kind: "route-local", route: "/todos" },
+          scope: routeMountScope("/todos"),
           initial: "idle",
         },
         metadata: {
@@ -152,7 +153,7 @@ describe("useState source plugin", () => {
             },
           },
           origin: { file: "App.tsx", line: 5, column: 15 },
-          scope: { kind: "route-local", route: "/todos" },
+          scope: routeMountScope("/todos"),
           initial: { kind: "guest" },
         },
         metadata: {

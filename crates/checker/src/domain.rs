@@ -631,6 +631,7 @@ mod tests {
             origin: json!("system"),
             scope: Scope::Global,
             initial: InitialValue::Single(initial),
+            role: None,
         }
     }
 

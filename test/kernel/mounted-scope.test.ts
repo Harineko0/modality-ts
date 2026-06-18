@@ -1,4 +1,5 @@
 import { checkModel, sliceModel } from "modality-ts/check";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
   enabled,
@@ -55,10 +56,10 @@ function read(id: string) {
 }
 
 describe("mounted scopes", () => {
-  it("keeps route-local models valid", () => {
+  it("accepts route mount-local guards derived from extraction", () => {
     const model: Model = {
       schemaVersion: 1,
-      id: "route-local-compat",
+      id: "route-mount-local",
       bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
       vars: [
         ...systemVars(),
@@ -66,7 +67,7 @@ describe("mounted scopes", () => {
           id: "local:panel",
           domain: { kind: "bool" },
           origin: "system",
-          scope: { kind: "route-local", route: "/a" },
+          scope: routeMountScope("/a"),
           initial: false,
         },
       ],
@@ -131,6 +132,53 @@ describe("mounted scopes", () => {
     };
     expect(validateModel(selfRef).errors.join("\n")).toContain(
       "mount-local when must not read the scoped var itself",
+    );
+  });
+
+  it("rejects mount-local guards that read unknown vars or are non-boolean", () => {
+    const base: Model = {
+      schemaVersion: 1,
+      id: "mount-local-guard-validation",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        ...systemVars(),
+        {
+          id: "local:panel",
+          domain: { kind: "bool" },
+          origin: "system",
+          scope: {
+            kind: "mount-local",
+            id: "slot-a",
+            when: {
+              kind: "eq",
+              args: [read("sys:missing"), { kind: "lit", value: true }],
+            },
+          },
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    expect(validateModel(base).errors.join("\n")).toContain(
+      "expression reads unknown var sys:missing",
+    );
+
+    const nonBoolean: Model = {
+      ...base,
+      vars: [
+        ...base.vars.slice(0, -1),
+        {
+          ...base.vars[3],
+          scope: {
+            kind: "mount-local",
+            id: "slot-a",
+            when: { kind: "read", var: "sys:route" },
+          },
+        },
+      ],
+    };
+    expect(validateModel(nonBoolean).errors.join("\n")).toContain(
+      "mount-local when must be boolean",
     );
   });
 

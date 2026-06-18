@@ -50,6 +50,7 @@ import {
   settersForComponent,
 } from "./context.js";
 import { safeId, tagStableIdKey, withStableTransitionIds } from "./ids.js";
+import { routeMountScope } from "./routes.js";
 import { staticNavigationTransitions } from "./static-navigation.js";
 import {
   firstValue,
@@ -1228,5 +1229,5 @@ function scopeForLocalState(
     inventory ?? { routes: [] },
   );
   if (mountScope) return mountScope;
-  return { kind: "route-local", route };
+  return routeMountScope(route);
 }

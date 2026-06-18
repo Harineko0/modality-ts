@@ -12,7 +12,10 @@ import type {
   StateVarDecl,
   Value,
 } from "modality-ts/core";
-import { normalizeRouteTarget } from "../../engine/ts/routes.js";
+import {
+  normalizeRouteTarget,
+  routeMountScope,
+} from "../../engine/ts/routes.js";
 import {
   nextRouteTreeToMetadata,
   type NextInterceptInfo,
@@ -444,10 +447,7 @@ function mountScopeForNode(
     };
   }
 
-  return {
-    kind: "route-local",
-    route: node.pattern,
-  };
+  return routeMountScope(node.pattern);
 }
 
 function collectSlotKeys(nodes: readonly NextRouteTreeNode[]): string[] {

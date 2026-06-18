@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   access,
   mkdir,
@@ -164,7 +165,7 @@ describe("modality CLI", () => {
         model.vars.find(
           (decl: { id: string }) => decl.id === expectation.localVar,
         )?.scope,
-      ).toEqual({ kind: "route-local", route: expectation.route });
+      ).toEqual(routeMountScope(expectation.route));
     }
     const analyticsModel = JSON.parse(
       await readFile(
@@ -172,13 +173,14 @@ describe("modality CLI", () => {
         "utf8",
       ),
     );
-    const routeLocalVars = analyticsModel.vars.filter(
-      (decl: { scope?: { kind: string; route?: string } }) =>
-        decl.scope?.kind === "route-local",
+    const routeScopedVars = analyticsModel.vars.filter(
+      (decl: { scope?: { kind: string; id?: string } }) =>
+        decl.scope?.kind === "mount-local" &&
+        decl.scope.id?.startsWith("route:"),
     );
     expect(
-      routeLocalVars.every(
-        (decl: { scope?: { route?: string } }) => decl.scope?.route !== "/",
+      routeScopedVars.every(
+        (decl: { scope?: { id?: string } }) => decl.scope?.id !== "route:/",
       ),
     ).toBe(true);
     await expect(

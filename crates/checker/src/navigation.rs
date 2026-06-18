@@ -154,6 +154,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!("/a")),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:history".into(),
@@ -166,6 +168,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "sys:pending".into(),
@@ -178,6 +182,8 @@ mod tests {
                     origin: json!("system"),
                     scope: Scope::Global,
                     initial: InitialValue::Single(json!([])),
+
+                    role: None,
                 },
                 StateVarDecl {
                     id: "local:panel".into(),
@@ -185,6 +191,8 @@ mod tests {
                     origin: json!("test"),
                     scope: local_scope,
                     initial: InitialValue::Single(local_initial),
+
+                    role: None,
                 },
             ],
             transitions: vec![],
@@ -208,10 +216,21 @@ mod tests {
     }
 
     #[test]
-    fn route_local_unmounts_off_route() {
+    fn mount_local_unmounts_off_route() {
         let compiled = route_model(
-            Scope::RouteLocal {
-                route: "/a".into(),
+            Scope::MountLocal {
+                id: "route:/a".into(),
+                when: ExprIR::Eq {
+                    args: vec![
+                        ExprIR::Read {
+                            var: "sys:route".into(),
+                            path: None,
+                        },
+                        ExprIR::Lit {
+                            value: json!("/a"),
+                        },
+                    ],
+                },
             },
             json!(true),
         );

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { routeMountScope } from "../../extract/engine/ts/routes.js";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -42,12 +43,12 @@ describe("runExtractCommand", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { next: "^15.0.0" },
     });
-    expect(registry.adapters.moduleRoles.map((adapter) => adapter.kind)).toEqual(
-      ["module-roles"],
-    );
-    expect(registry.adapters.effectApis.map((provider) => provider.kind)).toEqual(
-      ["effect-api"],
-    );
+    expect(
+      registry.adapters.moduleRoles.map((adapter) => adapter.kind),
+    ).toEqual(["module-roles"]);
+    expect(
+      registry.adapters.effectApis.map((provider) => provider.kind),
+    ).toEqual(["effect-api"]);
     expect(
       registry.adapters.cacheStorage.map((provider) => provider.kind),
     ).toEqual(["cache-storage"]);
@@ -95,9 +96,9 @@ describe("runExtractCommand", () => {
           plugin.kind === "cache-storage" && plugin.id === "next-cache-storage",
       ),
     ).toBe(true);
-    expect(result.pluginLabels.some((label) => label.includes("cache-storage"))).toBe(
-      true,
-    );
+    expect(
+      result.pluginLabels.some((label) => label.includes("cache-storage")),
+    ).toBe(true);
   });
 
   it("omits cache vars when Next cache/storage provider is not registered", async () => {
@@ -169,7 +170,7 @@ describe("runExtractCommand", () => {
       id: "local:App.saveStatus",
       domain: { kind: "enum", values: ["idle", "posting"] },
       origin: { file: sourcePath, line: 4, column: 15 },
-      scope: { kind: "route-local", route: "/" },
+      scope: routeMountScope("/"),
       initial: "idle",
     });
     expect(appModel).toContain("export const M = ");
@@ -3149,7 +3150,7 @@ describe("runExtractCommand", () => {
     ).toBe("/fallback");
     expect(
       result.model.vars.find((decl) => decl.id === "local:App.flag")?.scope,
-    ).toEqual({ kind: "route-local", route: "/fallback" });
+    ).toEqual(routeMountScope("/fallback"));
   });
 
   it("loads navigation.routeBySource from modality config", async () => {
@@ -3204,7 +3205,7 @@ describe("runExtractCommand", () => {
     expect(
       result.model.vars.find((decl) => decl.id === "local:Analytics.viewed")
         ?.scope,
-    ).toEqual({ kind: "route-local", route: "/custom-analytics" });
+    ).toEqual(routeMountScope("/custom-analytics"));
   });
 
   it("scopes route-local state to each route source", async () => {
@@ -3277,7 +3278,7 @@ describe("runExtractCommand", () => {
             decl.id === `local:${testCase.component}.${testCase.stateVar}`,
         )?.scope,
         testCase.file,
-      ).toEqual({ kind: "route-local", route: testCase.route });
+      ).toEqual(routeMountScope(testCase.route));
       expect(result.lines).toContain(`route=${testCase.route}`);
     }
   });

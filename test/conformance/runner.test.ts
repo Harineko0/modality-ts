@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,12 @@ import {
   listFixtureRootEntries,
   runConformanceMatrix,
 } from "../../tools/conformance/runner.js";
-import type { CheckReport, ConformReport, ExtractionReport, Model } from "modality-ts/core";
+import type {
+  CheckReport,
+  ConformReport,
+  ExtractionReport,
+  Model,
+} from "modality-ts/core";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const matrixPath = join(repoRoot, "test/conformance/matrix.json");
@@ -79,9 +85,7 @@ describe("conformance assertion helpers", () => {
   } as ExtractionReport;
 
   it("fails low coverage thresholds", () => {
-    expect(
-      assertCoverageThreshold(extractionReport, 1).status,
-    ).toBe("fail");
+    expect(assertCoverageThreshold(extractionReport, 1).status).toBe("fail");
   });
 
   it("fails conform pass-rate thresholds", () => {
@@ -101,7 +105,15 @@ describe("conformance assertion helpers", () => {
     const extractionReport = {
       stateContributors: {
         totalBits: 40,
-        topVars: [{ varId: "local:App.count", bits: 20, domainKind: "boundedInt", scope: "/", origin: "x" }],
+        topVars: [
+          {
+            varId: "local:App.count",
+            bits: 20,
+            domainKind: "boundedInt",
+            scope: "/",
+            origin: "x",
+          },
+        ],
         bySource: [],
       },
     } as ExtractionReport;
@@ -133,7 +145,9 @@ describe("conformance assertion helpers", () => {
     const outcome = evaluateAcceptedCaveats({
       extractionReport: {
         globalTaints: [],
-        staleReads: [{ kind: "stale-read", id: "auth", reason: "x", severity: "info" }],
+        staleReads: [
+          { kind: "stale-read", id: "auth", reason: "x", severity: "info" },
+        ],
         unhandledRejections: [],
       } as ExtractionReport,
       acceptedCaveats: [],
@@ -144,11 +158,20 @@ describe("conformance assertion helpers", () => {
 
   it("checks semantic transition and var expectations", () => {
     const model = {
-      transitions: [{ id: "App.onClick.count", effect: { kind: "assign", var: "local:App.count", expr: { kind: "lit", value: 1 } } }],
+      transitions: [
+        {
+          id: "App.onClick.count",
+          effect: {
+            kind: "assign",
+            var: "local:App.count",
+            expr: { kind: "lit", value: 1 },
+          },
+        },
+      ],
       vars: [
         {
           id: "local:App.count",
-          scope: { kind: "route-local", route: "/" },
+          scope: routeMountScope("/"),
           domain: { kind: "boundedInt", min: 0, max: 1 },
         },
       ],
@@ -270,7 +293,9 @@ describe("conformance runner", () => {
     } as ConformReport;
     expect(assertConformPassRate(report, 1).status).toBe("fail");
     expect(
-      assertTransitionPassRates(report, 1).some((entry) => entry.status === "fail"),
+      assertTransitionPassRates(report, 1).some(
+        (entry) => entry.status === "fail",
+      ),
     ).toBe(true);
   });
 
