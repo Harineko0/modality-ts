@@ -1374,7 +1374,127 @@ describe("property DSL", () => {
     const property = always(model, enabled(model, "toggle"), {
       name: "toggleEnabled",
     });
-    expect(property.reads).toEqual(["flag"]);
+    expect(property.reads).toEqual([]);
+    expect(property.enabledTransitions).toEqual(["toggle"]);
+  });
+
+  it("infers only guard reads for enabled with a wide effect and narrow guard", () => {
+    const model: Model = {
+      ...baseModel(),
+      vars: [
+        ...baseModel().vars.filter(
+          (decl) => !["flag", "mode"].includes(decl.id),
+        ),
+        {
+          id: "guard",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "widePayload",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "effectRead",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "wideEffect",
+          cls: "user",
+          label: { kind: "click", text: "Wide effect" },
+          source: [],
+          guard: eq(readVar("guard"), lit(true)),
+          effect: {
+            kind: "assign",
+            var: "widePayload",
+            expr: { kind: "read", var: "effectRead" },
+          },
+          reads: ["guard", "effectRead", "widePayload"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(model, enabled(model, "wideEffect"), {
+      name: "wideEnabled",
+    });
+    expect(property.reads).toEqual(["guard"]);
+    expect(property.enabledTransitions).toEqual(["wideEffect"]);
+  });
+
+  it("infers sorted guard-read union for enabledTransitionPrefix", () => {
+    const model: Model = {
+      ...baseModel(),
+      vars: [
+        ...baseModel().vars.filter(
+          (decl) => !["flag", "mode"].includes(decl.id),
+        ),
+        {
+          id: "guardA",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "guardB",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "family.alpha",
+          cls: "user",
+          label: { kind: "click", text: "Alpha" },
+          source: [],
+          guard: eq(readVar("guardA"), lit(true)),
+          effect: {
+            kind: "assign",
+            var: "guardB",
+            expr: { kind: "lit", value: true },
+          },
+          reads: ["guardA", "guardB"],
+          writes: ["guardB"],
+          confidence: "exact",
+        },
+        {
+          id: "family.beta",
+          cls: "user",
+          label: { kind: "click", text: "Beta" },
+          source: [],
+          guard: eq(readVar("guardB"), lit(true)),
+          effect: {
+            kind: "assign",
+            var: "guardA",
+            expr: { kind: "lit", value: true },
+          },
+          reads: ["guardA", "guardB"],
+          writes: ["guardA"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(model, enabledTransitionPrefix(model, "family."), {
+      name: "familyEnabled",
+    });
+    expect(property.reads).toEqual(["guardA", "guardB"]);
+    expect(property.enabledTransitions).toEqual([
+      "family.alpha",
+      "family.beta",
+    ]);
   });
 
   it("emits transitionEnabledPrefix IR for suffixed transition families", () => {

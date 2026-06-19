@@ -4737,10 +4737,86 @@ describe("checker", () => {
     };
     const property = always(model, notExpr(enabled(model, "toggle")), {
       name: "toggleUnavailable",
-      reads: [],
     });
     const sliced = sliceModel(model, property.reads ?? []);
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:route");
+    expect(property.reads).toEqual([]);
+    expect(property.enabledTransitions).toEqual(["toggle"]);
+  });
+
+  it("matches sliced and unsliced verdicts when enabled prunes a wide effect var", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "enabled-wide-effect-pruned",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "status",
+          domain: { kind: "enum", values: ["connected", "disconnected"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "widePayload",
+          domain: {
+            kind: "record",
+            fields: Object.fromEntries(
+              Array.from({ length: 16 }, (_, index) => [`flag${index}`, bool]),
+            ),
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 16 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "setWide",
+          cls: "user",
+          label: { kind: "click", text: "Set wide" },
+          source: [],
+          guard: eq(readVar("status"), lit("connected")),
+          effect: {
+            kind: "assign",
+            var: "widePayload",
+            expr: {
+              kind: "updateField",
+              target: readVar("widePayload"),
+              path: ["flag0"],
+              value: coreLit(true),
+            },
+          },
+          reads: ["status", "widePayload"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      model,
+      orExpr(
+        neq(readVar("status"), lit("connected")),
+        enabled(model, "setWide"),
+      ),
+      { name: "wideEnabledParity" },
+    );
+    const { model: slicedModel } = sliceModelForCheckProperty(model, property);
+    expect(slicedModel.vars.map((decl) => decl.id)).toEqual(["status"]);
+    expect(slicedModel.transitions[0]?.writes).toEqual([]);
+    const unsliced = checkModel(model, [property]);
+    const sliced = checkModel(model, [property], { slicing: true });
+    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
   });
 
   it("keeps custom pending queue role ids in targeted alwaysStep slices", () => {

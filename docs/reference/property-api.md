@@ -13,7 +13,11 @@ Helpers exported from `modality-ts/core` (and `modality-ts/core/props`) for buil
 Each takes the `model` first and returns a `Property` object. The `model` lets the
 combinator infer two fields from the predicate: `reads` (the variables the predicate
 touches) and `enabledTransitions` (any transitions referenced through `enabled()` /
-`enabledTransitionPrefix()`). Pass either option explicitly to override the inference.
+`enabledTransitionPrefix()`). For `enabled(t)`, inferred `reads` include only the guard
+and mount-availability variables needed to evaluate whether `t` is enabled; effect
+reads and writes are not included solely because the property asks about enabledness.
+The `enabledTransitions` field records the observed transition id so slicing can retain
+it as observation-only. Pass either option explicitly to override the inference.
 
 | Helper | Signature | Kind |
 | --- | --- | --- |

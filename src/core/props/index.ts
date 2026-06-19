@@ -8,7 +8,7 @@ import type {
   StepPredicateIR,
   Value,
 } from "../ir/types.js";
-import { effectReads, effectWrites, exprReads } from "../ir/validator.js";
+import { exprReads } from "../ir/validator.js";
 
 export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
 export type {
@@ -244,10 +244,6 @@ function inferReads(
         );
         if (transition) {
           for (const id of exprReads(transition.guard)) reads.add(id);
-          for (const id of effectReads(transition.effect)) reads.add(id);
-          for (const id of effectWrites(transition.effect)) reads.add(id);
-          for (const id of transition.reads) reads.add(id);
-          for (const id of transition.writes) reads.add(id);
         }
         break;
       }
@@ -255,10 +251,6 @@ function inferReads(
         for (const transition of model.transitions) {
           if (!transition.id.startsWith(expr.prefix)) continue;
           for (const id of exprReads(transition.guard)) reads.add(id);
-          for (const id of effectReads(transition.effect)) reads.add(id);
-          for (const id of effectWrites(transition.effect)) reads.add(id);
-          for (const id of transition.reads) reads.add(id);
-          for (const id of transition.writes) reads.add(id);
         }
         break;
       }

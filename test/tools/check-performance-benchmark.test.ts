@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { sliceModelForCheckProperty } from "modality-ts/check";
+import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
 import { runCheckPerformanceBenchmark } from "../../tools/check-performance-benchmark.js";
-import { COFFEE_SHAPED_DENSITY_ONE_PROPERTY } from "../../tools/perf/coffee-shaped-fixture.js";
+import {
+  COFFEE_SHAPED_DENSITY_ONE_PROPERTY,
+  coffeeShapedDensityOnePropertyInferred,
+  coffeeShapedPerformanceModel,
+} from "../../tools/perf/coffee-shaped-fixture.js";
 
 describe("check-performance-benchmark", () => {
   it("emits stable structural fields for the coffee-shaped fixture", () => {
@@ -33,5 +39,31 @@ describe("check-performance-benchmark", () => {
     if (result.speedup !== undefined) {
       expect(result.speedup).toBeGreaterThan(0);
     }
+  });
+
+  it("infers narrow enabled reads and slice economics for densityOne", () => {
+    const model = coffeeShapedPerformanceModel();
+    const property = coffeeShapedDensityOnePropertyInferred(model);
+    expect(property.reads).toEqual(["printerStatus", "sys:route"]);
+    expect(property.enabledTransitions).toEqual(["setDensity1"]);
+
+    const { model: sliced } = sliceModelForCheckProperty(model, property);
+    expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
+      "printerStatus",
+      "sys:route",
+    ]);
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([
+      "setDensity1",
+    ]);
+    expect(sliced.vars.length).toBe(2);
+    expect(sliced.transitions.length).toBe(1);
+
+    const economics = compareModelEconomics(model, sliced);
+    const prunedVarIds = economics.prunedTopContributors.map(
+      (entry) => entry.varId,
+    );
+    expect(prunedVarIds).toEqual(
+      expect.arrayContaining(["orderHistoryPayload", "printerStatusData"]),
+    );
   });
 });

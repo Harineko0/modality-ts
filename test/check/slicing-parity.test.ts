@@ -115,7 +115,7 @@ describe("enabled transition guard-only slicing", () => {
             expr: {
               kind: "updateField",
               target: read("widePayload"),
-              field: "flag0",
+              path: ["flag0"],
               value: lit(true),
             },
           },
@@ -131,7 +131,7 @@ describe("enabled transition guard-only slicing", () => {
         neq(readVar("status"), lit("connected")),
         enabled(m, "setDensity1"),
       ),
-      { name: "densityGuardedByConnection", reads: ["status"] },
+      { name: "densityGuardedByConnection" },
     );
     const { model: sliced } = sliceModelForCheckProperty(m, property);
     const varIds = sliced.vars.map((decl) => decl.id);
@@ -147,6 +147,76 @@ describe("enabled transition guard-only slicing", () => {
       kind: "seq",
       effects: [],
     });
+  });
+
+  it("matches unsliced verdict status for enabled property with inferred reads", () => {
+    const m: Model = {
+      schemaVersion: 1,
+      id: "enabled-guard-verdict-parity",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "status",
+          domain: {
+            kind: "enum",
+            values: ["connected", "disconnected", "error"],
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "widePayload",
+          domain: wideProductDomain(),
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 32 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+      ],
+      transitions: [
+        {
+          id: "setDensity1",
+          cls: "user",
+          label: { kind: "click", text: "Set density 1" },
+          source: [],
+          guard: { kind: "eq", args: [read("status"), lit("connected")] },
+          effect: {
+            kind: "assign",
+            var: "widePayload",
+            expr: {
+              kind: "updateField",
+              target: read("widePayload"),
+              path: ["flag0"],
+              value: lit(true),
+            },
+          },
+          reads: ["status", "widePayload"],
+          writes: ["widePayload"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(
+      m,
+      orExpr(
+        neq(readVar("status"), lit("connected")),
+        enabled(m, "setDensity1"),
+      ),
+      { name: "densityGuardedByConnectionVerdictParity" },
+    );
+    const unsliced = checkModel(m, [property]);
+    const sliced = checkModel(m, [property], { slicing: true });
+    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
   });
 
   it("prunes mount-local writes for enabled observation of a mount-local transition", () => {
@@ -199,7 +269,7 @@ describe("enabled transition guard-only slicing", () => {
             expr: {
               kind: "updateField",
               target: read("local:a.wide"),
-              field: "flag0",
+              path: ["flag0"],
               value: lit(true),
             },
           },
@@ -212,7 +282,7 @@ describe("enabled transition guard-only slicing", () => {
     const property = always(
       m,
       orExpr(neq(readVar("status"), lit("connected")), enabled(m, "setWide")),
-      { name: "wideGuardedByConnection", reads: ["status"] },
+      { name: "wideGuardedByConnection" },
     );
     const { model: sliced } = sliceModelForCheckProperty(m, property);
     const varIds = sliced.vars.map((decl) => decl.id);

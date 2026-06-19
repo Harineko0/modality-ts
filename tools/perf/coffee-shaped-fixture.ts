@@ -242,6 +242,17 @@ export function coffeeShapedPerformanceModel(): Model {
   };
 }
 
+export function coffeeShapedDensityOnePropertyInferred(model: Model): Property {
+  return always(
+    model,
+    orExpr(
+      neq(readVar("printerStatus"), lit("connected")),
+      enabled(model, "setDensity1"),
+    ),
+    { name: COFFEE_SHAPED_DENSITY_ONE_PROPERTY },
+  );
+}
+
 export function coffeeShapedPerformanceProperties(
   model: Model,
 ): readonly Property[] {

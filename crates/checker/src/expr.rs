@@ -233,6 +233,79 @@ pub fn guard_holds(
     .unwrap_or(false)
 }
 
+fn expr_read_vars(expr: &ExprIR, out: &mut std::collections::HashSet<String>) {
+    match expr {
+        ExprIR::Read { var, .. } => {
+            out.insert(var.clone());
+        }
+        ExprIR::Eq { args }
+        | ExprIR::Neq { args }
+        | ExprIR::And { args }
+        | ExprIR::Or { args }
+        | ExprIR::Not { args }
+        | ExprIR::Cond { args }
+        | ExprIR::Lt { args }
+        | ExprIR::Lte { args }
+        | ExprIR::Gt { args }
+        | ExprIR::Gte { args }
+        | ExprIR::Add { args }
+        | ExprIR::Sub { args }
+        | ExprIR::Mod { args } => {
+            for arg in args {
+                expr_read_vars(arg, out);
+            }
+        }
+        ExprIR::UpdateField { target, value, .. } => {
+            expr_read_vars(target, out);
+            expr_read_vars(value, out);
+        }
+        ExprIR::TagIs { arg, .. } | ExprIR::LenCat { arg } => {
+            expr_read_vars(arg, out);
+        }
+        ExprIR::FreshToken { domain_of } => {
+            out.insert(domain_of.clone());
+        }
+        ExprIR::Lit { .. }
+        | ExprIR::TransitionEnabled { .. }
+        | ExprIR::TransitionEnabledPrefix { .. }
+        | ExprIR::ReadPre { .. }
+        | ExprIR::ReadOpArg { .. } => {}
+    }
+}
+
+fn enabledness_read_vars(
+    compiled: &CompiledModel,
+    transition_idx: usize,
+) -> std::collections::HashSet<String> {
+    let transition = compiled.transition(transition_idx);
+    let mut vars = std::collections::HashSet::new();
+    expr_read_vars(&transition.guard, &mut vars);
+    for &var_idx in &compiled.transitions[transition_idx].mount_local_var_indexes {
+        if let Some(guard) = &compiled.vars[var_idx].mount_guard {
+            expr_read_vars(guard, &mut vars);
+        }
+    }
+    loop {
+        let before = vars.len();
+        for (idx, compiled_var) in compiled.vars.iter().enumerate() {
+            if compiled_var.mount_guard.is_none() {
+                continue;
+            }
+            let var_id = &compiled.model.vars[idx].id;
+            if !vars.contains(var_id) {
+                continue;
+            }
+            if let Some(guard) = &compiled_var.mount_guard {
+                expr_read_vars(guard, &mut vars);
+            }
+        }
+        if vars.len() == before {
+            break;
+        }
+    }
+    vars
+}
+
 fn transition_is_enabled(
     compiled: &CompiledModel,
     transition: &crate::model::Transition,
@@ -783,13 +856,8 @@ fn eval_expr_checked(
                 return Ok(Value::Bool(false));
             };
             let transition = compiled.transition(idx);
-            for var in transition
-                .reads
-                .iter()
-                .chain(transition.writes.iter())
-                .chain(std::iter::once(&"sys:route".to_string()))
-            {
-                if !allowed.contains(var) {
+            for var in enabledness_read_vars(compiled, idx) {
+                if !allowed.contains(&var) {
                     return Err(format!(
                         "{property_name}: {context} read undeclared var {var}"
                     ));
@@ -801,13 +869,11 @@ fn eval_expr_checked(
             let mut saw_match = false;
             for transition in transitions_matching_prefix(compiled, prefix) {
                 saw_match = true;
-                for var in transition
-                    .reads
-                    .iter()
-                    .chain(transition.writes.iter())
-                    .chain(std::iter::once(&"sys:route".to_string()))
-                {
-                    if !allowed.contains(var) {
+                let Some(&idx) = compiled.transition_index.get(&transition.id) else {
+                    continue;
+                };
+                for var in enabledness_read_vars(compiled, idx) {
+                    if !allowed.contains(&var) {
                         return Err(format!(
                             "{property_name}: {context} read undeclared var {var}"
                         ));
@@ -923,9 +989,7 @@ pub fn allowed_reads(
     if let Some(ids) = enabled_transitions {
         for tid in ids {
             if let Some(&idx) = compiled.transition_index.get(tid) {
-                let t = compiled.transition(idx);
-                allowed.extend(t.reads.iter().cloned());
-                allowed.extend(t.writes.iter().cloned());
+                allowed.extend(enabledness_read_vars(compiled, idx));
             }
         }
     }
@@ -1230,5 +1294,33 @@ mod tests {
             domain,
             AbstractDomain::BoundedInt { min: 1, max: 4, .. }
         ));
+    }
+
+    #[test]
+    fn allowed_reads_for_enabled_transition_excludes_effect_writes() {
+        let (compiled, _) = compiled_with_x(json!(false));
+        let allowed = allowed_reads(Some(&[]), Some(&["t".into()]), &compiled);
+        assert!(!allowed.contains("x"));
+        assert!(allowed.is_empty());
+    }
+
+    #[test]
+    fn transition_enabled_checked_eval_accepts_narrow_enabledness_reads() {
+        let (compiled, state) = compiled_with_x(json!(false));
+        let expr = ExprIR::TransitionEnabled {
+            transition_id: "t".into(),
+        };
+        let allowed = allowed_reads(Some(&[]), Some(&["t".into()]), &compiled);
+        let value = eval_expr_checked(
+            &compiled,
+            &state,
+            &expr,
+            &mut EvalOptions::default(),
+            &allowed,
+            "p",
+            "predicate",
+        )
+        .expect("narrow enabledness reads should satisfy checked evaluation");
+        assert_eq!(value, json!(true));
     }
 }
