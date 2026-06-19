@@ -9,6 +9,9 @@ import {
   inferCheckTargetsFromProps,
   inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
+  safeSliceFileNamesForProperties,
+  sliceArtifactsDirForModel,
+  sliceManifestPathForModel,
 } from "../../src/cli/defaults.js";
 
 describe("CLI default discovery", () => {
@@ -234,6 +237,64 @@ describe("CLI default discovery", () => {
     expect(await discoverGeneratedModelFiles(dir)).toEqual([
       join(".modality", "models", "app", "root.model.json"),
       join(".modality", "models", "app", "routes", "home.model.json"),
+    ]);
+  });
+
+  it("derives slice manifest and directory paths from model paths", () => {
+    expect(
+      sliceManifestPathForModel(
+        join(".modality", "models", "app", "home.model.json"),
+      ),
+    ).toBe(join(".modality", "models", "app", "home.slices.json"));
+    expect(
+      sliceArtifactsDirForModel(
+        join(".modality", "models", "app", "home.model.json"),
+      ),
+    ).toBe(join(".modality", "models", "app", "home.slices"));
+  });
+
+  it("builds deterministic safe slice filenames with collision handling", () => {
+    const fileNames = safeSliceFileNamesForProperties([
+      { name: "flag-false", index: 0 },
+      { name: "flag false", index: 1 },
+      { name: "Flag-False", index: 2 },
+    ]);
+    expect(fileNames.get(0)).toMatch(/^flag-false-[0-9a-f]{8}\.slice\.json$/);
+    expect(fileNames.get(1)).toBe("flag_false.slice.json");
+    expect(fileNames.get(2)).toMatch(/^Flag-False-[0-9a-f]{8}\.slice\.json$/);
+  });
+
+  it("ignores slice artifacts when discovering generated model files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-defaults-slices-"));
+    await mkdir(join(dir, ".modality", "models", "app"), { recursive: true });
+    await mkdir(join(dir, ".modality", "models", "app", "home.slices"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(dir, ".modality", "models", "app", "home.model.json"),
+      "{}",
+      "utf8",
+    );
+    await writeFile(
+      join(dir, ".modality", "models", "app", "home.slices.json"),
+      "{}",
+      "utf8",
+    );
+    await writeFile(
+      join(
+        dir,
+        ".modality",
+        "models",
+        "app",
+        "home.slices",
+        "flag-false.slice.json",
+      ),
+      "{}",
+      "utf8",
+    );
+
+    expect(await discoverGeneratedModelFiles(dir)).toEqual([
+      join(".modality", "models", "app", "home.model.json"),
     ]);
   });
 });

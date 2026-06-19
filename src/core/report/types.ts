@@ -212,10 +212,86 @@ export interface ExtractionPipelineDiagnostics {
   semanticProjectSourceFiles: number;
 }
 
+export interface PropertySliceManifestMountScopeDependency {
+  varId: string;
+  guardReads: readonly string[];
+  retainedBecause: readonly string[];
+}
+
+export interface PropertySliceManifestPendingQueueDependency {
+  varId: string;
+  reasons: readonly string[];
+  opIds?: readonly string[];
+  continuations?: readonly string[];
+}
+
+export type PropertySliceManifestEntry =
+  | {
+      property: string;
+      propertyIndex: number;
+      status: "emitted";
+      mode: "state" | "targetedStep" | "full";
+      path: string;
+      vars: number;
+      transitions: number;
+      varIds: readonly string[];
+      transitionIds: readonly string[];
+      retainedBits: number;
+      prunedBits: number;
+      topContributors: readonly StateSpaceContributor[];
+      prunedTopContributors: readonly StateSpaceContributor[];
+      retainedSystemVars: readonly string[];
+      prunedSystemVars: readonly string[];
+      pendingQueueDependencies?: readonly PropertySliceManifestPendingQueueDependency[];
+      mountScopeDependencies?: readonly PropertySliceManifestMountScopeDependency[];
+      closureFallback?: string;
+      sliceKey: string;
+    }
+  | {
+      property: string;
+      propertyIndex: number;
+      status: "skipped";
+      reason: string;
+    };
+
+export interface PropertySliceManifest {
+  schemaVersion: 1;
+  kind: "property-slice-manifest";
+  modelId: string;
+  sourceModelPath: string;
+  sourceModelHash: string;
+  generatedAt: string;
+  properties: readonly PropertySliceManifestEntry[];
+}
+
+export interface ExtractionPropertySliceDiagnosticsEntry {
+  property: string;
+  propertyIndex: number;
+  status: "emitted" | "skipped";
+  mode?: "state" | "targetedStep" | "full";
+  path?: string;
+  vars?: number;
+  transitions?: number;
+  retainedBits?: number;
+  prunedBits?: number;
+  sliceKey?: string;
+  reason?: string;
+}
+
+export interface ExtractionPropertySliceDiagnostics {
+  manifestPath: string;
+  properties: number;
+  emitted: number;
+  skipped: number;
+  slices: number;
+  entries?: readonly ExtractionPropertySliceDiagnosticsEntry[];
+}
+
 export interface ExtractionDiagnostics {
   phaseTimings: readonly ExtractionPhaseTiming[];
   surface: ExtractionSurfaceDiagnostics;
   pipeline?: ExtractionPipelineDiagnostics;
+  propertySlices?: ExtractionPropertySliceDiagnostics;
 }
 
 export interface ExtractionReport {

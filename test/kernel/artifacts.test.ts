@@ -5,6 +5,7 @@ import {
   parseExtractionReportArtifact,
   parseModelArtifact,
   parsePropertyArtifact,
+  parsePropertySliceManifestArtifact,
   parseReplayReportArtifact,
   parseTraceArtifact,
   traceArtifact,
@@ -488,5 +489,82 @@ describe("artifact parsers", () => {
         }),
       ),
     ).toThrow("transitionEnabledPrefix must declare prefix");
+  });
+
+  it("accepts valid property slice manifest artifacts", () => {
+    const manifest = {
+      schemaVersion: 1,
+      kind: "property-slice-manifest",
+      modelId: "m",
+      sourceModelPath: ".modality/models/App.model.json",
+      sourceModelHash: "abc",
+      generatedAt: "2026-06-19T00:00:00.000Z",
+      properties: [
+        {
+          property: "flagFalse",
+          propertyIndex: 0,
+          status: "emitted",
+          mode: "state",
+          path: ".modality/models/App.slices/flagFalse.slice.json",
+          vars: 1,
+          transitions: 1,
+          varIds: ["flag"],
+          transitionIds: ["toggle"],
+          retainedBits: 1,
+          prunedBits: 0,
+          topContributors: [],
+          prunedTopContributors: [],
+          retainedSystemVars: [],
+          prunedSystemVars: [],
+          sliceKey: "key",
+        },
+        {
+          property: "opaque",
+          propertyIndex: 1,
+          status: "skipped",
+          reason: "property predicate is not serializable IR",
+        },
+      ],
+    };
+    expect(
+      parsePropertySliceManifestArtifact(JSON.stringify(manifest)),
+    ).toEqual(manifest);
+  });
+
+  it("rejects malformed property slice manifest artifacts", () => {
+    expect(() =>
+      parsePropertySliceManifestArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "check-report",
+          modelId: "m",
+          sourceModelPath: "m.json",
+          sourceModelHash: "abc",
+          generatedAt: "2026-06-19T00:00:00.000Z",
+          properties: [],
+        }),
+      ),
+    ).toThrow(
+      "property slice manifest artifact kind must be property-slice-manifest",
+    );
+    expect(() =>
+      parsePropertySliceManifestArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "property-slice-manifest",
+          modelId: "m",
+          sourceModelPath: "m.json",
+          sourceModelHash: "abc",
+          generatedAt: "2026-06-19T00:00:00.000Z",
+          properties: [
+            {
+              property: "bad",
+              propertyIndex: 0,
+              status: "emitted",
+            },
+          ],
+        }),
+      ),
+    ).toThrow("properties[0] missing mode");
   });
 });

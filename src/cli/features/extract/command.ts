@@ -7,10 +7,16 @@ import * as ts from "typescript";
 import {
   canonicalJson,
   parseModelArtifact,
+  prunedFieldPathsForSlice,
   type ExtractionPhaseTiming,
+  type ExtractionPropertySliceDiagnostics,
+  type ExtractionPropertySliceDiagnosticsEntry,
   type ExtractionReport,
   type Model,
   type OverlaySpec,
+  type Property,
+  type PropertySliceManifest,
+  type PropertySliceManifestEntry,
 } from "modality-ts/core";
 import type { Bounds } from "modality-ts/core";
 import type {
@@ -28,6 +34,17 @@ import {
   type NextParsedConfig,
 } from "modality-ts/extract/sources/next";
 import { emitAppModel } from "../../codegen/model.js";
+import { compareModelEconomics } from "../../../check/slicing/contributors.js";
+import {
+  propertySlicingSkipReason,
+  sliceModelForCheckProperty,
+} from "../../../check/slicing/slice-model.js";
+import {
+  sliceArtifactsDirForModel,
+  sliceManifestPathForModel,
+  sliceModelPathForProperty,
+} from "../../defaults.js";
+import { loadProperties } from "../../properties/load-properties.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import {
@@ -99,6 +116,9 @@ export interface ExtractCommandOptions {
   domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: NavigationAdapter | false;
   bounds?: Partial<Bounds>;
+  propsPath?: string;
+  propsPaths?: readonly string[];
+  sliceManifestPath?: string;
   explainDrift?: boolean;
   now?: Date;
 }
@@ -114,6 +134,7 @@ export interface ExtractCommandResult {
   pluginLabels: readonly string[];
   stateSpaceLine?: string;
   coarseDomainsLine?: string;
+  sliceStatsLine?: string;
   artifacts: readonly ExtractArtifactEntry[];
 }
 
@@ -424,7 +445,29 @@ export async function runExtractCommand(
         ),
       ),
   );
+  const propsPaths = [
+    ...(options.propsPaths ?? []),
+    ...(options.propsPath ? [options.propsPath] : []),
+  ];
+  const loadedProperties =
+    propsPaths.length > 0 ? await loadProperties(model, propsPaths) : undefined;
+  const sliceManifestPath =
+    loadedProperties !== undefined
+      ? (options.sliceManifestPath ??
+        sliceManifestPathForModel(options.modelPath))
+      : undefined;
+  const propertySlicePlan =
+    loadedProperties !== undefined && sliceManifestPath !== undefined
+      ? buildPropertySlicePlan(
+          model,
+          loadedProperties,
+          options.modelPath,
+          sliceManifestPath,
+          options.now ?? new Date(),
+        )
+      : undefined;
   let reportWithDiagnostics: ExtractionReport = report;
+  const sliceArtifacts: ExtractArtifactEntry[] = [];
   await diagnosticsClock.measureAsync(
     "write-artifacts",
     "Write extraction artifacts",
@@ -433,6 +476,28 @@ export async function runExtractCommand(
       await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
       await mkdir(dirname(appModelPath), { recursive: true });
       await writeFile(appModelPath, emitAppModel(model), "utf8");
+      if (propertySlicePlan) {
+        await mkdir(sliceArtifactsDirForModel(options.modelPath), {
+          recursive: true,
+        });
+        for (const emitted of propertySlicePlan.emittedWrites) {
+          await writeFile(
+            emitted.path,
+            `${canonicalJson(emitted.slice)}\n`,
+            "utf8",
+          );
+          sliceArtifacts.push({ kind: "sliceModel", path: emitted.path });
+        }
+        await writeFile(
+          propertySlicePlan.manifestPath,
+          `${canonicalJson(propertySlicePlan.manifest)}\n`,
+          "utf8",
+        );
+        sliceArtifacts.push({
+          kind: "sliceManifest",
+          path: propertySlicePlan.manifestPath,
+        });
+      }
       if (options.expectModelPath) {
         await assertMatchesExpectedModel(model, options.expectModelPath);
       }
@@ -443,6 +508,9 @@ export async function runExtractCommand(
     diagnostics: {
       phaseTimings: diagnosticsClock.finish(),
       ...extractionDiagnosticsBase,
+      ...(propertySlicePlan
+        ? { propertySlices: propertySlicePlan.diagnosticsSummary }
+        : {}),
     },
   };
   if (options.reportPath) {
@@ -490,10 +558,14 @@ export async function runExtractCommand(
   const artifacts: ExtractArtifactEntry[] = [
     { kind: "model", path: options.modelPath },
     { kind: "appModel", path: appModelPath },
+    ...sliceArtifacts,
   ];
   if (options.reportPath) {
     artifacts.push({ kind: "report", path: options.reportPath });
   }
+  const sliceStatsLine = propertySlicePlan
+    ? `slices=properties:${propertySlicePlan.diagnosticsSummary.properties} emitted:${propertySlicePlan.diagnosticsSummary.emitted} skipped:${propertySlicePlan.diagnosticsSummary.skipped} groups:${propertySlicePlan.diagnosticsSummary.slices} manifest=${propertySlicePlan.manifestPath}`
+    : undefined;
   return {
     model,
     report: reportWithDiagnostics,
@@ -504,6 +576,7 @@ export async function runExtractCommand(
     pluginLabels,
     stateSpaceLine,
     coarseDomainsLine,
+    sliceStatsLine,
     artifacts,
     lines: [
       `extracted vars=${varCount} transitions=${transitionCount}`,
@@ -511,6 +584,7 @@ export async function runExtractCommand(
       ...(stateSpaceLine ? [stateSpaceLine] : []),
       ...(routeCoverageLine ? [routeCoverageLine] : []),
       ...(coarseDomainsLine ? [coarseDomainsLine] : []),
+      ...(sliceStatsLine ? [sliceStatsLine] : []),
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
@@ -788,4 +862,188 @@ function editDistance(left: string, right: string): number {
   }
   const distance = previous[right.length];
   return distance ?? 0;
+}
+
+interface PropertySliceWrite {
+  path: string;
+  slice: Model;
+}
+
+interface PropertySlicePlan {
+  manifestPath: string;
+  manifest: PropertySliceManifest;
+  emittedWrites: readonly PropertySliceWrite[];
+  diagnosticsSummary: ExtractionPropertySliceDiagnostics;
+}
+
+function computeSliceKey(
+  slice: Model,
+  mode: "state" | "targetedStep" | "full",
+): string {
+  return [
+    slice.vars
+      .map((decl) => decl.id)
+      .sort()
+      .join("\0"),
+    slice.transitions
+      .map((transition) => transition.id)
+      .sort()
+      .join("\0"),
+    mode,
+  ].join("\x01");
+}
+
+export function buildPropertySlicePlan(
+  model: Model,
+  properties: readonly Property[],
+  modelPath: string,
+  manifestPath: string,
+  now: Date,
+): PropertySlicePlan {
+  const indexedProperties = properties.map((property, index) => ({
+    property,
+    index,
+  }));
+  const propertyDescriptors = indexedProperties.map(({ property, index }) => ({
+    name: property.name,
+    index,
+  }));
+  const entries: PropertySliceManifestEntry[] = [];
+  const emittedWrites: PropertySliceWrite[] = [];
+  const diagnosticsEntries: ExtractionPropertySliceDiagnosticsEntry[] = [];
+  const sliceKeys = new Set<string>();
+  let emitted = 0;
+  let skipped = 0;
+
+  for (const { property, index } of [...indexedProperties].sort(
+    (left, right) =>
+      left.property.name.localeCompare(right.property.name) ||
+      left.index - right.index,
+  )) {
+    const skipReason = propertySlicingSkipReason(model, property);
+    if (skipReason) {
+      skipped += 1;
+      entries.push({
+        property: property.name,
+        propertyIndex: index,
+        status: "skipped",
+        reason: skipReason,
+      });
+      diagnosticsEntries.push({
+        property: property.name,
+        propertyIndex: index,
+        status: "skipped",
+        reason: skipReason,
+      });
+      continue;
+    }
+
+    const {
+      model: slice,
+      mode,
+      diagnostics,
+    } = sliceModelForCheckProperty(model, property);
+    const economics = compareModelEconomics(
+      model,
+      slice,
+      20,
+      prunedFieldPathsForSlice(model, slice, [property]),
+    );
+    const sliceKey = computeSliceKey(slice, mode);
+    sliceKeys.add(sliceKey);
+    const slicePath = sliceModelPathForProperty(
+      modelPath,
+      property.name,
+      index,
+      propertyDescriptors,
+    );
+    emitted += 1;
+    emittedWrites.push({ path: slicePath, slice });
+    entries.push({
+      property: property.name,
+      propertyIndex: index,
+      status: "emitted",
+      mode,
+      path: slicePath,
+      vars: slice.vars.length,
+      transitions: slice.transitions.length,
+      varIds: slice.vars.map((decl) => decl.id).sort(),
+      transitionIds: slice.transitions
+        .map((transition) => transition.id)
+        .sort(),
+      retainedBits: economics.retainedBits,
+      prunedBits: economics.prunedBits,
+      topContributors: economics.topContributors,
+      prunedTopContributors: economics.prunedTopContributors,
+      retainedSystemVars: economics.retainedSystemVars,
+      prunedSystemVars: economics.prunedSystemVars,
+      ...(diagnostics?.pendingQueueDependencies &&
+      diagnostics.pendingQueueDependencies.length > 0
+        ? {
+            pendingQueueDependencies: diagnostics.pendingQueueDependencies.map(
+              (entry) => ({
+                varId: entry.varId,
+                reasons: [...entry.reasons].sort(),
+                ...(entry.opIds ? { opIds: [...entry.opIds].sort() } : {}),
+                ...(entry.continuations
+                  ? { continuations: [...entry.continuations].sort() }
+                  : {}),
+              }),
+            ),
+          }
+        : {}),
+      ...(diagnostics?.mountScopeDependencies &&
+      diagnostics.mountScopeDependencies.length > 0
+        ? {
+            mountScopeDependencies: diagnostics.mountScopeDependencies.map(
+              (entry) => ({
+                varId: entry.varId,
+                guardReads: [...entry.guardReads].sort(),
+                retainedBecause: [...entry.retainedBecause].sort(),
+              }),
+            ),
+          }
+        : {}),
+      ...(diagnostics?.closureFallback
+        ? { closureFallback: diagnostics.closureFallback }
+        : {}),
+      sliceKey,
+    });
+    diagnosticsEntries.push({
+      property: property.name,
+      propertyIndex: index,
+      status: "emitted",
+      mode,
+      path: slicePath,
+      vars: slice.vars.length,
+      transitions: slice.transitions.length,
+      retainedBits: economics.retainedBits,
+      prunedBits: economics.prunedBits,
+      sliceKey,
+    });
+  }
+
+  const manifest: PropertySliceManifest = {
+    schemaVersion: 1,
+    kind: "property-slice-manifest",
+    modelId: model.id,
+    sourceModelPath: modelPath,
+    sourceModelHash: sha256(canonicalJson(model)),
+    generatedAt: now.toISOString(),
+    properties: entries,
+  };
+
+  return {
+    manifestPath,
+    manifest,
+    emittedWrites,
+    diagnosticsSummary: {
+      manifestPath,
+      properties: properties.length,
+      emitted,
+      skipped,
+      slices: sliceKeys.size,
+      entries: diagnosticsEntries,
+    },
+  };
 }

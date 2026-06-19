@@ -119,6 +119,14 @@ overlay author must re-confirm (`modality extract --explain-drift` helps).
 Writes `model.json`, the generated state-type module, and the **extraction report** —
 the trust ledger of everything the verification claim is conditional on.
 
+When properties are supplied (`modality extract --props …` or inferred per-tenant
+extract targets), extraction also emits a **property slice manifest**
+(`*.slices.json`) and one persisted slice model per sliceable property
+(`*.slices/<property>.slice.json`). These artifacts reuse the same per-property
+slicing logic as check and include slice economics for inspection before check runs.
+**Check still computes its own transient slices** in this phase; it does not consume
+persisted extract-side slices yet. Parity tests keep both paths aligned.
+
 Optional `diagnostics` on the extraction report make project-surface cost transparent:
 
 - `phaseTimings` — stable phase ids (`load-project`, `project-surface`, `extraction-pipeline`, …) with `elapsedMs` for CLI orchestration hotspots.

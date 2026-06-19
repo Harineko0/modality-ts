@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   ) {
     console.log("Usage: modality init");
     console.log(
-      "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
+      "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--props props.ts] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
     );
     console.log(
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
@@ -389,6 +389,11 @@ async function main(): Promise<void> {
       const value = args[index + 1];
       return value ? [value] : [];
     });
+    const propsPaths = args.flatMap((arg, index) => {
+      if (arg !== "--props") return [];
+      const value = args[index + 1];
+      return value ? [value] : [];
+    });
     const sourcePaths = positionals(
       args,
       [
@@ -400,7 +405,7 @@ async function main(): Promise<void> {
         "--config",
         "--package-json",
       ],
-      ["--effect-api", "--disable-plugin"],
+      ["--effect-api", "--disable-plugin", "--props"],
     );
     const outFlag = flagValue(args, "--out");
     const appModelFlag = flagValue(args, "--app-model");
@@ -427,6 +432,8 @@ async function main(): Promise<void> {
       throw new Error("Missing --package-json path");
     if (args.includes("--disable-plugin") && disabledPlugins.length === 0)
       throw new Error("Missing --disable-plugin id");
+    if (args.includes("--props") && propsPaths.length === 0)
+      throw new Error("Missing --props path");
     const wantsSingleMergedOutput =
       outFlag !== undefined ||
       appModelFlag !== undefined ||
@@ -441,6 +448,7 @@ async function main(): Promise<void> {
       disabledPlugins,
       effectApis: effectApiFlags,
       explainDrift,
+      ...(propsPaths.length > 0 ? { propsPaths } : {}),
     };
     const extractTargets: Array<{
       label: string;
@@ -472,6 +480,7 @@ async function main(): Promise<void> {
           sourcePath: target.sourcePath,
           modelPath: target.modelPath,
           appModelPath: target.appModelPath,
+          propsPaths: [target.propsPath],
           ...sharedOptions,
         });
         extractTargets.push({
@@ -492,6 +501,7 @@ async function main(): Promise<void> {
           pluginLabels: result.pluginLabels,
           stateSpaceLine: result.stateSpaceLine,
           coarseDomainsLine: result.coarseDomainsLine,
+          sliceStatsLine: result.sliceStatsLine,
           artifacts: result.artifacts,
         })),
         {

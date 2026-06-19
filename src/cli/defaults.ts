@@ -1,4 +1,5 @@
 import { readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 
 export const defaultArtifactDir = ".modality";
@@ -152,12 +153,85 @@ async function discoverModelFilesIn(dir: string): Promise<string[]> {
   const discovered = await Promise.all(
     entries.map(async (entry) => {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) return discoverModelFilesIn(path);
+      if (entry.isDirectory()) {
+        if (entry.name.endsWith(".slices")) return [];
+        return discoverModelFilesIn(path);
+      }
       if (entry.isFile() && entry.name.endsWith(".model.json")) return [path];
       return [];
     }),
   );
   return discovered.flat();
+}
+
+export function sliceManifestPathForModel(modelPath: string): string {
+  if (modelPath.endsWith(".model.json")) {
+    return modelPath.replace(/\.model\.json$/, ".slices.json");
+  }
+  return `${modelPath}.slices.json`;
+}
+
+export function sliceArtifactsDirForModel(modelPath: string): string {
+  if (modelPath.endsWith(".model.json")) {
+    return modelPath.replace(/\.model\.json$/, ".slices");
+  }
+  return `${modelPath}.slices`;
+}
+
+function sanitizePropertyFileStem(name: string): string {
+  const sanitized = name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return sanitized.length > 0 ? sanitized : "property";
+}
+
+function shortPropertyHash(
+  propertyName: string,
+  propertyIndex: number,
+): string {
+  return createHash("sha256")
+    .update(`${propertyName}\0${propertyIndex}`)
+    .digest("hex")
+    .slice(0, 8);
+}
+
+export function safeSliceFileNamesForProperties(
+  properties: readonly { name: string; index: number }[],
+): Map<number, string> {
+  const sorted = [...properties].sort(
+    (left, right) =>
+      left.name.localeCompare(right.name) || left.index - right.index,
+  );
+  const baseNames = new Map<number, string>();
+  for (const entry of sorted) {
+    baseNames.set(entry.index, sanitizePropertyFileStem(entry.name));
+  }
+  const lowerCounts = new Map<string, number>();
+  for (const base of baseNames.values()) {
+    const lower = base.toLowerCase();
+    lowerCounts.set(lower, (lowerCounts.get(lower) ?? 0) + 1);
+  }
+  const result = new Map<number, string>();
+  for (const entry of sorted) {
+    const base = baseNames.get(entry.index) ?? "property";
+    const needsHash = (lowerCounts.get(base.toLowerCase()) ?? 0) > 1;
+    const stem = needsHash
+      ? `${base}-${shortPropertyHash(entry.name, entry.index)}`
+      : base;
+    result.set(entry.index, `${stem}.slice.json`);
+  }
+  return result;
+}
+
+export function sliceModelPathForProperty(
+  modelPath: string,
+  propertyName: string,
+  propertyIndex: number,
+  allProperties: readonly { name: string; index: number }[],
+): string {
+  const fileNames = safeSliceFileNamesForProperties(allProperties);
+  const fileName =
+    fileNames.get(propertyIndex) ??
+    `${sanitizePropertyFileStem(propertyName)}-${shortPropertyHash(propertyName, propertyIndex)}.slice.json`;
+  return join(sliceArtifactsDirForModel(modelPath), fileName);
 }
 
 async function discoverPropsFilesIn(dir: string): Promise<string[]> {

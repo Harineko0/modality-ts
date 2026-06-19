@@ -9,7 +9,7 @@ import {
 } from "../../output.js";
 
 export interface ExtractArtifactEntry {
-  kind: "model" | "appModel" | "report";
+  kind: "model" | "appModel" | "report" | "sliceManifest" | "sliceModel";
   path: string;
 }
 
@@ -21,6 +21,7 @@ export interface HumanExtractTargetResult {
   pluginLabels: readonly string[];
   stateSpaceLine?: string;
   coarseDomainsLine?: string;
+  sliceStatsLine?: string;
   artifacts: readonly ExtractArtifactEntry[];
   durationMs?: number;
 }
@@ -66,6 +67,9 @@ export function renderHumanExtractTargets(
     }
     if (target.coarseDomainsLine) {
       lines.push(`  - ${target.coarseDomainsLine}`);
+    }
+    if (target.sliceStatsLine) {
+      lines.push(`  - ${target.sliceStatsLine}`);
     }
   }
   if (results.length > 0) {

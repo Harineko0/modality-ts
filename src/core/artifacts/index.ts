@@ -6,6 +6,8 @@ import type {
   ConformanceMatrixReport,
   ConformReport,
   ExtractionReport,
+  PropertySliceManifest,
+  PropertySliceManifestEntry,
   ReplayReport,
 } from "../report/types.js";
 import type {
@@ -272,6 +274,111 @@ export function parsePropertyArtifact(json: string): Property[] {
   return value.properties.map((property, index) =>
     assertSerializableProperty(property, `properties[${index}]`),
   );
+}
+
+export function parsePropertySliceManifestArtifact(
+  json: string,
+): PropertySliceManifest {
+  const value = JSON.parse(json) as unknown;
+  if (!isRecord(value)) {
+    throw new Error("property slice manifest artifact must be an object");
+  }
+  if (value.schemaVersion !== 1) {
+    throw new Error(
+      `unsupported property slice manifest schemaVersion ${String(value.schemaVersion)}`,
+    );
+  }
+  if (value.kind !== "property-slice-manifest") {
+    throw new Error(
+      "property slice manifest artifact kind must be property-slice-manifest",
+    );
+  }
+  if (typeof value.modelId !== "string") {
+    throw new Error("property slice manifest artifact missing modelId");
+  }
+  if (typeof value.sourceModelPath !== "string") {
+    throw new Error("property slice manifest artifact missing sourceModelPath");
+  }
+  if (typeof value.sourceModelHash !== "string") {
+    throw new Error("property slice manifest artifact missing sourceModelHash");
+  }
+  if (typeof value.generatedAt !== "string") {
+    throw new Error("property slice manifest artifact missing generatedAt");
+  }
+  if (!Array.isArray(value.properties)) {
+    throw new Error("property slice manifest artifact missing properties");
+  }
+  const properties = value.properties.map((entry, index) =>
+    assertPropertySliceManifestEntry(entry, `properties[${index}]`),
+  );
+  return {
+    schemaVersion: 1,
+    kind: "property-slice-manifest",
+    modelId: value.modelId,
+    sourceModelPath: value.sourceModelPath,
+    sourceModelHash: value.sourceModelHash,
+    generatedAt: value.generatedAt,
+    properties,
+  };
+}
+
+function assertPropertySliceManifestEntry(
+  value: unknown,
+  path: string,
+): PropertySliceManifestEntry {
+  if (!isRecord(value)) throw new Error(`${path} must be an object`);
+  if (typeof value.property !== "string") {
+    throw new Error(`${path} missing property`);
+  }
+  if (typeof value.propertyIndex !== "number") {
+    throw new Error(`${path} missing propertyIndex`);
+  }
+  if (value.status === "skipped") {
+    if (typeof value.reason !== "string") {
+      throw new Error(`${path} missing reason`);
+    }
+    return {
+      property: value.property,
+      propertyIndex: value.propertyIndex,
+      status: "skipped",
+      reason: value.reason,
+    };
+  }
+  if (value.status !== "emitted") {
+    throw new Error(`${path} has unsupported status`);
+  }
+  if (
+    value.mode !== "state" &&
+    value.mode !== "targetedStep" &&
+    value.mode !== "full"
+  ) {
+    throw new Error(`${path} missing mode`);
+  }
+  if (typeof value.path !== "string") throw new Error(`${path} missing path`);
+  if (typeof value.vars !== "number") throw new Error(`${path} missing vars`);
+  if (typeof value.transitions !== "number") {
+    throw new Error(`${path} missing transitions`);
+  }
+  assertStringArray(value.varIds, `${path}.varIds`);
+  assertStringArray(value.transitionIds, `${path}.transitionIds`);
+  if (typeof value.retainedBits !== "number") {
+    throw new Error(`${path} missing retainedBits`);
+  }
+  if (typeof value.prunedBits !== "number") {
+    throw new Error(`${path} missing prunedBits`);
+  }
+  if (!Array.isArray(value.topContributors)) {
+    throw new Error(`${path} missing topContributors`);
+  }
+  if (!Array.isArray(value.prunedTopContributors)) {
+    throw new Error(`${path} missing prunedTopContributors`);
+  }
+  assertStringArray(value.retainedSystemVars, `${path}.retainedSystemVars`);
+  assertStringArray(value.prunedSystemVars, `${path}.prunedSystemVars`);
+  if (typeof value.sliceKey !== "string") {
+    throw new Error(`${path} missing sliceKey`);
+  }
+  return value as unknown as PropertySliceManifestEntry;
 }
 
 export function assertSerializableProperty(

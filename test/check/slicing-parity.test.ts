@@ -3,6 +3,8 @@ import {
   sliceModel,
   sliceModelForCheckProperty,
 } from "modality-ts/check";
+import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
+import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
@@ -20,6 +22,7 @@ import {
   stepEnqueued,
   stepTransitionId,
   type Model,
+  type Property,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 
@@ -727,5 +730,126 @@ describe("neutral slicing parity", () => {
     expect(sliced.vars.map((decl) => decl.id)).toEqual(
       expect.arrayContaining(["flag", "value"]),
     );
+  });
+});
+
+describe("extract-side property slice parity", () => {
+  it("matches check-side slice ids for a state property", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "slice-parity",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "toggle",
+          cls: "user",
+          label: { kind: "click" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "flag",
+            expr: { kind: "not", args: [{ kind: "read", var: "flag" }] },
+          },
+          reads: ["flag"],
+          writes: ["flag"],
+          confidence: "exact",
+        },
+        {
+          id: "noiseToggle",
+          cls: "user",
+          label: { kind: "click" },
+          source: [],
+          guard: { kind: "lit", value: true },
+          effect: {
+            kind: "assign",
+            var: "noise",
+            expr: { kind: "not", args: [{ kind: "read", var: "noise" }] },
+          },
+          reads: ["noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = reachable(model, eq(readVar("flag"), lit(true)), {
+      name: "flagTrue",
+      reads: ["flag"],
+    });
+    const checkSlice = sliceModelForCheckProperty(model, property).model;
+    const plan = buildPropertySlicePlan(
+      model,
+      [property],
+      "model.model.json",
+      "model.slices.json",
+      new Date("2026-06-19T00:00:00.000Z"),
+    );
+    const entry = plan.manifest.properties[0];
+    expect(entry?.status).toBe("emitted");
+    if (entry?.status === "emitted") {
+      expect(entry.varIds).toEqual(
+        checkSlice.vars.map((decl) => decl.id).sort(),
+      );
+      expect(entry.transitionIds).toEqual(
+        checkSlice.transitions.map((transition) => transition.id).sort(),
+      );
+    }
+  });
+
+  it("records skipped opaque properties without emitting slice models", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "slice-parity-opaque",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "flag",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [],
+    };
+    const property = {
+      kind: "always",
+      name: "opaque",
+      predicate: { step: { changed: "flag" } },
+    } as unknown as Property;
+    const skipReason = propertySlicingSkipReason(model, property);
+    expect(skipReason).toBeDefined();
+    const plan = buildPropertySlicePlan(
+      model,
+      [property],
+      "model.model.json",
+      "model.slices.json",
+      new Date("2026-06-19T00:00:00.000Z"),
+    );
+    expect(plan.emittedWrites).toEqual([]);
+    expect(plan.manifest.properties).toEqual([
+      {
+        property: "opaque",
+        propertyIndex: 0,
+        status: "skipped",
+        reason: skipReason,
+      },
+    ]);
   });
 });

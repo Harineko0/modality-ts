@@ -424,4 +424,100 @@ export default [route('/', 'routes/home.tsx')];`,
       column: 15,
     });
   });
+
+  it("renders slice artifacts and compact slice stats when present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-slice-output-"));
+    const sourcePath = join(dir, "App.tsx");
+    const propsPath = join(dir, "App.props.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `
+      export const properties = [
+        {
+          kind: 'always',
+          name: 'flagFalse',
+          predicate: {
+            kind: 'eq',
+            args: [
+              { kind: 'read', var: 'local:App.flag' },
+              { kind: 'lit', value: false },
+            ],
+          },
+        },
+      ];
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      propsPaths: [propsPath],
+    });
+    const lines = renderHumanExtractTargets(
+      [
+        {
+          label: "App.tsx",
+          durationMs: 12,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          report: result.report,
+          pluginLabels: result.pluginLabels,
+          sliceStatsLine: result.sliceStatsLine,
+          artifacts: result.artifacts,
+        },
+      ],
+      { totalDurationMs: 12 },
+    );
+    expect(lines.join("\n")).toContain("(sliceManifest)");
+    expect(lines.join("\n")).toContain("(sliceModel)");
+    expect(lines.join("\n")).toContain("slices=properties:");
+  });
+
+  it("omits compact slice stats when no slices are produced", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-extract-no-slice-output-"),
+    );
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const lines = renderHumanExtractTargets(
+      [
+        {
+          label: "App.tsx",
+          durationMs: 12,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          report: result.report,
+          pluginLabels: result.pluginLabels,
+          sliceStatsLine: result.sliceStatsLine,
+          artifacts: result.artifacts,
+        },
+      ],
+      { totalDurationMs: 12 },
+    );
+    expect(lines.join("\n")).not.toContain("slices=properties:");
+  });
 });

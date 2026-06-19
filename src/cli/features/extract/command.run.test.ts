@@ -6,12 +6,18 @@ import { checkModel } from "modality-ts/check";
 import {
   eq,
   lit,
+  parseModelArtifact,
+  parsePropertySliceManifestArtifact,
   reachable,
   readVar,
   validateModel,
   type Model,
 } from "modality-ts/core";
 import { runExtractCommand } from "./index.js";
+import {
+  sliceManifestPathForModel,
+  sliceModelPathForProperty,
+} from "../../defaults.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 
 describe("runExtractCommand", () => {
@@ -1238,5 +1244,104 @@ describe("runExtractCommand", () => {
         confidence: "over-approx",
       }),
     );
+  });
+
+  it("emits property slice artifacts when props paths are supplied", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-slices-"));
+    const sourcePath = join(dir, "App.tsx");
+    const propsPath = join(dir, "App.props.ts");
+    const modelPath = join(dir, "App.model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `
+      export const properties = [
+        {
+          kind: 'always',
+          name: 'flagFalse',
+          predicate: {
+            kind: 'eq',
+            args: [
+              { kind: 'read', var: 'local:App.flag' },
+              { kind: 'lit', value: false },
+            ],
+          },
+        },
+      ];
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      propsPaths: [propsPath],
+    });
+    const manifestPath = sliceManifestPathForModel(modelPath);
+    const manifest = parsePropertySliceManifestArtifact(
+      await readFile(manifestPath, "utf8"),
+    );
+    expect(manifest.kind).toBe("property-slice-manifest");
+    expect(
+      manifest.properties.some((entry) => entry.status === "emitted"),
+    ).toBe(true);
+    const emitted = manifest.properties.find(
+      (entry) => entry.status === "emitted",
+    );
+    expect(emitted?.status).toBe("emitted");
+    if (emitted?.status === "emitted") {
+      const slicePath = sliceModelPathForProperty(
+        modelPath,
+        emitted.property,
+        emitted.propertyIndex,
+        manifest.properties.map((entry) => ({
+          name: entry.property,
+          index: entry.propertyIndex,
+        })),
+      );
+      expect(emitted.path).toBe(slicePath);
+      parseModelArtifact(await readFile(slicePath, "utf8"));
+    }
+    expect(
+      result.artifacts.some((entry) => entry.kind === "sliceManifest"),
+    ).toBe(true);
+    expect(result.artifacts.some((entry) => entry.kind === "sliceModel")).toBe(
+      true,
+    );
+    expect(result.sliceStatsLine).toMatch(/^slices=properties:/);
+  });
+
+  it("does not emit slice artifacts without props paths", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-no-slices-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "App.model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.artifacts.map((entry) => entry.kind)).toEqual([
+      "model",
+      "appModel",
+    ]);
+    expect(result.sliceStatsLine).toBeUndefined();
   });
 });
