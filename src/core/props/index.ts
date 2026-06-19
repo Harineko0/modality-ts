@@ -9,12 +9,7 @@ import type {
   Value,
 } from "../ir/types.js";
 import { exprReads } from "../ir/validator.js";
-import {
-  isVarHandle,
-  lift,
-  type Operand,
-  type VarHandle,
-} from "./operand.js";
+import { isVarHandle, lift, type Operand, type VarHandle } from "./operand.js";
 import {
   always as registerAlways,
   alwaysStep as registerAlwaysStep,
@@ -44,7 +39,7 @@ export {
   isExprIR,
   isVarHandle,
   lift,
-  varHandle,
+  var,
 } from "./operand.js";
 export { s, type ComponentLike } from "./accessor.js";
 export {
@@ -69,7 +64,7 @@ export function readOpArg(key: string): ExprIR {
 
 /**
  * Read the macro-step pre-state snapshot of a variable. Accepts a {@link VarHandle}
- * (e.g. `s(Component).field` or `varHandle(id)`) or a `read` expression.
+ * (e.g. `s(Component).field` or `var(id)`) or a `read` expression.
  */
 export function pre(operand: VarHandle | ExprIR): ExprIR {
   if (isVarHandle(operand)) {

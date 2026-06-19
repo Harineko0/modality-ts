@@ -18,7 +18,7 @@ import {
   step,
   submitStatus,
   userId,
-} from "./.modality/vars/App";
+} from "./App.vars";
 
 always("guestCannotReachSuccess", not(and(eq(auth, "guest"), eq(step, "success"))));
 

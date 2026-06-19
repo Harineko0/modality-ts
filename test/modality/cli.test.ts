@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { propsFileBody, flagTrueProperty, } from "../helpers/props-file.js";
+import { propsFileBody, flagTrueProperty } from "../helpers/props-file.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -332,11 +332,7 @@ describe("modality CLI", () => {
     const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
 
     let stdout = "";
     try {
@@ -684,13 +680,13 @@ async function writeFixtureApp(dir: string): Promise<void> {
 
 function passingProps(prefix: string): string {
   return propsFileBody(
-    `reachable("${prefix}FlagCanBecomeTrue", eq(varHandle("flag"), true));`,
+    `reachable("${prefix}FlagCanBecomeTrue", eq(stateVar("flag"), true));`,
   );
 }
 
 function failingProps(): string {
   return propsFileBody(
-    `always("homeFlagAlwaysFalse", eq(varHandle("flag"), false));`,
+    `always("homeFlagAlwaysFalse", eq(stateVar("flag"), false));`,
   );
 }
 

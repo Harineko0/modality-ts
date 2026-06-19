@@ -444,8 +444,8 @@ export default [route('/', 'routes/home.tsx')];`,
     await writeFile(
       propsPath,
       `
-      import { always, eq, varHandle } from "modality-ts/properties";
-      always("flagFalse", eq(varHandle("local:App.flag"), false));
+      import { always, eq, var as stateVar } from "modality-ts/properties";
+      always("flagFalse", eq(stateVar("local:App.flag"), false));
       `,
       "utf8",
     );

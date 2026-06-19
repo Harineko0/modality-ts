@@ -1,4 +1,4 @@
-import { varHandle, type VarHandle } from "./operand.js";
+import { var as stateVar, type VarHandle } from "./operand.js";
 
 export type ComponentLike =
   | { name?: string }
@@ -12,7 +12,7 @@ export function s(
   return new Proxy({} as Record<string, VarHandle>, {
     get(_target, field) {
       if (typeof field !== "string" || field === "then") return undefined;
-      return varHandle(`local:${componentId}.${field}`);
+      return stateVar(`local:${componentId}.${field}`);
     },
   });
 }

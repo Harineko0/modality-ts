@@ -40,14 +40,14 @@ const localOnlyModel: Model = {
     {
       id: "local:App.phase",
       domain: { kind: "enum", values: ["plan", "confirm"] },
-      origin: "system",
+      origin: { file: join(process.cwd(), "App.tsx"), line: 3 },
       scope: { kind: "global" },
       initial: "plan",
     },
     {
       id: "local:App.count",
       domain: { kind: "boundedInt", min: 0, max: 2 },
-      origin: "system",
+      origin: { file: join(process.cwd(), "App.tsx"), line: 4 },
       scope: { kind: "global" },
       initial: 0,
     },
@@ -56,7 +56,7 @@ const localOnlyModel: Model = {
 };
 
 describe("rewriteImportedSymbols", () => {
-  it("rewrites imported module-scoped symbols to varHandle calls", async () => {
+  it("rewrites imported module-scoped symbols to var calls", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
     const propsPath = join(dir, "app.props.ts");
     const appPath = join(dir, "App.tsx");
@@ -83,7 +83,7 @@ eq(authAtom, "guest");
       },
     };
     const { source } = await rewriteImportedSymbols(propsPath, anchoredModel);
-    expect(source).toContain('varHandle("atom:authAtom")');
+    expect(source).toContain('modalityVar("atom:authAtom")');
     expect(source).not.toMatch(/\beq\(authAtom,/);
   });
 
@@ -98,51 +98,61 @@ eq(local, "guest");
 `,
       "utf8",
     );
-    const { source } = await rewriteImportedSymbols(propsPath, model);
+    const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
     expect(source).toContain('eq(local, "guest")');
   });
 
   it("rewrites imports from generated handle modules via the embedded id", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
     const propsPath = join(dir, "app.props.ts");
-    const handlePath = join(dir, "App.d.ts");
+    const handlePath = join(dir, "App.vars.ts");
     await writeFile(
       handlePath,
-      `import type { VarHandle } from "modality-ts/core";
-export declare const phase: VarHandle<{ readonly kind: "enum" }, "local:App.phase">;
+      `import { var as stateVar, type VarHandle } from "modality-ts/core";
+export const phase: VarHandle<{ readonly kind: "enum" }, "local:App.phase"> = stateVar("local:App.phase") as VarHandle<{ readonly kind: "enum" }, "local:App.phase">;
 `,
       "utf8",
     );
     await writeFile(
       propsPath,
       `import { eq } from "modality-ts/properties";
-import { phase } from "./App";
+import { phase } from "./App.vars";
 eq(phase, "confirm");
 `,
       "utf8",
     );
 
-    const { source } = await rewriteImportedSymbols(propsPath, model);
-    expect(source).toContain('varHandle("local:App.phase")');
-    expect(source).not.toMatch(/import \{ phase \} from "\.\/App"/);
+    const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
+    expect(source).toContain('modalityVar("local:App.phase")');
+    expect(source).not.toMatch(/import \{ phase \} from "\.\/App\.vars"/);
   });
 
-  it("rewrites generated handle imports from virtual declarations", async () => {
+  it("rewrites sibling generated handle imports from virtual declarations", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
     const propsPath = join(dir, "app.props.ts");
+    const modelWithOrigins: Model = {
+      ...localOnlyModel,
+      vars: localOnlyModel.vars.map((decl, index) => ({
+        ...decl,
+        origin: { file: join(dir, "App.tsx"), line: index + 3 },
+      })),
+    };
     await writeFile(
       propsPath,
       `import { always, and, eq } from "modality-ts/properties";
-import { count, phase } from "./.modality/vars/App";
+import { count, phase } from "./App.vars";
 always("ok", and(eq(phase, "confirm"), eq(count, 1)));
 `,
       "utf8",
     );
 
-    const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
-    expect(source).toContain('varHandle("local:App.phase")');
-    expect(source).toContain('varHandle("local:App.count")');
-    expect(source).not.toContain("./.modality/vars/App");
+    const { source } = await rewriteImportedSymbols(
+      propsPath,
+      modelWithOrigins,
+    );
+    expect(source).toContain('modalityVar("local:App.phase")');
+    expect(source).toContain('modalityVar("local:App.count")');
+    expect(source).not.toContain("./App.vars");
   });
 
   it("throws for stale generated handle imports", async () => {
@@ -151,14 +161,21 @@ always("ok", and(eq(phase, "confirm"), eq(count, 1)));
     await writeFile(
       propsPath,
       `import { eq } from "modality-ts/properties";
-import { missing } from "./.modality/vars/App";
+import { missing } from "./App.vars";
 eq(missing, "confirm");
 `,
       "utf8",
     );
 
+    const modelWithOrigin: Model = {
+      ...localOnlyModel,
+      vars: localOnlyModel.vars.map((decl) => ({
+        ...decl,
+        origin: { file: join(dir, "App.tsx"), line: 3 },
+      })),
+    };
     await expect(
-      rewriteImportedSymbols(propsPath, localOnlyModel),
+      rewriteImportedSymbols(propsPath, modelWithOrigin),
     ).rejects.toThrow(/Could not resolve imported symbol "missing"/);
   });
 

@@ -22,7 +22,6 @@ import {
   symbolForStatus,
 } from "./output.js";
 
-
 const IMPORT_CACHE_DIR = join(process.cwd(), ".modality", "import-cache");
 const LONG_PATH_SEGMENT =
   "very-long-path-segment-for-import-cache-filename-regression";
@@ -379,7 +378,7 @@ describe("runCheckCommand", () => {
       propsFileBody(`alwaysStep("submitEnqueued", {
   negate: true,
   step: { transitionId: "submit", enqueued: "POST" },
-  post: eq(varHandle("draft"), "nonEmpty"),
+  post: eq(stateVar("draft"), "nonEmpty"),
 });`),
       "utf8",
     );
@@ -572,11 +571,7 @@ describe("runCheckCommand", () => {
       })),
     };
     await writeFile(modelPath, JSON.stringify(locatorless), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -737,11 +732,7 @@ describe("runCheckCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      propsFileBody(amountKnownProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(amountKnownProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -769,11 +760,7 @@ describe("runCheckCommand", () => {
     const overlayPath = join(dir, "overlay.json");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
     await writeFile(
       overlayPath,
       JSON.stringify({
@@ -846,11 +833,7 @@ describe("runCheckCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -941,11 +924,7 @@ describe("runCheckCommand", () => {
       } satisfies Model),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      propsFileBody(idNotBlockedProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(idNotBlockedProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1009,11 +988,7 @@ describe("runCheckCommand", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      propsFileBody(panelReachableProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(panelReachableProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1041,11 +1016,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1063,11 +1034,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1086,11 +1053,7 @@ describe("runCheckCommand", () => {
     const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1119,11 +1082,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1139,11 +1098,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1163,11 +1118,7 @@ describe("runCheckCommand", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1211,11 +1162,7 @@ describe("runCheckCommand", () => {
     const modelPath = resolve(nested, "model.json");
     const propsPath = resolve(nested, "index.props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
 
     const before = await cacheEntries();
     const result = await runCheckCommand({
@@ -1245,11 +1192,7 @@ describe("runCheckCommand", () => {
     const modelPath = resolve(nested, "model.json");
     const propsPath = resolve(nested, "index.props.mjs");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      registrationPropsMjs,
-      "utf8",
-    );
+    await writeFile(propsPath, registrationPropsMjs, "utf8");
 
     const before = await cacheEntries();
     const result = await runCheckCommand({
@@ -1371,11 +1314,7 @@ describe("renderHumanCheckTargets", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
 
     const result = await runCheckCommand({ modelPath, propsPath });
     const lines = renderHumanCheckTargets(
@@ -1403,11 +1342,7 @@ describe("renderHumanCheckTargets", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagTrueProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
     const result = await runCheckCommand({ modelPath, propsPath });
     const lines = renderHumanCheckTargets(
       [
@@ -1452,11 +1387,7 @@ describe("renderHumanCheckTargets", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
     const result = await runCheckCommand({ modelPath, propsPath });
     const plain = renderHumanCheckResult(result.check, { color: false });
     const colored = renderHumanCheckResult(result.check, { color: true });
@@ -1473,11 +1404,7 @@ describe("runCheckCommand streaming output", () => {
     const tracesDir = join(dir, "traces");
     const replayTestsDir = join(dir, "replay-tests");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const emitted: string[] = [];
     const result = await runCheckCommand({
@@ -1525,11 +1452,7 @@ describe("runCheckCommand streaming output", () => {
     const propsPath = join(dir, "props.ts");
     const reportPath = join(dir, "report.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,
@@ -1555,11 +1478,7 @@ describe("property confidence reporting", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({ modelPath, propsPath });
     expect(result.report.verdicts[0]?.confidence).toMatchObject({
@@ -1577,11 +1496,7 @@ describe("property confidence reporting", () => {
     const propsPath = join(dir, "props.ts");
     const overlayPath = join(dir, "overlay.json");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
     await writeFile(
       overlayPath,
       JSON.stringify({
@@ -1637,7 +1552,7 @@ describe("property confidence reporting", () => {
     );
     await writeFile(
       propsPath,
-      propsFileBody(`always("payloadKnown", eq(varHandle("payload"), "tok1"));`),
+      propsFileBody(`always("payloadKnown", eq(stateVar("payload"), "tok1"));`),
       "utf8",
     );
 
@@ -1687,11 +1602,7 @@ describe("property confidence reporting", () => {
       }),
       "utf8",
     );
-    await writeFile(
-      propsPath,
-      propsFileBody(amountKnownProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(amountKnownProperty), "utf8");
 
     const result = await runCheckCommand({ modelPath, propsPath });
     expect(result.report.verdicts[0]).toMatchObject({
@@ -1712,11 +1623,7 @@ describe("property confidence reporting", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagFalseProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagFalseProperty), "utf8");
 
     const result = await runCheckCommand({ modelPath, propsPath });
     const lines = renderHumanCheckTargets(
@@ -1746,11 +1653,7 @@ describe("property confidence reporting", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(model()), "utf8");
-    await writeFile(
-      propsPath,
-      propsFileBody(flagOkProperty),
-      "utf8",
-    );
+    await writeFile(propsPath, propsFileBody(flagOkProperty), "utf8");
 
     const result = await runCheckCommand({
       modelPath,

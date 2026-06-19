@@ -34,10 +34,7 @@ import {
   type NextParsedConfig,
 } from "modality-ts/extract/sources/next";
 import { emitAppModel } from "../../codegen/model.js";
-import {
-  componentVarsDir,
-  emitComponentVarModules,
-} from "../../codegen/component-state.js";
+import { emitComponentVarModules } from "../../codegen/component-state.js";
 import { compareModelEconomics } from "../../../check/slicing/contributors.js";
 import {
   propertySlicingSkipReason,
@@ -194,7 +191,6 @@ export async function runExtractCommand(
     );
   const appModelPath =
     options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
-  const varsDir = componentVarsDir(appModelPath);
   const projectWithInventory = await diagnosticsClock.measureAsync(
     "route-inventory",
     "Discover route inventory",
@@ -476,7 +472,7 @@ export async function runExtractCommand(
       : undefined;
   let reportWithDiagnostics: ExtractionReport = report;
   const sliceArtifacts: ExtractArtifactEntry[] = [];
-  const componentVarModules = emitComponentVarModules(model);
+  const componentVarModules = emitComponentVarModules(model, appModelPath);
   await diagnosticsClock.measureAsync(
     "write-artifacts",
     "Write extraction artifacts",
@@ -486,13 +482,9 @@ export async function runExtractCommand(
       await mkdir(dirname(appModelPath), { recursive: true });
       await writeFile(appModelPath, emitAppModel(model), "utf8");
       if (componentVarModules.length > 0) {
-        await mkdir(varsDir, { recursive: true });
         for (const varModule of componentVarModules) {
-          await writeFile(
-            join(varsDir, varModule.fileName),
-            varModule.source,
-            "utf8",
-          );
+          await mkdir(dirname(varModule.path), { recursive: true });
+          await writeFile(varModule.path, varModule.source, "utf8");
         }
       }
       if (propertySlicePlan) {
@@ -579,7 +571,7 @@ export async function runExtractCommand(
     { kind: "appModel", path: appModelPath },
     ...componentVarModules.map((varModule) => ({
       kind: "componentVars" as const,
-      path: join(varsDir, varModule.fileName),
+      path: varModule.path,
     })),
     ...sliceArtifacts,
   ];
@@ -617,7 +609,7 @@ export async function runExtractCommand(
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
       ...(componentVarModules.length > 0
-        ? [`componentVars=${varsDir} (${componentVarModules.length})`]
+        ? [`componentVars=${componentVarModules.length}`]
         : []),
       ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
       ...(options.explainDrift

@@ -37,7 +37,7 @@ const EXPR_IR_KINDS = new Set([
 
 export type Operand = ExprIR | VarHandle | Value;
 
-export function varHandle<const Id extends string = string, D = AbstractDomain>(
+function createVarHandle<const Id extends string = string, D = AbstractDomain>(
   varId: Id,
   domain?: D,
   path?: readonly string[],
@@ -48,10 +48,12 @@ export function varHandle<const Id extends string = string, D = AbstractDomain>(
     ...(path !== undefined ? { path } : {}),
     ...(domain !== undefined ? { domain } : {}),
     at(...segments: readonly string[]): VarHandle<D, Id> {
-      return varHandle(varId, domain, [...(path ?? []), ...segments]);
+      return createVarHandle(varId, domain, [...(path ?? []), ...segments]);
     },
   };
 }
+
+export { createVarHandle as var };
 
 export function isVarHandle(value: unknown): value is VarHandle {
   return (

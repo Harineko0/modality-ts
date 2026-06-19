@@ -23,9 +23,7 @@ function finalizeOne(model: Model): Property {
   return properties[0]!;
 }
 
-function withoutName(
-  options: PropertyOptions,
-): PropertyOptions {
+function withoutName(options: PropertyOptions): PropertyOptions {
   const { name: _name, ...rest } = options;
   return rest;
 }
@@ -60,7 +58,11 @@ export function reachable(
   options: PropertyOptions = {},
 ): Property {
   resetRegistry();
-  registerReachable(options.name ?? "reachable", predicate, withoutName(options));
+  registerReachable(
+    options.name ?? "reachable",
+    predicate,
+    withoutName(options),
+  );
   return finalizeOne(model);
 }
 
@@ -114,7 +116,7 @@ export {
   readOpArg,
   readPreVar,
   readVar,
-  varHandle,
+  var as stateVar,
   enabled,
   enabledTransitionPrefix,
   stepAny,

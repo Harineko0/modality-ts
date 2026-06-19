@@ -1,36 +1,86 @@
-import { dirname, join } from "node:path";
-import type { AbstractDomain, Model } from "modality-ts/core";
+import { dirname, join, parse } from "node:path";
+import type { AbstractDomain, Model, StateVarDecl } from "modality-ts/core";
 import { quoteProperty, stringLiteralType } from "./model.js";
 
 interface LocalField {
+  componentId: string;
   field: string;
   domain: AbstractDomain;
 }
 
 export interface ComponentVarModule {
-  componentId: string;
+  sourcePath?: string;
   fileName: string;
+  path: string;
   source: string;
 }
 
-function localFieldsByComponent(model: Model): Map<string, LocalField[]> {
-  const byComponent = new Map<string, LocalField[]>();
-  for (const decl of model.vars) {
-    if (!decl.id.startsWith("local:")) continue;
-    const rest = decl.id.slice("local:".length);
-    const dot = rest.indexOf(".");
-    if (dot < 0) continue;
-    const componentId = rest.slice(0, dot);
-    const field = rest.slice(dot + 1);
-    const fields = byComponent.get(componentId) ?? [];
-    fields.push({ field, domain: decl.domain });
-    byComponent.set(componentId, fields);
-  }
-  return byComponent;
+function componentAndField(
+  varId: string,
+): { componentId: string; field: string } | undefined {
+  if (!varId.startsWith("local:")) return undefined;
+  const rest = varId.slice("local:".length);
+  const dot = rest.indexOf(".");
+  if (dot < 0) return undefined;
+  return {
+    componentId: rest.slice(0, dot),
+    field: rest.slice(dot + 1),
+  };
 }
 
-function varHandleType(domain: AbstractDomain, varId: string): string {
+function modulePathForSource(sourcePath: string): string {
+  const parsed = parse(sourcePath);
+  return join(parsed.dir, `${parsed.name}.vars.ts`);
+}
+
+function fallbackModulePath(appModelPath: string, componentId: string): string {
+  return join(componentVarsDir(appModelPath), `${componentId}.vars.ts`);
+}
+
+function sourcePathForLocalVar(decl: StateVarDecl): string | undefined {
+  return typeof decl.origin === "object" ? decl.origin.file : undefined;
+}
+
+function localFieldsByModule(
+  model: Model,
+  appModelPath: string,
+): Map<string, { sourcePath?: string; fields: LocalField[] }> {
+  const byModule = new Map<
+    string,
+    { sourcePath?: string; fields: LocalField[] }
+  >();
+  for (const decl of model.vars) {
+    const parsed = componentAndField(decl.id);
+    if (!parsed) continue;
+    const sourcePath = sourcePathForLocalVar(decl);
+    const path = sourcePath
+      ? modulePathForSource(sourcePath)
+      : fallbackModulePath(appModelPath, parsed.componentId);
+    const entry = byModule.get(path) ?? {
+      ...(sourcePath ? { sourcePath } : {}),
+      fields: [],
+    };
+    entry.fields.push({
+      componentId: parsed.componentId,
+      field: parsed.field,
+      domain: decl.domain,
+    });
+    byModule.set(path, entry);
+  }
+  return byModule;
+}
+
+function handleType(domain: AbstractDomain, varId: string): string {
   return `VarHandle<${domainLiteral(domain)}, ${stringLiteralType(varId)}>`;
+}
+
+function collisionSafeExportName(
+  entry: LocalField,
+  fieldCounts: ReadonlyMap<string, number>,
+): string {
+  return (fieldCounts.get(entry.field) ?? 0) > 1
+    ? `${entry.componentId}_${entry.field}`
+    : entry.field;
 }
 
 function domainLiteral(domain: AbstractDomain): string {
@@ -73,36 +123,49 @@ function domainLiteral(domain: AbstractDomain): string {
 }
 
 /**
- * Emit one types-only module per component that owns `useState` locals. Each module exports a
- * `VarHandle` declaration per field with the var id embedded in the handle type, so the loader's
- * symbol rewriter can resolve `import { field } from "./.modality/vars/<Component>"` to
- * `varHandle("local:<Component>.<field>")` at check time (no runtime file is generated).
+ * Emit one sibling module per source file that owns `useState` locals. Each module exports a
+ * `VarHandle` value per field with the var id embedded in the handle type, so property files can
+ * import from `./Component.vars` directly while the loader can still rewrite imported symbols to
+ * `var("local:<Component>.<field>")` at check time.
  */
-export function emitComponentVarModules(model: Model): ComponentVarModule[] {
-  const byComponent = localFieldsByComponent(model);
+export function emitComponentVarModules(
+  model: Model,
+  appModelPath: string,
+): ComponentVarModule[] {
+  const byModule = localFieldsByModule(model, appModelPath);
   const modules: ComponentVarModule[] = [];
 
-  for (const [componentId, fields] of [...byComponent.entries()].sort(
-    ([left], [right]) => left.localeCompare(right),
+  for (const [path, entry] of [...byModule.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
   )) {
-    const sortedFields = [...fields].sort((left, right) =>
-      left.field.localeCompare(right.field),
+    const sortedFields = [...entry.fields].sort(
+      (left, right) =>
+        left.field.localeCompare(right.field) ||
+        left.componentId.localeCompare(right.componentId),
     );
+    const fieldCounts = new Map<string, number>();
+    for (const field of sortedFields) {
+      fieldCounts.set(field.field, (fieldCounts.get(field.field) ?? 0) + 1);
+    }
     const source = [
-      'import type { VarHandle } from "modality-ts/core";',
+      'import { var as modalityVar, type VarHandle } from "modality-ts/core";',
       "",
-      ...sortedFields.map(
-        (entry) =>
-          `export declare const ${entry.field}: ${varHandleType(
-            entry.domain,
-            `local:${componentId}.${entry.field}`,
-          )};`,
-      ),
+      ...sortedFields.map((entry) => {
+        const varId = `local:${entry.componentId}.${entry.field}`;
+        return `export const ${collisionSafeExportName(entry, fieldCounts)}: ${handleType(
+          entry.domain,
+          varId,
+        )} = modalityVar(${JSON.stringify(varId)}) as ${handleType(
+          entry.domain,
+          varId,
+        )};`;
+      }),
       "",
     ].join("\n");
     modules.push({
-      componentId,
-      fileName: `${componentId}.d.ts`,
+      ...(entry.sourcePath ? { sourcePath: entry.sourcePath } : {}),
+      fileName: parse(path).base,
+      path,
       source,
     });
   }
@@ -110,7 +173,7 @@ export function emitComponentVarModules(model: Model): ComponentVarModule[] {
   return modules;
 }
 
-/** Directory (sibling of the app model) that holds the generated per-component var modules. */
+/** Fallback directory (sibling of the app model) for synthetic local var modules. */
 export function componentVarsDir(appModelPath: string): string {
   return join(dirname(appModelPath), "vars");
 }

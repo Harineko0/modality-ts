@@ -12,7 +12,7 @@ import {
 } from "modality-ts/properties";
 import { pending } from "modality-ts/vars";
 import { authAtom } from "./App";
-import { draft, saveStatus } from "./.modality/vars/App";
+import { draft, saveStatus } from "./App.vars";
 
 function atMostOnePendingOp(opId: string) {
   return and(

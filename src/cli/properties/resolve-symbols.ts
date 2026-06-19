@@ -181,7 +181,10 @@ function isGeneratedVarsSpecifier(specifier: string | undefined): boolean {
   const normalized = specifier?.split("\\").join("/");
   return Boolean(
     normalized &&
-      (normalized.includes(".modality/vars/") ||
+      (normalized.endsWith(".vars") ||
+        normalized.endsWith(".vars.ts") ||
+        normalized.endsWith(".vars.js") ||
+        normalized.includes(".modality/vars/") ||
         normalized === "./vars" ||
         normalized.startsWith("./vars/") ||
         normalized === "../vars" ||
@@ -194,8 +197,24 @@ function componentIdFromGeneratedVarsSpecifier(
 ): string | undefined {
   if (!isGeneratedVarsSpecifier(specifier)) return undefined;
   const normalized = specifier.split("\\").join("/");
+  if (!normalized.includes(".modality/vars/")) return undefined;
   const last = normalized.split("/").at(-1);
   return last?.replace(/(\.d\.ts|\.ts|\.js)$/u, "");
+}
+
+function resolvedGeneratedVarsModulePath(
+  containingFile: string,
+  specifier: string,
+): string | undefined {
+  if (!isGeneratedVarsSpecifier(specifier)) return undefined;
+  if (!specifier.startsWith(".")) return undefined;
+  const basePath = resolve(dirname(containingFile), specifier);
+  if (basePath.endsWith(".vars.ts")) return basePath;
+  if (basePath.endsWith(".vars.js")) {
+    return basePath.replace(/\.vars\.js$/u, ".vars.ts");
+  }
+  if (basePath.endsWith(".vars")) return `${basePath}.ts`;
+  return undefined;
 }
 
 function localFieldNamesByComponent(model: Model): Map<string, Set<string>> {
@@ -214,32 +233,68 @@ function localFieldNamesByComponent(model: Model): Map<string, Set<string>> {
   return byComponent;
 }
 
+function localFieldNamesByGeneratedModule(
+  model: Model,
+  file: string,
+): Map<string, Set<string>> {
+  const appModelPath = join(dirname(file), ".modality", "app.model.ts");
+  const byModule = new Map<string, Set<string>>();
+  for (const module of emitComponentVarModules(model, appModelPath)) {
+    const fields = new Set<string>();
+    const sourceFile = ts.createSourceFile(
+      module.path,
+      module.source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    for (const statement of sourceFile.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name)) {
+          fields.add(declaration.name.text);
+        }
+      }
+    }
+    byModule.set(resolve(module.path), fields);
+  }
+  return byModule;
+}
+
 function generatedImportDiagnostics(
   sourceFile: ts.SourceFile,
   model: Model,
   file: string,
 ): SymbolRewriteDiagnostic[] {
   const localFields = localFieldNamesByComponent(model);
+  const localFieldsByModule = localFieldNamesByGeneratedModule(model, file);
   const diagnostics: SymbolRewriteDiagnostic[] = [];
 
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const modulePath = resolvedGeneratedVarsModulePath(
+      file,
+      statement.moduleSpecifier.text,
+    );
     const componentId = componentIdFromGeneratedVarsSpecifier(
       statement.moduleSpecifier.text,
     );
-    if (!componentId) continue;
-
     const namedBindings = statement.importClause?.namedBindings;
     if (!namedBindings || !ts.isNamedImports(namedBindings)) continue;
-    const fields = localFields.get(componentId) ?? new Set<string>();
+    const fields = modulePath
+      ? localFieldsByModule.get(modulePath)
+      : componentId
+        ? (localFields.get(componentId) ?? new Set<string>())
+        : undefined;
+    if (!fields) continue;
     for (const specifier of namedBindings.elements) {
       const exportedName = specifier.propertyName?.text ?? specifier.name.text;
       if (fields.has(exportedName)) continue;
       diagnostics.push({
         symbol: specifier.name.text,
         file,
-        message: `Could not resolve imported symbol "${specifier.name.text}" to a modeled state variable. Regenerate the component var module or use varHandle(...) / s(Component).field instead.`,
+        message: `Could not resolve imported symbol "${specifier.name.text}" to a modeled state variable. Regenerate the component var module or use var(...) / s(Component).field instead.`,
       });
     }
   }
@@ -291,13 +346,18 @@ function generatedComponentVarEntries(
   model: Model,
 ): SemanticSourceEntry[] {
   const propsDir = dirname(resolve(propsPath));
+  const appModelPath = join(propsDir, ".modality", "app.model.ts");
   const varsDirs = [
     join(propsDir, ".modality", "vars"),
     join(propsDir, "vars"),
   ];
   const entries: SemanticSourceEntry[] = [];
-  for (const varsDir of varsDirs) {
-    for (const module of emitComponentVarModules(model)) {
+  for (const module of emitComponentVarModules(model, appModelPath)) {
+    entries.push({
+      path: module.path,
+      text: module.source,
+    });
+    for (const varsDir of varsDirs) {
       entries.push({
         path: join(varsDir, module.fileName),
         text: module.source,
@@ -307,30 +367,30 @@ function generatedComponentVarEntries(
   return entries;
 }
 
-function ensureVarHandleImport(
+function ensureStateVarImport(
   source: string,
   sourceFile: ts.SourceFile,
 ): string {
-  if (!source.includes("varHandle(")) return source;
+  if (!source.includes("modalityVar(")) return source;
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const text = statement.getText(sourceFile);
-    if (text.includes("varHandle")) return source;
+    if (text.includes("var as modalityVar")) return source;
     if (
       text.includes("modality-ts/properties") ||
       text.includes("modality-ts/core")
     ) {
       const next = text.replace(/\{([^}]*)\}/, (_match, imports: string) => {
-        if (imports.includes("varHandle")) return `{${imports}}`;
+        if (imports.includes("var as modalityVar")) return `{${imports}}`;
         const trimmed = imports.trim().replace(/,\s*$/u, "");
         return trimmed.length > 0
-          ? `{ ${trimmed}, varHandle }`
-          : "{ varHandle }";
+          ? `{ ${trimmed}, var as modalityVar }`
+          : "{ var as modalityVar }";
       });
       return source.replace(text, next);
     }
   }
-  return `import { varHandle } from "modality-ts/properties";\n${source}`;
+  return `import { var as modalityVar } from "modality-ts/properties";\n${source}`;
 }
 
 export async function rewriteImportedSymbols(
@@ -396,7 +456,7 @@ export async function rewriteImportedSymbols(
         replacements.push({
           start: node.getStart(),
           end: node.getEnd(),
-          text: `varHandle(${JSON.stringify(varId)})`,
+          text: `modalityVar(${JSON.stringify(varId)})`,
         });
         rewrittenSymbolNames.add(node.text);
         rewrittenNodes.add(node);
@@ -409,7 +469,7 @@ export async function rewriteImportedSymbols(
         diagnostics.push({
           symbol: node.text,
           file: resolvedPropsPath,
-          message: `Could not resolve imported symbol "${node.text}" to a modeled state variable. Declare it in source so extraction records a var anchor, or use varHandle(...) / s(Component).field instead.`,
+          message: `Could not resolve imported symbol "${node.text}" to a modeled state variable. Declare it in source so extraction records a var anchor, or use var(...) / s(Component).field instead.`,
         });
       }
       ts.forEachChild(node, visit);
@@ -431,7 +491,7 @@ export async function rewriteImportedSymbols(
   }
 
   let rewritten = applyReplacements(source, replacements);
-  rewritten = ensureVarHandleImport(rewritten, sourceFile);
+  rewritten = ensureStateVarImport(rewritten, sourceFile);
   rewritten = removeRewrittenImports(rewritten, rewrittenSymbolNames);
   return { source: rewritten, diagnostics };
 }

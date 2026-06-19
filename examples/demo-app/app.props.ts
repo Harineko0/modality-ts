@@ -5,12 +5,12 @@ import {
   neq,
   not,
   or,
-  varHandle,
+  var as stateVar,
 } from "modality-ts/properties";
 import { pending, route } from "modality-ts/vars";
 import { authAtom } from "./App";
 
-const userCache = varHandle("swr:api_user:data");
+const userCache = stateVar("swr:api_user:data");
 
 function atMostOnePendingOp(opId: string) {
   return and(

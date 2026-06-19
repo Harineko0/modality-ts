@@ -39,13 +39,16 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 - **Module-scoped state** (atoms, stores, signals, context, consts): `import { sessionAtom }
   from "./store"` and use it directly. The loader resolves the imported symbol to its model
   variable, so IDE renames stay in sync.
-- **`useState` locals**: import generated handles from `./.modality/vars/<Component>`.
+- **`useState` locals**: import generated handles from sibling `*.vars` modules, such
+  as `./App.vars`.
 - **Stable system vars**: import `{ pending, route, history }` from `modality-ts/vars`.
-- **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: `varHandle(id)`.
+- **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: the `var`
+  export, usually imported with an alias because `var` is a reserved local binding
+  (`import { var as stateVar } from "modality-ts/properties"`).
 
 | Helper | Builds |
 | --- | --- |
-| `varHandle(id, domain?, path?)` | a handle for a variable id without an importable symbol |
+| `var(id, domain?, path?)` | a handle for a variable id without an importable symbol |
 | `handle.at(...segments)` | extend a handle with nested record/list path segments |
 | `pre(handle)` | read the macro-step pre-state snapshot of a variable (batching) |
 | `readOpArg(key)` | read an enqueue-time snapshot from a pending op |
@@ -57,11 +60,10 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 | `enabledTransitionPrefix(prefix)` | true when some enabled transition id starts with `prefix` |
 | `s(component, idOverride?)` | quick untyped handles for `useState` locals (`s({ name: "App" }).step`) |
 
-Generated component modules are types-only. The CLI rewrites each imported handle to
-`varHandle("local:<Component>.<state>")` and strips the import at check time, so no
-runtime file is needed. With `moduleResolution: "nodenext"`, TypeScript may require a
-`.js` specifier such as `./.modality/vars/App.js`; extensionless imports work under
-`bundler`/classic Node-style resolution.
+Generated component modules are real TypeScript files written beside the source file,
+for example `app/home/home.tsx` produces `app/home/home.vars.ts`. The CLI rewrites
+each imported handle to `var("local:<Component>.<state>")` and strips the import
+at check time.
 
 ## Numeric expressions
 
@@ -75,7 +77,7 @@ only governs assignments back into a finite domain, not intermediate predicate m
 
 ```ts
 import { always, not, lessThan, add } from "modality-ts/properties";
-import { capacity, count } from "./.modality/vars/Cart";
+import { capacity, count } from "./Cart.vars";
 
 always("withinCapacity", not(lessThan(capacity, add(count, 1))));
 ```
@@ -113,7 +115,7 @@ import {
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
 import { sessionAtom, authAtom } from "./store";
-import { step } from "./.modality/vars/App";
+import { step } from "./App.vars";
 
 always(
   "adminRequiresAuth",

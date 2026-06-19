@@ -43,7 +43,7 @@ from small combinators, not arbitrary functions.
 
 ```ts
 import { always, or, not, eq } from "modality-ts/properties";
-import { auth, step } from "./.modality/vars/App";
+import { auth, step } from "./App.vars";
 
 always(
   "checkoutOnlySucceedsForUsers",
@@ -55,9 +55,10 @@ Variable IDs come from the generated model / extraction report. Common prefixes:
 `local:<Component>.<state>` (a `useState`), `atom:<name>` (Jotai),
 `store:<name>.<field>` (Zustand), `swr:<key>` (SWR cache), and `sys:*`
 (system variables such as `sys:route`, `sys:pending`). Extract also writes typed local
-handles under `.modality/vars/<Component>.d.ts`; import stable system handles from
-`modality-ts/vars`, and use `varHandle("...")` for synthesized ids without a generated or
-built-in handle. See
+handles beside source files as `<source>.vars.ts`; import stable system handles from
+`modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
+built-in handle (usually via `import { var as stateVar } from "modality-ts/properties"`).
+See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 4. Check the model

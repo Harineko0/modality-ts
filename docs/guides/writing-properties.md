@@ -26,7 +26,7 @@ import {
   stepEnqueued,
   stepResolved,
 } from "modality-ts/properties";
-import { auth, step } from "./.modality/vars/App";
+import { auth, step } from "./App.vars";
 
 always(
   "checkoutOnlySucceedsForUsers",
@@ -105,7 +105,7 @@ alwaysStep(
 "After submitting, the order must settle to success or error within 3 environment steps."
 
 ```ts
-import { order } from "./.modality/vars/App";
+import { order } from "./App.vars";
 
 leadsToWithin(
   stepEnqueued("api.placeOrder"),
@@ -122,7 +122,7 @@ By default only environment/library/internal steps count toward the goal. Set
 "From any state with a valid payment method, the review step remains reachable."
 
 ```ts
-import { payment, step } from "./.modality/vars/App";
+import { payment, step } from "./App.vars";
 
 reachableFrom(
   eq(payment, "valid"),
@@ -142,7 +142,7 @@ guards are structured IR.
 
 ```ts
 import { enabled } from "modality-ts/properties";
-import { order } from "./.modality/vars/App";
+import { order } from "./App.vars";
 
 always(
   "logoutAvailableOnError",
@@ -161,23 +161,23 @@ disambiguates duplicate handler ids with stable hash suffixes, use
 
 ## Component state handles
 
-Extraction emits one declaration module per component under `.modality/vars/`. Import
-`useState` locals from the generated component module:
+Extraction emits one sibling handle module for each source file with `useState` locals.
+Import `useState` locals from the generated `*.vars` module:
 
 ```ts
-import { step } from "./.modality/vars/App";
+import { step } from "./App.vars";
 
 always("guestCannotReachSuccess", not(and(eq(auth, "guest"), eq(step, "success"))));
 ```
 
-With `moduleResolution: "nodenext"`, TypeScript may require a `.js` specifier in source
-(`"./.modality/vars/App.js"`). The CLI loader rewrites and strips the generated import at
-check time, so there is no runtime file.
+For example, `app/home/home.tsx` produces `app/home/home.vars.ts`. The CLI loader
+rewrites and strips generated handle imports at check time.
 
 Imported atoms and stores resolve through symbol rewriting when their declaration anchors
-appear in `model.metadata.varAnchors`; otherwise use `varHandle("atom:authAtom")` directly.
-Use `varHandle("swr:...")` or `varHandle("sys:timer:...")` for synthesized ids that do not
-have a stable importable handle.
+appear in `model.metadata.varAnchors`; otherwise use the `var` export directly, usually
+with an alias such as `import { var as stateVar } from "modality-ts/properties"`.
+Use `stateVar("swr:...")` or `stateVar("sys:timer:...")` for synthesized ids that do
+not have a stable importable handle.
 
 ## Naming and verdicts
 

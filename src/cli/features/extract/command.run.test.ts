@@ -1266,7 +1266,7 @@ describe("runExtractCommand", () => {
       propsPath,
       `
       import { always, eq } from "modality-ts/properties";
-      import { flag } from "./vars/App";
+      import { flag } from "./App.vars";
       always("flagFalse", eq(flag, false));
       `,
       "utf8",
@@ -1307,9 +1307,9 @@ describe("runExtractCommand", () => {
     ).toBe(true);
     expect(result.artifacts).toContainEqual({
       kind: "componentVars",
-      path: join(dir, "vars", "App.d.ts"),
+      path: join(dir, "App.vars.ts"),
     });
-    expect(await readFile(join(dir, "vars", "App.d.ts"), "utf8")).toContain(
+    expect(await readFile(join(dir, "App.vars.ts"), "utf8")).toContain(
       '"local:App.flag"',
     );
     expect(result.artifacts.some((entry) => entry.kind === "sliceModel")).toBe(

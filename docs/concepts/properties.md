@@ -55,9 +55,11 @@ always(
 ```
 
 Reference state with handles: import module-scoped atoms/stores directly, import generated
-`useState` locals from `./.modality/vars/<Component>`, import stable system handles from
-`modality-ts/vars`, or use `varHandle(id)` (plus `handle.at(...path)`) for synthesized ids
-such as `swr:*` and parameterized `sys:*`. Other helpers: `pre(handle)` / `readOpArg(key)`,
+`useState` locals from sibling `*.vars` modules, import stable system handles from
+`modality-ts/vars`, or use the `var` export (usually imported as
+`import { var as stateVar } from "modality-ts/properties"`) plus
+`handle.at(...path)` for synthesized ids such as `swr:*` and parameterized `sys:*`.
+Other helpers: `pre(handle)` / `readOpArg(key)`,
 `eq` / `neq`, `and` / `or` / `not`, numeric comparisons and arithmetic, and
 `enabled(transitionId)`. See the
 [property API reference](../reference/property-api.md).
@@ -93,7 +95,7 @@ states — a violating edge between two known-good states is still caught.
 
 ```ts
 import { leadsToWithin, or, eq, stepEnqueued } from "modality-ts/properties";
-import { order } from "./.modality/vars/App";
+import { order } from "./App.vars";
 
 leadsToWithin(
   stepEnqueued("api.placeOrder"),
