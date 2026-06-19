@@ -80,6 +80,18 @@ function collectSimpleClauses(expr: ExprIR): DirectionalClause[] | undefined {
       }
       return undefined;
     }
+    case "not": {
+      const inner = collectSimpleClauses(expr.args[0]);
+      if (inner === undefined || inner.length !== 1) return undefined;
+      const clause = inner[0]!;
+      if (clause.kind === "eq") {
+        return [{ kind: "neq", var: clause.var, value: clause.value }];
+      }
+      if (clause.kind === "neq") {
+        return [{ kind: "eq", var: clause.var, value: clause.value }];
+      }
+      return undefined;
+    }
     case "and":
     case "or": {
       const clauses: DirectionalClause[] = [];

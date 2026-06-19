@@ -3,12 +3,15 @@ import {
   sliceModel,
   sliceModelForCheckProperty,
 } from "modality-ts/check";
+import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
 import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
 import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
   alwaysStep,
+  collectRecordDomainFieldPaths,
+  domainCardinality,
   enabled,
   enabledTransitionPrefix,
   eq,
@@ -21,6 +24,7 @@ import {
   stepChangedTo,
   stepEnqueued,
   stepTransitionId,
+  validateModel,
   type Model,
   type Property,
 } from "modality-ts/core";
@@ -800,6 +804,205 @@ describe("neutral slicing parity", () => {
     expect(sliced.vars.map((decl) => decl.id)).toEqual(
       expect.arrayContaining(["flag", "value"]),
     );
+  });
+});
+
+describe("record field domain projection", () => {
+  function wideRecordFixtureModel(): Model {
+    const fields: Record<string, { kind: "bool" }> = {};
+    for (let index = 0; index < 32; index += 1) {
+      fields[`flag${index}`] = { kind: "bool" };
+    }
+    const domain = { kind: "record" as const, fields };
+    return {
+      schemaVersion: 1,
+      id: "record-field-projection",
+      bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "product",
+          domain,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 32 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "setFlag0",
+          cls: "user",
+          label: { kind: "click", text: "Set flag0" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "assign",
+            var: "product",
+            expr: {
+              kind: "updateField",
+              target: read("product"),
+              path: ["flag0"],
+              value: lit(true),
+            },
+          },
+          reads: ["product"],
+          writes: ["product"],
+          confidence: "exact",
+        },
+        {
+          id: "setNoise",
+          cls: "user",
+          label: { kind: "click", text: "Set noise" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+  }
+
+  it("projects retained record domains to property-relevant field paths", () => {
+    const model = wideRecordFixtureModel();
+    const property = reachable(
+      model,
+      eq(readVar("product", ["flag0"]), lit(true)),
+      { name: "flag0True", reads: ["product"] },
+    );
+    const fullDecl = model.vars.find((decl) => decl.id === "product")!;
+    const fullBits = Math.log2(domainCardinality(fullDecl.domain));
+    const { model: sliced } = sliceModelForCheckProperty(model, property);
+    const productDecl = sliced.vars.find((decl) => decl.id === "product")!;
+    expect(collectRecordDomainFieldPaths(productDecl.domain)).toEqual([
+      ["flag0"],
+    ]);
+    const economics = compareModelEconomics(model, sliced);
+    expect(economics.retainedBits).toBeLessThan(fullBits);
+    expect(economics.topContributors[0]?.prunedFieldPaths?.length).toBe(31);
+    expect(validateModel(sliced, { sliced: true }).ok).toBe(true);
+  });
+
+  it("matches unsliced verdict status after record domain projection", () => {
+    const model = wideRecordFixtureModel();
+    const property = reachable(
+      model,
+      eq(readVar("product", ["flag0"]), lit(true)),
+      { name: "flag0TrueParity", reads: ["product"] },
+    );
+    const unsliced = checkModel(model, [property]);
+    const sliced = checkModel(model, [property], { slicing: true });
+    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
+  });
+
+  it("records projected economics in extract-side slice manifests", () => {
+    const model = wideRecordFixtureModel();
+    const property = reachable(
+      model,
+      eq(readVar("product", ["flag0"]), lit(true)),
+      { name: "flag0TrueManifest", reads: ["product"] },
+    );
+    const checkSlice = sliceModelForCheckProperty(model, property).model;
+    const plan = buildPropertySlicePlan(
+      model,
+      [property],
+      "model.model.json",
+      "model.slices.json",
+      new Date("2026-06-19T00:00:00.000Z"),
+    );
+    const entry = plan.manifest.properties[0];
+    expect(entry?.status).toBe("emitted");
+    if (entry?.status === "emitted") {
+      expect(entry.varIds).toEqual(
+        checkSlice.vars.map((decl) => decl.id).sort(),
+      );
+      expect(entry.retainedBits).toBeLessThan(32);
+      expect(entry.topRetainedContributors[0]?.prunedFieldPaths?.length).toBe(
+        31,
+      );
+    }
+  });
+});
+
+describe("directional predicate not(eq) normalization", () => {
+  it("treats not(eq(...)) like neq for reachable directional closure", () => {
+    const model: Model = {
+      schemaVersion: 1,
+      id: "not-eq-directional",
+      bounds: { maxDepth: 3, maxPending: 0, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "phase",
+          domain: { kind: "enum", values: ["menu", "confirm", "complete"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "menu",
+        },
+        {
+          id: "noise",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "toConfirm",
+          cls: "user",
+          label: { kind: "click", text: "Confirm" },
+          source: [],
+          guard: eq(read("phase"), lit("menu")),
+          effect: { kind: "assign", var: "phase", expr: lit("confirm") },
+          reads: ["phase"],
+          writes: ["phase"],
+          confidence: "exact",
+        },
+        {
+          id: "setNoise",
+          cls: "user",
+          label: { kind: "click", text: "Noise" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "noise", expr: lit(true) },
+          reads: ["noise"],
+          writes: ["noise"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = reachable(
+      model,
+      notExpr(eq(readVar("phase"), lit("confirm"))),
+      { name: "notConfirm", reads: ["phase"] },
+    );
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+      model,
+      property,
+    );
+    expect(diagnostics?.closureFallback).toBeUndefined();
+    expect(sliced.transitions.map((transition) => transition.id)).toEqual([]);
+    expect(sliced.vars.map((decl) => decl.id)).toEqual(["phase"]);
+    expect(
+      sliceModelForCheckProperty(
+        model,
+        reachable(model, eq(readVar("phase"), lit("confirm")), {
+          name: "confirm",
+          reads: ["phase"],
+        }),
+      )
+        .model.transitions.map((transition) => transition.id)
+        .sort(),
+    ).toEqual(["toConfirm"]);
   });
 });
 

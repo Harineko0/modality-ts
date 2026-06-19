@@ -7,7 +7,7 @@ import * as ts from "typescript";
 import {
   canonicalJson,
   parseModelArtifact,
-  prunedFieldPathsForSlice,
+  sliceContributorFieldPaths,
   type ExtractionPhaseTiming,
   type ExtractionPropertySliceDiagnostics,
   type ExtractionPropertySliceDiagnosticsEntry,
@@ -958,7 +958,7 @@ export function buildPropertySlicePlan(
       model,
       slice,
       20,
-      prunedFieldPathsForSlice(model, slice, [property]),
+      sliceContributorFieldPaths(model, slice, [property]),
     );
     const elapsedMs = performance.now() - propertyStartedAt;
     const sliceKey = computeSliceKey(slice, mode);

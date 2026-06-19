@@ -1,4 +1,5 @@
 import {
+  collectRecordDomainFieldPaths,
   domainCardinality,
   type Model,
   type StateSpaceContributor,
@@ -85,11 +86,28 @@ export function compareModelEconomics(
   retainedFieldPaths?: ReadonlyMap<string, readonly string[][]>,
 ): SliceEconomics {
   const sliceVarIds = new Set(slice.vars.map((decl) => decl.id));
-  const retainedDecls = full.vars.filter((decl) => sliceVarIds.has(decl.id));
+  const fullDeclsById = new Map(full.vars.map((decl) => [decl.id, decl]));
+  const retainedDecls = slice.vars;
   const prunedDecls = full.vars.filter((decl) => !sliceVarIds.has(decl.id));
-  const retainedContributors = retainedDecls.map((decl) =>
-    contributorForVar(decl, retainedFieldPaths?.get(decl.id)),
-  );
+  const retainedContributors = retainedDecls.map((decl) => {
+    const explicitPaths = retainedFieldPaths?.get(decl.id);
+    const inferredPaths =
+      explicitPaths ??
+      (() => {
+        const fullDecl = fullDeclsById.get(decl.id);
+        if (!fullDecl || fullDecl.domain.kind !== "record") return undefined;
+        if (decl.domain.kind !== "record") return undefined;
+        const fullPaths = collectRecordDomainFieldPaths(fullDecl.domain);
+        const slicePaths = collectRecordDomainFieldPaths(decl.domain);
+        if (fullPaths.length === slicePaths.length) return undefined;
+        const sliceKeys = new Set(slicePaths.map((path) => path.join("\0")));
+        const pruned = fullPaths
+          .filter((path) => !sliceKeys.has(path.join("\0")))
+          .map((path) => [...path]);
+        return pruned.length > 0 ? pruned : undefined;
+      })();
+    return contributorForVar(decl, inferredPaths);
+  });
   const prunedContributors = prunedDecls.map((decl) => contributorForVar(decl));
   const retainedBits = round2(
     retainedContributors.reduce((sum, c) => sum + c.bits, 0),

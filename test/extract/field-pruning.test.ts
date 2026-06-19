@@ -1,6 +1,7 @@
 import {
   buildFieldPruningMetadata,
   collectExprReadFieldPaths,
+  projectRecordDomainForSlice,
   readVar,
   type Model,
 } from "modality-ts/core";
@@ -84,5 +85,50 @@ describe("field pruning metadata", () => {
       "session",
     );
     expect(paths).toEqual([["user", "id"]]);
+  });
+
+  it("projects record domains to slice-retained field paths", () => {
+    const model = sessionModel([
+      {
+        id: "check-id",
+        cls: "user",
+        label: { kind: "click" },
+        source: [{ file: "fixture.ts", line: 10 }],
+        guard: {
+          kind: "eq",
+          args: [
+            readVar("session", ["user", "id"]),
+            { kind: "lit", value: "blocked" },
+          ],
+        },
+        effect: {
+          kind: "assign",
+          var: "session",
+          expr: {
+            kind: "updateField",
+            target: readVar("session"),
+            path: ["user", "id"],
+            value: { kind: "lit", value: "u2" },
+          },
+        },
+        reads: ["session"],
+        writes: ["session"],
+        confidence: "exact",
+      },
+    ]);
+    const decl = model.vars[0]!;
+    const projected = projectRecordDomainForSlice(decl, [["user", "id"]]);
+    expect(projected?.domain).toEqual({
+      kind: "record",
+      fields: {
+        user: {
+          kind: "record",
+          fields: {
+            id: { kind: "tokens", count: 1 },
+          },
+        },
+      },
+    });
+    expect(projected?.initial).toEqual({ user: { id: "u1" } });
   });
 });

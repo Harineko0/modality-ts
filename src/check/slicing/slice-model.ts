@@ -1,13 +1,14 @@
-import { exprReads } from "modality-ts/core";
-import type {
-  EffectIR,
-  ExprIR,
-  Model,
-  Property,
-  StatePredicateIR,
-  StepPredicateFlat,
-  StepPredicateIR,
-  Transition,
+import {
+  applySliceRecordDomainProjection,
+  exprReads,
+  type EffectIR,
+  type ExprIR,
+  type Model,
+  type Property,
+  type StatePredicateIR,
+  type StepPredicateFlat,
+  type StepPredicateIR,
+  type Transition,
 } from "modality-ts/core";
 import type { MountScopeDependency, PendingQueueDependency } from "../types.js";
 import {
@@ -73,6 +74,7 @@ export function sliceModelForCheckProperty(
     case "state": {
       const sliced = sliceModelForProperty(model, dependencySliceInput(deps), {
         directionalPredicate: deps.directionalPredicate,
+        recordProjectionProperty: property,
       });
       return {
         model: sliced.model,
@@ -112,6 +114,7 @@ export function sliceModelForProperty(
   property: Pick<Property, "reads" | "enabledTransitions">,
   options: {
     directionalPredicate?: ExprIR;
+    recordProjectionProperty?: Property;
   } = {},
 ): { model: Model; diagnostics?: SliceDiagnostics } {
   const graph = buildModelDependencyGraph(model);
@@ -135,8 +138,16 @@ export function sliceModelForProperty(
     ),
     observationOnlyTransitions,
   );
+  const baseModel = { ...model, vars, transitions };
+  const sliced = options.recordProjectionProperty
+    ? applySliceRecordDomainProjection(
+        model,
+        options.recordProjectionProperty,
+        baseModel,
+      )
+    : baseModel;
   return {
-    model: { ...model, vars, transitions },
+    model: sliced,
     diagnostics: mergeSliceDiagnostics(
       mountScopeDependencies.length > 0
         ? { mountScopeDependencies }
@@ -195,8 +206,10 @@ export function sliceModelForTargetedStepProperty(
     ),
     observationOnlyTransitions,
   );
+  const baseModel = { ...model, vars, transitions };
+  const sliced = applySliceRecordDomainProjection(model, property, baseModel);
   return {
-    model: { ...model, vars, transitions },
+    model: sliced,
     diagnostics:
       mountScopeDependencies.length > 0
         ? { mountScopeDependencies }

@@ -3474,7 +3474,7 @@ describe("checker", () => {
       );
     });
 
-    it("falls back to broad closure for unsupported directional predicates", () => {
+    it("normalizes not(eq(...)) for directional reachable slicing", () => {
       const m = coffeeDirectionalModel();
       const property = reachable(
         m,
@@ -3483,6 +3483,32 @@ describe("checker", () => {
           args: [eq(readVar("phase"), lit("confirm"))],
         },
         { name: "notConfirm", reads: ["phase"] },
+      );
+      const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+        m,
+        property,
+      );
+      expect(diagnostics?.closureFallback).toBeUndefined();
+      expect(
+        sliced.transitions.map((transition) => transition.id).sort(),
+      ).toEqual(["acknowledge", "orderEffect", "resolve", "submit"]);
+      expect(sliced.vars.map((decl) => decl.id).sort()).toEqual(
+        expect.arrayContaining(["phase"]),
+      );
+      expect(sliced.transitions.map((transition) => transition.id)).not.toEqual(
+        expect.arrayContaining(["chooseFree", "choosePaid"]),
+      );
+    });
+
+    it("falls back to broad closure for unsupported directional predicates", () => {
+      const m = coffeeDirectionalModel();
+      const property = reachable(
+        m,
+        {
+          kind: "lt",
+          args: [readVar("receiptTotal"), lit(1)],
+        },
+        { name: "receiptTotalBelowOne", reads: ["receiptTotal"] },
       );
       const { model: sliced, diagnostics } = sliceModelForCheckProperty(
         m,

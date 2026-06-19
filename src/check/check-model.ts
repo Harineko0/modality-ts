@@ -1,5 +1,5 @@
 import type { Model, Property } from "modality-ts/core";
-import { prunedFieldPathsForSlice } from "modality-ts/core";
+import { sliceContributorFieldPaths } from "modality-ts/core";
 import { compareModelEconomics } from "./slicing/contributors.js";
 import {
   canSliceAllProperties,
@@ -207,7 +207,7 @@ function checkModelSliced(
         model,
         group.model,
         20,
-        prunedFieldPathsForSlice(model, group.model, group.properties),
+        sliceContributorFieldPaths(model, group.model, group.properties),
       ),
       ...(group.mountScopeDependencies.length > 0
         ? { mountScopeDependencies: group.mountScopeDependencies }
