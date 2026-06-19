@@ -226,6 +226,7 @@ export interface Model {
     extractionCaveats?: ExtractionCaveats;
     numericReductions?: NumericReductions;
     fieldPruning?: FieldPruningMetadata;
+    varAnchors?: Record<string, SourceAnchor>;
   };
 }
 

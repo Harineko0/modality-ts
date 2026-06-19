@@ -4,24 +4,37 @@ title: Writing properties
 sidebar_label: Writing properties
 ---
 
-Properties live in a file such as `app.props.ts` that exports a `properties()`
-function returning an array of property objects. Predicates are built from
-[combinators](../concepts/properties.md) imported from `modality-ts/core` — they are
-serializable data, evaluated by the [Rust checker](../architecture/checker.md), not
-arbitrary functions.
+Properties live in a file such as `app.props.ts` beside the component. Import builders from
+`modality-ts/properties` and call them at module top level — each call registers a spec that
+the CLI loader harvests and finalizes against the extracted model. Predicates are built from
+[combinators](../concepts/properties.md); they are serializable data, evaluated by the
+[Rust checker](../architecture/checker.md), not arbitrary functions.
 
 ```ts
 import {
-  always, alwaysStep, leadsToWithin, reachable, reachableFrom,
-  andExpr, orExpr, notExpr, eq, neq, lit, readVar, enabled,
-  stepEnqueued, stepResolved,
-} from "modality-ts/core";
-import type { PropertyFactory } from "modality-ts/core";
+  always,
+  alwaysStep,
+  leadsToWithin,
+  reachable,
+  reachableFrom,
+  and,
+  or,
+  not,
+  eq,
+  neq,
+  enabled,
+  stepEnqueued,
+  stepResolved,
+} from "modality-ts/properties";
+import { auth, step } from "./.modality/vars/App";
 
-export const properties: PropertyFactory = (model) => [
-  /* ... property objects ... */
-];
+always(
+  "checkoutOnlySucceedsForUsers",
+  or(not(eq(step, "success")), eq(auth, "user")),
+);
 ```
+
+Use `group("prefix", () => { ... })` to namespace property names.
 
 ## Choosing the right combinator
 
@@ -42,16 +55,14 @@ flowchart TD
 
 "While on `/admin`, the session must be authenticated."
 
-```js
-{
-  kind: "always",
-  name: "adminRequiresAuth",
-  reads: ["sys:route", "atom:sessionAtom"],
-  predicate: orExpr(
-    notExpr(eq(readVar("sys:route"), lit("/admin"))),
-    eq(readVar("atom:sessionAtom"), lit("authenticated")),
-  ),
-}
+```ts
+import { route } from "modality-ts/vars";
+import { sessionAtom } from "./store";
+
+always(
+  "adminRequiresAuth",
+  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
+);
 ```
 
 ## Pattern: action invariant (`alwaysStep`)
@@ -60,17 +71,14 @@ Prefer `alwaysStep` whenever the English says "cannot trigger" / "must not clear
 state-invariant version is often *reachably wrong*: a guest who logs out while a request
 is in flight legally produces `guest ∧ pending`.
 
-```js
-{
-  kind: "alwaysStep",
-  name: "guestCannotSubmit",
-  reads: ["atom:authAtom"],
-  predicate: {
-    negate: true,
-    step: stepEnqueued("api.createTodo"),
-    pre: eq(readVar("atom:authAtom"), lit("guest")),
-  },
-}
+```ts
+import { authAtom } from "./store";
+
+alwaysStep("guestCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(authAtom, "guest"),
+});
 ```
 
 The `step` matcher exposes `stepEnqueued(op)`, `stepResolved(op, outcome?)`,
@@ -78,47 +86,32 @@ The `step` matcher exposes `stepEnqueued(op)`, `stepResolved(op, outcome?)`,
 operation's argument snapshot (`opArgs`) to write **snapshot-staleness** rules without
 temporal operators.
 
-A composite `alwaysStep` predicate is checked on **every explored edge**. For focused
-postconditions on one handler, prefer a **negated bad-step** pattern instead of a
-positive target+post pair:
+For focused postconditions on one handler, prefer a **negated bad-step** pattern:
 
 ```ts
 alwaysStep(
-  model,
+  "submitDoesNotLeaveDraftDirty",
   {
     negate: true,
     step: stepTransitionId("Component.onSubmit"),
     post: /* bad post-state condition */,
   },
-  {
-    name: "submitDoesNotLeaveDraftDirty",
-    enabledTransitions: ["Component.onSubmit"],
-  },
+  { enabledTransitions: ["Component.onSubmit"] },
 );
 ```
-
-`{ step: stepTransitionId(id), post: goodCondition }` is **not** an implication over
-handler edges — it requires every observed edge to be that target edge with that
-postcondition, so unrelated transitions can produce confusing counterexamples. When
-slicing is enabled, negated properties with a syntactic `stepTransitionId(...)` target can
-use a targeted edge slice; broad matchers such as `stepAny()` and positive target
-predicates still use full-model search.
 
 ## Pattern: bounded response (`leadsToWithin`)
 
 "After submitting, the order must settle to success or error within 3 environment steps."
 
-```js
-{
-  kind: "leadsToWithin",
-  name: "submitResolves",
-  trigger: stepEnqueued("api.placeOrder"),
-  goal: orExpr(
-    eq(readVar("local:App.order"), lit("success")),
-    eq(readVar("local:App.order"), lit("error")),
-  ),
-  budget: { environment: 3 },
-}
+```ts
+import { order } from "./.modality/vars/App";
+
+leadsToWithin(
+  stepEnqueued("api.placeOrder"),
+  or(eq(order, "success"), eq(order, "error")),
+  { name: "submitResolves", budget: { environment: 3 } },
+);
 ```
 
 By default only environment/library/internal steps count toward the goal. Set
@@ -128,13 +121,14 @@ By default only environment/library/internal steps count toward the goal. Set
 
 "From any state with a valid payment method, the review step remains reachable."
 
-```js
-{
-  kind: "reachableFrom",
-  name: "reviewStaysReachable",
-  when: eq(readVar("local:App.payment"), lit("valid")),
-  goal: eq(readVar("local:App.step"), lit("review")),
-}
+```ts
+import { payment, step } from "./.modality/vars/App";
+
+reachableFrom(
+  eq(payment, "valid"),
+  eq(step, "review"),
+  { name: "reviewStaysReachable" },
+);
 ```
 
 Counterexamples for `reachableFrom` are non-replayable by nature (they assert path
@@ -143,35 +137,47 @@ certificate.
 
 ## Pattern: enabledness (`enabled`)
 
-"Logout must remain possible in every error state." `enabled(model, transitionId)` is
-exact because guards are structured IR.
+"Logout must remain possible in every error state." `enabled(transitionId)` is exact because
+guards are structured IR.
 
-```js
-import { enabled } from "modality-ts/core";
-// inside an `always` predicate:
-orExpr(
-  notExpr(eq(readVar("local:App.order"), lit("error"))),
-  enabled(model, "Header.logout"),
-)
+```ts
+import { enabled } from "modality-ts/properties";
+import { order } from "./.modality/vars/App";
+
+always(
+  "logoutAvailableOnError",
+  or(not(eq(order, "error")), enabled("Header.logout")),
+);
 ```
 
 ## The `reads` list
 
-Each property may declare a `reads` array. The combinator helpers infer it from the
-predicate automatically, but declaring it explicitly is recommended for clarity and for
-[slicing](../concepts/state-space-control.md): it tells the checker which variables the
-property depends on. An `enabled(t)` reference automatically pulls in `t`'s guard
-read-set and the route variable. When extraction disambiguates duplicate handler ids
-with stable hash suffixes, use `enabledTransitionPrefix(model, baseId)` instead of
-relying on the unsuffixed base id.
+Each property may declare a `reads` array in the trailing options object. The loader infers
+it from the predicate automatically, but declaring it explicitly is recommended for clarity
+and for [slicing](../concepts/state-space-control.md). An `enabled(t)` reference
+automatically pulls in `t`'s guard read-set and the route variable. When extraction
+disambiguates duplicate handler ids with stable hash suffixes, use
+`enabledTransitionPrefix(baseId)` instead of relying on the unsuffixed base id.
 
-## Using the model object
+## Component state handles
 
-The `always`/`alwaysStep`/`leadsToWithin`/`reachable`/`reachableFrom` *helper functions*
-take the `model` as their first argument (so they can infer reads and validate variable
-IDs). If you prefer, you can also write the plain property objects directly, as shown
-above — both forms are equivalent. See the
-[property API reference](../reference/property-api.md).
+Extraction emits one declaration module per component under `.modality/vars/`. Import
+`useState` locals from the generated component module:
+
+```ts
+import { step } from "./.modality/vars/App";
+
+always("guestCannotReachSuccess", not(and(eq(auth, "guest"), eq(step, "success"))));
+```
+
+With `moduleResolution: "nodenext"`, TypeScript may require a `.js` specifier in source
+(`"./.modality/vars/App.js"`). The CLI loader rewrites and strips the generated import at
+check time, so there is no runtime file.
+
+Imported atoms and stores resolve through symbol rewriting when their declaration anchors
+appear in `model.metadata.varAnchors`; otherwise use `varHandle("atom:authAtom")` directly.
+Use `varHandle("swr:...")` or `varHandle("sys:timer:...")` for synthesized ids that do not
+have a stable importable handle.
 
 ## Naming and verdicts
 

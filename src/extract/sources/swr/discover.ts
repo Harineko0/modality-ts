@@ -136,7 +136,7 @@ export function keyFromExpression(
   if (ts.isConditionalExpression(expr) && isNullish(expr.whenTrue)) {
     const key = keyFromExpression(expr.whenFalse);
     const activeWhen = exprFromCondition(expr.condition);
-    if (key && activeWhen) return { ...key, activeWhen: notExpr(activeWhen) };
+    if (key && activeWhen) return { ...key, activeWhen: negateIr(activeWhen) };
   }
   return undefined;
 }
@@ -244,7 +244,7 @@ function lit(value: Value): ExprIR {
   return { kind: "lit", value };
 }
 
-function notExpr(expr: ExprIR): ExprIR {
+function negateIr(expr: ExprIR): ExprIR {
   if (expr.kind === "not") return expr.args[0] ?? lit(true);
   return { kind: "not", args: [expr] };
 }

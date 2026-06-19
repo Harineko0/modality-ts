@@ -82,6 +82,14 @@
       "types": "./dist/core/props/index.d.ts",
       "default": "./dist/core/props/index.js"
     },
+    "./properties": {
+      "types": "./dist/core/props/index.d.ts",
+      "default": "./dist/core/props/index.js"
+    },
+    "./vars": {
+      "types": "./dist/core/props/vars.d.ts",
+      "default": "./dist/core/props/vars.js"
+    },
     "./check": {
       "types": "./dist/check/index.d.ts",
       "default": "./dist/check/index.js"

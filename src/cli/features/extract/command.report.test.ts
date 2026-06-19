@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { eq, lit, reachable, readVar, type Model } from "modality-ts/core";
+import { eq, lit, readVar, type Model } from "modality-ts/core";
+import { reachable } from "../../../../test/helpers/property-builders.js";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {

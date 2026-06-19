@@ -4,14 +4,13 @@ import {
   sliceModelForCheckProperty,
 } from "modality-ts/check";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { always, reachable } from "../helpers/property-builders.js";
 import {
-  always,
   enabled,
   eq,
   lit,
   mountGuardForScope,
-  orExpr,
-  reachable,
+  or,
   readVar,
   UNMOUNTED,
   validateModel,
@@ -419,7 +418,7 @@ describe("mounted scopes", () => {
     const result = checkModel(model, [
       always(
         model,
-        orExpr(
+        or(
           eq(readVar("sys:slotA"), lit(true)),
           eq(readVar("local:panel"), lit(UNMOUNTED)),
         ),
@@ -427,9 +426,9 @@ describe("mounted scopes", () => {
       ),
       always(
         model,
-        orExpr(
+        or(
           eq(readVar("sys:slotA"), lit(true)),
-          eq(enabled(model, "turnOn"), lit(false)),
+          eq(enabled("turnOn"), lit(false)),
         ),
         { name: "turnOnDisabledWhenUnmounted" },
       ),

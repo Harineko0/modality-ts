@@ -220,7 +220,7 @@ describe("conformance runner", () => {
     );
     await writeFile(
       join(fixtureRoot, "app/app.props.ts"),
-      "export const properties = [];",
+      "// no properties registered",
       "utf8",
     );
     await writeFile(

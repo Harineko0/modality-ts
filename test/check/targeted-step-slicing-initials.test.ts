@@ -1,5 +1,5 @@
+import { alwaysStep } from "../helpers/property-builders.js";
 import {
-  alwaysStep,
   eq,
   lit as coreLit,
   type Model,

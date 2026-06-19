@@ -1,70 +1,53 @@
 import {
-  andExpr,
+  always,
+  alwaysStep,
+  and,
   eq,
-  lit,
   neq,
-  notExpr,
-  orExpr,
-  readPreVar,
-  readVar,
+  not,
+  or,
+  pre,
   stepEnqueued,
   stepResolved,
-} from "modality-ts/core";
-import type { ExprIR, PropertyFactory } from "modality-ts/core";
+} from "modality-ts/properties";
+import { pending } from "modality-ts/vars";
+import { authAtom } from "./App";
+import { draft, saveStatus } from "./.modality/vars/App";
 
-function atMostOnePendingOp(opId: string): ExprIR {
-  return andExpr(
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+function atMostOnePendingOp(opId: string) {
+  return and(
+    or(
+      neq(pending.at("0", "opId"), opId),
+      neq(pending.at("1", "opId"), opId),
     ),
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    or(
+      neq(pending.at("0", "opId"), opId),
+      neq(pending.at("2", "opId"), opId),
     ),
-    orExpr(
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    or(
+      neq(pending.at("1", "opId"), opId),
+      neq(pending.at("2", "opId"), opId),
     ),
   );
 }
 
-export const properties: PropertyFactory = (_model) => [
-    {
-      kind: "always",
-      name: "naiveNoDoubleSubmitInvariant",
-      reads: ["sys:pending"],
-      predicate: atMostOnePendingOp("api.createTodo"),
-    },
-    {
-      kind: "alwaysStep",
-      name: "guestCannotSubmit",
-      reads: ["atom:authAtom", "sys:pending"],
-      predicate: {
-        negate: true,
-        step: stepEnqueued("api.createTodo"),
-        pre: eq(readVar("atom:authAtom"), lit("guest")),
-      },
-    },
-    {
-      kind: "alwaysStep",
-      name: "emptyDraftCannotSubmit",
-      reads: ["local:App.draft", "sys:pending"],
-      predicate: {
-        negate: true,
-        step: stepEnqueued("api.createTodo"),
-        pre: eq(readVar("local:App.draft"), lit("empty")),
-      },
-    },
-    {
-      kind: "alwaysStep",
-      name: "staleCompletionIsInert",
-      reads: ["local:App.saveStatus", "local:App.draft", "sys:pending"],
-      predicate: {
-        negate: true,
-        step: stepResolved("api.createTodo", "success"),
-        pre: neq(readVar("local:App.saveStatus"), lit("posting")),
-        post: neq(readVar("local:App.draft"), readPreVar("local:App.draft")),
-      },
-    },
-];
+always("naiveNoDoubleSubmitInvariant", atMostOnePendingOp("api.createTodo"));
+
+alwaysStep("guestCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(authAtom, "guest"),
+});
+
+alwaysStep("emptyDraftCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(draft, "empty"),
+});
+
+alwaysStep("staleCompletionIsInert", {
+  negate: true,
+  step: stepResolved("api.createTodo", "success"),
+  pre: neq(saveStatus, "posting"),
+  post: neq(draft, pre(draft)),
+});

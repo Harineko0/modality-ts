@@ -1,14 +1,13 @@
 import { checkModel } from "modality-ts/check";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { always, reachable } from "../helpers/property-builders.js";
 import {
-  always,
-  andExpr,
+  and,
   eq,
   lit,
   type EffectIR,
   type Model,
   neq,
-  reachable,
   readVar,
 } from "modality-ts/core";
 import type {
@@ -1750,7 +1749,7 @@ describe("useState inventory", () => {
     const check = checkModel(model, [
       reachable(
         model,
-        andExpr(
+        and(
           eq(readVar("local:App.saved"), lit("nonEmpty")),
           eq(readVar("local:App.draft"), lit("empty")),
         ),
@@ -1871,7 +1870,7 @@ describe("useState inventory", () => {
     const check = checkModel(model, [
       reachable(
         model,
-        andExpr(
+        and(
           eq(readVar("local:App.auth", ["kind"]), lit("user")),
           eq(readVar("local:App.auth", ["stale"]), lit(false)),
         ),

@@ -38,31 +38,26 @@ npx modality extract src/App.tsx --report .modality/extraction-report.json
 ## 3. Write a property
 
 Properties live in files such as `app.props.ts` and import helpers from
-`modality-ts/core`. A property is a plain data object — predicates are built from
-small combinators, not arbitrary functions.
+`modality-ts/properties`. Call property builders at module top level — predicates are built
+from small combinators, not arbitrary functions.
 
 ```ts
-import { eq, lit, notExpr, orExpr, readVar } from "modality-ts/core";
-import type { PropertyFactory } from "modality-ts/core";
+import { always, or, not, eq } from "modality-ts/properties";
+import { auth, step } from "./.modality/vars/App";
 
-export const properties: PropertyFactory = (_model) => [
-  {
-    kind: "always",
-    name: "checkoutOnlySucceedsForUsers",
-    reads: ["local:App.step", "local:App.auth"],
-    // step === "success"  →  auth === "user"
-    predicate: orExpr(
-      notExpr(eq(readVar("local:App.step"), lit("success"))),
-      eq(readVar("local:App.auth"), lit("user")),
-    ),
-  },
-];
+always(
+  "checkoutOnlySucceedsForUsers",
+  or(not(eq(step, "success")), eq(auth, "user")),
+);
 ```
 
 Variable IDs come from the generated model / extraction report. Common prefixes:
 `local:<Component>.<state>` (a `useState`), `atom:<name>` (Jotai),
 `store:<name>.<field>` (Zustand), `swr:<key>` (SWR cache), and `sys:*`
-(system variables such as `sys:route`, `sys:pending`). See
+(system variables such as `sys:route`, `sys:pending`). Extract also writes typed local
+handles under `.modality/vars/<Component>.d.ts`; import stable system handles from
+`modality-ts/vars`, and use `varHandle("...")` for synthesized ids without a generated or
+built-in handle. See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 4. Check the model

@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, lit, neq, readVar, UNMOUNTED } from "modality-ts/core";
+import { always } from "../../../../test/helpers/property-builders.js";
+import { lit, neq, readVar, UNMOUNTED } from "modality-ts/core";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import { runExtractCommand } from "./index.js";
 

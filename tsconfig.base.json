@@ -12,6 +12,7 @@
     "paths": {
       "modality-ts/core": ["src/core/index.ts"],
       "modality-ts/core/props": ["src/core/props/index.ts"],
+      "modality-ts/vars": ["src/core/props/vars.ts"],
       "modality-ts/check": ["src/check/index.ts"],
       "modality-ts/extract": ["src/extract/index.ts"],
       "modality-ts/extract/engine": ["src/extract/engine/index.ts"],

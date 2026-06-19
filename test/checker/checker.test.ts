@@ -9,19 +9,21 @@ import {
 import {
   always,
   alwaysStep,
-  andExpr,
+  leadsToWithin,
+  reachable,
+  reachableFrom,
+} from "../helpers/property-builders.js";
+import {
+  and,
   lit as coreLit,
   enabled,
   enabledTransitionPrefix,
   eq,
-  leadsToWithin,
   type Model,
   neq,
-  notExpr,
-  orExpr,
+  not,
+  or,
   type Property,
-  reachable,
-  reachableFrom,
   readVar,
   stepAny,
   stepChangedTo,
@@ -242,7 +244,7 @@ function model(): Model {
 }
 
 function partialStateExpr(expected: Record<string, unknown>) {
-  return andExpr(
+  return and(
     ...Object.entries(expected).map(([key, value]) =>
       eq(readVar(key), lit(value)),
     ),
@@ -253,10 +255,10 @@ function tagsOneDialogOpenInvariant() {
   const createOpen = eq(readVar("local:Tags.createOpen"), lit(true));
   const editOpen = neq(readVar("local:Tags.editTarget"), lit("none"));
   const deleteOpen = neq(readVar("local:Tags.deleteTarget"), lit("none"));
-  return andExpr(
-    notExpr(andExpr(createOpen, editOpen)),
-    notExpr(andExpr(createOpen, deleteOpen)),
-    notExpr(andExpr(editOpen, deleteOpen)),
+  return and(
+    not(and(createOpen, editOpen)),
+    not(and(createOpen, deleteOpen)),
+    not(and(editOpen, deleteOpen)),
   );
 }
 
@@ -516,8 +518,8 @@ describe("checker", () => {
     const props: Property[] = [
       always(
         m,
-        notExpr(
-          andExpr(
+        not(
+          and(
             eq(readVar("done"), lit(true)),
             eq(readVar("draft"), lit("empty")),
           ),
@@ -562,7 +564,7 @@ describe("checker", () => {
       leadsToWithin(
         m,
         stepEnqueued("POST"),
-        orExpr(
+        or(
           eq(readVar("done"), lit(true)),
           eq(readVar("status"), lit("failed")),
         ),
@@ -594,7 +596,7 @@ describe("checker", () => {
       leadsToWithin(
         m,
         stepEnqueued("POST"),
-        orExpr(
+        or(
           eq(readVar("done"), lit(true)),
           eq(readVar("status"), lit("failed")),
         ),
@@ -1064,7 +1066,7 @@ describe("checker", () => {
     const diamond = checkModel(independentBits, [
       reachable(
         independentBits,
-        andExpr(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
+        and(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
         { name: "bothSet", reads: ["a", "b"] },
       ),
     ]);
@@ -1297,7 +1299,7 @@ describe("checker", () => {
       leadsToWithin(
         m,
         stepEnqueued("POST"),
-        orExpr(
+        or(
           eq(readVar("done"), lit(true)),
           eq(readVar("status"), lit("failed")),
         ),
@@ -1428,8 +1430,8 @@ describe("checker", () => {
     const props: Property[] = [
       always(
         m,
-        notExpr(
-          andExpr(
+        not(
+          and(
             eq(readVar("done"), lit(true)),
             eq(readVar("draft"), lit("empty")),
           ),
@@ -1459,8 +1461,8 @@ describe("checker", () => {
     const props: Property[] = [
       always(
         m,
-        notExpr(
-          andExpr(
+        not(
+          and(
             eq(readVar("done"), lit(true)),
             eq(readVar("draft"), lit("empty")),
           ),
@@ -1606,7 +1608,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
+        and(eq(readVar("a"), lit(true)), eq(readVar("b"), lit(true))),
         {
           name: "bothInternalEffectsRan",
           reads: ["a", "b"],
@@ -1742,7 +1744,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(eq(readVar("x"), lit("b")), eq(readVar("seen"), lit("sawA"))),
+        and(eq(readVar("x"), lit("b")), eq(readVar("seen"), lit("sawA"))),
         {
           name: "aThenBReachable",
           reads: ["x", "seen"],
@@ -1750,7 +1752,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        andExpr(eq(readVar("x"), lit("a")), eq(readVar("seen"), lit("sawB"))),
+        and(eq(readVar("x"), lit("a")), eq(readVar("seen"), lit("sawB"))),
         {
           name: "bThenAReachable",
           reads: ["x", "seen"],
@@ -1841,7 +1843,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/b")),
           eq(readVar("local:A.draft"), lit(UNMOUNTED)),
         ),
@@ -1849,8 +1851,8 @@ describe("checker", () => {
       ),
       always(
         m,
-        notExpr(
-          andExpr(
+        not(
+          and(
             eq(readVar("sys:route"), lit("/b")),
             eq(readVar("local:A.draft"), lit("nonEmpty")),
           ),
@@ -1945,8 +1947,8 @@ describe("checker", () => {
     const result = checkModel(m, [
       always(
         m,
-        notExpr(
-          andExpr(
+        not(
+          and(
             eq(readVar("sys:route"), lit("/b")),
             eq(readVar("local:A.draft"), lit("nonEmpty")),
           ),
@@ -1958,7 +1960,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/b")),
           eq(readVar("local:A.draft"), lit(UNMOUNTED)),
         ),
@@ -2097,7 +2099,7 @@ describe("checker", () => {
       }),
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/tags")),
           eq(readVar("local:Tags.createOpen"), lit(true)),
           eq(readVar("local:Tags.editTarget"), lit("link-1")),
@@ -2122,7 +2124,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/analytics")),
           eq(readVar("local:Tags.createOpen"), lit(true)),
         ),
@@ -2205,7 +2207,7 @@ describe("checker", () => {
     const defaultResult = checkModel(m, [
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/b")),
           eq(readVar("local:A.draft"), lit(UNMOUNTED)),
         ),
@@ -2218,7 +2220,7 @@ describe("checker", () => {
     const optInResult = checkModel(m, [
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("sys:route"), lit("/b")),
           eq(readVar("local:A.draft"), lit(UNMOUNTED)),
         ),
@@ -2315,7 +2317,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       always(
         m,
-        orExpr(
+        or(
           eq(readVar("local:EditLink.draft", ["visibility"]), lit("hidden")),
           eq(readVar("local:EditLink.draft", ["visibility"]), lit("visible")),
         ),
@@ -2677,7 +2679,7 @@ describe("checker", () => {
       ],
     };
     const props = [
-      always(m, notExpr(enabled(m, "go")), {
+      always(m, not(enabled("go")), {
         name: "goNeverEnabled",
         reads: [],
       }),
@@ -2819,9 +2821,9 @@ describe("checker", () => {
     const props = [0, 1, 2].map((index) =>
       always(
         m,
-        orExpr(
+        or(
           neq(readVar("printerStatus"), lit("connected")),
-          enabled(m, `setDensity${index}`),
+          enabled( `setDensity${index}`),
         ),
         { name: `density${index}Guarded`, reads: ["printerStatus"] },
       ),
@@ -3067,9 +3069,9 @@ describe("checker", () => {
     const props = [
       always(
         m,
-        orExpr(
+        or(
           neq(readVar("printerStatus"), lit("connected")),
-          enabled(m, "setDensity1"),
+          enabled("setDensity1"),
         ),
         {
           name: "densityOneRequiresConnectedPrinter",
@@ -3078,16 +3080,16 @@ describe("checker", () => {
       ),
       always(
         m,
-        orExpr(
+        or(
           eq(readVar("printerStatus"), lit("connected")),
-          notExpr(enabled(m, "setDensity7")),
+          not(enabled("setDensity7")),
         ),
         {
           name: "densitySevenDisabledWhenPrinterDisconnected",
           reads: ["printerStatus"],
         },
       ),
-      always(m, enabled(m, "loadMoreOrders"), {
+      always(m, enabled("loadMoreOrders"), {
         name: "loadMoreOrdersEnabledOnlyWithCursorAndIdleDialog",
         reads: ["orderHistoryCursor", "orderHistoryDialog"],
       }),
@@ -3642,13 +3644,13 @@ describe("checker", () => {
       ],
     };
     const exactEnabled = checkModel(m, [
-      always(m, enabled(m, resetPrefix), {
+      always(m, enabled( resetPrefix), {
         name: "exactResetIdAbsent",
       }),
     ]);
     expect(exactEnabled.verdicts[0]?.status).toBe("violated");
     const prefixEnabled = checkModel(m, [
-      always(m, enabledTransitionPrefix(m, resetPrefix), {
+      always(m, enabledTransitionPrefix( resetPrefix), {
         name: "resetFamilyAlwaysEnabled",
         reads: [draftSecVar, "sys:route"],
       }),
@@ -3837,7 +3839,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("source"), lit(true)),
           eq(readVar("target"), lit(true)),
         ),
@@ -3848,7 +3850,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("source"), lit(true)),
           eq(readVar("target"), lit(false)),
         ),
@@ -3956,7 +3958,7 @@ describe("checker", () => {
       ...expected.map((state, index) =>
         reachable(
           m,
-          andExpr(
+          and(
             eq(readVar("phase"), lit(state.phase)),
             eq(readVar("flag"), lit(state.flag)),
           ),
@@ -3965,7 +3967,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar("phase"), lit("start")),
           eq(readVar("flag"), lit(true)),
         ),
@@ -4762,7 +4764,7 @@ describe("checker", () => {
         },
       ],
     };
-    const property = always(model, notExpr(enabled(model, "toggle")), {
+    const property = always(model, not(enabled("toggle")), {
       name: "toggleUnavailable",
     });
     const sliced = sliceModel(model, property.reads ?? []);
@@ -4832,9 +4834,9 @@ describe("checker", () => {
     };
     const property = always(
       model,
-      orExpr(
+      or(
         neq(readVar("status"), lit("connected")),
-        enabled(model, "setWide"),
+        enabled("setWide"),
       ),
       { name: "wideEnabledParity" },
     );
@@ -5722,7 +5724,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(...toggleIds.map((id) => eq(readVar(id), lit(true)))),
+        and(...toggleIds.map((id) => eq(readVar(id), lit(true)))),
         {
           name: "allToggled",
           reads: toggleIds,

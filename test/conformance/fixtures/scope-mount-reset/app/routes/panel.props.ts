@@ -1,1 +1,1 @@
-export const properties = [];
+// no properties registered

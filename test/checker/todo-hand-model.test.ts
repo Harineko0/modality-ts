@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
+import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 import {
-  always,
-  alwaysStep,
-  andExpr,
   enabled,
-  notExpr,
-  orExpr,
-  reachable,
+  not,
+  or,
   readPreVar,
   readVar,
   stepEnqueued,
@@ -298,16 +295,16 @@ function resolveGet(suffix: string, data: "0" | "1" | null) {
 }
 
 function atMostOnePendingOp(opId: string): ExprIR {
-  return andExpr(
-    orExpr(
+  return and(
+    or(
       neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
       neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
     ),
-    orExpr(
+    or(
       neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
       neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
     ),
-    orExpr(
+    or(
       neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
       neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
     ),
@@ -348,8 +345,8 @@ function todoProperties(model: Model): Property[] {
       {
         negate: true,
         step: stepResolved("POST_TODO", "error"),
-        post: notExpr(
-          andExpr(
+        post: not(
+          and(
             eq(readVar("draft"), readPreVar("draft")),
             eq(readVar("saveStatus"), lit("failed")),
           ),
@@ -365,8 +362,8 @@ function todoProperties(model: Model): Property[] {
       {
         negate: true,
         step: stepResolved("POST_TODO", "success"),
-        post: notExpr(
-          andExpr(
+        post: not(
+          and(
             eq(readVar("draft"), lit("empty")),
             eq(readVar("saveStatus"), lit("idle")),
           ),
@@ -376,14 +373,14 @@ function todoProperties(model: Model): Property[] {
     ),
     always(
       model,
-      orExpr(
-        notExpr(
-          andExpr(
+      or(
+        not(
+          and(
             eq(readVar("auth"), lit("user")),
             eq(readVar("todosError"), lit(true)),
           ),
         ),
-        enabled(model, "App.logout"),
+        enabled("App.logout"),
       ),
       {
         name: "logoutAvailableDuringGetError",
@@ -393,9 +390,9 @@ function todoProperties(model: Model): Property[] {
     ),
     reachable(
       model,
-      andExpr(
+      and(
         eq(readVar("auth"), lit("user")),
-        orExpr(
+        or(
           eq(readVar("todosData"), lit("1")),
           eq(readVar("todosData"), lit("many")),
         ),

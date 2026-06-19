@@ -12,6 +12,12 @@ export default defineConfig({
         "./src/core/props/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/properties": new URL(
+        "./src/core/props/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/vars": new URL("./src/core/props/vars.ts", import.meta.url)
+        .pathname,
       "modality-ts/core": new URL("./src/core/index.ts", import.meta.url)
         .pathname,
       "modality-ts/check": new URL("./src/check/index.ts", import.meta.url)

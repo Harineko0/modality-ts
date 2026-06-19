@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import { locationEffect } from "../../../src/extract/engine/ts/transition/navigation.js";
 import type { ExprIR, Model, Value } from "modality-ts/core";
@@ -18,6 +19,15 @@ export function demoHandModel(): Model {
     schemaVersion: 1,
     id: "demo-hand-model",
     bounds: { maxDepth: 12, maxPending: 3, maxInternalSteps: 4 },
+    metadata: {
+      varAnchors: {
+        "atom:authAtom": {
+          file: resolve("examples/demo-app/App.tsx"),
+          line: 5,
+          column: 14,
+        },
+      },
+    },
     vars: [
       {
         id: "sys:route",

@@ -34,6 +34,10 @@ import {
   type NextParsedConfig,
 } from "modality-ts/extract/sources/next";
 import { emitAppModel } from "../../codegen/model.js";
+import {
+  componentVarsDir,
+  emitComponentVarModules,
+} from "../../codegen/component-state.js";
 import { compareModelEconomics } from "../../../check/slicing/contributors.js";
 import {
   propertySlicingSkipReason,
@@ -45,6 +49,7 @@ import {
   sliceModelPathForProperty,
 } from "../../defaults.js";
 import { loadProperties } from "../../properties/load-properties.js";
+import { buildVarAnchorsFromVars } from "../../properties/var-anchors.js";
 import { loadAndApplyOverlay, loadOverlaySpec } from "../../overlay.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import {
@@ -189,6 +194,7 @@ export async function runExtractCommand(
     );
   const appModelPath =
     options.appModelPath ?? `${dirname(options.modelPath)}/app.model.ts`;
+  const varsDir = componentVarsDir(appModelPath);
   const projectWithInventory = await diagnosticsClock.measureAsync(
     "route-inventory",
     "Discover route inventory",
@@ -408,6 +414,7 @@ export async function runExtractCommand(
         ...withInputClasses.model,
         metadata: {
           ...withInputClasses.model.metadata,
+          varAnchors: buildVarAnchorsFromVars(withInputClasses.model.vars),
           extractionCaveats: mergeExtractionCaveats(
             extractionCaveats,
             cacheStorageFragments.caveats,
@@ -469,6 +476,7 @@ export async function runExtractCommand(
       : undefined;
   let reportWithDiagnostics: ExtractionReport = report;
   const sliceArtifacts: ExtractArtifactEntry[] = [];
+  const componentVarModules = emitComponentVarModules(model);
   await diagnosticsClock.measureAsync(
     "write-artifacts",
     "Write extraction artifacts",
@@ -477,6 +485,16 @@ export async function runExtractCommand(
       await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
       await mkdir(dirname(appModelPath), { recursive: true });
       await writeFile(appModelPath, emitAppModel(model), "utf8");
+      if (componentVarModules.length > 0) {
+        await mkdir(varsDir, { recursive: true });
+        for (const varModule of componentVarModules) {
+          await writeFile(
+            join(varsDir, varModule.fileName),
+            varModule.source,
+            "utf8",
+          );
+        }
+      }
       if (propertySlicePlan) {
         await mkdir(sliceArtifactsDirForModel(options.modelPath), {
           recursive: true,
@@ -559,6 +577,10 @@ export async function runExtractCommand(
   const artifacts: ExtractArtifactEntry[] = [
     { kind: "model", path: options.modelPath },
     { kind: "appModel", path: appModelPath },
+    ...componentVarModules.map((varModule) => ({
+      kind: "componentVars" as const,
+      path: join(varsDir, varModule.fileName),
+    })),
     ...sliceArtifacts,
   ];
   if (options.reportPath) {
@@ -594,6 +616,9 @@ export async function runExtractCommand(
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
+      ...(componentVarModules.length > 0
+        ? [`componentVars=${varsDir} (${componentVarModules.length})`]
+        : []),
       ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
       ...(options.explainDrift
         ? driftLines.length > 0

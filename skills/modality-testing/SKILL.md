@@ -60,10 +60,27 @@ npx modality extract [source.tsx ...] \
 - async operations, pending bound `maxPending`, stale reads, unhandled rejections,
   over-approx/manual transitions, ignored vars, and bound-hit events are understood.
 
-4. Write `*.props.ts` files exporting serializable property objects. Prefer
-`export const properties: PropertyFactory = (model) => ...` so editors infer the
-`model` parameter and return type while model-aware helpers validate IDs and infer
-`reads`.
+4. Write `*.props.ts` files that register properties at module top level. Import builders
+from `modality-ts/properties`:
+
+```ts
+import { always, or, not, eq } from "modality-ts/properties";
+import { route } from "modality-ts/vars";
+import { sessionAtom } from "./store";
+
+always(
+  "adminRequiresAuth",
+  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
+);
+```
+
+Reference state through handles, never a raw-id wrapper: `import` a module-scoped atom/store
+directly (resolved to its var by symbol rewriting, so renames stay in sync), import generated
+`useState` locals from `./.modality/vars/<Component>`, import stable system vars from
+`modality-ts/vars`, or use `varHandle(id)` (+ `handle.at(...path)`) for synthesized ids such
+as `swr:*` and parameterized `sys:*`. Use `group("prefix", () => { ... })` to namespace
+related properties. Extraction emits `.modality/vars/<Component>.d.ts` type-only modules
+for component locals; with `moduleResolution: "nodenext"`, source may need a `.js` specifier.
 
 5. Check the model:
 
@@ -110,21 +127,10 @@ signals until the model is stable enough to hard-fail them.
 ## Property Files
 
 Predicates are data interpreted by the Rust checker. Do not put callback predicates in
-property objects.
+property registrations.
 
-Accepted export shapes include:
-
-```ts
-import type { PropertyFactory } from "modality-ts/core";
-
-export const properties: PropertyFactory = (model) => [/* properties */];
-```
-
-The loader also accepts plain `properties` arrays, `propertiesFor(model)`, and default
-property artifacts for compatibility, but prefer `PropertyFactory` in new TypeScript
-property files.
-
-Import property and predicate helpers from `modality-ts/core`:
+Import property and predicate helpers from `modality-ts/properties` and call builders at
+module top level:
 
 ```ts
 import {
@@ -133,22 +139,39 @@ import {
   reachable,
   reachableFrom,
   leadsToWithin,
-  andExpr,
-  orExpr,
-  notExpr,
+  and,
+  or,
+  not,
   eq,
   neq,
-  lit,
-  readVar,
-  readPreVar,
+  pre,
   readOpArg,
   enabled,
   stepAny,
   stepEnqueued,
   stepResolved,
   stepTransitionId,
-} from "modality-ts/core";
-import type { PropertyFactory } from "modality-ts/core";
+} from "modality-ts/properties";
+import { route } from "modality-ts/vars";
+import { sessionAtom, authAtom } from "./store";
+import { order } from "./.modality/vars/App";
+
+always(
+  "adminRequiresAuth",
+  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
+);
+
+alwaysStep("guestCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(authAtom, "guest"),
+});
+
+leadsToWithin(
+  stepEnqueued("api.placeOrder"),
+  or(eq(order, "success"), eq(order, "error")),
+  { name: "submitResolves", budget: { environment: 3 } },
+);
 ```
 
 Choose the property kind by intent:
@@ -162,67 +185,31 @@ Choose the property kind by intent:
 - `leadsToWithin`: bounded response after a trigger; set `budget` and use
   `allowUserEvents: true` only when adversarial user interference should count.
 
-Model-aware helpers take `model` first and infer `reads` unless provided:
+
+Builders infer `reads` and `enabledTransitions` when the loader finalizes specs against the
+model. Properties are registered by calling builders at module top level — there is no
+`export const properties` array. Declare `reads` explicitly in the trailing options object
+when you need focused diagnostics or predictable slicing:
 
 ```ts
-export const properties: PropertyFactory = (model) => [
-  always(
-    model,
-    orExpr(
-      notExpr(eq(readVar("sys:route"), lit("/admin"))),
-      eq(readVar("atom:sessionAtom"), lit("authenticated")),
-    ),
-    { name: "adminRequiresAuth" },
-  ),
-  alwaysStep(
-    model,
-    {
-      negate: true,
-      step: stepEnqueued("api.createTodo"),
-      pre: eq(readVar("atom:authAtom"), lit("guest")),
-    },
-    { name: "guestCannotSubmit" },
-  ),
-  leadsToWithin(
-    model,
-    stepEnqueued("api.placeOrder"),
-    orExpr(
-      eq(readVar("local:App.order"), lit("success")),
-      eq(readVar("local:App.order"), lit("error")),
-    ),
-    { name: "submitResolves", budget: { environment: 3 } },
-  ),
-];
-```
+import { auth, submitStatus } from "./.modality/vars/App";
 
-Plain object properties are also valid. Declare `reads` explicitly when writing them by
-hand, especially for useful slicing and focused diagnostics:
-
-```ts
-import type { Property } from "modality-ts/core";
-
-export const properties: readonly Property[] = [
+alwaysStep(
+  "staleFailureDoesNotMutateStatus",
   {
-    kind: "alwaysStep",
-    name: "staleFailureDoesNotMutateStatus",
-    reads: ["local:App.auth", "local:App.submitStatus", "sys:pending"],
-    predicate: {
-      negate: true,
-      step: stepResolved("api.placeOrder", "error"),
-      pre: eq(readVar("local:App.auth"), lit("guest")),
-      post: neq(
-        readVar("local:App.submitStatus"),
-        readPreVar("local:App.submitStatus"),
-      ),
-    },
+    negate: true,
+    step: stepResolved("api.placeOrder", "error"),
+    pre: eq(auth, "guest"),
+    post: neq(submitStatus, pre(submitStatus)),
   },
-];
+  { reads: ["local:App.auth", "local:App.submitStatus", "sys:pending"] },
+);
 ```
 
-Use `readVar("id", ["field", "nested"])` for nested records and string index segments
-for bounded lists such as `readVar("sys:pending", ["0", "opId"])`. Use `readPreVar`
-and `readOpArg` only inside step predicates/response properties where pre-state or
-enqueue-time operation args exist.
+Use `handle.at("field", "nested")` for nested records and string index segments for bounded
+lists such as `pending.at("0", "opId")` from `modality-ts/vars`. Use `pre(handle)` and `readOpArg`
+only inside step predicates/response properties where pre-state or enqueue-time operation
+args exist.
 
 Step predicates may use helper forms or flat metadata matchers such as
 `transitionId`, `transitionClass`, `labelKind`, `enqueued`, `resolved`, `navigated`,

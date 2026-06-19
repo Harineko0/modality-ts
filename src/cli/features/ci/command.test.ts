@@ -4,12 +4,18 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
+import {
+  flagAlwaysFalseProperty,
+  flagFalseReachableProperty,
+  flagTrueProperty,
+  propsFileBody,
+} from "../../../../test/helpers/props-file.js";
 import { runCiCommand } from "./index.js";
 import { renderHumanCiResult } from "./output.js";
 
-const flagAlwaysFalseProps = `export const properties = [{ kind: "always", name: "flagAlwaysFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
-const flagTrueProps = `export const properties = [{ kind: "reachable", name: "flagCanBecomeTrue", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }, reads: ["flag"] }];`;
-const flagFalseReachableProps = `export const properties = [{ kind: "reachable", name: "flagAlreadyFalse", predicate: { kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }, reads: ["flag"] }];`;
+const flagAlwaysFalseProps = propsFileBody(flagAlwaysFalseProperty);
+const flagTrueProps = propsFileBody(flagTrueProperty);
+const flagFalseReachableProps = propsFileBody(flagFalseReachableProperty);
 
 function model(): Model {
   return {

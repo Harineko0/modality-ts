@@ -182,7 +182,7 @@ describe("canary runner", () => {
     );
     await writeFile(
       join(canaryRoot, "app/app.props.ts"),
-      "export const properties = [];",
+      "// no properties registered",
       "utf8",
     );
     await writeFile(

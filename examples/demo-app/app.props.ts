@@ -1,58 +1,42 @@
 import {
-  andExpr,
+  always,
+  and,
   eq,
-  lit,
   neq,
-  notExpr,
-  orExpr,
-  readVar,
-} from "modality-ts/core";
-import type { ExprIR, PropertyFactory } from "modality-ts/core";
+  not,
+  or,
+  varHandle,
+} from "modality-ts/properties";
+import { pending, route } from "modality-ts/vars";
+import { authAtom } from "./App";
 
-function atMostOnePendingOp(opId: string): ExprIR {
-  return andExpr(
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
+const userCache = varHandle("swr:api_user:data");
+
+function atMostOnePendingOp(opId: string) {
+  return and(
+    or(
+      neq(pending.at("0", "opId"), opId),
+      neq(pending.at("1", "opId"), opId),
     ),
-    orExpr(
-      neq(readVar("sys:pending", ["0", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    or(
+      neq(pending.at("0", "opId"), opId),
+      neq(pending.at("2", "opId"), opId),
     ),
-    orExpr(
-      neq(readVar("sys:pending", ["1", "opId"]), lit(opId)),
-      neq(readVar("sys:pending", ["2", "opId"]), lit(opId)),
+    or(
+      neq(pending.at("1", "opId"), opId),
+      neq(pending.at("2", "opId"), opId),
     ),
   );
 }
 
-export const properties: PropertyFactory = (_model) => [
-    {
-      kind: "always",
-      name: "noDoubleSubmit",
-      reads: ["sys:pending"],
-      predicate: atMostOnePendingOp("api.placeOrder"),
-    },
-    {
-      kind: "always",
-      name: "guestCannotReachAdmin",
-      reads: ["sys:route", "atom:authAtom"],
-      predicate: notExpr(
-        andExpr(
-          eq(readVar("sys:route"), lit("/admin")),
-          eq(readVar("atom:authAtom"), lit("guest")),
-        ),
-      ),
-    },
-    {
-      kind: "always",
-      name: "guestDoesNotSeeUserCache",
-      reads: ["atom:authAtom", "swr:api_user:data"],
-      predicate: notExpr(
-        andExpr(
-          eq(readVar("atom:authAtom"), lit("guest")),
-          neq(readVar("swr:api_user:data"), lit(null)),
-        ),
-      ),
-    },
-];
+always("noDoubleSubmit", atMostOnePendingOp("api.placeOrder"));
+
+always(
+  "guestCannotReachAdmin",
+  not(and(eq(route, "/admin"), eq(authAtom, "guest"))),
+);
+
+always(
+  "guestDoesNotSeeUserCache",
+  not(and(eq(authAtom, "guest"), neq(userCache, null))),
+);

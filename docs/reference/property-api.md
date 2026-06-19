@@ -4,88 +4,80 @@ title: Property API
 sidebar_label: Property API
 ---
 
-Helpers exported from `modality-ts/core` (and `modality-ts/core/props`) for building
+Helpers exported from `modality-ts/properties` for building
 [properties](../concepts/properties.md). Predicates are serializable data; the
 [Rust checker](../architecture/checker.md) interprets them.
 
+Property builders register specs at module load time. The CLI loader imports the props
+file, harvests the registered specs, and finalizes them against the extracted `Model`
+(inferring `reads` and `enabledTransitions`).
+
 ## Combinators
 
-Each takes the `model` first and returns a `Property` object. The `model` lets the
-combinator infer two fields from the predicate: `reads` (the variables the predicate
-touches) and `enabledTransitions` (any transitions referenced through `enabled()` /
-`enabledTransitionPrefix()`). For `enabled(t)`, inferred `reads` include only the guard
-and mount-availability variables needed to evaluate whether `t` is enabled; effect
-reads and writes are not included solely because the property asks about enabledness.
-The `enabledTransitions` field records the observed transition id so slicing can retain
-it as observation-only. Pass either option explicitly to override the inference.
+Each builder registers a property when the module is evaluated. Pass `reads` or
+`enabledTransitions` in the optional trailing `options` object to override inference.
 
 | Helper | Signature | Kind |
 | --- | --- | --- |
-| `always` | `(model, predicate, options?)` | `G p` — state invariant |
-| `alwaysStep` | `(model, stepPredicate, options?)` | action invariant over edges |
-| `reachable` | `(model, predicate, options?)` | `EF p` — existential witness |
-| `reachableFrom` | `(model, when, goal, options?)` | `AG(when → EF goal)` |
-| `leadsToWithin` | `(model, trigger, goal, options & { budget, allowUserEvents? })` | bounded response |
+| `always` | `(name, predicate, options?)` | `G p` — state invariant |
+| `alwaysStep` | `(name, stepPredicate, options?)` | action invariant over edges |
+| `reachable` | `(name, predicate, options?)` | `EF p` — existential witness |
+| `reachableFrom` | `(when, goal, options?)` | `AG(when → EF goal)` — `name` in options |
+| `leadsToWithin` | `(trigger, goal, options & { budget, allowUserEvents? })` | bounded response — `name` in options |
+| `group` | `(prefix, fn)` | prefixes registered property names |
 
 `options` is `{ name?, reads?, enabledTransitions?, includeUnmounted? }`. The `budget` is
-`{ steps?, environment? }`. When `name` is omitted it defaults to the combinator kind
-(`"always"`, `"alwaysStep"`, etc.). `includeUnmounted` keeps mount-local variables in the
-read set even when their owning component is unmounted.
+`{ steps?, environment? }`. `includeUnmounted` keeps mount-local variables in the read set
+even when their owning component is unmounted.
 
 ## Expression helpers
 
-State predicates are `ExprIR` trees:
+State predicates are `ExprIR` trees. Operands accept a `VarHandle`, an `ExprIR`, or a plain
+`Value` literal — primitives are lifted to literals automatically, so there is no `lit(...)`
+wrapper. Reference state through handles, never by raw id in a wrapper call:
+
+- **Module-scoped state** (atoms, stores, signals, context, consts): `import { sessionAtom }
+  from "./store"` and use it directly. The loader resolves the imported symbol to its model
+  variable, so IDE renames stay in sync.
+- **`useState` locals**: import generated handles from `./.modality/vars/<Component>`.
+- **Stable system vars**: import `{ pending, route, history }` from `modality-ts/vars`.
+- **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: `varHandle(id)`.
 
 | Helper | Builds |
 | --- | --- |
-| `readVar(id, path?)` | read a model variable |
-| `readPreVar(id, path?)` | read the macro-step pre-state snapshot (batching) |
+| `varHandle(id, domain?, path?)` | a handle for a variable id without an importable symbol |
+| `handle.at(...segments)` | extend a handle with nested record/list path segments |
+| `pre(handle)` | read the macro-step pre-state snapshot of a variable (batching) |
 | `readOpArg(key)` | read an enqueue-time snapshot from a pending op |
-| `lit(value)` | a literal |
 | `eq(a, b)` / `neq(a, b)` | equality / inequality |
-| `andExpr(...)` / `orExpr(...)` / `notExpr(x)` | boolean composition |
-| `enabled(model, transitionId)` | the [enabledness](../concepts/properties.md) accessor (exact id) |
-| `enabledTransitionPrefix(model, prefix)` | true when some enabled transition id starts with `prefix` |
+| `and(...)` / `or(...)` / `not(x)` | boolean composition |
+| `lessThan` / `lessThanOrEqual` / `greaterThan` / `greaterThanOrEqual` | numeric comparisons |
+| `add` / `sub` / `mod` | numeric arithmetic |
+| `enabled(transitionId)` | the [enabledness](../concepts/properties.md) accessor (exact id) |
+| `enabledTransitionPrefix(prefix)` | true when some enabled transition id starts with `prefix` |
+| `s(component, idOverride?)` | quick untyped handles for `useState` locals (`s({ name: "App" }).step`) |
+
+Generated component modules are types-only. The CLI rewrites each imported handle to
+`varHandle("local:<Component>.<state>")` and strips the import at check time, so no
+runtime file is needed. With `moduleResolution: "nodenext"`, TypeScript may require a
+`.js` specifier such as `./.modality/vars/App.js`; extensionless imports work under
+`bundler`/classic Node-style resolution.
 
 ## Numeric expressions
 
-[Finite numeric domains](./domains.md) (`boundedInt`, `intSet`, and the branded aliases
-such as `Uint8`) can be compared and combined with arithmetic. These nodes have **no
-helper functions** — write the `ExprIR` object directly. Every operand is coerced to an
-integer first; a non-integer operand (or division by zero) makes the node fall back as
-noted below.
-
-Comparisons build a boolean `ExprIR` (use them like `eq`):
-
-| Node | Means | When an operand is not an integer |
-| --- | --- | --- |
-| `{ kind: "lt", args: [a, b] }` | `a < b` | the comparison is `false` |
-| `{ kind: "lte", args: [a, b] }` | `a ≤ b` | the comparison is `false` |
-| `{ kind: "gt", args: [a, b] }` | `a > b` | the comparison is `false` |
-| `{ kind: "gte", args: [a, b] }` | `a ≥ b` | the comparison is `false` |
-
-Arithmetic builds an integer `ExprIR` to nest inside a comparison:
-
-| Node | Means | Notes |
-| --- | --- | --- |
-| `{ kind: "add", args: [a, b] }` | `a + b` | |
-| `{ kind: "sub", args: [a, b] }` | `a − b` | |
-| `{ kind: "mod", args: [a, b] }` | `a mod b` | floored — the result has the sign of `b`, so it is non-negative for a positive `b`; `b = 0` is undefined |
+[Finite numeric domains](./domains.md) (`boundedInt`, `intSet`, and branded aliases such as
+`Uint8`) can be compared and combined with the numeric helpers above. Every operand is coerced
+to an integer first; a non-integer operand (or division by zero for `mod`) makes comparisons
+fall back to `false` and leaves arithmetic undefined at evaluation time.
 
 Arithmetic here is unbounded — the variable's [`overflow` policy](./domains.md#numeric-overflow-policy)
-(`forbid` / `wrap` / `saturate`) only governs what happens when a value is *assigned back*
-into a finite domain, not intermediate predicate math.
+only governs assignments back into a finite domain, not intermediate predicate math.
 
 ```ts
-// "count never exceeds capacity, even after one more increment"
-always(
-  model,
-  notExpr({
-    kind: "lt",
-    args: [readVar("local:Cart.capacity"), { kind: "add", args: [readVar("local:Cart.count"), lit(1)] }],
-  }),
-  { name: "withinCapacity" },
-);
+import { always, not, lessThan, add } from "modality-ts/properties";
+import { capacity, count } from "./.modality/vars/Cart";
+
+always("withinCapacity", not(lessThan(capacity, add(count, 1))));
 ```
 
 ## Step predicate helpers
@@ -99,72 +91,45 @@ For `alwaysStep` and as `leadsToWithin` triggers:
 | `stepTransitionId(id)` | a specific transition |
 | `stepAny()` | any edge |
 
-Each helper returns a flat step matcher (`StepPredicateFlat`). Beyond the helpers above,
-a flat matcher object accepts more fields directly — there is no dedicated helper, so
-write the object literal:
-
-| Field | Matches |
-| --- | --- |
-| `transitionClass` | edges whose transition class is one of `user`, `nav`, `env`, `internal`, `library` |
-| `labelKind` | edges whose event label kind matches (e.g. `click`, `submit`, `input`, `navigate`, `resolve`) |
-| `changed` | any edge that assigns the given var |
-| `changedTo` | an edge that assigns the var to a specific value |
-| `opId` | an edge whose pending op has this id |
-| `continuation` | an edge resolving to a specific continuation |
-| `opArgs` | an edge whose op `args` snapshot matches these values |
-
-A full step predicate may be composite: `{ step, pre?, post?, negate? }` — `pre`/`post`
-are `ExprIR` over the edge endpoints, and `negate` flips the match. On enqueue/resolve
-edges, read the operation's enqueue-time `args` snapshot from within `pre`/`post` using
-`readOpArg(key)`.
+Each helper returns a flat step matcher (`StepPredicateFlat`). A full step predicate may be
+composite: `{ step, pre?, post?, negate? }` — `pre`/`post` are `ExprIR` over the edge
+endpoints, and `negate` flips the match. On enqueue/resolve edges, read enqueue-time `args`
+from within `pre`/`post` using `readOpArg(key)`.
 
 For focused handler postconditions, prefer `negate: true` with a bad `post` on
-`stepTransitionId(id)` rather than `{ step: stepTransitionId(id), post: goodCondition }`:
-the latter is checked on every explored edge, not as an implication over the target edge
-only. When slicing is enabled, a negated bad-step property with syntactic
-`stepTransitionId(...)` in the step matcher (not `enabledTransitions` alone) may use
-targeted edge slicing.
+`stepTransitionId(id)` rather than `{ step: stepTransitionId(id), post: goodCondition }`.
 
 ## Example file
 
 ```ts
 import {
-  always, alwaysStep, leadsToWithin,
-  andExpr, orExpr, notExpr, eq, lit, readVar, stepEnqueued,
-} from "modality-ts/core";
-import type { PropertyFactory } from "modality-ts/core";
+  always,
+  alwaysStep,
+  leadsToWithin,
+  or,
+  not,
+  eq,
+  stepEnqueued,
+} from "modality-ts/properties";
+import { route } from "modality-ts/vars";
+import { sessionAtom, authAtom } from "./store";
+import { step } from "./.modality/vars/App";
 
-export const properties: PropertyFactory = (_model) => [
-  {
-    kind: "always",
-    name: "adminRequiresAuth",
-    reads: ["sys:route", "atom:sessionAtom"],
-    predicate: orExpr(
-      notExpr(eq(readVar("sys:route"), lit("/admin"))),
-      eq(readVar("atom:sessionAtom"), lit("authenticated")),
-    ),
-  },
-  {
-    kind: "alwaysStep",
-    name: "guestCannotSubmit",
-    reads: ["atom:authAtom"],
-    predicate: {
-      negate: true,
-      step: stepEnqueued("api.createTodo"),
-      pre: eq(readVar("atom:authAtom"), lit("guest")),
-    },
-  },
-  {
-    kind: "leadsToWithin",
-    name: "submitResolves",
-    trigger: stepEnqueued("api.placeOrder"),
-    goal: orExpr(
-      eq(readVar("local:App.order"), lit("success")),
-      eq(readVar("local:App.order"), lit("error")),
-    ),
-    budget: { environment: 3 },
-  },
-];
+always(
+  "adminRequiresAuth",
+  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
+);
+
+alwaysStep("guestCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(authAtom, "guest"),
+});
+
+leadsToWithin(stepEnqueued("api.placeOrder"), or(eq(step, "success"), eq(step, "error")), {
+  name: "submitResolves",
+  budget: { environment: 3 },
+});
 ```
 
 See the [writing-properties guide](../guides/writing-properties.md) for patterns.

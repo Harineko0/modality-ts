@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
+import { always, reachable } from "../../helpers/property-builders.js";
 import {
-  always,
-  andExpr,
+  and,
   eq,
   lit,
   neq,
-  orExpr,
-  reachable,
+  or,
   readVar,
   type Model,
 } from "modality-ts/core";
@@ -246,7 +245,7 @@ describe("SWR template", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        andExpr(
+        and(
           eq(readVar(todosData), lit(null)),
           eq(readVar(todosValidating), lit(true)),
         ),
@@ -256,7 +255,7 @@ describe("SWR template", () => {
       ),
       reachable(
         m,
-        orExpr(
+        or(
           eq(readVar(todosData), lit("1")),
           eq(readVar(todosData), lit("many")),
         ),
@@ -266,8 +265,8 @@ describe("SWR template", () => {
       ),
       reachable(
         m,
-        andExpr(
-          orExpr(
+        and(
+          or(
             eq(readVar(todosData), lit("1")),
             eq(readVar(todosData), lit("many")),
           ),
@@ -277,7 +276,7 @@ describe("SWR template", () => {
       ),
       always(
         m,
-        orExpr(
+        or(
           neq(readVar("auth"), lit("guest")),
           eq(readVar(todosValidating), lit(false)),
         ),

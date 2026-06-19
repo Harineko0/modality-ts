@@ -40,39 +40,43 @@ Over the stabilized LTS `M = (S, S₀, A, →)`:
 
 ## Building predicates
 
-State predicates are `ExprIR` trees, built with helpers from `modality-ts/core`:
+State predicates are `ExprIR` trees, built with helpers from `modality-ts/properties`:
 
-```js
-import { always, andExpr, eq, lit, notExpr, orExpr, readVar } from "modality-ts/core";
+```ts
+import { always, or, not, eq } from "modality-ts/properties";
+import { route } from "modality-ts/vars";
+import { sessionAtom } from "./store";
 
 // "while on /admin, the session must be authenticated"
-const authGuard = always(model,
-  orExpr(
-    notExpr(eq(readVar("sys:route"), lit("/admin"))),
-    eq(readVar("atom:sessionAtom"), lit("authenticated")),
-  ),
-  { name: "authGuard" },
+always(
+  "authGuard",
+  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
 );
 ```
 
-Helpers: `readVar` / `readPreVar` / `readOpArg`, `lit`, `eq` / `neq`,
-`andExpr` / `orExpr` / `notExpr`, `enabled(model, transitionId)`, and the numeric
-comparisons. See the [property API reference](../reference/property-api.md).
+Reference state with handles: import module-scoped atoms/stores directly, import generated
+`useState` locals from `./.modality/vars/<Component>`, import stable system handles from
+`modality-ts/vars`, or use `varHandle(id)` (plus `handle.at(...path)`) for synthesized ids
+such as `swr:*` and parameterized `sys:*`. Other helpers: `pre(handle)` / `readOpArg(key)`,
+`eq` / `neq`, `and` / `or` / `not`, numeric comparisons and arithmetic, and
+`enabled(transitionId)`. See the
+[property API reference](../reference/property-api.md).
 
 ## Step properties: constraining actions, not states
 
 Use `alwaysStep` when the English rule is about a *transition* ("cannot trigger", "must
 not clear"). The step predicate exposes IR-level facts about the executed edge:
 
-```js
-import { alwaysStep, eq, lit, readVar, stepEnqueued } from "modality-ts/core";
+```ts
+import { alwaysStep, eq, stepEnqueued } from "modality-ts/properties";
+import { authAtom } from "./store";
 
 // "a guest must never enqueue api.createTodo"
-const guestCannotSubmit = alwaysStep(model, {
+alwaysStep("guestCannotSubmit", {
   negate: true,
   step: stepEnqueued("api.createTodo"),
-  pre: eq(readVar("atom:authAtom"), lit("guest")),
-}, { name: "guestCannotSubmit" });
+  pre: eq(authAtom, "guest"),
+});
 ```
 
 `stepEnqueued(op)`, `stepResolved(op, outcome?)`, `stepTransitionId(id)`, and `stepAny()`
@@ -87,13 +91,13 @@ states — a violating edge between two known-good states is still caught.
 
 ## Bounded response (`leadsToWithin`)
 
-```js
-import { leadsToWithin, eq, lit, orExpr, readVar, stepEnqueued } from "modality-ts/core";
+```ts
+import { leadsToWithin, or, eq, stepEnqueued } from "modality-ts/properties";
+import { order } from "./.modality/vars/App";
 
-const submitResolves = leadsToWithin(model,
+leadsToWithin(
   stepEnqueued("api.placeOrder"),
-  orExpr(eq(readVar("local:App.order"), lit("success")),
-         eq(readVar("local:App.order"), lit("error"))),
+  or(eq(order, "success"), eq(order, "error")),
   { name: "submitResolves", budget: { environment: 3 } },
 );
 ```

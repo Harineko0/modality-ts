@@ -34,7 +34,7 @@ describe("renderHumanExtractTargets", () => {
           artifacts: result.artifacts,
         },
       ],
-      { totalDurationMs: 12 },
+      { totalDurationMs: 12, showArtifacts: true },
     );
     expect(lines[0]).toMatch(/^ ✓ App\.tsx /);
     expect(lines.join("\n")).not.toContain("extracted vars=");
@@ -163,7 +163,7 @@ export default [route('/items', 'routes/items.tsx')];`,
       "utf8",
     );
     await writeFile(
-      join(dir, "app", "lib", "helpers.ts"),
+      join(dir, "app", "lib", "helpers.tsx"),
       `
       export function ClientButton(props: { onClick: () => void }) {
         return <button onClick={props.onClick}>Go</button>;
@@ -444,19 +444,8 @@ export default [route('/', 'routes/home.tsx')];`,
     await writeFile(
       propsPath,
       `
-      export const properties = [
-        {
-          kind: 'always',
-          name: 'flagFalse',
-          predicate: {
-            kind: 'eq',
-            args: [
-              { kind: 'read', var: 'local:App.flag' },
-              { kind: 'lit', value: false },
-            ],
-          },
-        },
-      ];
+      import { always, eq, varHandle } from "modality-ts/properties";
+      always("flagFalse", eq(varHandle("local:App.flag"), false));
       `,
       "utf8",
     );
@@ -479,7 +468,7 @@ export default [route('/', 'routes/home.tsx')];`,
           artifacts: result.artifacts,
         },
       ],
-      { totalDurationMs: 12 },
+      { totalDurationMs: 12, showArtifacts: true },
     );
     expect(lines.join("\n")).toContain("(sliceManifest)");
     expect(lines.join("\n")).toContain("(sliceModel)");
@@ -520,7 +509,7 @@ export default [route('/', 'routes/home.tsx')];`,
           artifacts: result.artifacts,
         },
       ],
-      { totalDurationMs: 12 },
+      { totalDurationMs: 12, showArtifacts: true },
     );
     expect(lines.join("\n")).not.toContain("slices=properties:");
     expect(lines.join("\n")).not.toContain("slice-economics=");

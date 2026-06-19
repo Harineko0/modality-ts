@@ -25,7 +25,7 @@ export function emitAppModel(model: Model): string {
   ].join("\n");
 }
 
-function typeForDomain(domain: AbstractDomain): string {
+export function typeForDomain(domain: AbstractDomain): string {
   switch (domain.kind) {
     case "bool":
       return "boolean";
@@ -77,11 +77,11 @@ function initialState(vars: readonly StateVarDecl[]): Record<string, Value> {
   return Object.fromEntries(vars.map((decl) => [decl.id, decl.initial]));
 }
 
-function quoteProperty(value: string): string {
+export function quoteProperty(value: string): string {
   return /^[A-Za-z_$][\w$]*$/.test(value) ? value : JSON.stringify(value);
 }
 
-function stringLiteralType(value: string): string {
+export function stringLiteralType(value: string): string {
   return JSON.stringify(value);
 }
 

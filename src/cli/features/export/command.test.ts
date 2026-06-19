@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { locationEffect } from "../../../extract/engine/ts/transition/navigation.js";
 import { checkModel } from "modality-ts/check";
+import { reachable } from "../../../../test/helpers/property-builders.js";
 import {
-  andExpr,
+  and,
   canonicalState,
   eq,
   lit,
-  reachable,
   readVar,
   type ExprIR,
   type Model,
@@ -23,7 +23,6 @@ import {
 } from "./index.js";
 import { renderHumanExportResult } from "./output.js";
 
-const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {
   kind: "record",
   fields: {
@@ -85,15 +84,6 @@ function firstTransition(
   const transition = fixture.transitions[0];
   if (!transition) throw new Error("export fixture missing transition");
   return transition;
-}
-
-function requiredVar(
-  id: string,
-  fixture: Model = model(),
-): Model["vars"][number] {
-  const decl = fixture.vars.find((entry) => entry.id === id);
-  if (!decl) throw new Error(`export fixture missing var ${id}`);
-  return decl;
 }
 
 function assuranceModel(): Model {
@@ -304,7 +294,7 @@ function stateEqualsPredicate(target: ModelState): ExprIR {
     }
     parts.push(eq(readVar(key), lit(value as Value)));
   }
-  return andExpr(...parts);
+  return and(...parts);
 }
 
 function oraclePosts(state: ModelState): ModelState[] {

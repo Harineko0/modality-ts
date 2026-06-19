@@ -10,6 +10,9 @@ import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   always,
   alwaysStep,
+  reachable,
+} from "../helpers/property-builders.js";
+import {
   collectRecordDomainFieldPaths,
   domainCardinality,
   enabled,
@@ -17,10 +20,9 @@ import {
   eq,
   lit,
   neq,
-  notExpr,
-  orExpr,
+  not,
+  or,
   readVar,
-  reachable,
   stepChangedTo,
   stepEnqueued,
   stepTransitionId,
@@ -131,9 +133,9 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      orExpr(
+      or(
         neq(readVar("status"), lit("connected")),
-        enabled(m, "setDensity1"),
+        enabled("setDensity1"),
       ),
       { name: "densityGuardedByConnection" },
     );
@@ -212,9 +214,9 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      orExpr(
+      or(
         neq(readVar("status"), lit("connected")),
-        enabled(m, "setDensity1"),
+        enabled("setDensity1"),
       ),
       { name: "densityGuardedByConnectionVerdictParity" },
     );
@@ -285,7 +287,7 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      orExpr(neq(readVar("status"), lit("connected")), enabled(m, "setWide")),
+      or(neq(readVar("status"), lit("connected")), enabled("setWide")),
       { name: "wideGuardedByConnection" },
     );
     const { model: sliced } = sliceModelForCheckProperty(m, property);
@@ -354,7 +356,7 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      enabledTransitionPrefix(m, "LaneTimer.onClick.draftSec"),
+      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
       {
         name: "prefixEnabled",
         reads: ["status"],
@@ -488,9 +490,9 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      orExpr(
+      or(
         neq(readVar("printerStatus"), lit("connected")),
-        enabled(m, "PrinterSettingsDialog.onClick.optimisticDensity.seq.1"),
+        enabled("PrinterSettingsDialog.onClick.optimisticDensity.seq.1"),
       ),
       { name: "densityOneRequiresConnectedPrinter" },
     );
@@ -811,7 +813,7 @@ describe("neutral slicing parity", () => {
         },
       ],
     };
-    const property = always(m, notExpr(enabled(m, "toggle")), {
+    const property = always(m, not(enabled("toggle")), {
       name: "toggleUnavailable",
       reads: [],
     });
@@ -1124,7 +1126,7 @@ describe("directional predicate not(eq) normalization", () => {
     };
     const property = reachable(
       model,
-      notExpr(eq(readVar("phase"), lit("confirm"))),
+      not(eq(readVar("phase"), lit("confirm"))),
       { name: "notConfirm", reads: ["phase"] },
     );
     const { model: sliced, diagnostics } = sliceModelForCheckProperty(

@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { always, reachable } from "../helpers/property-builders.js";
 import {
-  always,
-  andExpr,
+  and,
   eq,
   evalStatePredicate,
   lit,
   neq,
-  orExpr,
-  reachable,
+  or,
   readVar,
   StatePredicateEvalError,
   type Model,
@@ -53,7 +52,7 @@ describe("modality-ts/cli/runtime observable assertions", () => {
     const properties = [
       always(
         model,
-        orExpr(
+        or(
           eq(readVar("auth"), lit("user")),
           neq(readVar("route"), lit("/checkout")),
         ),
@@ -115,7 +114,7 @@ describe("modality-ts/cli/runtime observable assertions", () => {
       [
         always(
           model,
-          andExpr(
+          and(
             eq(readVar("flag"), lit(true)),
             eq(readVar("secret"), lit("open")),
           ),
@@ -141,7 +140,7 @@ describe("modality-ts/cli/runtime observable assertions", () => {
       [
         always(
           model,
-          orExpr(
+          or(
             eq(readVar("auth"), lit("user")),
             neq(readVar("route"), lit("/checkout")),
           ),

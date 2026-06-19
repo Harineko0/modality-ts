@@ -3,7 +3,10 @@ import { canSliceProperty } from "modality-ts/check";
 import {
   always,
   alwaysStep,
-  andExpr,
+  reachableFrom,
+} from "../helpers/property-builders.js";
+import {
+  and,
   canonicalJson,
   canonicalState,
   enabled,
@@ -12,8 +15,7 @@ import {
   eq,
   evalStatePredicate,
   lit,
-  notExpr,
-  reachableFrom,
+  not,
   readVar,
   stepChanged,
   stepChangedTo,
@@ -1276,7 +1278,7 @@ describe("property DSL", () => {
     expect(
       always(
         model,
-        andExpr(eq(readVar("flag"), lit(false)), eq(readVar("mode"), lit("a"))),
+        and(eq(readVar("flag"), lit(false)), eq(readVar("mode"), lit("a"))),
         {
           name: "flagMode",
         },
@@ -1326,7 +1328,7 @@ describe("property DSL", () => {
 
   it("records literal enabled transition references for slicing", () => {
     const model = baseModel();
-    const property = always(model, notExpr(enabled(model, "toggle")), {
+    const property = always(model, not(enabled("toggle")), {
       name: "toggleUnavailable",
       reads: [],
     });
@@ -1371,7 +1373,7 @@ describe("property DSL", () => {
         },
       ],
     };
-    const property = always(model, enabled(model, "toggle"), {
+    const property = always(model, enabled("toggle"), {
       name: "toggleEnabled",
     });
     expect(property.reads).toEqual([]);
@@ -1425,7 +1427,7 @@ describe("property DSL", () => {
         },
       ],
     };
-    const property = always(model, enabled(model, "wideEffect"), {
+    const property = always(model, enabled("wideEffect"), {
       name: "wideEnabled",
     });
     expect(property.reads).toEqual(["guard"]);
@@ -1487,7 +1489,7 @@ describe("property DSL", () => {
         },
       ],
     };
-    const property = always(model, enabledTransitionPrefix(model, "family."), {
+    const property = always(model, enabledTransitionPrefix( "family."), {
       name: "familyEnabled",
     });
     expect(property.reads).toEqual(["guardA", "guardB"]);
@@ -1500,7 +1502,7 @@ describe("property DSL", () => {
   it("emits transitionEnabledPrefix IR for suffixed transition families", () => {
     const model = baseModel();
     expect(
-      enabledTransitionPrefix(model, "LaneTimer.onClick.draftSec"),
+      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
     ).toEqual({
       kind: "transitionEnabledPrefix",
       prefix: "LaneTimer.onClick.draftSec",
@@ -1545,7 +1547,7 @@ describe("property DSL", () => {
     };
     const property = always(
       model,
-      enabledTransitionPrefix(model, "LaneTimer.onClick.draftSec"),
+      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
       { name: "resetFamilyEnabled" },
     );
     expect(property.enabledTransitions).toEqual([
@@ -1556,8 +1558,8 @@ describe("property DSL", () => {
 
   it("allows explicit enabled transition metadata when inference cannot see through helpers", () => {
     const model = baseModel();
-    const toggleEnabled = enabled(model, "toggle");
-    const property = always(model, notExpr(toggleEnabled), {
+    const toggleEnabled = enabled("toggle");
+    const property = always(model, not(toggleEnabled), {
       name: "toggleUnavailable",
       reads: [],
       enabledTransitions: ["toggle"],

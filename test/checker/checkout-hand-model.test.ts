@@ -3,9 +3,10 @@ import { checkModel } from "modality-ts/check";
 import {
   always,
   alwaysStep,
-  andExpr,
-  notExpr,
   reachableFrom,
+} from "../helpers/property-builders.js";
+import {
+  not,
   readOpArg,
   readVar,
   stepResolved,
@@ -227,8 +228,8 @@ function checkoutProperties(model: Model): Property[] {
   return [
     always(
       model,
-      notExpr(
-        andExpr(
+      not(
+        and(
           eq(readVar("auth"), lit("guest")),
           eq(readVar("step"), lit("success")),
         ),
@@ -243,10 +244,10 @@ function checkoutProperties(model: Model): Property[] {
       {
         negate: true,
         step: stepResolved("POST_ORDER", "success"),
-        post: andExpr(
+        post: and(
           eq(readVar("step"), lit("success")),
-          notExpr(
-            andExpr(
+          not(
+            and(
               eq(readVar("auth"), lit("user")),
               eq(readOpArg("userId"), readVar("userId")),
             ),
@@ -263,7 +264,7 @@ function checkoutProperties(model: Model): Property[] {
       {
         negate: true,
         step: stepResolved("POST_ORDER", "success"),
-        post: andExpr(
+        post: and(
           eq(readVar("step"), lit("success")),
           eq(readVar("auth"), lit("user")),
           neq(readOpArg("plan"), readVar("plan")),
@@ -276,7 +277,7 @@ function checkoutProperties(model: Model): Property[] {
     ),
     reachableFrom(
       model,
-      andExpr(
+      and(
         eq(readVar("step"), lit("review")),
         eq(readVar("submitStatus"), lit("idle")),
         eq(readVar("auth"), lit("user")),

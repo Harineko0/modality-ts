@@ -1,15 +1,15 @@
 import {
-  always,
   enabled,
   eq,
   lit,
   neq,
-  notExpr,
-  orExpr,
+  not,
+  or,
   readVar,
   type Model,
   type Property,
 } from "modality-ts/core";
+import { always as buildAlways } from "../../test/helpers/property-builders.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 
 export const COFFEE_SHAPED_DENSITY_ONE_PROPERTY =
@@ -243,11 +243,11 @@ export function coffeeShapedPerformanceModel(): Model {
 }
 
 export function coffeeShapedDensityOnePropertyInferred(model: Model): Property {
-  return always(
+  return buildAlways(
     model,
-    orExpr(
+    or(
       neq(readVar("printerStatus"), lit("connected")),
-      enabled(model, "setDensity1"),
+      enabled("setDensity1"),
     ),
     { name: COFFEE_SHAPED_DENSITY_ONE_PROPERTY },
   );
@@ -257,29 +257,29 @@ export function coffeeShapedPerformanceProperties(
   model: Model,
 ): readonly Property[] {
   return [
-    always(
+    buildAlways(
       model,
-      orExpr(
+      or(
         neq(readVar("printerStatus"), lit("connected")),
-        enabled(model, "setDensity1"),
+        enabled("setDensity1"),
       ),
       {
         name: COFFEE_SHAPED_DENSITY_ONE_PROPERTY,
         reads: ["printerStatus"],
       },
     ),
-    always(
+    buildAlways(
       model,
-      orExpr(
+      or(
         eq(readVar("printerStatus"), lit("connected")),
-        notExpr(enabled(model, "setDensity7")),
+        not(enabled("setDensity7")),
       ),
       {
         name: COFFEE_SHAPED_DENSITY_SEVEN_PROPERTY,
         reads: ["printerStatus"],
       },
     ),
-    always(model, enabled(model, "loadMoreOrders"), {
+    buildAlways(model, enabled("loadMoreOrders"), {
       name: COFFEE_SHAPED_LOAD_MORE_PROPERTY,
       reads: ["orderHistoryCursor", "orderHistoryDialog"],
     }),

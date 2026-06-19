@@ -9,7 +9,13 @@ import {
 } from "../../output.js";
 
 export interface ExtractArtifactEntry {
-  kind: "model" | "appModel" | "report" | "sliceManifest" | "sliceModel";
+  kind:
+    | "model"
+    | "appModel"
+    | "componentVars"
+    | "report"
+    | "sliceManifest"
+    | "sliceModel";
   path: string;
 }
 

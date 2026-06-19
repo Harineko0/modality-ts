@@ -48,11 +48,11 @@ function neqExpr(left: ExprIR, right: ExprIR): ExprIR {
   return { kind: "neq", args: [left, right] };
 }
 
-function andExpr(left: ExprIR, right: ExprIR): ExprIR {
+function conjIr(left: ExprIR, right: ExprIR): ExprIR {
   return { kind: "and", args: [left, right] };
 }
 
-function orExpr(left: ExprIR, right: ExprIR): ExprIR {
+function disjIr(left: ExprIR, right: ExprIR): ExprIR {
   return { kind: "or", args: [left, right] };
 }
 
@@ -60,7 +60,7 @@ function orMany(parts: readonly ExprIR[]): ExprIR {
   if (parts.length === 0) return litValue(false);
   return parts
     .slice(1)
-    .reduce((acc, next) => orExpr(acc, next), parts[0] ?? litValue(false));
+    .reduce((acc, next) => disjIr(acc, next), parts[0] ?? litValue(false));
 }
 
 function lenCatExpr(varId: string): ExprIR {
@@ -109,12 +109,12 @@ function exactHistoryLengthGuard(
   if (length === 0) return eqExpr(lenCatExpr(historyVar), litValue("0"));
   if (length === 1) return eqExpr(lenCatExpr(historyVar), litValue("1"));
   let guard = eqExpr(lenCatExpr(historyVar), litValue("many"));
-  guard = andExpr(
+  guard = conjIr(
     guard,
     neqExpr(readVar(historyVar, [String(length - 1)]), litValue(null)),
   );
   if (length < maxLen) {
-    guard = andExpr(
+    guard = conjIr(
       guard,
       eqExpr(readVar(historyVar, [String(length)]), litValue(null)),
     );
@@ -129,7 +129,7 @@ function historyTupleGuard(
 ): ExprIR {
   let guard = exactHistoryLengthGuard(historyVar, tuple.length, maxLen);
   for (let index = 0; index < tuple.length; index++) {
-    guard = andExpr(
+    guard = conjIr(
       guard,
       eqExpr(readVar(historyVar, [String(index)]), litValue(tuple[index]!)),
     );
@@ -187,7 +187,7 @@ function buildPushHistoryEffect(
   for (let length = historyCap - 1; length >= 0; length--) {
     for (const tuple of cartesianTuples(historyRouteValues, length)) {
       for (const current of historyRouteValues) {
-        const guard = andExpr(
+        const guard = conjIr(
           historyTupleGuard(historyVar, tuple, historyCap),
           eqExpr(readPreVar(currentVar), litValue(current)),
         );

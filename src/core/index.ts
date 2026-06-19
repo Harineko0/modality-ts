@@ -7,6 +7,7 @@ export * from "./ir/validator.js";
 export * from "./ir/eval.js";
 export * from "./numeric/types.js";
 export * from "./props/index.js";
+export * from "./props/raw-ir.js";
 export * from "./trace/types.js";
 export * from "./report/types.js";
 export * from "./overlay/index.js";

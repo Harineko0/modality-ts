@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { propsFileBody, flagTrueProperty, } from "../helpers/props-file.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -58,7 +59,7 @@ describe("modality CLI", () => {
 
       const model = JSON.parse(await readFile(modelPath, "utf8"));
       expect(stdout).toMatch(/^ [✓×⚠] /m);
-      expect(stdout).toContain(modelPath.split("/").pop() ?? modelPath);
+      expect(stdout).toContain("App.tsx");
       expect(model.schemaVersion).toBe(1);
       expect(model.transitions.length).toBeGreaterThan(0);
     },
@@ -69,7 +70,7 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract"], {
+    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract", "-A"], {
       cwd: dir,
     });
 
@@ -125,7 +126,7 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeRouteFixtureApp(dir);
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract"], {
+    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract", "-A"], {
       cwd: dir,
     });
 
@@ -197,6 +198,7 @@ describe("modality CLI", () => {
       [
         cliPath,
         "extract",
+        "-A",
         "--out",
         ".modality/model.json",
         "--app-model",
@@ -226,7 +228,7 @@ describe("modality CLI", () => {
 
     const { stdout } = await execFileAsync(
       tsxBin,
-      [cliPath, "extract", "src/App.tsx", "src/HomePage.tsx"],
+      [cliPath, "extract", "-A", "src/App.tsx", "src/HomePage.tsx"],
       { cwd: dir },
     );
 
@@ -332,9 +334,7 @@ describe("modality CLI", () => {
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(
       propsPath,
-      `export const properties = [
-        { kind: "reachable", name: "flagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
-      ];`,
+      propsFileBody(flagTrueProperty),
       "utf8",
     );
 
@@ -374,7 +374,7 @@ describe("modality CLI", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
-    await writeFile(propsPath, "export const properties = [];", "utf8");
+    await writeFile(propsPath, "// no properties registered", "utf8");
 
     await expect(
       execFileAsync(
@@ -394,7 +394,7 @@ describe("modality CLI", () => {
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
-    await writeFile(propsPath, "export const properties = [];", "utf8");
+    await writeFile(propsPath, "// no properties registered", "utf8");
 
     await expect(
       execFileAsync(
@@ -631,17 +631,17 @@ async function writeRouteFixtureApp(dir: string): Promise<void> {
   );
   await writeFile(
     join(dir, "app", "root.props.ts"),
-    "export const properties = [];",
+    "// no properties registered",
     "utf8",
   );
   await writeFile(
     join(dir, "app", "routes", "home.props.ts"),
-    "export const properties = [];",
+    "// no properties registered",
     "utf8",
   );
   await writeFile(
     join(dir, "app", "routes", "analytics.props.ts"),
-    "export const properties = [];",
+    "// no properties registered",
     "utf8",
   );
 }
@@ -672,29 +672,26 @@ async function writeFixtureApp(dir: string): Promise<void> {
   );
   await writeFile(
     join(dir, "src", "App.props.ts"),
-    "export const properties = [];",
+    "// no properties registered",
     "utf8",
   );
   await writeFile(
     join(dir, "src", "HomePage.props.ts"),
-    "export const properties = [];",
+    "// no properties registered",
     "utf8",
   );
 }
 
-const flagTrueIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: true }] }`;
-const flagFalseIr = `{ kind: "eq", args: [{ kind: "read", var: "flag" }, { kind: "lit", value: false }] }`;
-
 function passingProps(prefix: string): string {
-  return `export const properties = [
-    { kind: "reachable", name: "${prefix}FlagCanBecomeTrue", predicate: ${flagTrueIr}, reads: ["flag"] }
-  ];`;
+  return propsFileBody(
+    `reachable("${prefix}FlagCanBecomeTrue", eq(varHandle("flag"), true));`,
+  );
 }
 
 function failingProps(): string {
-  return `export const properties = [
-    { kind: "always", name: "homeFlagAlwaysFalse", predicate: ${flagFalseIr}, reads: ["flag"] }
-  ];`;
+  return propsFileBody(
+    `always("homeFlagAlwaysFalse", eq(varHandle("flag"), false));`,
+  );
 }
 
 async function writePerPropsCheckFixture(
