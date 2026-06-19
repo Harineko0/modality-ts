@@ -57,7 +57,7 @@ Variable IDs come from the generated model / extraction report. Common prefixes:
 (system variables such as `sys:route`, `sys:pending`). Extract also writes typed local
 handles beside source files as `<source>.vars.ts`; import stable system handles from
 `modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
-built-in handle (usually via `import { var as stateVar } from "modality-ts/properties"`).
+built-in handle (usually via `import { variable } from "modality-ts/properties"`).
 See
 [State & domains](../concepts/state-and-domains.md).
 

@@ -111,7 +111,7 @@ function varIdFromHandleDeclaration(
   if (!ts.isVariableDeclaration(declaration)) return undefined;
   const type = declaration.type;
   if (!type || !ts.isTypeReferenceNode(type)) return undefined;
-  if (!ts.isIdentifier(type.typeName) || type.typeName.text !== "VarHandle") {
+  if (!ts.isIdentifier(type.typeName) || type.typeName.text !== "Variable") {
     return undefined;
   }
   const idArgument = type.typeArguments?.[1];
@@ -123,7 +123,7 @@ function varIdFromHandleDeclaration(
 
 /**
  * Resolve an imported identifier whose declaration is a generated handle
- * (`export declare const field: VarHandle<_, "local:Component.field">`) to its var id, read
+ * (`export declare const field: Variable<_, "local:Component.field">`) to its var id, read
  * straight from the embedded type literal.
  */
 function handleVarIdForIdentifier(
@@ -371,26 +371,24 @@ function ensureStateVarImport(
   source: string,
   sourceFile: ts.SourceFile,
 ): string {
-  if (!source.includes("modalityVar(")) return source;
+  if (!source.includes("variable(")) return source;
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const text = statement.getText(sourceFile);
-    if (text.includes("var as modalityVar")) return source;
+    if (text.includes("variable")) return source;
     if (
       text.includes("modality-ts/properties") ||
       text.includes("modality-ts/core")
     ) {
       const next = text.replace(/\{([^}]*)\}/, (_match, imports: string) => {
-        if (imports.includes("var as modalityVar")) return `{${imports}}`;
+        if (imports.includes("variable")) return `{${imports}}`;
         const trimmed = imports.trim().replace(/,\s*$/u, "");
-        return trimmed.length > 0
-          ? `{ ${trimmed}, var as modalityVar }`
-          : "{ var as modalityVar }";
+        return trimmed.length > 0 ? `{ ${trimmed}, variable }` : "{ variable }";
       });
       return source.replace(text, next);
     }
   }
-  return `import { var as modalityVar } from "modality-ts/properties";\n${source}`;
+  return `import { variable } from "modality-ts/properties";\n${source}`;
 }
 
 export async function rewriteImportedSymbols(
@@ -456,7 +454,7 @@ export async function rewriteImportedSymbols(
         replacements.push({
           start: node.getStart(),
           end: node.getEnd(),
-          text: `modalityVar(${JSON.stringify(varId)})`,
+          text: `variable(${JSON.stringify(varId)})`,
         });
         rewrittenSymbolNames.add(node.text);
         rewrittenNodes.add(node);

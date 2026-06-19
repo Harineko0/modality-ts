@@ -38,10 +38,10 @@ describe("emitComponentVarModules", () => {
     expect(modules.map((entry) => entry.path)).toEqual(["App.vars.ts"]);
     const source = modules[0]!.source;
     expect(source).toContain(
-      'import { var as modalityVar, type VarHandle } from "modality-ts/core";',
+      'import { variable, type Variable } from "modality-ts/core";',
     );
-    expect(source).toContain("export const phase: VarHandle<");
-    expect(source).toContain('modalityVar("local:App.phase")');
+    expect(source).toContain("export const phase: Variable<");
+    expect(source).toContain('variable("local:App.phase")');
     expect(source).toContain('"local:App.phase"');
     // atoms are not component-local — they resolve via real source imports
     expect(source).not.toContain("authAtom");

@@ -83,7 +83,7 @@ eq(authAtom, "guest");
       },
     };
     const { source } = await rewriteImportedSymbols(propsPath, anchoredModel);
-    expect(source).toContain('modalityVar("atom:authAtom")');
+    expect(source).toContain('variable("atom:authAtom")');
     expect(source).not.toMatch(/\beq\(authAtom,/);
   });
 
@@ -108,8 +108,8 @@ eq(local, "guest");
     const handlePath = join(dir, "App.vars.ts");
     await writeFile(
       handlePath,
-      `import { var as stateVar, type VarHandle } from "modality-ts/core";
-export const phase: VarHandle<{ readonly kind: "enum" }, "local:App.phase"> = stateVar("local:App.phase") as VarHandle<{ readonly kind: "enum" }, "local:App.phase">;
+      `import { variable, type Variable } from "modality-ts/core";
+export const phase: Variable<{ readonly kind: "enum" }, "local:App.phase"> = variable("local:App.phase") as Variable<{ readonly kind: "enum" }, "local:App.phase">;
 `,
       "utf8",
     );
@@ -123,7 +123,7 @@ eq(phase, "confirm");
     );
 
     const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
-    expect(source).toContain('modalityVar("local:App.phase")');
+    expect(source).toContain('variable("local:App.phase")');
     expect(source).not.toMatch(/import \{ phase \} from "\.\/App\.vars"/);
   });
 
@@ -150,8 +150,8 @@ always("ok", and(eq(phase, "confirm"), eq(count, 1)));
       propsPath,
       modelWithOrigins,
     );
-    expect(source).toContain('modalityVar("local:App.phase")');
-    expect(source).toContain('modalityVar("local:App.count")');
+    expect(source).toContain('variable("local:App.phase")');
+    expect(source).toContain('variable("local:App.count")');
     expect(source).not.toContain("./App.vars");
   });
 

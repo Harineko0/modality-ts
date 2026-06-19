@@ -175,8 +175,8 @@ rewrites and strips generated handle imports at check time.
 
 Imported atoms and stores resolve through symbol rewriting when their declaration anchors
 appear in `model.metadata.varAnchors`; otherwise use the `var` export directly, usually
-with an alias such as `import { var as stateVar } from "modality-ts/properties"`.
-Use `stateVar("swr:...")` or `stateVar("sys:timer:...")` for synthesized ids that do
+with an alias such as `import { variable } from "modality-ts/properties"`.
+Use `variable("swr:...")` or `variable("sys:timer:...")` for synthesized ids that do
 not have a stable importable handle.
 
 ## Naming and verdicts

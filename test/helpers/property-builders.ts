@@ -116,7 +116,7 @@ export {
   readOpArg,
   readPreVar,
   readVar,
-  var as stateVar,
+  variable,
   enabled,
   enabledTransitionPrefix,
   stepAny,

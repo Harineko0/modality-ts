@@ -5,7 +5,7 @@ import type { ExprIR, Value } from "../ir/types.js";
  *
  * These construct raw {@link ExprIR} nodes by string var id and are intentionally
  * NOT part of the authoring API (`modality-ts/properties`). Property authors reference
- * state through typed handles instead — `s(Component).field`, `var(id)`, and
+ * state through typed handles instead — `s(Component).field`, `variable(id)`, and
  * `pre(handle)` — so that imports stay symbol-based and rename-safe.
  *
  * They remain available from `modality-ts/core` for internal model/IR construction and

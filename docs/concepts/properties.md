@@ -57,7 +57,7 @@ always(
 Reference state with handles: import module-scoped atoms/stores directly, import generated
 `useState` locals from sibling `*.vars` modules, import stable system handles from
 `modality-ts/vars`, or use the `var` export (usually imported as
-`import { var as stateVar } from "modality-ts/properties"`) plus
+`import { variable } from "modality-ts/properties"`) plus
 `handle.at(...path)` for synthesized ids such as `swr:*` and parameterized `sys:*`.
 Other helpers: `pre(handle)` / `readOpArg(key)`,
 `eq` / `neq`, `and` / `or` / `not`, numeric comparisons and arithmetic, and

@@ -8,14 +8,10 @@ import {
   lit,
   not,
   readVar,
-  type VarHandle,
-  var as stateVar,
+  type Variable,
+  variable,
 } from "modality-ts/core";
-import {
-  isExprIR,
-  isVarHandle,
-  lift,
-} from "../../../src/core/props/operand.js";
+import { isExprIR, isVariable, lift } from "../../../src/core/props/operand.js";
 
 type Equal<Left, Right> =
   (<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
@@ -25,16 +21,16 @@ type Expect<T extends true> = T;
 
 describe("operand lift", () => {
   it("preserves literal var ids in the handle type", () => {
-    const handle = stateVar("local:App.phase");
+    const handle = variable("local:App.phase");
     type _IdIsLiteral = Expect<
-      Equal<typeof handle, VarHandle<AbstractDomain, "local:App.phase">>
+      Equal<typeof handle, Variable<AbstractDomain, "local:App.phase">>
     >;
     expect(handle.varId).toBe("local:App.phase");
   });
 
   it("lifts handles to read nodes", () => {
-    const handle = stateVar("atom:auth");
-    expect(isVarHandle(handle)).toBe(true);
+    const handle = variable("atom:auth");
+    expect(isVariable(handle)).toBe(true);
     expect(lift(handle)).toEqual({ kind: "read", var: "atom:auth" });
   });
 
@@ -52,7 +48,7 @@ describe("operand lift", () => {
 
 describe("expression builders", () => {
   it("builds eq from handles and primitives", () => {
-    const handle = stateVar("local:App.step");
+    const handle = variable("local:App.step");
     expect(eq(handle, "confirm")).toEqual({
       kind: "eq",
       args: [
@@ -64,8 +60,8 @@ describe("expression builders", () => {
   });
 
   it("builds boolean and numeric IR", () => {
-    const count = stateVar("local:Cart.count");
-    const capacity = stateVar("local:Cart.capacity");
+    const count = variable("local:Cart.count");
+    const capacity = variable("local:Cart.capacity");
     expect(and(eq(count, 1), not(eq(count, 0)))).toEqual({
       kind: "and",
       args: [

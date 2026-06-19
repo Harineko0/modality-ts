@@ -680,13 +680,13 @@ async function writeFixtureApp(dir: string): Promise<void> {
 
 function passingProps(prefix: string): string {
   return propsFileBody(
-    `reachable("${prefix}FlagCanBecomeTrue", eq(stateVar("flag"), true));`,
+    `reachable("${prefix}FlagCanBecomeTrue", eq(variable("flag"), true));`,
   );
 }
 
 function failingProps(): string {
   return propsFileBody(
-    `always("homeFlagAlwaysFalse", eq(stateVar("flag"), false));`,
+    `always("homeFlagAlwaysFalse", eq(variable("flag"), false));`,
   );
 }
 

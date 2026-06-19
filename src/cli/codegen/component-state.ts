@@ -71,7 +71,7 @@ function localFieldsByModule(
 }
 
 function handleType(domain: AbstractDomain, varId: string): string {
-  return `VarHandle<${domainLiteral(domain)}, ${stringLiteralType(varId)}>`;
+  return `Variable<${domainLiteral(domain)}, ${stringLiteralType(varId)}>`;
 }
 
 function collisionSafeExportName(
@@ -124,9 +124,9 @@ function domainLiteral(domain: AbstractDomain): string {
 
 /**
  * Emit one sibling module per source file that owns `useState` locals. Each module exports a
- * `VarHandle` value per field with the var id embedded in the handle type, so property files can
+ * `Variable` value per field with the var id embedded in the handle type, so property files can
  * import from `./Component.vars` directly while the loader can still rewrite imported symbols to
- * `var("local:<Component>.<field>")` at check time.
+ * `variable("local:<Component>.<field>")` at check time.
  */
 export function emitComponentVarModules(
   model: Model,
@@ -148,14 +148,14 @@ export function emitComponentVarModules(
       fieldCounts.set(field.field, (fieldCounts.get(field.field) ?? 0) + 1);
     }
     const source = [
-      'import { var as modalityVar, type VarHandle } from "modality-ts/core";',
+      'import { variable, type Variable } from "modality-ts/core";',
       "",
       ...sortedFields.map((entry) => {
         const varId = `local:${entry.componentId}.${entry.field}`;
         return `export const ${collisionSafeExportName(entry, fieldCounts)}: ${handleType(
           entry.domain,
           varId,
-        )} = modalityVar(${JSON.stringify(varId)}) as ${handleType(
+        )} = variable(${JSON.stringify(varId)}) as ${handleType(
           entry.domain,
           varId,
         )};`;

@@ -32,7 +32,7 @@ even when their owning component is unmounted.
 
 ## Expression helpers
 
-State predicates are `ExprIR` trees. Operands accept a `VarHandle`, an `ExprIR`, or a plain
+State predicates are `ExprIR` trees. Operands accept a `Variable`, an `ExprIR`, or a plain
 `Value` literal — primitives are lifted to literals automatically, so there is no `lit(...)`
 wrapper. Reference state through handles, never by raw id in a wrapper call:
 
@@ -42,13 +42,12 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 - **`useState` locals**: import generated handles from sibling `*.vars` modules, such
   as `./App.vars`.
 - **Stable system vars**: import `{ pending, route, history }` from `modality-ts/vars`.
-- **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: the `var`
-  export, usually imported with an alias because `var` is a reserved local binding
-  (`import { var as stateVar } from "modality-ts/properties"`).
+- **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: use
+  `variable(id)` from `modality-ts/properties`.
 
 | Helper | Builds |
 | --- | --- |
-| `var(id, domain?, path?)` | a handle for a variable id without an importable symbol |
+| `variable(id, domain?, path?)` | a handle for a variable id without an importable symbol |
 | `handle.at(...segments)` | extend a handle with nested record/list path segments |
 | `pre(handle)` | read the macro-step pre-state snapshot of a variable (batching) |
 | `readOpArg(key)` | read an enqueue-time snapshot from a pending op |
@@ -62,7 +61,7 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 
 Generated component modules are real TypeScript files written beside the source file,
 for example `app/home/home.tsx` produces `app/home/home.vars.ts`. The CLI rewrites
-each imported handle to `var("local:<Component>.<state>")` and strips the import
+each imported handle to `variable("local:<Component>.<state>")` and strips the import
 at check time.
 
 ## Numeric expressions

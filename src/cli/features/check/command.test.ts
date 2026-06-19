@@ -378,7 +378,7 @@ describe("runCheckCommand", () => {
       propsFileBody(`alwaysStep("submitEnqueued", {
   negate: true,
   step: { transitionId: "submit", enqueued: "POST" },
-  post: eq(stateVar("draft"), "nonEmpty"),
+  post: eq(variable("draft"), "nonEmpty"),
 });`),
       "utf8",
     );
@@ -1552,7 +1552,7 @@ describe("property confidence reporting", () => {
     );
     await writeFile(
       propsPath,
-      propsFileBody(`always("payloadKnown", eq(stateVar("payload"), "tok1"));`),
+      propsFileBody(`always("payloadKnown", eq(variable("payload"), "tok1"));`),
       "utf8",
     );
 

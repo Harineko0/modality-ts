@@ -1,12 +1,12 @@
 import type { AbstractDomain, ExprIR, Value } from "../ir/types.js";
 
-export interface VarHandle<D = AbstractDomain, Id extends string = string> {
+export interface Variable<D = AbstractDomain, Id extends string = string> {
   readonly __modalityVar: true;
   readonly varId: Id;
   readonly path?: readonly string[];
   readonly domain?: D;
   /** Extend the handle with nested path segments (record fields / list indices). */
-  at(...segments: readonly string[]): VarHandle<D, Id>;
+  at(...segments: readonly string[]): Variable<D, Id>;
 }
 
 const EXPR_IR_KINDS = new Set([
@@ -35,31 +35,31 @@ const EXPR_IR_KINDS = new Set([
   "mod",
 ]);
 
-export type Operand = ExprIR | VarHandle | Value;
+export type Operand = ExprIR | Variable | Value;
 
-function createVarHandle<const Id extends string = string, D = AbstractDomain>(
+function createVariable<const Id extends string = string, D = AbstractDomain>(
   varId: Id,
   domain?: D,
   path?: readonly string[],
-): VarHandle<D, Id> {
+): Variable<D, Id> {
   return {
     __modalityVar: true,
     varId,
     ...(path !== undefined ? { path } : {}),
     ...(domain !== undefined ? { domain } : {}),
-    at(...segments: readonly string[]): VarHandle<D, Id> {
-      return createVarHandle(varId, domain, [...(path ?? []), ...segments]);
+    at(...segments: readonly string[]): Variable<D, Id> {
+      return createVariable(varId, domain, [...(path ?? []), ...segments]);
     },
   };
 }
 
-export { createVarHandle as var };
+export { createVariable as variable };
 
-export function isVarHandle(value: unknown): value is VarHandle {
+export function isVariable(value: unknown): value is Variable {
   return (
     typeof value === "object" &&
     value !== null &&
-    (value as VarHandle).__modalityVar === true
+    (value as Variable).__modalityVar === true
   );
 }
 
@@ -74,7 +74,7 @@ export function isExprIR(value: unknown): value is ExprIR {
 }
 
 export function lift(op: Operand): ExprIR {
-  if (isVarHandle(op)) {
+  if (isVariable(op)) {
     return {
       kind: "read",
       var: op.varId,

@@ -1,4 +1,4 @@
-import { var as stateVar } from "./operand.js";
+import { variable } from "./operand.js";
 
 /**
  * Built-in handles for the stable, framework-synthesized system variables.
@@ -12,14 +12,14 @@ import { var as stateVar } from "./operand.js";
  * ```
  *
  * Parameterized system ids (`sys:timer:*`, `sys:suspense:*`, …) and resource ids (`swr:*`)
- * are project-specific — reference those with `var("...")`.
+ * are project-specific — reference those with `variable("...")`.
  */
 
 /** The pending-operation queue (`sys:pending`). Index with `pending.at("0", "opId")`. */
-export const pending = stateVar("sys:pending");
+export const pending = variable("sys:pending");
 
 /** The current route / location (`sys:route`). */
-export const route = stateVar("sys:route");
+export const route = variable("sys:route");
 
 /** The navigation history stack (`sys:history`). */
-export const history = stateVar("sys:history");
+export const history = variable("sys:history");
