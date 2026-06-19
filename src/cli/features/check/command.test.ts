@@ -1808,4 +1808,48 @@ describe("property confidence reporting", () => {
     );
     expect(lines.some((line) => line.includes("reasons:"))).toBe(true);
   });
+
+  it("plumbs partial-order-reduction through check command output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(
+      propsPath,
+      `export const properties = [
+        { kind: "always", name: "flagOk", predicate: ${flagFalseIr}, reads: ["flag"] }
+      ];`,
+      "utf8",
+    );
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      partialOrderReduction: true,
+    });
+    expect(result.check.diagnostics?.partialOrderReduction).toMatchObject({
+      requested: true,
+    });
+    expect(result.report.diagnostics?.partialOrderReduction).toMatchObject({
+      requested: true,
+    });
+    const lines = renderHumanCheckTargets(
+      [
+        {
+          modelPath,
+          propsPath: "props.ts",
+          check: result.check,
+          reportVerdicts: result.report.verdicts,
+          artifacts: [],
+          durationMs: 5,
+        },
+      ],
+      { color: false, startedAt: new Date(), totalDurationMs: 5 },
+    );
+    expect(
+      lines.some(
+        (line) => line.includes("por=enabled") || line.includes("por=skipped"),
+      ),
+    ).toBe(true);
+  });
 });

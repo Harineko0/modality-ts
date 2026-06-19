@@ -38,6 +38,8 @@ Elapsed timings are environment-dependent. Compare deterministic fields first:
 | `propertySlices[].topRetainedContributors` / `topPrunedContributors` | Dominant retained/pruned vars |
 | `unsliced.states` / `edges` / `depth` | Unsliced search footprint |
 | `sliced.states` / `edges` / `depth` | Sliced search footprint |
+| `slicedPor.states` / `edges` / `depth` | Sliced search with `--partial-order-reduction` |
+| `slicedPor.partialOrderReduction` | POR diagnostics (skipped transitions, reduced states, cycle fallbacks) |
 
 Use `elapsedMs`, `slicePlanningElapsedMs`, `slicePlanningTotalElapsedMs`, and `speedup`
 for trend tracking only — not as golden test values.

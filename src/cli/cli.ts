@@ -112,7 +112,7 @@ async function main(): Promise<void> {
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
     );
     console.log(
-      "       modality check [model.json] [props.ts ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits] [--artifact|-A]",
+      "       modality check [model.json] [props.ts ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--partial-order-reduction] [--no-search-limits] [--artifact|-A]",
     );
     console.log(
       "         no args checks each discovered *.props.ts against its matching .modality/models/**/*.model.json",
@@ -561,6 +561,7 @@ async function main(): Promise<void> {
   const replayTestsFlag = flagValue(args, "--replay-tests");
   const actionReplayTestsFlag = flagValue(args, "--action-replay-tests");
   const noSearchLimits = args.includes("--no-search-limits");
+  const partialOrderReduction = args.includes("--partial-order-reduction");
   const showArtifacts = args.includes("--artifact") || args.includes("-A");
   const maxStatesRaw = flagValue(args, "--max-states");
   const maxEdgesRaw = flagValue(args, "--max-edges");
@@ -698,6 +699,7 @@ async function main(): Promise<void> {
           actionReplayTestsDir: `${base}.action-replay-tests`,
           statesPath,
           searchLimits,
+          partialOrderReduction,
         });
         if (result.exitCode === 2) exitCode = 2;
         checkTargets.push({
@@ -736,6 +738,7 @@ async function main(): Promise<void> {
     actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
     statesPath,
     searchLimits,
+    partialOrderReduction,
   });
   const propsLabel =
     effectivePropsPaths.length === 1

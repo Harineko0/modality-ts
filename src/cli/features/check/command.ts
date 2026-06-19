@@ -62,6 +62,7 @@ export interface CheckCommandOptions {
   replayTestsDir?: string;
   actionReplayTestsDir?: string;
   statesPath?: string;
+  partialOrderReduction?: boolean;
   searchLimits?:
     | {
         maxStates?: number;
@@ -104,6 +105,7 @@ export async function runCheckCommand(
   const canSlice = canSliceAllProperties(model, properties);
   const check = checkModel(model, properties, {
     slicing: canSlice,
+    partialOrderReduction: options.partialOrderReduction,
     ...resolveCheckSearchLimits(options.searchLimits),
   });
   const streamHuman =
@@ -352,6 +354,16 @@ export function renderCheckResult(
     lines.push(
       `hotPath=canonicalCache:${hotPath.canonicalCache} transitionIndex:${hotPath.transitionIndex} internalTransitionIndex:${hotPath.internalTransitionIndex}`,
     );
+  }
+  const por = check.diagnostics?.partialOrderReduction;
+  if (por?.requested || por?.enabled) {
+    if (por.enabled) {
+      lines.push(
+        `por=enabled reducedStates:${por.reducedStates} skippedTransitions:${por.skippedTransitions} cycleFallbacks:${por.cycleFallbackStates}`,
+      );
+    } else if (por.skipped) {
+      lines.push(`por=skipped reason:${por.skipReason ?? "unknown"}`);
+    }
   }
   return lines;
 }

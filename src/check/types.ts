@@ -85,6 +85,22 @@ export interface HotPathDiagnostics {
   internalTransitionIndex: boolean;
 }
 
+export interface PartialOrderReductionDiagnostics {
+  requested: boolean;
+  enabled: boolean;
+  skipped?: boolean;
+  skipReason?: string;
+  supportedPropertyKinds?: readonly string[];
+  fullExplorationStates: number;
+  reducedStates: number;
+  fullEnabledTransitions: number;
+  exploredTransitions: number;
+  skippedTransitions: number;
+  cycleFallbackStates: number;
+  violationRerun?: boolean;
+  reasonCounts: readonly { reason: string; count: number }[];
+}
+
 export interface CheckDiagnostics {
   slicing?: {
     enabled: boolean;
@@ -110,6 +126,7 @@ export interface CheckDiagnostics {
   dominantVars?: readonly { varId: string; distinctValues: number }[];
   storage?: StorageDiagnostics;
   hotPath?: HotPathDiagnostics;
+  partialOrderReduction?: PartialOrderReductionDiagnostics;
 }
 
 export interface CheckResult {
@@ -123,6 +140,7 @@ export interface CheckResult {
 export interface CheckOptions {
   slicing?: boolean;
   slicedModel?: boolean;
+  partialOrderReduction?: boolean;
   maxStates?: number;
   maxEdges?: number;
   maxFrontier?: number;

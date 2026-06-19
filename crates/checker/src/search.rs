@@ -5,6 +5,9 @@ use crate::effect::{apply_effect, effect_contains_enqueue};
 use crate::frontier::{chunk_frontier, sort_frontier_by_canon};
 use crate::graph::{resolve_edge_mode, GraphRecording};
 use crate::model::{CheckOptionsIR, CheckRequest, CompiledModel, Model};
+use crate::por::{
+    build_por_context, select_enabled_transitions, PorContext, PorMode, PorRunStats,
+};
 use crate::property::{all_properties_terminal, finalize_properties, observe_edge, observe_states};
 use crate::report::{build_check_result, invalid_model_result};
 use crate::stabilize::{sort_states_by_canon, stabilize};
@@ -38,15 +41,73 @@ pub fn check_model_compiled(
     properties: &[crate::model::PropertyIR],
     options: Option<&CheckOptionsIR>,
 ) -> Result<Value, String> {
-    let options = options.cloned().unwrap_or(CheckOptionsIR {
+    let result = check_model_compiled_once(compiled, properties, options)?;
+    let options = options.cloned().unwrap_or(default_check_options());
+    let por_context = build_por_context(compiled, properties, &options);
+    if por_context.mode == PorMode::Active && result_has_violation(&result) {
+        let mut rerun_options = options;
+        rerun_options.partial_order_reduction = Some(false);
+        let mut rerun = check_model_compiled_once(compiled, properties, Some(&rerun_options))?;
+        if let Some(diagnostics) = rerun.get_mut("diagnostics").and_then(|v| v.as_object_mut()) {
+            let mut por_diag = result
+                .pointer("/diagnostics/partialOrderReduction")
+                .cloned()
+                .unwrap_or_else(|| {
+                    json!({
+                        "requested": true,
+                        "enabled": true,
+                        "fullExplorationStates": 0,
+                        "reducedStates": 0,
+                        "fullEnabledTransitions": 0,
+                        "exploredTransitions": 0,
+                        "skippedTransitions": 0,
+                        "cycleFallbackStates": 0,
+                        "reasonCounts": [],
+                    })
+                });
+            if let Some(por_obj) = por_diag.as_object_mut() {
+                por_obj.insert("violationRerun".into(), json!(true));
+            }
+            diagnostics.insert("partialOrderReduction".into(), por_diag);
+        }
+        return Ok(rerun);
+    }
+    Ok(result)
+}
+
+fn result_has_violation(result: &Value) -> bool {
+    result
+        .pointer("/verdicts")
+        .and_then(|v| v.as_array())
+        .is_some_and(|verdicts| {
+            verdicts.iter().any(|verdict| {
+                verdict.get("status").and_then(|v| v.as_str()) == Some("violated")
+            })
+        })
+}
+
+fn default_check_options() -> CheckOptionsIR {
+    CheckOptionsIR {
         slicing: None,
         sliced_model: None,
+        partial_order_reduction: None,
         max_states: None,
         max_edges: None,
         max_frontier: None,
         track_elapsed: None,
         memory_guard_bytes: None,
-    });
+    }
+}
+
+fn check_model_compiled_once(
+    compiled: &CompiledModel,
+    properties: &[crate::model::PropertyIR],
+    options: Option<&CheckOptionsIR>,
+) -> Result<Value, String> {
+    let options = options.cloned().unwrap_or_else(default_check_options);
+    let por_context = build_por_context(compiled, properties, &options);
+    let por_requested = options.partial_order_reduction == Some(true);
+    let mut por_stats = PorRunStats::default();
 
     let started = if options.track_elapsed == Some(true) {
         Some(Instant::now())
@@ -138,6 +199,8 @@ pub fn check_model_compiled(
             &options,
             edge_count,
             &mut canon_fn,
+            &por_context,
+            &mut por_stats,
         )?;
 
         if let Some(limit) = explore.limit_hit {
@@ -268,6 +331,19 @@ pub fn check_model_compiled(
             .unwrap()
             .insert("dominantVars".into(), Value::Array(dominant));
     }
+    if por_requested {
+        let por_enabled = por_context.mode == PorMode::Active;
+        let por_skipped = por_context.mode == PorMode::Skipped;
+        diagnostics.as_object_mut().unwrap().insert(
+            "partialOrderReduction".into(),
+            por_stats.to_diagnostics_value(
+                por_requested,
+                por_enabled,
+                por_skipped,
+                por_context.skip_reason.as_deref(),
+            ),
+        );
+    }
 
     Ok(build_check_result(
         properties,
@@ -390,6 +466,7 @@ struct WorkerOutput {
     candidates: Vec<MergeCandidate>,
     bound_hits: HashSet<String>,
     enabled_transition_ids: HashSet<String>,
+    por_stats: PorRunStats,
 }
 
 fn seed_frontier(
@@ -429,6 +506,8 @@ fn explore_depth_parallel(
     options: &CheckOptionsIR,
     starting_edge_count: u32,
     _canon: &mut dyn FnMut(&ModelState) -> Vec<u8>,
+    por_context: &PorContext,
+    por_stats: &mut PorRunStats,
 ) -> Result<ExploreResult, String> {
     let worker_count = rayon::current_num_threads();
     let frontier_positions: HashMap<StateId, u32> = frontier
@@ -455,6 +534,7 @@ fn explore_depth_parallel(
                     &frontier_positions,
                     visited_ref,
                     Some(budget_ref),
+                    por_context,
                 )
             })
             .collect::<Result<Vec<_>, String>>()?
@@ -467,6 +547,7 @@ fn explore_depth_parallel(
         bound_hits.extend(output.bound_hits);
         all_edges.extend(output.edges);
         all_candidates.extend(output.candidates);
+        por_stats.merge(&output.por_stats);
     }
 
     all_edges.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
@@ -567,11 +648,13 @@ fn expand_chunk(
     frontier_positions: &HashMap<StateId, u32>,
     visited: &VisitedSet,
     budget: Option<&ExpansionBudget<'_>>,
+    por_context: &PorContext,
 ) -> Result<WorkerOutput, String> {
     let mut edges = Vec::new();
     let mut candidates = Vec::new();
     let mut bound_hits = HashSet::new();
     let mut enabled_transition_ids = HashSet::new();
+    let mut por_stats = PorRunStats::default();
     let mut canon_cache: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
     let mut canon = |state: &ModelState| -> Vec<u8> {
         let identity = canonical_identity(compiled, state);
@@ -588,7 +671,17 @@ fn expand_chunk(
         let parent_frontier_position = frontier_positions.get(&pre_id).copied().unwrap_or(u32::MAX);
         let pre = visited.arena.state(pre_id);
         let pre_canon = visited.arena.canon(pre_id).to_vec();
-        for transition_id in enabled_non_internal(compiled, pre) {
+        let enabled = enabled_non_internal(compiled, pre);
+        let decision = select_enabled_transitions(
+            compiled,
+            por_context,
+            &mut por_stats,
+            &enabled,
+            pre,
+            visited,
+            &pre_canon,
+        );
+        for transition_id in decision.transitions {
             if budget.is_some_and(|budget| budget.should_stop()) {
                 break 'chunk;
             }
@@ -666,6 +759,7 @@ fn expand_chunk(
         candidates,
         bound_hits,
         enabled_transition_ids,
+        por_stats,
     })
 }
 
@@ -964,15 +1058,9 @@ mod tests {
         let mut verdicts = HashMap::new();
         let mut enabled = HashSet::new();
         let mut bound_hits = HashSet::new();
-        let options = CheckOptionsIR {
-            slicing: None,
-            sliced_model: None,
-            max_states: None,
-            max_edges: None,
-            max_frontier: None,
-            track_elapsed: None,
-            memory_guard_bytes: None,
-        };
+        let options = default_check_options();
+        let por_context = build_por_context(&compiled, &[], &options);
+        let mut por_stats = PorRunStats::default();
         let result = explore_depth_parallel(
             &compiled,
             &[],
@@ -985,6 +1073,8 @@ mod tests {
             &options,
             0,
             &mut canon_fn,
+            &por_context,
+            &mut por_stats,
         )
         .unwrap();
         assert_eq!(result.edges, 1);
@@ -1243,8 +1333,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: Some(1),
                 max_frontier: None,
                 track_elapsed: None,
@@ -1284,8 +1375,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,
@@ -1317,6 +1409,7 @@ mod tests {
             Some(&CheckOptionsIR {
                 slicing: None,
                 sliced_model: None,
+                partial_order_reduction: None,
                 max_states: Some(1),
                 max_edges: None,
                 max_frontier: None,
@@ -1350,8 +1443,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: None,
                 max_frontier: Some(1),
                 track_elapsed: None,
@@ -1380,8 +1474,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,
@@ -1498,8 +1593,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: Some(8),
                 max_frontier: None,
                 track_elapsed: None,
@@ -1549,8 +1645,9 @@ mod tests {
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-                sliced_model: None,
-                max_states: None,
+            sliced_model: None,
+            partial_order_reduction: None,
+            max_states: None,
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,

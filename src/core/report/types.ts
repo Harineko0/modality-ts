@@ -120,6 +120,32 @@ export interface CheckReportDiagnostics {
     memoryGuardBytes?: number;
   };
   dominantVars?: readonly { varId: string; distinctValues: number }[];
+  storage?: {
+    recordedEdges: number;
+    storedStates: number;
+    parentEntries: number;
+    edgeRecordingMode: string;
+  };
+  hotPath?: {
+    canonicalCache: boolean;
+    transitionIndex: boolean;
+    internalTransitionIndex: boolean;
+  };
+  partialOrderReduction?: {
+    requested: boolean;
+    enabled: boolean;
+    skipped?: boolean;
+    skipReason?: string;
+    supportedPropertyKinds?: readonly string[];
+    fullExplorationStates: number;
+    reducedStates: number;
+    fullEnabledTransitions: number;
+    exploredTransitions: number;
+    skippedTransitions: number;
+    cycleFallbackStates: number;
+    violationRerun?: boolean;
+    reasonCounts: readonly { reason: string; count: number }[];
+  };
 }
 
 export interface CheckReport {

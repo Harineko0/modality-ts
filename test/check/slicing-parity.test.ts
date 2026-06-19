@@ -1126,3 +1126,89 @@ describe("extract-side property slice parity", () => {
     ]);
   });
 });
+
+describe("sliced plus POR parity", () => {
+  function toggleModel(): Model {
+    return {
+      schemaVersion: 1,
+      id: "slice-por-toggle",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: twoRoutes,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/a",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: twoRoutes, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "flipA",
+          cls: "user",
+          label: { kind: "click", text: "A" },
+          source: [],
+          guard: { kind: "not", args: [{ kind: "read", var: "a" }] },
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: ["a"],
+          writes: ["a"],
+          confidence: "exact",
+        },
+        {
+          id: "flipB",
+          cls: "user",
+          label: { kind: "click", text: "B" },
+          source: [],
+          guard: { kind: "not", args: [{ kind: "read", var: "b" }] },
+          effect: { kind: "assign", var: "b", expr: lit(true) },
+          reads: ["b"],
+          writes: ["b"],
+          confidence: "exact",
+        },
+      ],
+    };
+  }
+
+  it("matches sliced verdict status with sliced plus POR", () => {
+    const model = toggleModel();
+    const properties = [always(model, lit(true), { name: "ok", reads: [] })];
+    const sliced = checkModel(model, properties, { slicing: true });
+    const slicedPor = checkModel(model, properties, {
+      slicing: true,
+      partialOrderReduction: true,
+    });
+    expect(slicedPor.verdicts.map((verdict) => verdict.status)).toEqual(
+      sliced.verdicts.map((verdict) => verdict.status),
+    );
+    expect(slicedPor.diagnostics?.partialOrderReduction?.enabled).toBe(true);
+  });
+});

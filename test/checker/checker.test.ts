@@ -6052,3 +6052,184 @@ function highBranchingModel(): Model {
     })),
   };
 }
+
+describe("partial-order reduction", () => {
+  function independentToggleModel(): Model {
+    return {
+      schemaVersion: 1,
+      id: "por-independent-toggles",
+      bounds: { maxDepth: 2, maxPending: 1, maxInternalSteps: 4 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: route,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/",
+        },
+        {
+          id: "sys:history",
+          domain: { kind: "boundedList", inner: route, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: [],
+        },
+        {
+          id: "sys:pending",
+          domain: { kind: "boundedList", inner: pendingOp, maxLen: 1 },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "pending-queue" },
+          initial: [],
+        },
+        {
+          id: "a",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+        {
+          id: "b",
+          domain: bool,
+          origin: "system",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [
+        {
+          id: "flipA",
+          cls: "user",
+          label: { kind: "click", text: "A" },
+          source: [],
+          guard: { kind: "not", args: [read("a")] },
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: ["a"],
+          writes: ["a"],
+          confidence: "exact",
+        },
+        {
+          id: "flipB",
+          cls: "user",
+          label: { kind: "click", text: "B" },
+          source: [],
+          guard: { kind: "not", args: [read("b")] },
+          effect: { kind: "assign", var: "b", expr: lit(true) },
+          reads: ["b"],
+          writes: ["b"],
+          confidence: "exact",
+        },
+      ],
+    };
+  }
+
+  it("reports POR diagnostics when requested for always properties", () => {
+    const model = independentToggleModel();
+    const result = checkModel(
+      model,
+      [always(model, lit(true), { name: "ok", reads: [] })],
+      { partialOrderReduction: true },
+    );
+    expect(result.diagnostics?.partialOrderReduction).toMatchObject({
+      requested: true,
+      enabled: true,
+    });
+    expect(result.verdicts[0]?.status).toBe("verified-within-bounds");
+  });
+
+  it("skips POR for unsupported property kinds", () => {
+    const model = independentToggleModel();
+    const result = checkModel(
+      model,
+      [alwaysStep(model, stepAny(), { name: "step", reads: [] })],
+      { partialOrderReduction: true },
+    );
+    expect(result.diagnostics?.partialOrderReduction).toMatchObject({
+      requested: true,
+      enabled: false,
+      skipped: true,
+      skipReason: "unsupported-property-kind",
+    });
+  });
+
+  it("reduces explored transitions for independent invisible toggles", () => {
+    const model = independentToggleModel();
+    const withoutPor = checkModel(model, [
+      always(model, lit(true), { name: "ok", reads: [] }),
+    ]);
+    const withPor = checkModel(
+      model,
+      [always(model, lit(true), { name: "ok", reads: [] })],
+      { partialOrderReduction: true },
+    );
+    expect(withPor.stats.edges).toBeLessThan(withoutPor.stats.edges);
+    expect(
+      withPor.diagnostics?.partialOrderReduction?.skippedTransitions,
+    ).toBeGreaterThan(0);
+    expect(withPor.verdicts[0]?.status).toBe(withoutPor.verdicts[0]?.status);
+  });
+
+  it("does not reduce when a transition writes a property-read var", () => {
+    const model = independentToggleModel();
+    const withoutPor = checkModel(model, [
+      always(model, eq(readVar("a"), lit(false)), {
+        name: "aFalse",
+        reads: ["a"],
+      }),
+    ]);
+    const withPor = checkModel(
+      model,
+      [
+        always(model, eq(readVar("a"), lit(false)), {
+          name: "aFalse",
+          reads: ["a"],
+        }),
+      ],
+      { partialOrderReduction: true },
+    );
+    expect(withPor.stats.edges).toBe(withoutPor.stats.edges);
+  });
+
+  it("preserves violation traces via non-POR rerun", () => {
+    const model: Model = {
+      ...independentToggleModel(),
+      transitions: [
+        {
+          id: "violateA",
+          cls: "user",
+          label: { kind: "click", text: "A" },
+          source: [],
+          guard: lit(true),
+          effect: { kind: "assign", var: "a", expr: lit(true) },
+          reads: [],
+          writes: ["a"],
+          confidence: "exact",
+        },
+      ],
+    };
+    const property = always(model, eq(readVar("a"), lit(false)), {
+      name: "aStaysFalse",
+      reads: ["a"],
+    });
+    const withoutPor = checkModel(model, [property]);
+    const withPor = checkModel(model, [property], {
+      partialOrderReduction: true,
+    });
+    expect(withoutPor.verdicts[0]?.status).toBe("violated");
+    expect(withPor.verdicts[0]?.status).toBe("violated");
+    if (
+      withoutPor.verdicts[0]?.status === "violated" &&
+      withPor.verdicts[0]?.status === "violated"
+    ) {
+      expect(
+        withPor.verdicts[0].trace.steps.map((step) => step.transitionId),
+      ).toEqual(
+        withoutPor.verdicts[0].trace.steps.map((step) => step.transitionId),
+      );
+    }
+    expect(withPor.diagnostics?.partialOrderReduction?.violationRerun).toBe(
+      true,
+    );
+  });
+});

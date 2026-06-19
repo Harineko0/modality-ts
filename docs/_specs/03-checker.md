@@ -100,8 +100,9 @@ Per run: verdict per property (`verified-within-bounds` / `violated (n traces)` 
 - **search summary** — max/final frontier, expanded depths, elapsed time.
 - **limits** — reason when configured `maxStates` / `maxFrontier` / `maxEdges` / `memoryGuard` stops search early (error verdict, may set confidence `bounded`).
 - **dominantVars** — top vars by distinct observed values during search.
+- **partialOrderReduction** — when requested via `checkModel(..., { partialOrderReduction: true })` or CLI `--partial-order-reduction`: `requested`, `enabled`, optional `skipped`/`skipReason`, reduction counters (`reducedStates`, `skippedTransitions`, `cycleFallbackStates`, …), `reasonCounts`, and `violationRerun` when a violated `always` property was rechecked without POR so the reported trace stays the canonical BFS-shortest trace.
 
-Output: human terminal rendering (compact `slicing=...` / `search-limit=...` / `confidence=<level> reasons:<n>` lines when relevant) + `report.json` (CI artifact, schema-versioned; `diagnostics` and per-verdict `confidence` are optional additive fields on schema version 1).
+Output: human terminal rendering (compact `slicing=...` / `search-limit=...` / `por=enabled ...` or `por=skipped reason:...` / `confidence=<level> reasons:<n>` lines when relevant) + `report.json` (CI artifact, schema-versioned; `diagnostics` and per-verdict `confidence` are optional additive fields on schema version 1).
 
 ## 9. Correctness assurance for the checker itself
 
@@ -114,7 +115,11 @@ The checker is part of the trusted base; it gets the heaviest internal testing i
 
 ## 10. Performance envelope and specified extensions
 
-Targets (laptop): ≥30k macro-steps/sec expansion on structured effects; 10⁶ states ≈ under a minute; 10⁷ states ≈ tens of minutes / ~2 GB — beyond that, the answer is slicing, tighter bounds, or export, not heroics. **Parallel frontier expansion is implemented** in the Rust crate (`crates/checker/src/frontier.rs`, `search.rs`): BFS layers are embarrassingly parallel, with the visited set sharded by canon-hash. Specified-but-deferred extensions, in order of expected value: (a) partial-order reduction restricted to `resolve` transitions with disjoint IR footprints (the common commuting pair; correctness obligation is small because independence is checkable from validated footprints); (b) binary visited-set encoding; (c) on-disk frontier for memory-bound runs.
+Targets (laptop): ≥30k macro-steps/sec expansion on structured effects; 10⁶ states ≈ under a minute; 10⁷ states ≈ tens of minutes / ~2 GB — beyond that, the answer is slicing, tighter bounds, or export, not heroics. **Parallel frontier expansion is implemented** in the Rust crate (`crates/checker/src/frontier.rs`, `search.rs`): BFS layers are embarrassingly parallel, with the visited set sharded by canon-hash.
+
+**Partial-order reduction (POR)** is implemented as an opt-in conservative ample-set reduction in `crates/checker/src/por.rs`, integrated into BFS expansion in `search.rs`. It is **disabled by default**. Intended production order: full model → per-property slice group (`checkModelSliced`) → Rust check with optional POR. First supported mode: state-invariant **`always`** property groups with `EdgeRecordingMode::None` (no `reachableFrom` / `leadsToWithin` edge recording). Visibility is derived from serialized property `reads` and `enabledTransitions`; transitions writing visible vars or named in `enabledTransitions` force full expansion. Conservative dependency barriers (always dependent in this phase): pending queues, route/current/history system vars, mount-local scope, `readPre` / `readOpArg`, fresh tokens, havoc/choose/branching effects, triggered-by interactions, and read/write/write-write conflicts. When every enabled transition at a state is mutually independent and invisible, POR explores a singleton ample set; if all successors are already visited and other enabled transitions were skipped, a **cycle-proviso** fallback expands the full enabled set. Violations found under POR trigger an automatic non-POR rerun so reported traces remain BFS-shortest. Unsupported property kinds (`alwaysStep`, `reachable`, `reachableFrom`, `leadsToWithin`) skip POR with structured diagnostics rather than silently running full search.
+
+Specified-but-deferred extensions: (a) binary visited-set encoding; (b) on-disk frontier for memory-bound runs.
 
 ## 11. Failure modes and their handling
 

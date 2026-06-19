@@ -176,6 +176,16 @@ function renderTargetRows(
   );
   lines.push(` ${symbol} ${target.propsPath}${duration}`);
   lines.push(`  ${formatTargetStats(target.check)}`);
+  const por = target.check.diagnostics?.partialOrderReduction;
+  if (por?.requested || por?.enabled) {
+    if (por.enabled) {
+      lines.push(
+        `  por=enabled reducedStates:${por.reducedStates} skippedTransitions:${por.skippedTransitions} cycleFallbacks:${por.cycleFallbackStates}`,
+      );
+    } else if (por.skipped) {
+      lines.push(`  por=skipped reason:${por.skipReason ?? "unknown"}`);
+    }
+  }
   for (const verdict of target.check.verdicts) {
     lines.push(
       `  ${formatStatusSymbol(verdictStatusKind(verdict.status), options)} ${verdict.property} ${verdict.status}`,

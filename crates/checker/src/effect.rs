@@ -1,6 +1,6 @@
 use crate::domain::{apply_numeric_assign, enumerate_domain, validate_value, NumericAssignOutcome};
 use crate::expr::{eval_expr, EvalOptions};
-use crate::model::{CompiledModel, EffectIR};
+use crate::model::{CompiledModel, EffectIR, ExprIR};
 use crate::mount;
 use crate::state::ModelState;
 use serde_json::{json, Value};
@@ -306,6 +306,98 @@ pub fn effect_contains_enqueue(effect: &EffectIR) -> bool {
             effect_contains_enqueue(then) || effect_contains_enqueue(else_branch)
         }
         _ => false,
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct EffectFootprintScan {
+    pub uses_read_pre: bool,
+    pub uses_read_op_arg: bool,
+    pub uses_fresh_token: bool,
+    pub has_havoc_or_opaque_like: bool,
+    pub may_branch: bool,
+    pub touches_pending_queue: bool,
+    pub pending_queue_var_ids: std::collections::HashSet<String>,
+}
+
+fn scan_expr_for_effect_footprint(expr: &ExprIR, scan: &mut EffectFootprintScan) {
+    match expr {
+        ExprIR::FreshToken { .. } => scan.uses_fresh_token = true,
+        ExprIR::ReadPre { .. } => scan.uses_read_pre = true,
+        ExprIR::ReadOpArg { .. } => scan.uses_read_op_arg = true,
+        ExprIR::Eq { args }
+        | ExprIR::Neq { args }
+        | ExprIR::And { args }
+        | ExprIR::Or { args }
+        | ExprIR::Not { args }
+        | ExprIR::Cond { args }
+        | ExprIR::Lt { args }
+        | ExprIR::Lte { args }
+        | ExprIR::Gt { args }
+        | ExprIR::Gte { args }
+        | ExprIR::Add { args }
+        | ExprIR::Sub { args }
+        | ExprIR::Mod { args } => {
+            for arg in args {
+                scan_expr_for_effect_footprint(arg, scan);
+            }
+        }
+        ExprIR::UpdateField { target, value, .. } => {
+            scan_expr_for_effect_footprint(target, scan);
+            scan_expr_for_effect_footprint(value, scan);
+        }
+        ExprIR::TagIs { arg, .. } | ExprIR::LenCat { arg } => {
+            scan_expr_for_effect_footprint(arg, scan);
+        }
+        ExprIR::Lit { .. }
+        | ExprIR::Read { .. }
+        | ExprIR::TransitionEnabled { .. }
+        | ExprIR::TransitionEnabledPrefix { .. } => {}
+    }
+}
+
+pub fn scan_effect_footprint(effect: &EffectIR, scan: &mut EffectFootprintScan) {
+    match effect {
+        EffectIR::Assign { expr, .. } => scan_expr_for_effect_footprint(expr, scan),
+        EffectIR::Havoc { .. } => scan.has_havoc_or_opaque_like = true,
+        EffectIR::Choose { among, .. } => {
+            scan.has_havoc_or_opaque_like = true;
+            scan.may_branch = true;
+            for expr in among {
+                scan_expr_for_effect_footprint(expr, scan);
+            }
+        }
+        EffectIR::If {
+            cond,
+            then,
+            else_branch,
+        } => {
+            scan.may_branch = true;
+            scan_expr_for_effect_footprint(cond, scan);
+            scan_effect_footprint(then, scan);
+            scan_effect_footprint(else_branch, scan);
+        }
+        EffectIR::Seq { effects } => {
+            for child in effects {
+                scan_effect_footprint(child, scan);
+            }
+        }
+        EffectIR::Enqueue { queue, args, .. } => {
+            scan.touches_pending_queue = true;
+            if let Some(id) = queue {
+                scan.pending_queue_var_ids.insert(id.clone());
+            }
+            for expr in args.values() {
+                scan_expr_for_effect_footprint(expr, scan);
+            }
+        }
+        EffectIR::Dequeue { queue, .. } => {
+            scan.touches_pending_queue = true;
+            if let Some(id) = queue {
+                scan.pending_queue_var_ids.insert(id.clone());
+            }
+        }
+        EffectIR::Opaque { .. } => scan.has_havoc_or_opaque_like = true,
     }
 }
 

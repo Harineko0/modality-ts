@@ -45,6 +45,14 @@ export interface CheckPerformanceBenchmarkResult {
   motivatingPropertySlice?: CheckPerformanceBenchmarkPropertySlice;
   unsliced: CheckPerformanceBenchmarkCheckStats;
   sliced: CheckPerformanceBenchmarkCheckStats;
+  slicedPor?: CheckPerformanceBenchmarkCheckStats & {
+    partialOrderReduction?: {
+      enabled: boolean;
+      skippedTransitions?: number;
+      reducedStates?: number;
+      cycleFallbackStates?: number;
+    };
+  };
   speedup?: number;
 }
 
@@ -110,6 +118,15 @@ export function runCheckPerformanceBenchmark(
   const slicedResult = checkModel(model, properties, { slicing: true });
   const slicedElapsedMs = roundElapsedMs(performance.now() - slicedStartedAt);
 
+  const slicedPorStartedAt = performance.now();
+  const slicedPorResult = checkModel(model, properties, {
+    slicing: true,
+    partialOrderReduction: true,
+  });
+  const slicedPorElapsedMs = roundElapsedMs(
+    performance.now() - slicedPorStartedAt,
+  );
+
   const speedup =
     unslicedElapsedMs > 0 && slicedElapsedMs > 0
       ? roundElapsedMs(unslicedElapsedMs / slicedElapsedMs)
@@ -139,6 +156,25 @@ export function runCheckPerformanceBenchmark(
       edges: slicedResult.stats.edges,
       depth: slicedResult.stats.depth,
       elapsedMs: slicedElapsedMs,
+    },
+    slicedPor: {
+      states: slicedPorResult.stats.states,
+      edges: slicedPorResult.stats.edges,
+      depth: slicedPorResult.stats.depth,
+      elapsedMs: slicedPorElapsedMs,
+      partialOrderReduction: slicedPorResult.diagnostics?.partialOrderReduction
+        ? {
+            enabled: slicedPorResult.diagnostics.partialOrderReduction.enabled,
+            skippedTransitions:
+              slicedPorResult.diagnostics.partialOrderReduction
+                .skippedTransitions,
+            reducedStates:
+              slicedPorResult.diagnostics.partialOrderReduction.reducedStates,
+            cycleFallbackStates:
+              slicedPorResult.diagnostics.partialOrderReduction
+                .cycleFallbackStates,
+          }
+        : undefined,
     },
     ...(speedup !== undefined ? { speedup } : {}),
   };

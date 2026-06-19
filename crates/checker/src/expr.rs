@@ -233,6 +233,19 @@ pub fn guard_holds(
     .unwrap_or(false)
 }
 
+pub fn expr_state_read_vars(expr: &ExprIR) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    expr_read_vars(expr, &mut out);
+    out
+}
+
+pub fn transition_enabledness_read_vars(
+    compiled: &CompiledModel,
+    transition_idx: usize,
+) -> std::collections::HashSet<String> {
+    enabledness_read_vars(compiled, transition_idx)
+}
+
 fn expr_read_vars(expr: &ExprIR, out: &mut std::collections::HashSet<String>) {
     match expr {
         ExprIR::Read { var, .. } => {

@@ -165,6 +165,7 @@ export function runRustCheck(
     options: {
       slicing: options.slicing,
       slicedModel: options.slicedModel,
+      partialOrderReduction: options.partialOrderReduction,
       maxStates: options.maxStates,
       maxEdges: options.maxEdges,
       maxFrontier: options.maxFrontier,

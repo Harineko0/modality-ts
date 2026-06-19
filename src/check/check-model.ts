@@ -14,6 +14,7 @@ import type {
   CheckOptions,
   CheckResult,
   MountScopeDependency,
+  PartialOrderReductionDiagnostics,
   PendingQueueDependency,
   PropertyVerdict,
   SliceSummary,
@@ -271,7 +272,57 @@ function mergeSearchDiagnostics(
     dominantVars: dominant,
     storage: mergeStorageDiagnostics(left.storage, right.storage),
     hotPath: left.hotPath ?? right.hotPath,
+    partialOrderReduction: mergePartialOrderReductionDiagnostics(
+      left.partialOrderReduction,
+      right.partialOrderReduction,
+    ),
   };
+}
+
+function mergePartialOrderReductionDiagnostics(
+  left: PartialOrderReductionDiagnostics | undefined,
+  right: PartialOrderReductionDiagnostics | undefined,
+): PartialOrderReductionDiagnostics | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  const reasonCounts = new Map<string, number>();
+  for (const entry of [...left.reasonCounts, ...right.reasonCounts]) {
+    reasonCounts.set(
+      entry.reason,
+      (reasonCounts.get(entry.reason) ?? 0) + entry.count,
+    );
+  }
+  const allSkipped = (left.skipped ?? false) && (right.skipped ?? false);
+  return {
+    requested: left.requested || right.requested,
+    enabled: left.enabled || right.enabled,
+    skipped: allSkipped ? true : undefined,
+    skipReason: allSkipped
+      ? summarizePorSkipReason(left.skipReason, right.skipReason)
+      : undefined,
+    fullExplorationStates:
+      left.fullExplorationStates + right.fullExplorationStates,
+    reducedStates: left.reducedStates + right.reducedStates,
+    fullEnabledTransitions:
+      left.fullEnabledTransitions + right.fullEnabledTransitions,
+    exploredTransitions: left.exploredTransitions + right.exploredTransitions,
+    skippedTransitions: left.skippedTransitions + right.skippedTransitions,
+    cycleFallbackStates: left.cycleFallbackStates + right.cycleFallbackStates,
+    violationRerun: left.violationRerun || right.violationRerun,
+    reasonCounts: [...reasonCounts.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => a.reason.localeCompare(b.reason)),
+  };
+}
+
+function summarizePorSkipReason(
+  left: string | undefined,
+  right: string | undefined,
+): string | undefined {
+  if (left && right && left !== right) {
+    return `all groups skipped: ${left}; ${right}`;
+  }
+  return left ?? right;
 }
 
 function mergeStorageDiagnostics(

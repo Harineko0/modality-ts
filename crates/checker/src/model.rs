@@ -426,6 +426,7 @@ pub struct LeadsBudget {
 pub struct CheckOptionsIR {
     pub slicing: Option<bool>,
     pub sliced_model: Option<bool>,
+    pub partial_order_reduction: Option<bool>,
     pub max_states: Option<u32>,
     pub max_edges: Option<u32>,
     pub max_frontier: Option<u32>,
@@ -447,9 +448,20 @@ pub struct CompiledVar {
 
 #[derive(Debug, Clone)]
 pub struct CompiledTransition {
+    pub read_indexes: Vec<usize>,
     pub write_indexes: Vec<usize>,
     pub triggered_by_indexes: Vec<usize>,
     pub mount_local_var_indexes: Vec<usize>,
+    pub pending_queue_indexes_touched: Vec<usize>,
+    pub system_role_indexes_touched: Vec<usize>,
+    pub touches_pending_queue: bool,
+    pub touches_route_or_history: bool,
+    pub touches_mount_local: bool,
+    pub uses_read_pre: bool,
+    pub uses_read_op_arg: bool,
+    pub uses_fresh_token: bool,
+    pub has_havoc_or_opaque_like_effect: bool,
+    pub may_branch: bool,
 }
 
 #[derive(Debug)]
@@ -493,9 +505,15 @@ impl CompiledModel {
             .collect();
 
         let mut transitions = Vec::with_capacity(sorted_transitions.len());
+        let location_current_indexes = location_role_var_indexes(&model, SystemVarRoleKind::LocationCurrent);
+        let location_history_indexes =
+            location_role_var_indexes(&model, SystemVarRoleKind::LocationHistory);
+        let pending_queue_indexes =
+            location_role_var_indexes(&model, SystemVarRoleKind::PendingQueue);
         for transition in &sorted_transitions {
             validate_no_opaque(&transition.effect, &transition.id)?;
-            let read_indexes = resolve_var_indexes(&var_index, &transition.reads)?;
+            let read_indexes =
+                compile_transition_read_indexes(&model, &vars, &var_index, transition)?;
             let write_indexes = resolve_var_indexes(&var_index, &transition.writes)?;
             let triggered_by_indexes = match transition.triggered_by.as_ref() {
                 None => Vec::new(),
@@ -517,11 +535,83 @@ impl CompiledModel {
                         None
                     }
                 })
-                .collect();
+                .collect::<Vec<_>>();
+
+            let mut effect_scan = crate::effect::EffectFootprintScan::default();
+            crate::effect::scan_effect_footprint(&transition.effect, &mut effect_scan);
+            let mut pending_queue_indexes_touched = Vec::new();
+            for queue_id in &effect_scan.pending_queue_var_ids {
+                if let Some(&idx) = var_index.get(queue_id) {
+                    pending_queue_indexes_touched.push(idx);
+                }
+            }
+            if effect_scan.touches_pending_queue {
+                for &idx in &pending_queue_indexes {
+                    if touched.contains(&idx) && !pending_queue_indexes_touched.contains(&idx) {
+                        pending_queue_indexes_touched.push(idx);
+                    }
+                }
+                if pending_queue_indexes.len() == 1
+                    && !pending_queue_indexes_touched.contains(&pending_queue_indexes[0])
+                {
+                    pending_queue_indexes_touched.push(pending_queue_indexes[0]);
+                }
+            }
+            pending_queue_indexes_touched.sort_unstable();
+            pending_queue_indexes_touched.dedup();
+
+            let mut system_role_indexes_touched = HashSet::new();
+            for &idx in read_indexes
+                .iter()
+                .chain(write_indexes.iter())
+                .chain(pending_queue_indexes_touched.iter())
+            {
+                if model.vars[idx].role.is_some() {
+                    system_role_indexes_touched.insert(idx);
+                }
+            }
+            let mut system_role_indexes_touched: Vec<usize> =
+                system_role_indexes_touched.into_iter().collect();
+            system_role_indexes_touched.sort_unstable();
+
+            let touches_route_or_history = read_indexes
+                .iter()
+                .chain(write_indexes.iter())
+                .any(|idx| {
+                    location_current_indexes.contains(idx)
+                        || location_history_indexes.contains(idx)
+                })
+                || model.vars.iter().enumerate().any(|(idx, decl)| {
+                    touched.contains(&idx)
+                        && decl.role.as_ref().is_some_and(|role| {
+                            role.kind == SystemVarRoleKind::LocationCurrent
+                                || role.kind == SystemVarRoleKind::LocationHistory
+                        })
+                });
+
+            let touches_mount_local = !mount_local_var_indexes.is_empty()
+                || model.vars.iter().enumerate().any(|(idx, decl)| {
+                    touched.contains(&idx) && matches!(decl.scope, Scope::MountLocal { .. })
+                });
+
+            let touches_pending_queue = effect_scan.touches_pending_queue
+                || !pending_queue_indexes_touched.is_empty();
+
             transitions.push(CompiledTransition {
+                read_indexes,
                 write_indexes,
                 triggered_by_indexes,
                 mount_local_var_indexes,
+                pending_queue_indexes_touched,
+                system_role_indexes_touched,
+                touches_pending_queue,
+                touches_route_or_history,
+                touches_mount_local,
+                uses_read_pre: effect_scan.uses_read_pre,
+                uses_read_op_arg: effect_scan.uses_read_op_arg,
+                uses_fresh_token: effect_scan.uses_fresh_token,
+                has_havoc_or_opaque_like_effect: effect_scan.has_havoc_or_opaque_like,
+                may_branch: effect_scan.may_branch,
             });
         }
 
@@ -691,6 +781,68 @@ fn resolve_var_indexes(
                 .ok_or_else(|| format!("references unknown var {id}"))
         })
         .collect()
+}
+
+fn location_role_var_indexes(model: &Model, kind: SystemVarRoleKind) -> Vec<usize> {
+    model
+        .vars
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, decl)| {
+            if decl
+                .role
+                .as_ref()
+                .is_some_and(|role| role.kind == kind)
+            {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn compile_transition_read_indexes(
+    model: &Model,
+    vars: &[CompiledVar],
+    var_index: &HashMap<String, usize>,
+    transition: &Transition,
+) -> Result<Vec<usize>, String> {
+    let mut read_ids = HashSet::new();
+    for id in &transition.reads {
+        read_ids.insert(id.clone());
+    }
+    read_ids.extend(crate::expr::expr_state_read_vars(&transition.guard));
+    loop {
+        let before = read_ids.len();
+        for (idx, compiled_var) in vars.iter().enumerate() {
+            if compiled_var.mount_guard.is_none() {
+                continue;
+            }
+            let var_id = &model.vars[idx].id;
+            if !read_ids.contains(var_id) {
+                continue;
+            }
+            if let Some(guard) = &compiled_var.mount_guard {
+                read_ids.extend(crate::expr::expr_state_read_vars(guard));
+            }
+        }
+        if read_ids.len() == before {
+            break;
+        }
+    }
+    let mut read_indexes = Vec::new();
+    for id in read_ids {
+        read_indexes.push(
+            var_index
+                .get(&id)
+                .copied()
+                .ok_or_else(|| format!("{}: references unknown var {id}", transition.id))?,
+        );
+    }
+    read_indexes.sort_unstable();
+    read_indexes.dedup();
+    Ok(read_indexes)
 }
 
 fn validate_no_opaque(effect: &EffectIR, transition_id: &str) -> Result<(), String> {

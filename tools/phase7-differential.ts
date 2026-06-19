@@ -161,6 +161,25 @@ async function main(): Promise<void> {
     console.log(
       `RandomCorpus: models=${randomCount} chunks=${Math.ceil(randomCount / chunkSize)} checker states=${expected.states} generated=${expected.generated}; TLC distinct=${corpusTlc.distinctStates} generated=${corpusTlc.statesGenerated}`,
     );
+
+    const porModel = porParityModel();
+    const porProperties = [
+      {
+        kind: "always" as const,
+        name: "ok",
+        predicate: { kind: "lit" as const, value: true },
+        reads: [] as string[],
+      },
+    ];
+    const withoutPor = checkModel(porModel, porProperties);
+    const withPor = checkModel(porModel, porProperties, {
+      partialOrderReduction: true,
+    });
+    assertPorParity("PorParity", withoutPor, withPor);
+    console.log(
+      `PorParity: withoutPor edges=${withoutPor.stats.edges} withPor edges=${withPor.stats.edges} skippedTransitions=${withPor.diagnostics?.partialOrderReduction?.skippedTransitions ?? 0}`,
+    );
+
     console.log("phase7-differential: passed");
   } finally {
     await rm(workDir, { recursive: true, force: true });
@@ -960,6 +979,82 @@ function numberArg(name: string, fallback: number): number {
   if (!Number.isInteger(value) || value < 0)
     throw new Error(`${name} must be a non-negative integer`);
   return value;
+}
+
+function porParityModel(): Model {
+  const route = routeDecl();
+  return {
+    schemaVersion: 1,
+    id: "por-parity",
+    bounds: { maxDepth: 2, maxPending: 0, maxInternalSteps: 4 },
+    vars: [
+      route,
+      historyDecl(route.domain),
+      pendingDecl(0),
+      {
+        id: "a",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+      {
+        id: "b",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+    ],
+    transitions: [
+      {
+        id: "flipA",
+        cls: "user",
+        label: { kind: "click", text: "A" },
+        source: [],
+        guard: { kind: "not", args: [{ kind: "read", var: "a" }] },
+        effect: {
+          kind: "assign",
+          var: "a",
+          expr: { kind: "lit", value: true },
+        },
+        reads: ["a"],
+        writes: ["a"],
+        confidence: "exact",
+      },
+      {
+        id: "flipB",
+        cls: "user",
+        label: { kind: "click", text: "B" },
+        source: [],
+        guard: { kind: "not", args: [{ kind: "read", var: "b" }] },
+        effect: {
+          kind: "assign",
+          var: "b",
+          expr: { kind: "lit", value: true },
+        },
+        reads: ["b"],
+        writes: ["b"],
+        confidence: "exact",
+      },
+    ],
+  };
+}
+
+function assertPorParity(
+  label: string,
+  withoutPor: ReturnType<typeof checkModel>,
+  withPor: ReturnType<typeof checkModel>,
+): void {
+  if (
+    withoutPor.verdicts.map((verdict) => verdict.status).join(",") !==
+    withPor.verdicts.map((verdict) => verdict.status).join(",")
+  ) {
+    throw new Error(`${label} verdict mismatch`);
+  }
+  if (withPor.diagnostics?.partialOrderReduction?.enabled !== true) {
+    throw new Error(`${label} expected POR to be enabled`);
+  }
 }
 
 function assertEqual(label: string, actual: number, expected: number): void {
