@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   ) {
     console.log("Usage: modality init");
     console.log(
-      "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--props props.ts] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift]",
+      "       modality extract [source.tsx ...] [--out .modality/model.json] [--app-model .modality/app.model.ts] [--report extraction-report.json] [--props props.ts] [--expect-model expected.json] [--config modality.config.ts] [--package-json package.json] [--disable-plugin id] [--effect-api name] [--explain-drift] [--artifact|-A]",
     );
     console.log(
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
@@ -379,6 +379,7 @@ async function main(): Promise<void> {
   if (command === "extract") {
     const startedMs = performance.now();
     const explainDrift = args.includes("--explain-drift");
+    const showArtifacts = args.includes("--artifact") || args.includes("-A");
     const effectApiFlags = args.flatMap((arg, index) => {
       if (arg !== "--effect-api") return [];
       const value = args[index + 1];
@@ -395,7 +396,7 @@ async function main(): Promise<void> {
       return value ? [value] : [];
     });
     const sourcePaths = positionals(
-      args,
+      args.filter((arg) => arg !== "-A"),
       [
         "--out",
         "--app-model",
@@ -508,6 +509,7 @@ async function main(): Promise<void> {
         {
           ...outputOptions(),
           totalDurationMs: performance.now() - startedMs,
+          showArtifacts,
         },
       ),
     );

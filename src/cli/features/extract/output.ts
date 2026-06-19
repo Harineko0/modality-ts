@@ -29,6 +29,7 @@ export interface HumanExtractTargetResult {
 
 export interface HumanExtractRenderOptions extends OutputOptions {
   totalDurationMs: number;
+  showArtifacts?: boolean;
 }
 
 function formatRouteStats(report: ExtractionReport): string | undefined {
@@ -82,7 +83,7 @@ export function renderHumanExtractTargets(
       formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
     );
     const artifacts = results.flatMap((target) => [...target.artifacts]);
-    if (artifacts.length > 0) {
+    if (options.showArtifacts === true && artifacts.length > 0) {
       lines.push(formatSummaryLabel("Artifacts", ""));
       for (const entry of artifacts) {
         lines.push(formatArtifactLine(entry.kind, entry.path, options));
