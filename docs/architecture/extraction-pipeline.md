@@ -135,6 +135,15 @@ Optional `diagnostics` on the extraction report make project-surface cost transp
 
 These fields are diagnostic only; they do not change `sourceFiles` semantics or handler classifications.
 
+When properties are supplied, `diagnostics.propertySlices` adds per-property slice planning
+diagnostics: full/slice var and transition counts, retained/pruned bits, top retained/pruned
+contributors, per-property `elapsedMs` (planning only — not artifact writes), and aggregate
+fields (`totalElapsedMs`, `largestRetainedProperty`, `largestRetainedBits`,
+`largestPrunedBits`). The slice manifest remains deterministic and excludes elapsed timings.
+Human extract output may include a compact `slice-economics=…` line naming the largest
+retained property and top contributors. See `docs/_benchmarks/check-performance.md` for the
+synthetic Coffee-shaped benchmark procedure.
+
 ## Where extraction quality is won or lost
 
 P5 is deliberately conservative; P4's M0 subset is deliberately small. Together they

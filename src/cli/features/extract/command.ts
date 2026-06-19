@@ -135,6 +135,7 @@ export interface ExtractCommandResult {
   stateSpaceLine?: string;
   coarseDomainsLine?: string;
   sliceStatsLine?: string;
+  sliceEconomicsLine?: string;
   artifacts: readonly ExtractArtifactEntry[];
 }
 
@@ -566,6 +567,9 @@ export async function runExtractCommand(
   const sliceStatsLine = propertySlicePlan
     ? `slices=properties:${propertySlicePlan.diagnosticsSummary.properties} emitted:${propertySlicePlan.diagnosticsSummary.emitted} skipped:${propertySlicePlan.diagnosticsSummary.skipped} groups:${propertySlicePlan.diagnosticsSummary.slices} manifest=${propertySlicePlan.manifestPath}`
     : undefined;
+  const sliceEconomicsLine = propertySlicePlan
+    ? formatSliceEconomicsLine(propertySlicePlan.diagnosticsSummary)
+    : undefined;
   return {
     model,
     report: reportWithDiagnostics,
@@ -577,6 +581,7 @@ export async function runExtractCommand(
     stateSpaceLine,
     coarseDomainsLine,
     sliceStatsLine,
+    sliceEconomicsLine,
     artifacts,
     lines: [
       `extracted vars=${varCount} transitions=${transitionCount}`,
@@ -585,6 +590,7 @@ export async function runExtractCommand(
       ...(routeCoverageLine ? [routeCoverageLine] : []),
       ...(coarseDomainsLine ? [coarseDomainsLine] : []),
       ...(sliceStatsLine ? [sliceStatsLine] : []),
+      ...(sliceEconomicsLine ? [sliceEconomicsLine] : []),
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
@@ -900,6 +906,8 @@ export function buildPropertySlicePlan(
   manifestPath: string,
   now: Date,
 ): PropertySlicePlan {
+  const fullVars = model.vars.length;
+  const fullTransitions = model.transitions.length;
   const indexedProperties = properties.map((property, index) => ({
     property,
     index,
@@ -920,9 +928,11 @@ export function buildPropertySlicePlan(
       left.property.name.localeCompare(right.property.name) ||
       left.index - right.index,
   )) {
+    const propertyStartedAt = performance.now();
     const skipReason = propertySlicingSkipReason(model, property);
     if (skipReason) {
       skipped += 1;
+      const elapsedMs = performance.now() - propertyStartedAt;
       entries.push({
         property: property.name,
         propertyIndex: index,
@@ -934,6 +944,7 @@ export function buildPropertySlicePlan(
         propertyIndex: index,
         status: "skipped",
         reason: skipReason,
+        elapsedMs,
       });
       continue;
     }
@@ -949,6 +960,7 @@ export function buildPropertySlicePlan(
       20,
       prunedFieldPathsForSlice(model, slice, [property]),
     );
+    const elapsedMs = performance.now() - propertyStartedAt;
     const sliceKey = computeSliceKey(slice, mode);
     sliceKeys.add(sliceKey);
     const slicePath = sliceModelPathForProperty(
@@ -965,6 +977,8 @@ export function buildPropertySlicePlan(
       status: "emitted",
       mode,
       path: slicePath,
+      fullVars,
+      fullTransitions,
       vars: slice.vars.length,
       transitions: slice.transitions.length,
       varIds: slice.vars.map((decl) => decl.id).sort(),
@@ -973,8 +987,8 @@ export function buildPropertySlicePlan(
         .sort(),
       retainedBits: economics.retainedBits,
       prunedBits: economics.prunedBits,
-      topContributors: economics.topContributors,
-      prunedTopContributors: economics.prunedTopContributors,
+      topRetainedContributors: economics.topContributors,
+      topPrunedContributors: economics.prunedTopContributors,
       retainedSystemVars: economics.retainedSystemVars,
       prunedSystemVars: economics.prunedSystemVars,
       ...(diagnostics?.pendingQueueDependencies &&
@@ -1015,13 +1029,27 @@ export function buildPropertySlicePlan(
       status: "emitted",
       mode,
       path: slicePath,
+      fullVars,
+      fullTransitions,
       vars: slice.vars.length,
       transitions: slice.transitions.length,
       retainedBits: economics.retainedBits,
       prunedBits: economics.prunedBits,
+      topRetainedContributors: economics.topContributors,
+      topPrunedContributors: economics.prunedTopContributors,
       sliceKey,
+      elapsedMs,
     });
   }
+
+  const diagnosticsSummary = summarizePropertySliceDiagnostics(
+    manifestPath,
+    properties.length,
+    emitted,
+    skipped,
+    sliceKeys.size,
+    diagnosticsEntries,
+  );
 
   const manifest: PropertySliceManifest = {
     schemaVersion: 1,
@@ -1037,13 +1065,94 @@ export function buildPropertySlicePlan(
     manifestPath,
     manifest,
     emittedWrites,
-    diagnosticsSummary: {
-      manifestPath,
-      properties: properties.length,
-      emitted,
-      skipped,
-      slices: sliceKeys.size,
-      entries: diagnosticsEntries,
-    },
+    diagnosticsSummary,
   };
+}
+
+function summarizePropertySliceDiagnostics(
+  manifestPath: string,
+  properties: number,
+  emitted: number,
+  skipped: number,
+  slices: number,
+  entries: readonly ExtractionPropertySliceDiagnosticsEntry[],
+): ExtractionPropertySliceDiagnostics {
+  const totalElapsedMs = roundElapsedMs(
+    entries.reduce((sum, entry) => sum + (entry.elapsedMs ?? 0), 0),
+  );
+  const emittedEntries = entries.filter((entry) => entry.status === "emitted");
+  const largestRetained = emittedEntries.reduce<
+    ExtractionPropertySliceDiagnosticsEntry | undefined
+  >((current, entry) => {
+    if (entry.retainedBits === undefined) return current;
+    if (
+      current === undefined ||
+      entry.retainedBits > (current.retainedBits ?? 0)
+    ) {
+      return entry;
+    }
+    return current;
+  }, undefined);
+  const largestPrunedBits = emittedEntries.reduce((max, entry) => {
+    if (entry.prunedBits === undefined) return max;
+    return Math.max(max, entry.prunedBits);
+  }, 0);
+  return {
+    manifestPath,
+    properties,
+    emitted,
+    skipped,
+    slices,
+    totalElapsedMs,
+    ...(largestRetained
+      ? {
+          largestRetainedProperty: largestRetained.property,
+          largestRetainedBits: largestRetained.retainedBits,
+        }
+      : {}),
+    ...(largestPrunedBits > 0 ? { largestPrunedBits } : {}),
+    entries,
+  };
+}
+
+function roundElapsedMs(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function formatSliceEconomicsLine(
+  diagnostics: ExtractionPropertySliceDiagnostics,
+): string | undefined {
+  if (
+    !diagnostics.largestRetainedProperty ||
+    diagnostics.entries === undefined
+  ) {
+    return undefined;
+  }
+  const entry = diagnostics.entries.find(
+    (candidate) =>
+      candidate.status === "emitted" &&
+      candidate.property === diagnostics.largestRetainedProperty,
+  );
+  if (
+    !entry ||
+    entry.retainedBits === undefined ||
+    entry.prunedBits === undefined
+  ) {
+    return undefined;
+  }
+  const topRetained = entry.topRetainedContributors?.[0];
+  const topPruned = entry.topPrunedContributors?.[0];
+  const topRetainedLabel = topRetained
+    ? `topRetained:${topRetained.varId}(${topRetained.bits.toFixed(1)})`
+    : "topRetained:none";
+  const topPrunedLabel = topPruned
+    ? `topPruned:${topPruned.varId}(${topPruned.bits.toFixed(1)})`
+    : "topPruned:none";
+  return [
+    `slice-economics=largest:${entry.property}`,
+    `retained:${entry.retainedBits.toFixed(1)}bits`,
+    `pruned:${entry.prunedBits.toFixed(1)}bits`,
+    topRetainedLabel,
+    topPrunedLabel,
+  ].join(" ");
 }

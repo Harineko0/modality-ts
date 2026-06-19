@@ -113,6 +113,7 @@ export async function runCanarySuite(
         configPath,
         effectApis: canary.extract.effectApis,
         disabledPlugins: canary.extract.disabledPlugins,
+        ...(propsPaths.length > 0 ? { propsPaths } : {}),
         now,
       });
 
@@ -226,6 +227,8 @@ export async function runCanarySuite(
           ? "fail"
           : "pass";
 
+      const sliceManifestPath =
+        extracted.report.diagnostics?.propertySlices?.manifestPath;
       canaryResults.push({
         canaryId: canary.id,
         status,
@@ -237,6 +240,7 @@ export async function runCanarySuite(
           extract: extractReportPath,
           ...(checkReport ? { check: checkReportPath } : {}),
           ...(conformReport ? { conform: conformReportPath } : {}),
+          ...(sliceManifestPath ? { sliceManifest: sliceManifestPath } : {}),
         },
       });
 

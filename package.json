@@ -173,6 +173,7 @@
     "docs:start": "pnpm --dir docs start",
     "fix": "biome lint --write . && biome format --write .",
     "phase7": "tsx tools/phase7-differential.ts",
+    "perf:check": "tsx tools/check-performance-benchmark.ts",
     "publish:npm": "npm publish --access public",
     "test": "pnpm build:rust && vitest run",
     "typecheck": "tsc -b"

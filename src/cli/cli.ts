@@ -502,6 +502,7 @@ async function main(): Promise<void> {
           stateSpaceLine: result.stateSpaceLine,
           coarseDomainsLine: result.coarseDomainsLine,
           sliceStatsLine: result.sliceStatsLine,
+          sliceEconomicsLine: result.sliceEconomicsLine,
           artifacts: result.artifacts,
         })),
         {

@@ -22,6 +22,7 @@ export interface HumanExtractTargetResult {
   stateSpaceLine?: string;
   coarseDomainsLine?: string;
   sliceStatsLine?: string;
+  sliceEconomicsLine?: string;
   artifacts: readonly ExtractArtifactEntry[];
   durationMs?: number;
 }
@@ -70,6 +71,9 @@ export function renderHumanExtractTargets(
     }
     if (target.sliceStatsLine) {
       lines.push(`  - ${target.sliceStatsLine}`);
+    }
+    if (target.sliceEconomicsLine) {
+      lines.push(`  - ${target.sliceEconomicsLine}`);
     }
   }
   if (results.length > 0) {

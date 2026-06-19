@@ -1319,6 +1319,32 @@ describe("runExtractCommand", () => {
       true,
     );
     expect(result.sliceStatsLine).toMatch(/^slices=properties:/);
+    const propertySlices = result.report.diagnostics?.propertySlices;
+    expect(propertySlices).toBeDefined();
+    const emittedDiagnostic = propertySlices?.entries?.find(
+      (entry) => entry.status === "emitted",
+    );
+    expect(emittedDiagnostic).toEqual(
+      expect.objectContaining({
+        fullVars: expect.any(Number),
+        fullTransitions: expect.any(Number),
+        topRetainedContributors: expect.any(Array),
+        topPrunedContributors: expect.any(Array),
+        elapsedMs: expect.any(Number),
+      }),
+    );
+    expect(emittedDiagnostic?.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(emittedDiagnostic?.elapsedMs)).toBe(true);
+    expect(propertySlices?.totalElapsedMs).toBeGreaterThanOrEqual(0);
+    const manifestText = await readFile(manifestPath, "utf8");
+    expect(manifestText).not.toContain("elapsedMs");
+    if (emitted?.status === "emitted") {
+      expect(emitted.fullVars).toBe(result.model.vars.length);
+      expect(emitted.fullTransitions).toBe(result.model.transitions.length);
+      expect(emitted.topRetainedContributors).toEqual(expect.any(Array));
+      expect(emitted.topPrunedContributors).toEqual(expect.any(Array));
+    }
+    expect(result.sliceEconomicsLine).toMatch(/^slice-economics=largest:/);
   });
 
   it("does not emit slice artifacts without props paths", async () => {
@@ -1343,5 +1369,6 @@ describe("runExtractCommand", () => {
       "appModel",
     ]);
     expect(result.sliceStatsLine).toBeUndefined();
+    expect(result.sliceEconomicsLine).toBeUndefined();
   });
 });

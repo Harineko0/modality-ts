@@ -355,6 +355,12 @@ function assertPropertySliceManifestEntry(
     throw new Error(`${path} missing mode`);
   }
   if (typeof value.path !== "string") throw new Error(`${path} missing path`);
+  if (typeof value.fullVars !== "number") {
+    throw new Error(`${path} missing fullVars`);
+  }
+  if (typeof value.fullTransitions !== "number") {
+    throw new Error(`${path} missing fullTransitions`);
+  }
   if (typeof value.vars !== "number") throw new Error(`${path} missing vars`);
   if (typeof value.transitions !== "number") {
     throw new Error(`${path} missing transitions`);
@@ -367,12 +373,14 @@ function assertPropertySliceManifestEntry(
   if (typeof value.prunedBits !== "number") {
     throw new Error(`${path} missing prunedBits`);
   }
-  if (!Array.isArray(value.topContributors)) {
-    throw new Error(`${path} missing topContributors`);
-  }
-  if (!Array.isArray(value.prunedTopContributors)) {
-    throw new Error(`${path} missing prunedTopContributors`);
-  }
+  assertStateSpaceContributorArray(
+    value.topRetainedContributors,
+    `${path}.topRetainedContributors`,
+  );
+  assertStateSpaceContributorArray(
+    value.topPrunedContributors,
+    `${path}.topPrunedContributors`,
+  );
   assertStringArray(value.retainedSystemVars, `${path}.retainedSystemVars`);
   assertStringArray(value.prunedSystemVars, `${path}.prunedSystemVars`);
   if (typeof value.sliceKey !== "string") {
@@ -710,6 +718,32 @@ function assertStringArray(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
   for (const [index, entry] of value.entries()) {
     assertNonEmptyString(entry, `${path}[${index}]`);
+  }
+}
+
+function assertStateSpaceContributorArray(value: unknown, path: string): void {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  for (const [index, entry] of value.entries()) {
+    const entryPath = `${path}[${index}]`;
+    if (!isRecord(entry)) throw new Error(`${entryPath} must be an object`);
+    assertNonEmptyString(entry.varId, `${entryPath}.varId`);
+    assertNonEmptyString(entry.domainKind, `${entryPath}.domainKind`);
+    if (typeof entry.bits !== "number") {
+      throw new Error(`${entryPath}.bits must be a number`);
+    }
+    assertNonEmptyString(entry.scope, `${entryPath}.scope`);
+    assertNonEmptyString(entry.origin, `${entryPath}.origin`);
+    if (entry.prunedFieldPaths !== undefined) {
+      if (!Array.isArray(entry.prunedFieldPaths)) {
+        throw new Error(`${entryPath}.prunedFieldPaths must be an array`);
+      }
+      for (const [pathIndex, pathEntry] of entry.prunedFieldPaths.entries()) {
+        assertStringArray(
+          pathEntry,
+          `${entryPath}.prunedFieldPaths[${pathIndex}]`,
+        );
+      }
+    }
   }
 }
 

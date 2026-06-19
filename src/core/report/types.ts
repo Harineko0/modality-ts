@@ -232,14 +232,16 @@ export type PropertySliceManifestEntry =
       status: "emitted";
       mode: "state" | "targetedStep" | "full";
       path: string;
+      fullVars: number;
+      fullTransitions: number;
       vars: number;
       transitions: number;
       varIds: readonly string[];
       transitionIds: readonly string[];
       retainedBits: number;
       prunedBits: number;
-      topContributors: readonly StateSpaceContributor[];
-      prunedTopContributors: readonly StateSpaceContributor[];
+      topRetainedContributors: readonly StateSpaceContributor[];
+      topPrunedContributors: readonly StateSpaceContributor[];
       retainedSystemVars: readonly string[];
       prunedSystemVars: readonly string[];
       pendingQueueDependencies?: readonly PropertySliceManifestPendingQueueDependency[];
@@ -270,12 +272,17 @@ export interface ExtractionPropertySliceDiagnosticsEntry {
   status: "emitted" | "skipped";
   mode?: "state" | "targetedStep" | "full";
   path?: string;
+  fullVars?: number;
+  fullTransitions?: number;
   vars?: number;
   transitions?: number;
   retainedBits?: number;
   prunedBits?: number;
+  topRetainedContributors?: readonly StateSpaceContributor[];
+  topPrunedContributors?: readonly StateSpaceContributor[];
   sliceKey?: string;
   reason?: string;
+  elapsedMs?: number;
 }
 
 export interface ExtractionPropertySliceDiagnostics {
@@ -284,6 +291,10 @@ export interface ExtractionPropertySliceDiagnostics {
   emitted: number;
   skipped: number;
   slices: number;
+  totalElapsedMs?: number;
+  largestRetainedProperty?: string;
+  largestRetainedBits?: number;
+  largestPrunedBits?: number;
   entries?: readonly ExtractionPropertySliceDiagnosticsEntry[];
 }
 

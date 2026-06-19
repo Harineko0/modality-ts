@@ -475,6 +475,7 @@ export default [route('/', 'routes/home.tsx')];`,
           report: result.report,
           pluginLabels: result.pluginLabels,
           sliceStatsLine: result.sliceStatsLine,
+          sliceEconomicsLine: result.sliceEconomicsLine,
           artifacts: result.artifacts,
         },
       ],
@@ -483,6 +484,8 @@ export default [route('/', 'routes/home.tsx')];`,
     expect(lines.join("\n")).toContain("(sliceManifest)");
     expect(lines.join("\n")).toContain("(sliceModel)");
     expect(lines.join("\n")).toContain("slices=properties:");
+    expect(lines.join("\n")).toContain("slice-economics=largest:");
+    expect(lines.join("\n")).not.toMatch(/topRetainedContributors/);
   });
 
   it("omits compact slice stats when no slices are produced", async () => {
@@ -513,11 +516,13 @@ export default [route('/', 'routes/home.tsx')];`,
           report: result.report,
           pluginLabels: result.pluginLabels,
           sliceStatsLine: result.sliceStatsLine,
+          sliceEconomicsLine: result.sliceEconomicsLine,
           artifacts: result.artifacts,
         },
       ],
       { totalDurationMs: 12 },
     );
     expect(lines.join("\n")).not.toContain("slices=properties:");
+    expect(lines.join("\n")).not.toContain("slice-economics=");
   });
 });

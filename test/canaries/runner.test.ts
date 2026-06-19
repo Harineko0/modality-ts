@@ -80,8 +80,24 @@ describe("canary runner", () => {
       expect.objectContaining({
         canaryId: "examples-demo-app",
         status: "pass",
+        reportPaths: expect.objectContaining({
+          extract: expect.stringContaining("extract-report.json"),
+          sliceManifest: expect.stringContaining(".slices.json"),
+        }),
       }),
     ]);
+    const extractReport = JSON.parse(
+      await readFile(
+        result.report.canaryResults[0]?.reportPaths?.extract ?? "",
+        "utf8",
+      ),
+    ) as ExtractionReport;
+    expect(extractReport.diagnostics?.propertySlices).toEqual(
+      expect.objectContaining({
+        emitted: expect.any(Number),
+        entries: expect.any(Array),
+      }),
+    );
   });
 
   it("classifies state-space budget failures", () => {

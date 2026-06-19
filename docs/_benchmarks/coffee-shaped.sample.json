@@ -1,0 +1,596 @@
+{
+  "fixture": "coffee-shaped",
+  "properties": [
+    "densityOneRequiresConnectedPrinter",
+    "densitySevenDisabledWhenPrinterDisconnected",
+    "loadMoreOrdersEnabledOnlyWithCursorAndIdleDialog"
+  ],
+  "fullVars": 18,
+  "fullTransitions": 13,
+  "fullStateSpaceBits": 54.23,
+  "propertySlices": [
+    {
+      "property": "densityOneRequiresConnectedPrinter",
+      "status": "emitted",
+      "mode": "state",
+      "fullVars": 18,
+      "fullTransitions": 13,
+      "vars": 2,
+      "transitions": 1,
+      "retainedBits": 2.58,
+      "prunedBits": 51.65,
+      "topRetainedContributors": [
+        {
+          "varId": "printerStatus",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:route",
+          "domainKind": "enum",
+          "bits": 1,
+          "scope": "global",
+          "origin": "system"
+        }
+      ],
+      "topPrunedContributors": [
+        {
+          "varId": "orderHistoryPayload",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "printerStatusData",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:history",
+          "domainKind": "boundedList",
+          "bits": 3.91,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:pending",
+          "domainKind": "boundedList",
+          "bits": 2.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "orderHistoryCursor",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "orderHistoryDialog",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.autoPrint",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.orderHistoryOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.printerSettingsOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity1",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity2",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity3",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity4",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity5",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity6",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity7",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        }
+      ],
+      "slicePlanningElapsedMs": 0.8816669999999931
+    },
+    {
+      "property": "densitySevenDisabledWhenPrinterDisconnected",
+      "status": "emitted",
+      "mode": "state",
+      "fullVars": 18,
+      "fullTransitions": 13,
+      "vars": 2,
+      "transitions": 1,
+      "retainedBits": 2.58,
+      "prunedBits": 51.65,
+      "topRetainedContributors": [
+        {
+          "varId": "printerStatus",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:route",
+          "domainKind": "enum",
+          "bits": 1,
+          "scope": "global",
+          "origin": "system"
+        }
+      ],
+      "topPrunedContributors": [
+        {
+          "varId": "orderHistoryPayload",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "printerStatusData",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:history",
+          "domainKind": "boundedList",
+          "bits": 3.91,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:pending",
+          "domainKind": "boundedList",
+          "bits": 2.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "orderHistoryCursor",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "orderHistoryDialog",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.autoPrint",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.orderHistoryOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.printerSettingsOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity1",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity2",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity3",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity4",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity5",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity6",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity7",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        }
+      ],
+      "slicePlanningElapsedMs": 0.09924999999998363
+    },
+    {
+      "property": "loadMoreOrdersEnabledOnlyWithCursorAndIdleDialog",
+      "status": "emitted",
+      "mode": "state",
+      "fullVars": 18,
+      "fullTransitions": 13,
+      "vars": 2,
+      "transitions": 1,
+      "retainedBits": 3.16,
+      "prunedBits": 51.07,
+      "topRetainedContributors": [
+        {
+          "varId": "orderHistoryCursor",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "orderHistoryDialog",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        }
+      ],
+      "topPrunedContributors": [
+        {
+          "varId": "orderHistoryPayload",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "printerStatusData",
+          "domainKind": "record",
+          "bits": 16,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:history",
+          "domainKind": "boundedList",
+          "bits": 3.91,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:pending",
+          "domainKind": "boundedList",
+          "bits": 2.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "printerStatus",
+          "domainKind": "enum",
+          "bits": 1.58,
+          "scope": "global",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.autoPrint",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.orderHistoryOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "local:home.printerSettingsOpen",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity1",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity2",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity3",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity4",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity5",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity6",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "optimisticDensity7",
+          "domainKind": "bool",
+          "bits": 1,
+          "scope": "mount:route:/customer/home",
+          "origin": "system"
+        },
+        {
+          "varId": "sys:route",
+          "domainKind": "enum",
+          "bits": 1,
+          "scope": "global",
+          "origin": "system"
+        }
+      ],
+      "slicePlanningElapsedMs": 0.05929100000003018
+    }
+  ],
+  "slicePlanningTotalElapsedMs": 1.04,
+  "motivatingProperty": "densityOneRequiresConnectedPrinter",
+  "motivatingPropertySlice": {
+    "property": "densityOneRequiresConnectedPrinter",
+    "status": "emitted",
+    "mode": "state",
+    "fullVars": 18,
+    "fullTransitions": 13,
+    "vars": 2,
+    "transitions": 1,
+    "retainedBits": 2.58,
+    "prunedBits": 51.65,
+    "topRetainedContributors": [
+      {
+        "varId": "printerStatus",
+        "domainKind": "enum",
+        "bits": 1.58,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "sys:route",
+        "domainKind": "enum",
+        "bits": 1,
+        "scope": "global",
+        "origin": "system"
+      }
+    ],
+    "topPrunedContributors": [
+      {
+        "varId": "orderHistoryPayload",
+        "domainKind": "record",
+        "bits": 16,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "printerStatusData",
+        "domainKind": "record",
+        "bits": 16,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "sys:history",
+        "domainKind": "boundedList",
+        "bits": 3.91,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "sys:pending",
+        "domainKind": "boundedList",
+        "bits": 2.58,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "orderHistoryCursor",
+        "domainKind": "enum",
+        "bits": 1.58,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "orderHistoryDialog",
+        "domainKind": "enum",
+        "bits": 1.58,
+        "scope": "global",
+        "origin": "system"
+      },
+      {
+        "varId": "local:home.autoPrint",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "local:home.orderHistoryOpen",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "local:home.printerSettingsOpen",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity1",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity2",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity3",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity4",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity5",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity6",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      },
+      {
+        "varId": "optimisticDensity7",
+        "domainKind": "bool",
+        "bits": 1,
+        "scope": "mount:route:/customer/home",
+        "origin": "system"
+      }
+    ],
+    "slicePlanningElapsedMs": 0.8816669999999931
+  },
+  "unsliced": {
+    "states": 8,
+    "edges": 24,
+    "depth": 4,
+    "elapsedMs": 2.64
+  },
+  "sliced": {
+    "states": 3,
+    "edges": 0,
+    "depth": 1,
+    "elapsedMs": 0.66
+  },
+  "speedup": 4
+}

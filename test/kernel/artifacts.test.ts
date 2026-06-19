@@ -506,14 +506,16 @@ describe("artifact parsers", () => {
           status: "emitted",
           mode: "state",
           path: ".modality/models/App.slices/flagFalse.slice.json",
+          fullVars: 3,
+          fullTransitions: 1,
           vars: 1,
           transitions: 1,
           varIds: ["flag"],
           transitionIds: ["toggle"],
           retainedBits: 1,
           prunedBits: 0,
-          topContributors: [],
-          prunedTopContributors: [],
+          topRetainedContributors: [],
+          topPrunedContributors: [],
           retainedSystemVars: [],
           prunedSystemVars: [],
           sliceKey: "key",
@@ -566,5 +568,79 @@ describe("artifact parsers", () => {
         }),
       ),
     ).toThrow("properties[0] missing mode");
+    expect(() =>
+      parsePropertySliceManifestArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "property-slice-manifest",
+          modelId: "m",
+          sourceModelPath: "m.json",
+          sourceModelHash: "abc",
+          generatedAt: "2026-06-19T00:00:00.000Z",
+          properties: [
+            {
+              property: "bad",
+              propertyIndex: 0,
+              status: "emitted",
+              mode: "state",
+              path: "slice.json",
+              vars: 1,
+              transitions: 1,
+              varIds: ["flag"],
+              transitionIds: ["toggle"],
+              retainedBits: 1,
+              prunedBits: 0,
+              topRetainedContributors: [],
+              topPrunedContributors: [],
+              retainedSystemVars: [],
+              prunedSystemVars: [],
+              sliceKey: "key",
+            },
+          ],
+        }),
+      ),
+    ).toThrow("properties[0] missing fullVars");
+    expect(() =>
+      parsePropertySliceManifestArtifact(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "property-slice-manifest",
+          modelId: "m",
+          sourceModelPath: "m.json",
+          sourceModelHash: "abc",
+          generatedAt: "2026-06-19T00:00:00.000Z",
+          properties: [
+            {
+              property: "bad",
+              propertyIndex: 0,
+              status: "emitted",
+              mode: "state",
+              path: "slice.json",
+              fullVars: 1,
+              fullTransitions: 1,
+              vars: 1,
+              transitions: 1,
+              varIds: ["flag"],
+              transitionIds: ["toggle"],
+              retainedBits: 1,
+              prunedBits: 0,
+              topRetainedContributors: [
+                {
+                  varId: "flag",
+                  domainKind: "bool",
+                  bits: "oops",
+                  scope: "global",
+                  origin: "system",
+                },
+              ],
+              topPrunedContributors: [],
+              retainedSystemVars: [],
+              prunedSystemVars: [],
+              sliceKey: "key",
+            },
+          ],
+        }),
+      ),
+    ).toThrow("properties[0].topRetainedContributors[0].bits must be a number");
   });
 });
