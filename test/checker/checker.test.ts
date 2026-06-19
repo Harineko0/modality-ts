@@ -3368,12 +3368,13 @@ describe("checker", () => {
       expect(
         sliced.transitions.map((transition) => transition.id).sort(),
       ).toEqual(["chooseFree", "choosePaid"]);
-      expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
-        "isFree",
-        "phase",
-      ]);
+      // `isFree` is a co-write of chooseFree/choosePaid that the property never
+      // reads, so cone-of-influence projection prunes it along with the async
+      // receipt state.
+      expect(sliced.vars.map((decl) => decl.id).sort()).toEqual(["phase"]);
       expect(sliced.vars.map((decl) => decl.id)).not.toEqual(
         expect.arrayContaining([
+          "isFree",
           "receiptNumber",
           "receiptTotal",
           "router:actionData",

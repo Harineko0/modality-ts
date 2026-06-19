@@ -107,8 +107,8 @@ describe("demo app acceptance fixture", () => {
     });
     expect(checked.exitCode).toBe(2);
     expectSlicedStats(checked.check, {
-      states: 37,
-      edges: 46,
+      states: 22,
+      edges: 33,
       depth: 2,
     });
     expect(
@@ -236,8 +236,8 @@ describe("demo app acceptance fixture", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expectSlicedStats(checked.check, {
-      states: 49,
-      edges: 245,
+      states: 36,
+      edges: 97,
       depth: 4,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
@@ -432,8 +432,8 @@ describe("demo app acceptance fixture", () => {
       now: new Date("2026-06-12T00:00:00.000Z"),
     });
     expectSlicedStats(checked.check, {
-      states: 277,
-      edges: 1600,
+      states: 206,
+      edges: 1144,
       depth: 16,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([

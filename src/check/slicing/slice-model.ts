@@ -17,6 +17,7 @@ import {
   computeTargetedStepSliceClosure,
   enabledTransitionSeedVars,
 } from "./dependency-graph.js";
+import { isEmptyEffect, projectEffectToVars } from "./effect-projection.js";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
 
@@ -852,12 +853,13 @@ function finalizeSlicedTransitions(
   observationOnlyTransitions: ReadonlySet<string> = new Set(),
 ): Transition[] {
   const retainedVarIds = new Set(vars.map((decl) => decl.id));
-  const varsById = new Map(model.vars.map((decl) => [decl.id, decl]));
   const pendingQueues = pendingQueueVarIds(model);
   const retainsPending = vars.some((decl) => pendingQueues.has(decl.id));
-  return transitions.map((transition) => {
+  const finalized: Transition[] = [];
+  for (const transition of transitions) {
     if (observationOnlyTransitions.has(transition.id)) {
-      return stripObservationOnlyTransition(transition);
+      finalized.push(stripObservationOnlyTransition(transition));
+      continue;
     }
     const stripped = retainsPending
       ? transition
@@ -867,13 +869,49 @@ function finalizeSlicedTransitions(
           reads: transition.reads.filter((id) => !pendingQueues.has(id)),
           writes: transition.writes.filter((id) => !pendingQueues.has(id)),
         };
-    return stripToEnabledObservationTransition(
-      stripped,
-      retainedVarIds,
-      varsById,
-      pendingQueues,
-    );
-  });
+    const projected = projectSlicedTransition(stripped, retainedVarIds);
+    if (projected) finalized.push(projected);
+  }
+  return finalized;
+}
+
+/**
+ * Project a retained (non-observation) transition's effect onto the sliced
+ * variable set, dropping assignments to variables the slice no longer keeps.
+ * Reads/writes are recomputed from the projected effect so the sliced
+ * transition never references a pruned variable. A transition whose effect
+ * projects to a pure no-op is dropped entirely.
+ */
+function projectSlicedTransition(
+  transition: Transition,
+  retainedVarIds: ReadonlySet<string>,
+): Transition | undefined {
+  const effect = projectEffectToVars(transition.effect, retainedVarIds);
+  // Projection only drops separable writes to pruned variables, so the surviving
+  // writes are exactly the declared writes intersected with the retained set.
+  // Using the declared writes here (rather than re-deriving from the effect)
+  // keeps implicit sole-queue enqueue/dequeue writes correctly declared.
+  const writes = transition.writes
+    .filter((id) => retainedVarIds.has(id))
+    .sort();
+  if (writes.length === 0 && isEmptyEffect(effect)) {
+    return undefined;
+  }
+  const reads = [
+    ...new Set([...transition.reads, ...exprReads(transition.guard)]),
+  ]
+    .filter((id) => retainedVarIds.has(id))
+    .sort();
+  const triggeredBy = transition.triggeredBy?.filter((id) =>
+    retainedVarIds.has(id),
+  );
+  return {
+    ...transition,
+    effect,
+    reads,
+    writes,
+    ...(triggeredBy ? { triggeredBy } : {}),
+  };
 }
 
 function stripObservationOnlyTransition(transition: Transition): Transition {
@@ -882,35 +920,6 @@ function stripObservationOnlyTransition(transition: Transition): Transition {
     ...transition,
     reads: guardReads,
     writes: [],
-    effect: { kind: "seq", effects: [] },
-  };
-}
-
-function stripToEnabledObservationTransition(
-  transition: Transition,
-  retainedVarIds: ReadonlySet<string>,
-  varsById: ReadonlyMap<string, Model["vars"][number]>,
-  pendingQueues: ReadonlySet<string>,
-): Transition {
-  const executionVars = [
-    ...transition.reads,
-    ...transition.writes.filter((id) => !pendingQueues.has(id)),
-  ];
-  if (executionVars.every((id) => retainedVarIds.has(id))) {
-    return transition;
-  }
-  const mountLocalRefs = [
-    ...new Set(
-      [...transition.reads, ...transition.writes].filter((id) => {
-        const decl = varsById.get(id);
-        return decl?.scope.kind === "mount-local";
-      }),
-    ),
-  ].sort();
-  return {
-    ...transition,
-    reads: mountLocalRefs,
-    writes: mountLocalRefs,
     effect: { kind: "seq", effects: [] },
   };
 }

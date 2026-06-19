@@ -1,5 +1,7 @@
 import {
+  effectReads,
   effectReadsForModel,
+  effectWrites,
   exprReads,
   initialValues,
   mountGuardForScope,
@@ -14,6 +16,7 @@ import type {
 } from "modality-ts/core";
 import { evalStatePredicate, StatePredicateEvalError } from "modality-ts/core";
 import type { MountScopeDependency } from "../types.js";
+import { projectEffectToVars } from "./effect-projection.js";
 import {
   analyzeDirectionalPredicate,
   type DirectionalPredicateAnalysis,
@@ -345,21 +348,50 @@ function reachVarsThroughTransitions(
         neededTransitions.add(transition.id);
         changed = true;
       }
-      for (const id of transition.reads) {
-        if (!neededVars.has(id)) {
-          neededVars.add(id);
-          changed = true;
-        }
-      }
-      for (const id of transition.writes) {
-        if (graph.pendingQueueVarIds.has(id)) continue;
-        if (!neededVars.has(id)) {
-          neededVars.add(id);
-          changed = true;
-        }
+      if (addRetainedTransitionInputs(graph, neededVars, transition)) {
+        changed = true;
       }
     }
   }
+}
+
+/**
+ * Add the variables that genuinely influence a retained transition's effect on
+ * the property: guard reads, the reads of effect statements that survive
+ * cone-of-influence projection onto the current needed set, any co-written
+ * variables of atomic multi-writes kept by projection, and trigger variables.
+ *
+ * Crucially it does NOT add separable co-writes (e.g. a `useEffect` that also
+ * assigns an unrelated wide payload). Those are projected out of the slice, so
+ * retaining a transition for one needed write no longer drags its whole write
+ * set — and the wide domains it produced — into the model.
+ */
+function addRetainedTransitionInputs(
+  graph: ModelDependencyGraph,
+  neededVars: Set<string>,
+  transition: Transition,
+): boolean {
+  let changed = false;
+  const addRead = (id: string): void => {
+    if (!neededVars.has(id)) {
+      neededVars.add(id);
+      changed = true;
+    }
+  };
+  // Co-writes are skipped for pending queues (matching the historical write
+  // closure): a transition writing a queue does not force the queue into the
+  // slice. Reads do — if a retained guard or effect reads a queue, it must be
+  // retained so the transition's guard/effect stays evaluable.
+  const addCoWrite = (id: string): void => {
+    if (graph.pendingQueueVarIds.has(id)) return;
+    addRead(id);
+  };
+  const projected = projectEffectToVars(transition.effect, neededVars);
+  for (const id of effectReads(projected)) addRead(id);
+  for (const id of exprReads(transition.guard)) addRead(id);
+  for (const id of transition.triggeredBy ?? []) addRead(id);
+  for (const id of effectWrites(projected)) addCoWrite(id);
+  return changed;
 }
 
 function expandMountGuardDependencies(

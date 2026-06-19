@@ -377,6 +377,148 @@ describe("enabled transition guard-only slicing", () => {
       ),
     ).toBe(true);
   });
+
+  it("prunes wide co-writes pulled in by a needed writer transition (Coffee DX shape)", () => {
+    // A mount effect co-writes the property-relevant `printerStatus` together
+    // with a wide payload and density vars. The density onClick is decomposed
+    // into seq.1..seq.3. The property only reads `printerStatus` and observes
+    // enabledness of seq.1, so cone-of-influence projection must prune the wide
+    // payload and the sibling density transitions, not retain them via the
+    // effect's co-writes.
+    const densities = [1, 2, 3];
+    const m: Model = {
+      schemaVersion: 1,
+      id: "coffee-cowrite",
+      bounds: { maxDepth: 4, maxPending: 0, maxInternalSteps: 6 },
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/home", "/other"] },
+          origin: "system",
+          scope: { kind: "global" },
+          role: { kind: "location-current" },
+          initial: "/home",
+        },
+        {
+          id: "printerStatus",
+          domain: { kind: "enum", values: ["connected", "disconnected"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "disconnected",
+        },
+        {
+          id: "printerStatusData",
+          domain: {
+            kind: "record",
+            fields: Object.fromEntries(
+              Array.from({ length: 5 }, (_, index) => [`flag${index}`, bool]),
+            ),
+          },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: Object.fromEntries(
+            Array.from({ length: 5 }, (_, index) => [`flag${index}`, false]),
+          ),
+        },
+        ...densities.map((v) => ({
+          id: `optimisticDensity${v}`,
+          domain: bool,
+          origin: "system" as const,
+          scope: { kind: "global" as const },
+          initial: false,
+        })),
+      ],
+      transitions: [
+        {
+          id: "CustomerHome.useEffect",
+          cls: "internal",
+          label: { kind: "internal", text: "mount effect" },
+          source: [],
+          guard: lit(true),
+          effect: {
+            kind: "seq",
+            effects: [
+              { kind: "havoc", var: "printerStatus" },
+              { kind: "havoc", var: "printerStatusData" },
+              ...densities.map((v) => ({
+                kind: "assign" as const,
+                var: `optimisticDensity${v}`,
+                expr: lit(false),
+              })),
+            ],
+          },
+          reads: [],
+          writes: [
+            "printerStatus",
+            "printerStatusData",
+            ...densities.map((v) => `optimisticDensity${v}`),
+          ],
+          triggeredBy: ["sys:route"],
+          confidence: "exact",
+        },
+        ...densities.map((v) => ({
+          id: `PrinterSettingsDialog.onClick.optimisticDensity.seq.${v}`,
+          cls: "user" as const,
+          label: { kind: "click" as const, text: `density ${v}` },
+          source: [],
+          guard: {
+            kind: "eq" as const,
+            args: [read("printerStatus"), lit("connected")],
+          },
+          effect: {
+            kind: "seq" as const,
+            effects: [
+              {
+                kind: "assign" as const,
+                var: `optimisticDensity${v}`,
+                expr: lit(true),
+              },
+              { kind: "havoc" as const, var: "printerStatusData" },
+            ],
+          },
+          reads: [
+            "printerStatus",
+            `optimisticDensity${v}`,
+            "printerStatusData",
+          ],
+          writes: [`optimisticDensity${v}`, "printerStatusData"],
+          confidence: "exact" as const,
+        })),
+      ],
+    };
+    const property = always(
+      m,
+      orExpr(
+        neq(readVar("printerStatus"), lit("connected")),
+        enabled(m, "PrinterSettingsDialog.onClick.optimisticDensity.seq.1"),
+      ),
+      { name: "densityOneRequiresConnectedPrinter" },
+    );
+    const { model: sliced } = sliceModelForCheckProperty(m, property);
+    const varIds = sliced.vars.map((decl) => decl.id);
+    // The wide payload and the density co-writes are pruned: nothing the
+    // property observes reads them.
+    expect(varIds).not.toContain("printerStatusData");
+    expect(varIds).not.toContain("optimisticDensity2");
+    expect(varIds).not.toContain("optimisticDensity3");
+    expect(varIds.sort()).toEqual(["printerStatus", "sys:route"]);
+    // Sibling density transitions become no-ops once their writes are pruned
+    // and drop out; only the observed seq.1 remains (observation-only).
+    expect(sliced.transitions.map((transition) => transition.id)).not.toContain(
+      "PrinterSettingsDialog.onClick.optimisticDensity.seq.2",
+    );
+    expect(
+      sliced.transitions.find(
+        (transition) =>
+          transition.id ===
+          "PrinterSettingsDialog.onClick.optimisticDensity.seq.1",
+      )?.effect,
+    ).toEqual({ kind: "seq", effects: [] });
+    // Verdict parity with the full model is preserved.
+    const unsliced = checkModel(m, [property]);
+    const slicedRun = checkModel(m, [property], { slicing: true });
+    expect(slicedRun.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
+  });
 });
 
 describe("neutral slicing parity", () => {
