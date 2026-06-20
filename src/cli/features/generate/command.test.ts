@@ -8,7 +8,11 @@ import {
   createExtractDiagnosticsClock,
 } from "../../extraction/build-model.js";
 import { runGenerateCommand } from "./command.js";
-import { renderHumanGenerateTargets } from "./output.js";
+import {
+  renderGenerateSummary,
+  renderHumanGenerateTarget,
+  renderHumanGenerateTargets,
+} from "./output.js";
 
 describe("runGenerateCommand", () => {
   it("writes App.modals.ts from source analysis without loading properties", async () => {
@@ -117,5 +121,33 @@ describe("renderHumanGenerateTargets", () => {
     expect(lines.join("\n")).toContain("✓");
     expect(lines.join("\n")).toContain("Duration");
     expect(lines.join("\n")).toContain("(componentVars)");
+  });
+
+  it("composes per-target rows and summary into aggregate output", () => {
+    const targets = [
+      {
+        label: "a.tsx",
+        moduleCount: 1,
+        varCount: 2,
+        transitionCount: 1,
+        pluginLabels: ["source:react-use-state@1.0.0"],
+        durationMs: 5,
+        artifacts: [],
+      },
+      {
+        label: "b.tsx",
+        moduleCount: 1,
+        varCount: 2,
+        transitionCount: 1,
+        pluginLabels: ["source:react-use-state@1.0.0"],
+        durationMs: 7,
+        artifacts: [],
+      },
+    ];
+    const options = { totalDurationMs: 12, showArtifacts: false };
+    const composed = targets
+      .flatMap((target) => renderHumanGenerateTarget(target, options))
+      .concat(renderGenerateSummary(targets, options));
+    expect(composed).toEqual(renderHumanGenerateTargets(targets, options));
   });
 });

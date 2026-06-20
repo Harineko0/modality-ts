@@ -92,3 +92,26 @@ export function formatArtifactLine(
   const line = `     - (${kind}) ${path}`;
   return colorize(line, ANSI.dim, options);
 }
+
+export interface RunProgress {
+  start(label: string): void;
+  done(): void;
+}
+
+export function createRunProgress(options: OutputOptions): RunProgress {
+  const enabled = process.stderr.isTTY === true && useColor(options);
+  if (!enabled) {
+    return {
+      start() {},
+      done() {},
+    };
+  }
+  return {
+    start(label: string) {
+      process.stderr.write(`◌ ${label} running…\r`);
+    },
+    done() {
+      process.stderr.write("\r\x1b[K");
+    },
+  };
+}

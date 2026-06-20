@@ -7,8 +7,10 @@ export type { CheckCommandOptions, CheckCommandResult } from "./command.js";
 export {
   renderHumanCheckArtifacts,
   renderHumanCheckResult,
+  renderHumanCheckTarget,
   renderHumanCheckTargetHeader,
   renderHumanCheckTargets,
+  renderCheckSummary,
   symbolForStatus,
 } from "./output.js";
 export type {

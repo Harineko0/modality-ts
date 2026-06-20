@@ -1,5 +1,9 @@
 export { runGenerateCommand } from "./command.js";
-export { renderHumanGenerateTargets } from "./output.js";
+export {
+  renderHumanGenerateTargets,
+  renderHumanGenerateTarget,
+  renderGenerateSummary,
+} from "./output.js";
 export type {
   GenerateCommandOptions,
   GenerateTargetResult,

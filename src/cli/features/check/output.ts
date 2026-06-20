@@ -159,7 +159,7 @@ function traceSteps(verdict: PropertyVerdict): string {
   );
 }
 
-function renderTargetRows(
+export function renderHumanCheckTarget(
   target: HumanCheckTargetResult,
   options: OutputOptions,
 ): string[] {
@@ -204,14 +204,12 @@ function renderTargetRows(
   return lines;
 }
 
-export function renderHumanCheckTargets(
+export function renderCheckSummary(
   results: readonly HumanCheckTargetResult[],
   options: HumanCheckRenderOptions,
 ): string[] {
+  if (results.length === 0) return [];
   const lines: string[] = [];
-  for (const target of results) {
-    lines.push(...renderTargetRows(target, options));
-  }
   lines.push("");
 
   const totalTargets = results.length;
@@ -277,6 +275,15 @@ export function renderHumanCheckTargets(
   }
 
   return lines;
+}
+
+export function renderHumanCheckTargets(
+  results: readonly HumanCheckTargetResult[],
+  options: HumanCheckRenderOptions,
+): string[] {
+  return results
+    .flatMap((target) => renderHumanCheckTarget(target, options))
+    .concat(renderCheckSummary(results, options));
 }
 
 /** @deprecated Use renderHumanCheckTargets for CLI output */

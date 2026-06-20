@@ -3,7 +3,11 @@ export {
   buildExtractionModel,
   createExtractDiagnosticsClock,
 } from "./command.js";
-export { renderHumanExtractTargets } from "./output.js";
+export {
+  renderHumanExtractTargets,
+  renderHumanExtractTarget,
+  renderExtractSummary,
+} from "./output.js";
 export type {
   ExtractCommandOptions,
   ExtractCommandResult,

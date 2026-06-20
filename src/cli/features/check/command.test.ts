@@ -17,7 +17,9 @@ import {
 import { runReplayCommand } from "../../replay.js";
 import { runCheckCommand } from "./index.js";
 import {
+  renderCheckSummary,
   renderHumanCheckResult,
+  renderHumanCheckTarget,
   renderHumanCheckTargets,
   symbolForStatus,
 } from "./output.js";
@@ -1684,5 +1686,38 @@ describe("property confidence reporting", () => {
         (line) => line.includes("por=enabled") || line.includes("por=skipped"),
       ),
     ).toBe(true);
+  });
+
+  it("composes per-target rows and summary into aggregate output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-compose-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    await writeFile(modelPath, JSON.stringify(model()), "utf8");
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
+    const result = await runCheckCommand({ modelPath, propsPath });
+    const targets = [
+      {
+        modelPath,
+        propsPath: "a.props.ts",
+        check: result.check,
+        artifacts: [],
+        durationMs: 5,
+      },
+      {
+        modelPath,
+        propsPath: "b.props.ts",
+        check: result.check,
+        artifacts: [],
+        durationMs: 7,
+      },
+    ];
+    const options = {
+      startedAt: new Date("2026-06-12T11:36:28.000Z"),
+      totalDurationMs: 12,
+    };
+    const composed = targets
+      .flatMap((target) => renderHumanCheckTarget(target, options))
+      .concat(renderCheckSummary(targets, options));
+    expect(composed).toEqual(renderHumanCheckTargets(targets, options));
   });
 });

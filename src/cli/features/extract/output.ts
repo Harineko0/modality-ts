@@ -40,6 +40,7 @@ export interface HumanExtractTargetResult {
 }
 
 export interface HumanExtractRenderOptions extends OutputOptions {
+  startedAt?: Date;
   totalDurationMs: number;
   showArtifacts?: boolean;
 }
@@ -61,54 +62,68 @@ function renderTargetStats(target: HumanExtractTargetResult): string {
   return `(${parts.join(", ")})`;
 }
 
+export function renderHumanExtractTarget(
+  target: HumanExtractTargetResult,
+  options: OutputOptions,
+): string[] {
+  const lines: string[] = [];
+  const duration =
+    target.durationMs !== undefined ? ` ${formatMs(target.durationMs)}` : "";
+  lines.push(
+    ` ${formatStatusSymbol("pass", options)} ${target.label}${duration}`,
+  );
+  lines.push(`  ${renderTargetStats(target)}`);
+  for (const plugin of target.pluginLabels) {
+    lines.push(`  - plugin ${plugin}`);
+  }
+  if (target.stateSpaceLine) {
+    lines.push(`  - ${target.stateSpaceLine}`);
+  }
+  if (target.coarseDomainsLine) {
+    lines.push(`  - ${target.coarseDomainsLine}`);
+  }
+  if (target.sliceStatsLine) {
+    lines.push(`  - ${target.sliceStatsLine}`);
+  }
+  if (target.sliceEconomicsLine) {
+    lines.push(`  - ${target.sliceEconomicsLine}`);
+  }
+  if (target.propsErrors && target.propsErrors.length > 0) {
+    for (const propsError of target.propsErrors) {
+      lines.push(
+        ` ${formatStatusSymbol("warn", options)} ${propsError.propsPath}`,
+      );
+      lines.push(`    ${propsError.message}`);
+    }
+  }
+  return lines;
+}
+
+export function renderExtractSummary(
+  results: readonly HumanExtractTargetResult[],
+  options: HumanExtractRenderOptions,
+): string[] {
+  if (results.length === 0) return [];
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(
+    formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
+  );
+  const artifacts = results.flatMap((target) => [...target.artifacts]);
+  if (options.showArtifacts === true && artifacts.length > 0) {
+    lines.push(formatSummaryLabel("Artifacts", ""));
+    for (const entry of artifacts) {
+      lines.push(formatArtifactLine(entry.kind, entry.path, options));
+    }
+  }
+  return lines;
+}
+
 export function renderHumanExtractTargets(
   results: readonly HumanExtractTargetResult[],
   options: HumanExtractRenderOptions,
 ): string[] {
-  const lines: string[] = [];
-  for (const target of results) {
-    const duration =
-      target.durationMs !== undefined ? ` ${formatMs(target.durationMs)}` : "";
-    lines.push(
-      ` ${formatStatusSymbol("pass", options)} ${target.label}${duration}`,
-    );
-    lines.push(`  ${renderTargetStats(target)}`);
-    for (const plugin of target.pluginLabels) {
-      lines.push(`  - plugin ${plugin}`);
-    }
-    if (target.stateSpaceLine) {
-      lines.push(`  - ${target.stateSpaceLine}`);
-    }
-    if (target.coarseDomainsLine) {
-      lines.push(`  - ${target.coarseDomainsLine}`);
-    }
-    if (target.sliceStatsLine) {
-      lines.push(`  - ${target.sliceStatsLine}`);
-    }
-    if (target.sliceEconomicsLine) {
-      lines.push(`  - ${target.sliceEconomicsLine}`);
-    }
-    if (target.propsErrors && target.propsErrors.length > 0) {
-      for (const propsError of target.propsErrors) {
-        lines.push(
-          ` ${formatStatusSymbol("warn", options)} ${propsError.propsPath}`,
-        );
-        lines.push(`    ${propsError.message}`);
-      }
-    }
-  }
-  if (results.length > 0) {
-    lines.push("");
-    lines.push(
-      formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
-    );
-    const artifacts = results.flatMap((target) => [...target.artifacts]);
-    if (options.showArtifacts === true && artifacts.length > 0) {
-      lines.push(formatSummaryLabel("Artifacts", ""));
-      for (const entry of artifacts) {
-        lines.push(formatArtifactLine(entry.kind, entry.path, options));
-      }
-    }
-  }
-  return lines;
+  return results
+    .flatMap((target) => renderHumanExtractTarget(target, options))
+    .concat(renderExtractSummary(results, options));
 }

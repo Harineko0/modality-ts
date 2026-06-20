@@ -20,7 +20,8 @@ import {
   inferSourceFilesFromProps,
 } from "./defaults.js";
 import {
-  renderHumanCheckTargets,
+  renderHumanCheckTarget,
+  renderCheckSummary,
   runCheckCommand,
 } from "./features/check/index.js";
 import { renderHumanCiResult, runCiCommand } from "./features/ci/index.js";
@@ -33,11 +34,13 @@ import {
   runExportTlaCommand,
 } from "./features/export/index.js";
 import {
-  renderHumanExtractTargets,
+  renderExtractSummary,
+  renderHumanExtractTarget,
   runExtractCommand,
 } from "./features/extract/index.js";
 import {
-  renderHumanGenerateTargets,
+  renderGenerateSummary,
+  renderHumanGenerateTarget,
   runGenerateCommand,
 } from "./features/generate/index.js";
 import {
@@ -48,6 +51,7 @@ import {
   renderHumanReplayResult,
   runReplayCommand,
 } from "./features/replay/index.js";
+import { createRunProgress } from "./output.js";
 
 function flagValue(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -388,6 +392,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   if (command === "extract") {
+    const startedAt = new Date();
     const startedMs = performance.now();
     const explainDrift = args.includes("--explain-drift");
     const showArtifacts = args.includes("--artifact") || args.includes("-A");
@@ -462,32 +467,70 @@ async function main(): Promise<void> {
       explainDrift,
       ...(propsPaths.length > 0 ? { propsPaths } : {}),
     };
-    const extractTargets: Array<{
+    const extractOpts = outputOptions();
+    const extractProgress = createRunProgress(extractOpts);
+    const extractEntries: Array<{
       label: string;
       durationMs: number;
-      result: Awaited<ReturnType<typeof runExtractCommand>>;
+      varCount: number;
+      transitionCount: number;
+      report: Awaited<ReturnType<typeof runExtractCommand>>["report"];
+      pluginLabels: readonly string[];
+      stateSpaceLine?: string;
+      coarseDomainsLine?: string;
+      sliceStatsLine?: string;
+      sliceEconomicsLine?: string;
+      artifacts: Awaited<ReturnType<typeof runExtractCommand>>["artifacts"];
+      propsErrors?: Awaited<
+        ReturnType<typeof runExtractCommand>
+      >["propsErrors"];
     }> = [];
+    const pushExtractEntry = (
+      label: string,
+      durationMs: number,
+      result: Awaited<ReturnType<typeof runExtractCommand>>,
+    ) => {
+      const entry = {
+        label,
+        durationMs,
+        varCount: result.varCount,
+        transitionCount: result.transitionCount,
+        report: result.report,
+        pluginLabels: result.pluginLabels,
+        stateSpaceLine: result.stateSpaceLine,
+        coarseDomainsLine: result.coarseDomainsLine,
+        sliceStatsLine: result.sliceStatsLine,
+        sliceEconomicsLine: result.sliceEconomicsLine,
+        artifacts: result.artifacts,
+        propsErrors: result.propsErrors,
+      };
+      extractEntries.push(entry);
+      emitLines(renderHumanExtractTarget(entry, extractOpts));
+    };
     if (sourcePaths.length > 0 || wantsSingleMergedOutput) {
       const effectiveSourcePaths =
         sourcePaths.length > 0
           ? sourcePaths
           : await inferSourceFilesFromProps();
       const targetStartedMs = performance.now();
+      extractProgress.start(effectiveSourcePaths.join(", "));
       const result = await runExtractCommand({
         sourcePaths: effectiveSourcePaths,
         modelPath,
         appModelPath,
         ...sharedOptions,
       });
-      extractTargets.push({
-        label: result.targetLabel,
-        durationMs: performance.now() - targetStartedMs,
+      extractProgress.done();
+      pushExtractEntry(
+        result.targetLabel,
+        performance.now() - targetStartedMs,
         result,
-      });
+      );
     } else {
       const targets = await inferExtractTargetsFromProps();
       for (const target of targets) {
         const targetStartedMs = performance.now();
+        extractProgress.start(target.sourcePath);
         const result = await runExtractCommand({
           sourcePath: target.sourcePath,
           modelPath: target.modelPath,
@@ -495,35 +538,21 @@ async function main(): Promise<void> {
           propsPaths: [target.propsPath],
           ...sharedOptions,
         });
-        extractTargets.push({
-          label: target.sourcePath,
-          durationMs: performance.now() - targetStartedMs,
+        extractProgress.done();
+        pushExtractEntry(
+          target.sourcePath,
+          performance.now() - targetStartedMs,
           result,
-        });
+        );
       }
     }
     emitLines(
-      renderHumanExtractTargets(
-        extractTargets.map(({ label, durationMs, result }) => ({
-          label,
-          durationMs,
-          varCount: result.varCount,
-          transitionCount: result.transitionCount,
-          report: result.report,
-          pluginLabels: result.pluginLabels,
-          stateSpaceLine: result.stateSpaceLine,
-          coarseDomainsLine: result.coarseDomainsLine,
-          sliceStatsLine: result.sliceStatsLine,
-          sliceEconomicsLine: result.sliceEconomicsLine,
-          artifacts: result.artifacts,
-          propsErrors: result.propsErrors,
-        })),
-        {
-          ...outputOptions(),
-          totalDurationMs: performance.now() - startedMs,
-          showArtifacts,
-        },
-      ),
+      renderExtractSummary(extractEntries, {
+        ...extractOpts,
+        startedAt,
+        totalDurationMs: performance.now() - startedMs,
+        showArtifacts,
+      }),
     );
     process.exit(0);
   }
@@ -564,42 +593,45 @@ async function main(): Promise<void> {
       disabledPlugins,
       effectApis: effectApiFlags,
     };
-    const generateTargets: Array<{
+    const generateOpts = outputOptions();
+    const generateProgress = createRunProgress(generateOpts);
+    const generateEntries: Array<{
       label: string;
       durationMs: number;
-      result: Awaited<ReturnType<typeof runGenerateCommand>>;
+      moduleCount: number;
+      varCount: number;
+      transitionCount: number;
+      pluginLabels: readonly string[];
+      artifacts: Awaited<ReturnType<typeof runGenerateCommand>>["artifacts"];
     }> = [];
     const effectiveSourcePaths =
       sourcePaths.length > 0 ? sourcePaths : await inferSourceFilesFromProps();
     for (const sourcePath of effectiveSourcePaths) {
       const targetStartedMs = performance.now();
+      generateProgress.start(sourcePath);
       const result = await runGenerateCommand({
         sourcePath,
         ...sharedOptions,
       });
-      generateTargets.push({
+      generateProgress.done();
+      const entry = {
         label: result.targetLabel,
         durationMs: performance.now() - targetStartedMs,
-        result,
-      });
+        moduleCount: result.moduleCount,
+        varCount: result.varCount,
+        transitionCount: result.transitionCount,
+        pluginLabels: result.pluginLabels,
+        artifacts: result.artifacts,
+      };
+      generateEntries.push(entry);
+      emitLines(renderHumanGenerateTarget(entry, generateOpts));
     }
     emitLines(
-      renderHumanGenerateTargets(
-        generateTargets.map(({ label, durationMs, result }) => ({
-          label,
-          durationMs,
-          moduleCount: result.moduleCount,
-          varCount: result.varCount,
-          transitionCount: result.transitionCount,
-          pluginLabels: result.pluginLabels,
-          artifacts: result.artifacts,
-        })),
-        {
-          ...outputOptions(),
-          totalDurationMs: performance.now() - startedMs,
-          showArtifacts,
-        },
-      ),
+      renderGenerateSummary(generateEntries, {
+        ...generateOpts,
+        totalDurationMs: performance.now() - startedMs,
+        showArtifacts,
+      }),
     );
     process.exit(0);
   }
@@ -776,8 +808,10 @@ async function main(): Promise<void> {
       const targets = await inferCheckTargetsFromProps();
       let exitCode = 0;
       const checkTargets = [];
+      const checkProgress = createRunProgress({ color });
       for (const target of targets) {
         const targetStartedMs = performance.now();
+        checkProgress.start(target.propsPath);
         const base = target.modelPath.replace(/\.model\.json$/, "");
         const result = await runCheckCommand({
           modelPath: target.modelPath,
@@ -791,8 +825,9 @@ async function main(): Promise<void> {
           searchLimits,
           partialOrderReduction,
         });
+        checkProgress.done();
         if (result.exitCode === 2) exitCode = 2;
-        checkTargets.push({
+        const entry = {
           modelPath: target.modelPath,
           propsPath: relative(process.cwd(), target.propsPath),
           check: result.check,
@@ -800,10 +835,12 @@ async function main(): Promise<void> {
           reportPath: `${base}.report.json`,
           artifacts: result.artifacts,
           durationMs: performance.now() - targetStartedMs,
-        });
+        };
+        checkTargets.push(entry);
+        emitLines(renderHumanCheckTarget(entry, { color }));
       }
       emitLines(
-        renderHumanCheckTargets(checkTargets, {
+        renderCheckSummary(checkTargets, {
           color,
           startedAt,
           totalDurationMs: performance.now() - startedMs,
@@ -818,6 +855,14 @@ async function main(): Promise<void> {
     propsPaths.length > 0 ? propsPaths : await discoverPropsFiles();
   const targetStartedMs = performance.now();
   const effectiveReportPath = reportPath ?? defaultReportPath;
+  const checkProgress = createRunProgress({ color });
+  const checkProgressLabel =
+    effectivePropsPaths.length === 1
+      ? relative(process.cwd(), effectivePropsPaths[0] ?? "")
+      : effectivePropsPaths
+          .map((props) => relative(process.cwd(), props))
+          .join(", ");
+  checkProgress.start(checkProgressLabel);
   const result = await runCheckCommand({
     modelPath: effectiveModelPath,
     propsPaths: effectivePropsPaths,
@@ -830,32 +875,30 @@ async function main(): Promise<void> {
     searchLimits,
     partialOrderReduction,
   });
+  checkProgress.done();
   const propsLabel =
     effectivePropsPaths.length === 1
       ? relative(process.cwd(), effectivePropsPaths[0] ?? "")
       : effectivePropsPaths
           .map((props) => relative(process.cwd(), props))
           .join(", ");
+  const checkEntry = {
+    modelPath: effectiveModelPath,
+    propsPath: propsLabel,
+    check: result.check,
+    reportVerdicts: result.report.verdicts,
+    reportPath: effectiveReportPath,
+    artifacts: result.artifacts,
+    durationMs: performance.now() - targetStartedMs,
+  };
+  emitLines(renderHumanCheckTarget(checkEntry, { color }));
   emitLines(
-    renderHumanCheckTargets(
-      [
-        {
-          modelPath: effectiveModelPath,
-          propsPath: propsLabel,
-          check: result.check,
-          reportVerdicts: result.report.verdicts,
-          reportPath: effectiveReportPath,
-          artifacts: result.artifacts,
-          durationMs: performance.now() - targetStartedMs,
-        },
-      ],
-      {
-        color,
-        startedAt,
-        totalDurationMs: performance.now() - startedMs,
-        showArtifacts,
-      },
-    ),
+    renderCheckSummary([checkEntry], {
+      color,
+      startedAt,
+      totalDurationMs: performance.now() - startedMs,
+      showArtifacts,
+    }),
   );
   process.exit(result.exitCode);
 }

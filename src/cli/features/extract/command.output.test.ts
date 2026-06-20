@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { runExtractCommand } from "./index.js";
-import { renderHumanExtractTargets } from "./output.js";
+import {
+  renderExtractSummary,
+  renderHumanExtractTarget,
+  renderHumanExtractTargets,
+} from "./output.js";
 
 describe("renderHumanExtractTargets", () => {
   it("prints aggregated extract rows before duration and artifacts", async () => {
@@ -566,5 +570,39 @@ export default [route('/', 'routes/home.tsx')];`,
     );
     expect(lines.join("\n")).not.toContain("slices=properties:");
     expect(lines.join("\n")).not.toContain("slice-economics=");
+  });
+
+  it("composes per-target rows and summary into aggregate output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-compose-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const baseEntry = {
+      varCount: result.varCount,
+      transitionCount: result.transitionCount,
+      report: result.report,
+      pluginLabels: result.pluginLabels,
+      artifacts: result.artifacts,
+    };
+    const targets = [
+      { ...baseEntry, label: "a.tsx", durationMs: 5 },
+      { ...baseEntry, label: "b.tsx", durationMs: 7 },
+    ];
+    const options = { totalDurationMs: 12, showArtifacts: false };
+    const composed = targets
+      .flatMap((target) => renderHumanExtractTarget(target, options))
+      .concat(renderExtractSummary(targets, options));
+    expect(composed).toEqual(renderHumanExtractTargets(targets, options));
   });
 });
