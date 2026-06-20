@@ -58,16 +58,17 @@ describe("emitComponentModalModules", () => {
     expect(source).toContain(
       'import type { TransitionRef } from "modality-ts/properties";',
     );
+    expect(source).toContain("export const App = {");
     expect(source).toContain("// state");
-    expect(source).toContain("export const phase: Variable<");
+    expect(source).toContain("phase: variable(");
     expect(source).toContain('variable("local:App.phase")');
     expect(source).toContain("// transitions");
-    expect(source).toContain("export const App = {");
     expect(source).toContain("onClick: {");
     expect(source).toContain("handleAdvance:");
     expect(source).toContain('"App.onClick.handleAdvance"');
     expect(source).toContain('TransitionRef<"App.onClick.handleAdvance">');
     expect(source).not.toContain('"handleAdvance"');
+    expect(source).not.toContain("export const phase");
     expect(source).not.toContain("authAtom");
   });
 
@@ -231,7 +232,9 @@ describe("emitComponentModalModules", () => {
     );
     expect(source).not.toContain("TransitionRef");
     expect(source).not.toContain("// transitions");
+    expect(source).toContain("export const App = {");
     expect(source).toContain("// state");
+    expect(source).toContain("phase: variable(");
   });
 
   it("emits nothing for a model without local vars or sourced transitions", () => {
@@ -259,7 +262,7 @@ describe("emitComponentModalModules", () => {
     ).toEqual(["/tmp/.modality/modals/App.modals.ts"]);
   });
 
-  it("qualifies colliding field exports within a source file", () => {
+  it("scopes colliding field names by component object", () => {
     const modules = emitComponentModalModules(
       {
         ...model,
@@ -276,8 +279,35 @@ describe("emitComponentModalModules", () => {
       "/tmp/.modality/app.model.ts",
     );
 
-    expect(modules[0]?.source).toContain("export const App_phase:");
-    expect(modules[0]?.source).toContain("export const Child_phase:");
-    expect(modules[0]?.source).not.toContain("export const phase:");
+    expect(modules[0]?.source).toContain("export const App = {");
+    expect(modules[0]?.source).toContain("export const Child = {");
+    expect(modules[0]?.source).toMatch(
+      /export const App = \{\n {2}\/\/ state\n {2}phase: variable/,
+    );
+    expect(modules[0]?.source).toMatch(
+      /export const Child = \{\n {2}\/\/ state\n {2}phase: variable/,
+    );
+    expect(modules[0]?.source).not.toContain("App_phase");
+    expect(modules[0]?.source).not.toContain("Child_phase");
+  });
+
+  it("emits quoted keys for non-identifier state fields", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        transitions: [],
+        vars: [
+          {
+            ...model.vars[0]!,
+            id: "local:App.active-step",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+
+    expect(modules[0]?.source).toContain(
+      '"active-step": variable("local:App.active-step")',
+    );
   });
 });

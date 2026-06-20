@@ -1370,8 +1370,8 @@ describe("runExtractCommand", () => {
       propsPath,
       `
       import { always, eq } from "modality-ts/properties";
-      import { flag } from "./App.modals";
-      always("flagFalse", eq(flag, false));
+      import { App } from "./App.modals";
+      always("flagFalse", eq(App.flag, false));
       `,
       "utf8",
     );

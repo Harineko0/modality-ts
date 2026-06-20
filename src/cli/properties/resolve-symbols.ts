@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Model, SourceAnchor } from "modality-ts/core";
 import { emitComponentModalModules } from "../codegen/component-state.js";
+import { componentExportName } from "../codegen/transition-handles.js";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
@@ -161,6 +162,24 @@ function transitionIdFromPropertyDeclaration(
     : undefined;
 }
 
+function varIdFromPropertyDeclaration(
+  declaration: ts.Declaration,
+): string | undefined {
+  if (!ts.isPropertyAssignment(declaration)) return undefined;
+  const initializer = declaration.initializer;
+  if (!initializer || !ts.isAsExpression(initializer)) return undefined;
+  const type = initializer.type;
+  if (!type || !ts.isTypeReferenceNode(type)) return undefined;
+  if (!ts.isIdentifier(type.typeName) || type.typeName.text !== "Variable") {
+    return undefined;
+  }
+  const idArgument = type.typeArguments?.[1];
+  if (!idArgument || !ts.isLiteralTypeNode(idArgument)) return undefined;
+  return ts.isStringLiteral(idArgument.literal)
+    ? idArgument.literal.text
+    : undefined;
+}
+
 function transitionIdFromTransitionRefType(type: ts.Type): string | undefined {
   if (type.isStringLiteral()) return type.value;
   if (type.isUnion()) {
@@ -282,6 +301,41 @@ function transitionIdFromObjectLiteralWalk(
   return undefined;
 }
 
+function varIdFromObjectLiteralWalk(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+): string | undefined {
+  const chain = collectTransitionAccessChain(node);
+  if (!chain || chain.segments.length === 0) return undefined;
+
+  const symbol = checker.getSymbolAtLocation(chain.root);
+  if (!symbol) return undefined;
+  const resolved = resolveAliasedSymbol(symbol, checker);
+  for (const declaration of resolved.getDeclarations() ?? []) {
+    if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) {
+      continue;
+    }
+    let expression: ts.Expression = declaration.initializer;
+    if (ts.isAsExpression(expression)) expression = expression.expression;
+    if (!ts.isObjectLiteralExpression(expression)) continue;
+
+    let object = expression;
+    for (let index = 0; index < chain.segments.length; index++) {
+      const key = chain.segments[index]!;
+      const property = findPropertyAssignment(object, key);
+      if (!property) return undefined;
+      if (index === chain.segments.length - 1) {
+        return varIdFromPropertyDeclaration(property);
+      }
+      let next = property.initializer;
+      if (ts.isAsExpression(next)) next = next.expression;
+      if (!ts.isObjectLiteralExpression(next)) return undefined;
+      object = next;
+    }
+  }
+  return undefined;
+}
+
 function transitionIdFromAccessExpression(
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
   checker: ts.TypeChecker,
@@ -301,6 +355,22 @@ function transitionIdFromAccessExpression(
   if (typeId) return typeId;
 
   return transitionIdFromObjectLiteralWalk(node, checker);
+}
+
+function varIdFromAccessExpression(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+): string | undefined {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol) {
+    const resolved = resolveAliasedSymbol(symbol, checker);
+    for (const declaration of resolved.getDeclarations() ?? []) {
+      const varId = varIdFromPropertyDeclaration(declaration);
+      if (varId) return varId;
+    }
+  }
+
+  return varIdFromObjectLiteralWalk(node, checker);
 }
 
 /**
@@ -433,14 +503,14 @@ function localFieldNamesByComponent(model: Model): Map<string, Set<string>> {
   return byComponent;
 }
 
-function localFieldNamesByGeneratedModule(
+function exportedNamesByGeneratedModule(
   model: Model,
   file: string,
 ): Map<string, Set<string>> {
   const appModelPath = join(dirname(file), ".modality", "app.model.ts");
   const byModule = new Map<string, Set<string>>();
   for (const module of emitComponentModalModules(model, appModelPath)) {
-    const fields = new Set<string>();
+    const exports = new Set<string>();
     const sourceFile = ts.createSourceFile(
       module.path,
       module.source,
@@ -452,13 +522,25 @@ function localFieldNamesByGeneratedModule(
       if (!ts.isVariableStatement(statement)) continue;
       for (const declaration of statement.declarationList.declarations) {
         if (ts.isIdentifier(declaration.name)) {
-          fields.add(declaration.name.text);
+          exports.add(declaration.name.text);
         }
       }
     }
-    byModule.set(resolve(module.path), fields);
+    byModule.set(resolve(module.path), exports);
   }
   return byModule;
+}
+
+function generatedComponentExportNames(model: Model): Set<string> {
+  const names = new Set<string>();
+  for (const fields of localFieldNamesByComponent(model).keys()) {
+    names.add(componentExportName(fields));
+  }
+  for (const transition of model.transitions) {
+    const componentId = transition.id.split(".")[0];
+    if (componentId) names.add(componentExportName(componentId));
+  }
+  return names;
 }
 
 function generatedImportDiagnostics(
@@ -466,8 +548,8 @@ function generatedImportDiagnostics(
   model: Model,
   file: string,
 ): SymbolRewriteDiagnostic[] {
-  const localFields = localFieldNamesByComponent(model);
-  const localFieldsByModule = localFieldNamesByGeneratedModule(model, file);
+  const exportsByModule = exportedNamesByGeneratedModule(model, file);
+  const componentExports = generatedComponentExportNames(model);
   const diagnostics: SymbolRewriteDiagnostic[] = [];
 
   for (const statement of sourceFile.statements) {
@@ -482,15 +564,15 @@ function generatedImportDiagnostics(
     );
     const namedBindings = statement.importClause?.namedBindings;
     if (!namedBindings || !ts.isNamedImports(namedBindings)) continue;
-    const fields = modulePath
-      ? localFieldsByModule.get(modulePath)
+    const exports = modulePath
+      ? exportsByModule.get(modulePath)
       : componentId
-        ? (localFields.get(componentId) ?? new Set<string>())
+        ? componentExports
         : undefined;
-    if (!fields) continue;
+    if (!exports) continue;
     for (const specifier of namedBindings.elements) {
       const exportedName = specifier.propertyName?.text ?? specifier.name.text;
-      if (fields.has(exportedName)) continue;
+      if (exports.has(exportedName)) continue;
       diagnostics.push({
         symbol: specifier.name.text,
         file,
@@ -500,6 +582,29 @@ function generatedImportDiagnostics(
   }
 
   return diagnostics;
+}
+
+function isGeneratedModalImportRoot(
+  node: ts.Identifier,
+  checker: ts.TypeChecker,
+): boolean {
+  const specifier = importModuleSpecifierForIdentifier(node, checker);
+  return isGeneratedModalSpecifier(specifier);
+}
+
+function generatedMemberDiagnostic(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+  file: string,
+): SymbolRewriteDiagnostic | undefined {
+  const chain = collectTransitionAccessChain(node);
+  if (!chain || chain.segments.length === 0) return undefined;
+  if (!isGeneratedModalImportRoot(chain.root, checker)) return undefined;
+  return {
+    symbol: node.getText(),
+    file,
+    message: `Could not resolve generated modal member "${node.getText()}" to a modeled state variable or transition. Regenerate the component var module or use var(...) / s(Component).field instead.`,
+  };
 }
 
 function isImportedIdentifier(
@@ -630,6 +735,18 @@ export async function rewriteImportedSymbols(
       ts.isPropertyAccessExpression(node) ||
       ts.isElementAccessExpression(node)
     ) {
+      const varId = varIdFromAccessExpression(node, checker);
+      if (varId) {
+        replacements.push({
+          start: node.getStart(),
+          end: node.getEnd(),
+          text: `variable(${JSON.stringify(varId)})`,
+        });
+        const root = leftmostIdentifier(node);
+        if (root) rewrittenSymbolNames.add(root.text);
+        rewrittenNodes.add(node);
+        return;
+      }
       const id = transitionIdFromAccessExpression(node, checker);
       if (id) {
         replacements.push({
@@ -639,6 +756,16 @@ export async function rewriteImportedSymbols(
         });
         const root = leftmostIdentifier(node);
         if (root) rewrittenSymbolNames.add(root.text);
+        rewrittenNodes.add(node);
+        return;
+      }
+      const diagnostic = generatedMemberDiagnostic(
+        node,
+        checker,
+        resolvedPropsPath,
+      );
+      if (diagnostic) {
+        diagnostics.push(diagnostic);
         rewrittenNodes.add(node);
         return;
       }

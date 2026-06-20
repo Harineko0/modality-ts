@@ -55,8 +55,8 @@ always(
 ```
 
 Reference state with handles: import module-scoped atoms/stores directly, import generated
-`useState` locals from sibling `*.vars` modules, import stable system handles from
-`modality-ts/vars`, or use the `var` export (usually imported as
+`useState` locals from sibling `*.modals.ts` modules through their component object,
+import stable system handles from `modality-ts/vars`, or use the `var` export (usually imported as
 `import { variable } from "modality-ts/properties"`) plus
 `handle.at(...path)` for synthesized ids such as `swr:*` and parameterized `sys:*`.
 Other helpers: `pre(handle)` / `readOpArg(key)`,
@@ -95,11 +95,11 @@ states — a violating edge between two known-good states is still caught.
 
 ```ts
 import { leadsToWithin, or, eq, stepEnqueued } from "modality-ts/properties";
-import { order } from "./App.vars";
+import { App } from "./App.modals";
 
 leadsToWithin(
   stepEnqueued("api.placeOrder"),
-  or(eq(order, "success"), eq(order, "error")),
+  or(eq(App.order, "success"), eq(App.order, "error")),
   { name: "submitResolves", budget: { environment: 3 } },
 );
 ```

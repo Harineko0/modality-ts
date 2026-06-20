@@ -26,11 +26,11 @@ import {
   stepEnqueued,
   stepResolved,
 } from "modality-ts/properties";
-import { auth, step } from "./App.vars";
+import { App } from "./App.modals";
 
 always(
   "checkoutOnlySucceedsForUsers",
-  or(not(eq(step, "success")), eq(auth, "user")),
+  or(not(eq(App.step, "success")), eq(App.auth, "user")),
 );
 ```
 
@@ -105,11 +105,11 @@ alwaysStep(
 "After submitting, the order must settle to success or error within 3 environment steps."
 
 ```ts
-import { order } from "./App.vars";
+import { App } from "./App.modals";
 
 leadsToWithin(
   stepEnqueued("api.placeOrder"),
-  or(eq(order, "success"), eq(order, "error")),
+  or(eq(App.order, "success"), eq(App.order, "error")),
   { name: "submitResolves", budget: { environment: 3 } },
 );
 ```
@@ -122,11 +122,11 @@ By default only environment/library/internal steps count toward the goal. Set
 "From any state with a valid payment method, the review step remains reachable."
 
 ```ts
-import { payment, step } from "./App.vars";
+import { App } from "./App.modals";
 
 reachableFrom(
-  eq(payment, "valid"),
-  eq(step, "review"),
+  eq(App.payment, "valid"),
+  eq(App.step, "review"),
   { name: "reviewStaysReachable" },
 );
 ```
@@ -142,11 +142,11 @@ guards are structured IR.
 
 ```ts
 import { enabled } from "modality-ts/properties";
-import { order } from "./App.vars";
+import { App } from "./App.modals";
 
 always(
   "logoutAvailableOnError",
-  or(not(eq(order, "error")), enabled("Header.logout")),
+  or(not(eq(App.order, "error")), enabled("Header.logout")),
 );
 ```
 
@@ -162,15 +162,19 @@ disambiguates duplicate handler ids with stable hash suffixes, use
 ## Component state handles
 
 Extraction emits one sibling handle module for each source file with `useState` locals.
-Import `useState` locals from the generated `*.vars` module:
+Import `useState` locals from the generated `*.modals.ts` module through the component
+object:
 
 ```ts
-import { step } from "./App.vars";
+import { App } from "./App.modals";
 
-always("guestCannotReachSuccess", not(and(eq(auth, "guest"), eq(step, "success"))));
+always(
+  "guestCannotReachSuccess",
+  not(and(eq(App.auth, "guest"), eq(App.step, "success"))),
+);
 ```
 
-For example, `app/home/home.tsx` produces `app/home/home.vars.ts`. The CLI loader
+For example, `app/home/home.tsx` produces `app/home/home.modals.ts`. The CLI loader
 rewrites and strips generated handle imports at check time.
 
 Imported atoms and stores resolve through symbol rewriting when their declaration anchors

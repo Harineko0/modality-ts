@@ -39,8 +39,8 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 - **Module-scoped state** (atoms, stores, signals, context, consts): `import { sessionAtom }
   from "./store"` and use it directly. The loader resolves the imported symbol to its model
   variable, so IDE renames stay in sync.
-- **`useState` locals**: import generated handles from sibling `*.vars` modules, such
-  as `./App.vars`.
+- **`useState` locals**: import generated handles from sibling `*.modals.ts` modules,
+  such as `./App.modals`, through the component object.
 - **Stable system vars**: import `{ pending, route, history }` from `modality-ts/vars`.
 - **Other synthesized vars** (`swr:*`, parameterized `sys:*`) or a bare id: use
   `variable(id)` from `modality-ts/properties`.
@@ -60,7 +60,7 @@ wrapper. Reference state through handles, never by raw id in a wrapper call:
 | `s(component, idOverride?)` | quick untyped handles for `useState` locals (`s({ name: "App" }).step`) |
 
 Generated component modules are real TypeScript files written beside the source file,
-for example `app/home/home.tsx` produces `app/home/home.vars.ts`. The CLI rewrites
+for example `app/home/home.tsx` produces `app/home/home.modals.ts`. The CLI rewrites
 each imported handle to `variable("local:<Component>.<state>")` and strips the import
 at check time.
 
@@ -114,7 +114,7 @@ import {
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
 import { sessionAtom, authAtom } from "./store";
-import { step } from "./App.vars";
+import { App } from "./App.modals";
 
 always(
   "adminRequiresAuth",
@@ -127,7 +127,7 @@ alwaysStep("guestCannotSubmit", {
   pre: eq(authAtom, "guest"),
 });
 
-leadsToWithin(stepEnqueued("api.placeOrder"), or(eq(step, "success"), eq(step, "error")), {
+leadsToWithin(stepEnqueued("api.placeOrder"), or(eq(App.step, "success"), eq(App.step, "error")), {
   name: "submitResolves",
   budget: { environment: 3 },
 });

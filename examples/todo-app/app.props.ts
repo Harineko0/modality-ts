@@ -12,7 +12,7 @@ import {
 } from "modality-ts/properties";
 import { pending } from "modality-ts/vars";
 import { authAtom } from "./App";
-import { draft, saveStatus } from "./App.modals";
+import { App } from "./App.modals";
 
 function atMostOnePendingOp(opId: string) {
   return and(
@@ -42,12 +42,12 @@ alwaysStep("guestCannotSubmit", {
 alwaysStep("emptyDraftCannotSubmit", {
   negate: true,
   step: stepEnqueued("api.createTodo"),
-  pre: eq(draft, "empty"),
+  pre: eq(App.draft, "empty"),
 });
 
 alwaysStep("staleCompletionIsInert", {
   negate: true,
   step: stepResolved("api.createTodo", "success"),
-  pre: neq(saveStatus, "posting"),
-  post: neq(draft, pre(draft)),
+  pre: neq(App.saveStatus, "posting"),
+  post: neq(App.draft, pre(App.draft)),
 });

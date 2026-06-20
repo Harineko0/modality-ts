@@ -12,22 +12,17 @@ import {
   stepResolved,
 } from "modality-ts/properties";
 import {
-  auth,
-  plan,
-  quoteStatus,
-  step,
-  submitStatus,
-  userId,
+  App,
 } from "./App.modals";
 
-always("guestCannotReachSuccess", not(and(eq(auth, "guest"), eq(step, "success"))));
+always("guestCannotReachSuccess", not(and(eq(App.auth, "guest"), eq(App.step, "success"))));
 
 alwaysStep("orderSuccessMatchesUser", {
   negate: true,
   step: stepResolved("api.submitOrder", "success"),
   post: and(
-    eq(step, "success"),
-    not(and(eq(auth, "user"), eq(readOpArg("userId"), userId))),
+    eq(App.step, "success"),
+    not(and(eq(App.auth, "user"), eq(readOpArg("userId"), App.userId))),
   ),
 });
 
@@ -35,28 +30,28 @@ alwaysStep("orderSuccessMatchesCart", {
   negate: true,
   step: stepResolved("api.submitOrder", "success"),
   post: and(
-    eq(step, "success"),
-    eq(auth, "user"),
-    neq(readOpArg("plan"), plan),
+    eq(App.step, "success"),
+    eq(App.auth, "user"),
+    neq(readOpArg("plan"), App.plan),
   ),
 });
 
 alwaysStep("staleFailureDoesNotMutateGuestStatus", {
   negate: true,
   step: stepResolved("api.submitOrder", "error"),
-  pre: eq(auth, "guest"),
-  post: neq(submitStatus, pre(submitStatus)),
+  pre: eq(App.auth, "guest"),
+  post: neq(App.submitStatus, pre(App.submitStatus)),
 });
 
 alwaysStep("invalidQuoteCannotEnterBilling", {
   negate: true,
   step: stepAny(),
-  pre: eq(quoteStatus, "invalid"),
-  post: eq(step, "billing"),
+  pre: eq(App.quoteStatus, "invalid"),
+  post: eq(App.step, "billing"),
 });
 
 reachableFrom(
   "reviewCanReachSuccess",
-  and(eq(auth, "user"), eq(step, "review"), eq(submitStatus, "idle")),
-  eq(step, "success"),
+  and(eq(App.auth, "user"), eq(App.step, "review"), eq(App.submitStatus, "idle")),
+  eq(App.step, "success"),
 );

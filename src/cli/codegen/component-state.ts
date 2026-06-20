@@ -120,15 +120,6 @@ function transitionHandleType(transitionId: string): string {
   return `TransitionRef<${stringLiteralType(transitionId)}>`;
 }
 
-function collisionSafeExportName(
-  entry: LocalField,
-  fieldCounts: ReadonlyMap<string, number>,
-): string {
-  return (fieldCounts.get(entry.field) ?? 0) > 1
-    ? `${entry.componentId}_${entry.field}`
-    : entry.field;
-}
-
 function domainLiteral(domain: AbstractDomain): string {
   switch (domain.kind) {
     case "bool":
@@ -247,33 +238,6 @@ function emitTransitionPathTree(
   }
 }
 
-function emitTransitionsSection(
-  components: readonly TransitionComponentGroup[],
-  stateExportNames: ReadonlySet<string>,
-): string[] {
-  const lines: string[] = ["// transitions"];
-  for (const group of components) {
-    const exportName = componentExportName(group.component);
-    if (stateExportNames.has(exportName)) {
-      throw new Error(
-        `Transition handle export "${exportName}" collides with a state export in the same module`,
-      );
-    }
-    lines.push(`export const ${exportName} = {`);
-    for (const eventGroup of group.events) {
-      const tree = new Map<string, TransitionPathNode>();
-      for (const leaf of eventGroup.leaves) {
-        insertTransitionPath(tree, leaf.path, leaf.transitionId);
-      }
-      lines.push(`  ${quoteProperty(eventGroup.event)}: {`);
-      emitTransitionPathTree(tree, "    ", lines);
-      lines.push("  },");
-    }
-    lines.push("};");
-  }
-  return lines;
-}
-
 function emitModuleSource(
   fields: readonly LocalField[],
   components: readonly TransitionComponentGroup[],
@@ -292,43 +256,66 @@ function emitModuleSource(
     lines.push("");
   }
 
-  const stateExportNames = new Set<string>();
+  const fieldsByComponent = new Map<string, LocalField[]>();
+  for (const field of fields) {
+    const entries = fieldsByComponent.get(field.componentId) ?? [];
+    entries.push(field);
+    fieldsByComponent.set(field.componentId, entries);
+  }
+  const transitionsByComponent = new Map<string, TransitionComponentGroup>();
+  for (const component of components) {
+    transitionsByComponent.set(component.component, component);
+  }
+  const componentIds = [
+    ...new Set([...fieldsByComponent.keys(), ...transitionsByComponent.keys()]),
+  ].sort((left, right) => left.localeCompare(right));
 
-  if (hasState) {
-    const sortedFields = [...fields].sort(
-      (left, right) =>
-        left.field.localeCompare(right.field) ||
-        left.componentId.localeCompare(right.componentId),
-    );
-    const fieldCounts = new Map<string, number>();
-    for (const field of sortedFields) {
-      fieldCounts.set(field.field, (fieldCounts.get(field.field) ?? 0) + 1);
+  for (const [index, componentId] of componentIds.entries()) {
+    if (index > 0) lines.push("");
+    const componentFields = [
+      ...(fieldsByComponent.get(componentId) ?? []),
+    ].sort((left, right) => left.field.localeCompare(right.field));
+    const componentTransitions = transitionsByComponent.get(componentId);
+
+    lines.push(`export const ${componentExportName(componentId)} = {`);
+    if (componentFields.length > 0) {
+      lines.push("  // state");
+      for (const entry of componentFields) {
+        const varId = `local:${entry.componentId}.${entry.field}`;
+        lines.push(
+          `  ${quoteProperty(entry.field)}: variable(${JSON.stringify(varId)}) as ${handleType(
+            entry.domain,
+            varId,
+          )},`,
+        );
+      }
     }
-    lines.push("// state");
-    for (const entry of sortedFields) {
-      const exportName = collisionSafeExportName(entry, fieldCounts);
-      stateExportNames.add(exportName);
-      const varId = `local:${entry.componentId}.${entry.field}`;
-      lines.push(
-        `export const ${exportName}: ${handleType(
-          entry.domain,
-          varId,
-        )} = variable(${JSON.stringify(varId)}) as ${handleType(
-          entry.domain,
-          varId,
-        )};`,
-      );
+
+    if (componentTransitions) {
+      if (componentFields.length > 0) {
+        lines.push("");
+      }
+      lines.push("  // transitions");
+      for (const eventGroup of componentTransitions.events) {
+        const tree = new Map<string, TransitionPathNode>();
+        for (const leaf of eventGroup.leaves) {
+          insertTransitionPath(tree, leaf.path, leaf.transitionId);
+        }
+        lines.push(`  ${quoteProperty(eventGroup.event)}: {`);
+        emitTransitionPathTree(tree, "    ", lines);
+        lines.push("  },");
+      }
     }
+    lines.push("};");
   }
 
-  if (hasTransitions) {
-    if (hasState) {
+  if (!hasState && !hasTransitions) {
+    lines.push("");
+  } else {
+    if (lines.at(-1) !== "") {
       lines.push("");
     }
-    lines.push(...emitTransitionsSection(components, stateExportNames));
   }
-
-  lines.push("");
   return lines.join("\n");
 }
 

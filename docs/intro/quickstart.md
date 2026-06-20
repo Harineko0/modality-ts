@@ -43,11 +43,11 @@ from small combinators, not arbitrary functions.
 
 ```ts
 import { always, or, not, eq } from "modality-ts/properties";
-import { auth, step } from "./App.modals";
+import { App } from "./App.modals";
 
 always(
   "checkoutOnlySucceedsForUsers",
-  or(not(eq(step, "success")), eq(auth, "user")),
+  or(not(eq(App.step, "success")), eq(App.auth, "user")),
 );
 ```
 
@@ -58,8 +58,8 @@ Variable IDs come from the generated model / extraction report. Common prefixes:
 handles beside source files as `<source>.modals.ts`; import stable system handles from
 `modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
 built-in handle (usually via `import { variable } from "modality-ts/properties"`).
-Transition handles from the same module are nested by component and event — for example
-`enabled(App.onClick.save)` — instead of magic-string ids. See
+Local state and transition handles from the same module are nested by component — for example
+`eq(App.step, "success")` and `enabled(App.onClick.save)` — instead of magic-string ids. See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 4. Check the model

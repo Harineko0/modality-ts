@@ -1,11 +1,11 @@
 import { variable, type Variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
-// state
-export const orderStatus: Variable<{ readonly kind: "enum"; readonly values: readonly ["done", "idle", "submitting"] }, "local:App.orderStatus"> = variable("local:App.orderStatus") as Variable<{ readonly kind: "enum"; readonly values: readonly ["done", "idle", "submitting"] }, "local:App.orderStatus">;
-
-// transitions
 export const App = {
+  // state
+  orderStatus: variable("local:App.orderStatus") as Variable<{ readonly kind: "enum"; readonly values: readonly ["done", "idle", "submitting"] }, "local:App.orderStatus">,
+
+  // transitions
   onClick: {
     api: {
       placeOrder: {
@@ -20,22 +20,30 @@ export const App = {
     },
   },
 };
+
 export const swr_api_user_fetch = {
+  // transitions
   _: {
     _: "swr:api_user:fetch" as TransitionRef<"swr:api_user:fetch">,
   },
 };
+
 export const swr_api_user_resolve_error = {
+  // transitions
   _: {
     _: "swr:api_user:resolve:error" as TransitionRef<"swr:api_user:resolve:error">,
   },
 };
+
 export const swr_api_user_resolve_success_0 = {
+  // transitions
   _: {
     _: "swr:api_user:resolve:success:0" as TransitionRef<"swr:api_user:resolve:success:0">,
   },
 };
+
 export const swr_api_user_resolve_success_1 = {
+  // transitions
   _: {
     _: "swr:api_user:resolve:success:1" as TransitionRef<"swr:api_user:resolve:success:1">,
   },
