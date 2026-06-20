@@ -5,6 +5,7 @@ import { useSupportStore } from "../../../../../features/support/state/support-s
 import { useSupportCase } from "../../../../../features/support/infra/support-queries.js";
 import { supportEscalationSchema } from "../../../../../shared/features/support/domain/support.schema.js";
 import { PrioritySelect } from "../../../../../features/support/_components/PrioritySelect.js";
+import { api } from "../../../../../features/auth/infra/api.js";
 
 export function SupportEscalationForm() {
   const { accountId = "acct-alpha" } = useParams();
