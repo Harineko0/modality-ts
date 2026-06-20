@@ -37,7 +37,23 @@ jobs:
         run: pnpm typecheck
       - name: Benchmarks
         run: pnpm benchmarks -- --report .modality/benchmarks/report.json
+      - name: Prepare benchmark comment
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "Benchmark report: [link](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo
+            echo "<details>"
+            echo "<summary>Actual JSON</summary>"
+            echo
+            echo '```json'
+            cat .modality/benchmarks/report.json
+            echo '```'
+            echo
+            echo "</details>"
+          } > .modality/benchmarks/comment.md
       - name: Get comment ID
+        if: github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v2
         id: find-comment
         with:
@@ -45,12 +61,12 @@ jobs:
           comment-author: github-actions[bot]
           body-includes: 'Benchmark report:'
       - name: Comment on PR
+        if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
-          body: |
-            Benchmark report: [link](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          body-path: .modality/benchmarks/comment.md
       - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v4
