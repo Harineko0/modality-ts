@@ -1,5 +1,5 @@
 ---
-id: tanstack
+id: tanstack-router
 title: TanStack Router
 sidebar_label: TanStack Router
 ---
