@@ -31,61 +31,124 @@ Model-checking-based testing tool for React state-transition bugs.
 
 `modality-ts` extracts a finite transition model from React + TypeScript code, checks developer-defined properties against every reachable state within stated bounds, and turns counterexamples into replayable tests.
 
-## Install
+It is for the bugs that hide between example-based tests: double submits, stale async completions, impossible checkout states, auth/router bypasses, and "this can never happen" state combinations that only appear after an awkward event interleaving.
 
-Install `modality-ts` as a dev dependency in the app you are checking. Property files such as `app.props.ts` import `modality-ts/core`, so the package must resolve from that app's dependency graph.
+### [Read the docs »](https://modality-ts.yuni.cat)
+
+## Installation
 
 ```bash
 npm install -D modality-ts
+# or
+pnpm add -D modality-ts
+# or
+yarn add -D modality-ts
 ```
-
-(`pnpm add -D modality-ts` and `yarn add -D modality-ts` work the same way.)
 
 ## Usage
 
-Start by extracting a model from a React component:
+### 1. Register a target
+
+Create an empty `*.props.ts` file beside the components you want to model:
+
+```text
+src/App.tsx
+src/App.props.ts
+```
+
+### 2. Generate typed handles
+
+Run generation before writing properties:
 
 ```bash
 npx modality init
+npx modality generate
+```
+
+This writes sibling modules such as `src/App.modals.ts`, which contain typed handles for the component's state and transitions.
+
+### 3. Write properties
+
+Write properties in the props file, importing component handles from sibling modules such as `./App.modals`.
+
+```ts
+import {
+  always,
+  alwaysStep,
+  and,
+  eq,
+  not,
+  or,
+  stepEnqueued,
+} from "modality-ts/properties";
+import { App } from "./App.modals";
+
+// always for state invariants
+always(
+  "guestCannotReachSuccess",
+  not(and(eq(App.auth, "guest"), eq(App.step, "success"))),
+);
+
+// alwaysStep for action rules
+alwaysStep("emptyDraftCannotSubmit", {
+  negate: true,
+  step: stepEnqueued("api.createTodo"),
+  pre: eq(App.draft, "empty"),
+});
+
+// reachable for sanity checks
+reachable(
+  "guestCannotReachSuccess",
+  not(and(eq(App.auth, "guest"), eq(App.step, "success"))),
+);
+
+// reachableFrom for conditional reachability
+reachableFrom(
+  "reviewStaysReachable",
+  eq(App.payment, "valid"),
+  eq(App.step, "review"),
+);
+
+// leadsToWithin for bounded response
+leadsToWithin(
+  "submitResolves",
+  stepEnqueued("api.placeOrder"),
+  or(eq(App.order, "success"), eq(App.order, "error")),
+  { budget: { environment: 3 } },
+);
+```
+
+### 4. Extract and check
+Run extraction and check:
+
+```bash
+# extract the model from the source code
 npx modality extract
-```
 
-If your component calls side-effect APIs that should appear in the model, name them explicitly:
-
-```bash
-npx modality extract --effect-api api.placeOrder
-```
-
-Check the extracted model against a property file:
-
-```bash
+# check the model for properties
 npx modality check
 ```
 
-`modality check` applies conservative default search limits (`--max-states`, `--max-edges`, `--max-frontier`, `--memory-guard-mb`). Use `--no-search-limits` for intentionally unbounded runs.
+This will produce a report like this:
 
-When a property fails, replay the generated counterexample trace:
+```text
+ ✓ src/App.props.ts 0.13s
+  (2 tests, 2 passed, 0 failed, 0 errors, states 1, edges 0, depth 1, slices 2, vars 2, transitions 0, skipped 0)
+  ✓ guestCannotReachSuccess reachable
+    trace: (initial)
+  ✓ emptyDraftCannotSubmit verified-within-bounds
+    trace: (initial)
+  ✓ guestCannotReachSuccess verified-within-bounds
+    trace: (initial)
+  ✓ reviewStaysReachable verified-within-bounds
+    trace: (initial)
+  ✓ submitResolves verified-within-bounds
+    trace: (initial)
 
-```bash
-npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json
-```
-
-For CI, write all verification artifacts into one directory:
-
-```bash
-npx modality ci .modality/model.json src/app.props.ts --artifacts .modality
-```
-
-Useful commands:
-
-```bash
-npx modality init
-npx modality extract [source.tsx ...]
-npx modality check [model.json] [props.ts ...] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--no-search-limits]
-npx modality replay <trace.json>
-npx modality conform --count 8 --depth 4
-npx modality export
-npx modality ci <model.json> [props.ts] --artifacts .modality
+ Test Files  0 failed | 1 passed (5)
+      Tests  5 passed, 0 failed, 0 warnings, (5)
+   Start at  <timestamp>
+   Duration  <duration>
 ```
 
 ## Limitation
