@@ -121,7 +121,7 @@ sources and navigation. See [Navigation](./navigation.md) and
 | Zustand | `create`/`createStore` | actions / `setState` | none | store handle (direct) | [details](../sources/zustand.md) |
 | TanStack Query | `useQuery` / `useMutation` | QueryClient cache APIs, `mutate` | **yes** (query + mutation lifecycle) | `QueryClient` handle | [details](../sources/tanstack-query.md) |
 | Router | route manifest (adapter) | — | location semantics | router test API | [details](./navigation.md) |
-| TanStack Router | route manifest + loader cache (adapters) | — | loader cache semantics | router harness + branch vars | [details](../sources/tanstack.md) |
+| TanStack Router | route manifest + loader cache (adapters) | — | loader cache semantics | router harness + branch vars | [details](../sources/tanstack-router.md) |
 
 A future source like **XState** fits especially well (machines *are* transition systems
 — a direct machine→IR import, bypassing the M0 interpreter). **React Context as state**
