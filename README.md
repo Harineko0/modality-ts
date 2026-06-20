@@ -47,7 +47,7 @@ yarn add -D modality-ts
 
 ## Usage
 
-### 1. Register a target
+### 1. Create an empty props file
 
 Create an empty `*.props.ts` file beside the components you want to model:
 
@@ -56,7 +56,7 @@ src/App.tsx
 src/App.props.ts
 ```
 
-### 2. Generate typed handles
+### 2. Run generation
 
 Run generation before writing properties:
 
@@ -72,6 +72,7 @@ This writes sibling modules such as `src/App.modals.ts`, which contain typed han
 Write properties in the props file, importing component handles from sibling modules such as `./App.modals`.
 
 ```ts
+// src/App.props.ts
 import {
   always,
   alwaysStep,
