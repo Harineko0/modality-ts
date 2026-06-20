@@ -199,9 +199,11 @@
     "@biomejs/biome": "2.5.0",
     "@napi-rs/cli": "^2.18.4",
     "@types/node": "^24.10.1",
+    "arktype": "^2.2.1",
     "dependency-cruiser": "^17.4.3",
     "tsx": "^4.20.6",
-    "vitest": "^4.0.14"
+    "vitest": "^4.0.14",
+    "zod": "^4.4.3"
   },
   "napi": {
     "name": "modality-checker",
