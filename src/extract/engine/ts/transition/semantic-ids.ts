@@ -37,7 +37,9 @@ export function dependencyNameSegment(
   return names.length > 0 ? names.join("_") : undefined;
 }
 
-function semanticTextForLocator(locator: Locator | undefined): string | undefined {
+function semanticTextForLocator(
+  locator: Locator | undefined,
+): string | undefined {
   if (!locator) return undefined;
   if (locator.kind === "role" && locator.name) return locator.name;
   if (locator.kind === "testId") return locator.value;

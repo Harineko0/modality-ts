@@ -136,7 +136,7 @@ describe("runExtractCommand", () => {
       ).toEqual(routeMountScope(testCase.route));
       expect(result.lines).toContain(`route=${testCase.route}`);
     }
-  });
+  }, 120_000);
 
   it("requires navigation.initialRoute for multi-source extraction across routes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-route-"));

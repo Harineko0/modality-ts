@@ -5,6 +5,8 @@
       "**",
       "!dist",
       "!examples",
+      "!.modality",
+      "!native/index.js",
       "!node_modules",
       "!docs/node_modules",
       "!docs/build",

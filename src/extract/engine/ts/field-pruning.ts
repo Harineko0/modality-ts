@@ -21,7 +21,7 @@ export function fieldPruningCollapseCaveats(
   const caveats: ExtractionCaveat[] = [];
   for (const entry of metadata.entries) {
     const decl = varsById.get(entry.varId);
-    if (!decl || decl.domain.kind !== "record") continue;
+    if (decl?.domain.kind !== "record") continue;
     for (const path of entry.prunedPaths) {
       const fieldDomain = domainPathAt(decl.domain, path);
       if (fieldDomain?.kind !== "tokens") continue;

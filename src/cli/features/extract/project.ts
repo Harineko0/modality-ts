@@ -387,15 +387,6 @@ function seedsForModule(
           (mod) => mod.kind === ts.SyntaxKind.DefaultKeyword,
         )) ??
       false;
-    const exported =
-      isDefault ||
-      ((ts.canHaveModifiers(statement) &&
-        statement.modifiers?.some(
-          (mod) => mod.kind === ts.SyntaxKind.ExportKeyword,
-        )) ??
-        false) ||
-      ts.isExportAssignment(statement);
-
     if (
       ts.isTypeAliasDeclaration(statement) ||
       ts.isInterfaceDeclaration(statement) ||
@@ -479,11 +470,6 @@ function parseImportBindings(
   if (!ts.isStringLiteral(node.moduleSpecifier)) return [];
   const specifier = node.moduleSpecifier.text;
   if (localOnly && !isLocalImportSpecifier(specifier)) return [];
-  const isTypeOnly =
-    node.importClause?.isTypeOnly === true ||
-    (node.importClause?.namedBindings &&
-      ts.isNamedImports(node.importClause.namedBindings) &&
-      node.importClause.namedBindings.elements.every((el) => el.isTypeOnly));
   const bindings: ImportBinding[] = [];
   const clause = node.importClause;
   if (!clause) {
@@ -532,10 +518,7 @@ function collectImportBindings(
   return bindings;
 }
 
-function referencedIdentifiers(
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): Set<string> {
+function referencedIdentifiers(node: ts.Node): Set<string> {
   const ids = new Set<string>();
   const visit = (current: ts.Node): void => {
     if (ts.isIdentifier(current) && current.parent !== node) {
@@ -826,7 +809,7 @@ function syncReferencedImports(
   for (const declName of declSet) {
     const decl = findTopLevelDeclaration(sourceFile, declName);
     if (!decl) continue;
-    for (const ref of referencedIdentifiers(decl, sourceFile)) {
+    for (const ref of referencedIdentifiers(decl)) {
       const binding = importBindings.find((item) => item.local === ref);
       if (binding) importSet.add(binding.local);
     }
@@ -977,7 +960,7 @@ export async function sourceWithReachableImports(
     for (const declName of [...declSet]) {
       const decl = findTopLevelDeclaration(sourceFile, declName);
       if (!decl) continue;
-      const refs = referencedIdentifiers(decl, sourceFile);
+      const refs = referencedIdentifiers(decl);
       for (const ref of refs) {
         const localDecl = findTopLevelDeclaration(sourceFile, ref);
         if (localDecl) {

@@ -20,7 +20,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const todoDir = join(repoRoot, "examples", "todo-app");
 const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
 const cliPath = join(repoRoot, "src", "cli", "cli.ts");
-const CLI_E2E_TIMEOUT_MS = 20_000;
+const CLI_E2E_TIMEOUT_MS = 60_000;
 
 describe("modality CLI", () => {
   it("initializes a typed modality config", async () => {

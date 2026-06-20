@@ -53,7 +53,7 @@ describe("runExtractCommand", () => {
     expect(appModel).toContain('"local:App.saveStatus": "idle" | "posting";');
     expect(appModel).toContain("export type VarId = keyof AppState;");
     expect(model.transitions.map((transition) => transition.id)).toEqual([
-      "App.onClick.saveStatus",
+      "App.onClick.Save",
     ]);
     expect(model.metadata?.sourceHashes?.[sourcePath]).toMatch(
       /^[a-f0-9]{64}$/,
@@ -86,7 +86,7 @@ describe("runExtractCommand", () => {
       generatedAt: "2026-06-12T00:00:00.000Z",
       plugins: model.metadata?.plugins,
       handlers: [
-        { id: "App.onClick.saveStatus", classification: "exact", reasons: [] },
+        { id: "App.onClick.Save", classification: "exact", reasons: [] },
       ],
       globalTaints: [],
       staleReads: [],
@@ -621,7 +621,7 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.handlers).toEqual([
       {
-        id: "App.onClick.saveStatus.escaped",
+        id: "App.onClick.Save.escaped",
         classification: "over-approx",
         reasons: [
           "domain-wide havoc: havoc write to local:App.saveStatus",
@@ -661,7 +661,7 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.handlers).toEqual([
       {
-        id: "App.onClick.saveStatus.loop",
+        id: "App.onClick.Save.loop",
         classification: "over-approx",
         reasons: ["domain-wide havoc: havoc write to local:App.saveStatus"],
       },

@@ -327,7 +327,7 @@ export default [route('/open', 'routes/open.tsx')];`,
       result.model.vars.find((decl) => decl.id === "local:Anonymous.open"),
     ).toBeTruthy();
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(
-      expect.arrayContaining(["Anonymous.onClick.open"]),
+      expect.arrayContaining(["Anonymous.onClick.Open"]),
     );
     expect(result.report.warnings).not.toContain(
       "No render surface found for requested extraction entries",
@@ -394,7 +394,7 @@ export default [route('/', 'routes/home.tsx')];`,
       modelPath,
     });
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(
-      expect.arrayContaining(["Child.onClick.count"]),
+      expect.arrayContaining(["Child.onClick.Count"]),
     );
   });
 

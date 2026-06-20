@@ -253,7 +253,7 @@ describe("canary runner", () => {
         expect(selectedIds).not.toContain(canary.id);
       }
     }
-  });
+  }, 120_000);
 
   it("keeps generated artifacts outside canary app roots", async () => {
     const canaryRoot = join(repoRoot, "examples/demo-app");

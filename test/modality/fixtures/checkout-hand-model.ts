@@ -145,18 +145,15 @@ export function checkoutHandModel(): Model {
         not(neq(read("local:App.auth"), lit("guest"))),
         ["local:App.auth"],
       ),
-      userSeq(
-        "App.onClick.Logout",
-        [
-          assign("local:App.auth", "guest"),
-          assign("local:App.userId", "none"),
-          assign("local:App.step", "plan"),
-          assign("local:App.plan", "none"),
-          assign("local:App.quoteStatus", "missing"),
-          assign("local:App.paymentMethod", "none"),
-          assign("local:App.submitStatus", "idle"),
-        ],
-      ),
+      userSeq("App.onClick.Logout", [
+        assign("local:App.auth", "guest"),
+        assign("local:App.userId", "none"),
+        assign("local:App.step", "plan"),
+        assign("local:App.plan", "none"),
+        assign("local:App.quoteStatus", "missing"),
+        assign("local:App.paymentMethod", "none"),
+        assign("local:App.submitStatus", "idle"),
+      ]),
       {
         id: "App.onClick.api.fetchQuote.start",
         cls: "user",

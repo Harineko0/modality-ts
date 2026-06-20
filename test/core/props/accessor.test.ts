@@ -24,9 +24,7 @@ describe("s() accessor", () => {
   });
 
   it("honors idOverride", () => {
-    expect(s(App, "CustomerHome").phase.varId).toBe(
-      "local:CustomerHome.phase",
-    );
+    expect(s(App, "CustomerHome").phase.varId).toBe("local:CustomerHome.phase");
   });
 
   it("accepts a component-like name object", () => {

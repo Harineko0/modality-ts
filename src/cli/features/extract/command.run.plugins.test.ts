@@ -150,9 +150,7 @@ describe("runExtractCommand", () => {
     const userTransitionIds = result.model.transitions
       .filter((transition) => transition.cls === "user")
       .map((transition) => transition.id);
-    expect(userTransitionIds).toEqual([
-      "App.onClick.Apply",
-    ]);
+    expect(userTransitionIds).toEqual(["App.onClick.Apply"]);
   });
 
   it("writes app.model.ts to an explicit path", async () => {

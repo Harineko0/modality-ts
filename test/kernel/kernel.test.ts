@@ -1489,7 +1489,7 @@ describe("property DSL", () => {
         },
       ],
     };
-    const property = always(model, enabledTransitionPrefix( "family."), {
+    const property = always(model, enabledTransitionPrefix("family."), {
       name: "familyEnabled",
     });
     expect(property.reads).toEqual(["guardA", "guardB"]);
@@ -1501,9 +1501,7 @@ describe("property DSL", () => {
 
   it("emits transitionEnabledPrefix IR for suffixed transition families", () => {
     const model = baseModel();
-    expect(
-      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
-    ).toEqual({
+    expect(enabledTransitionPrefix("LaneTimer.onClick.draftSec")).toEqual({
       kind: "transitionEnabledPrefix",
       prefix: "LaneTimer.onClick.draftSec",
     });
@@ -1547,7 +1545,7 @@ describe("property DSL", () => {
     };
     const property = always(
       model,
-      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
+      enabledTransitionPrefix("LaneTimer.onClick.draftSec"),
       { name: "resetFamilyEnabled" },
     );
     expect(property.enabledTransitions).toEqual([

@@ -95,7 +95,7 @@ export function compareModelEconomics(
       explicitPaths ??
       (() => {
         const fullDecl = fullDeclsById.get(decl.id);
-        if (!fullDecl || fullDecl.domain.kind !== "record") return undefined;
+        if (fullDecl?.domain.kind !== "record") return undefined;
         if (decl.domain.kind !== "record") return undefined;
         const fullPaths = collectRecordDomainFieldPaths(fullDecl.domain);
         const slicePaths = collectRecordDomainFieldPaths(decl.domain);

@@ -28,7 +28,10 @@
     "maxStates": 20
   },
   "expectations": {
-    "transitionIdPrefixes": ["App.onClick.count.seq."],
+    "transitionIdPrefixes": [
+      "App.onClick.Direct batch",
+      "App.onClick.Functional batch"
+    ],
     "vars": [
       {
         "id": "local:App.count",
@@ -48,8 +51,12 @@
     ],
     "effectReadKinds": [
       {
-        "transitionIdPrefix": "App.onClick.count.seq.",
-        "kinds": ["readPre", "read"]
+        "transitionIdPrefix": "App.onClick.Direct batch",
+        "kinds": ["readPre"]
+      },
+      {
+        "transitionIdPrefix": "App.onClick.Functional batch",
+        "kinds": ["read"]
       }
     ],
     "minStateContributorVars": 1

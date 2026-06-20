@@ -545,7 +545,11 @@ export function transitionsFromBoundedListAttribute(
   const setterCall = setterCallFrom(summary.call, setters, types);
   if (!setterCall) return [];
   const baseLocator = locatorForEventAttribute(node);
-  const semanticName = semanticEventName(node, resolvedHandler.name, baseLocator);
+  const semanticName = semanticEventName(
+    node,
+    resolvedHandler.name,
+    baseLocator,
+  );
   const transitions: Transition[] = [];
   for (let index = 0; index < listInfo.domain.maxLen; index += 1) {
     const locals = new Map(summary.locals);

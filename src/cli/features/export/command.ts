@@ -764,7 +764,7 @@ function resolvePendingQueueId(
 ): string {
   if (explicitQueue !== undefined) {
     const decl = model.vars.find((candidate) => candidate.id === explicitQueue);
-    if (!decl || decl.role?.kind !== "pending-queue") {
+    if (decl?.role?.kind !== "pending-queue") {
       throw new Error(
         `TLA export pending queue ${explicitQueue} is not a pending-queue role var`,
       );

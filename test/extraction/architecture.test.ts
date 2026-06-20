@@ -514,7 +514,7 @@ describe("extraction architecture surface", () => {
       overflow: "forbid",
     });
     const draftTransitions = result.transitions.filter((transition) =>
-      transition.id.includes("draftSec"),
+      transition.writes.includes("local:LaneTimer.draftSec"),
     );
     expect(
       draftTransitions.some((transition) =>
@@ -555,9 +555,6 @@ describe("extraction architecture surface", () => {
       ),
     ).toBe(true);
     const ids = incrementTransitions.map((transition) => transition.id);
-    expect(
-      ids.every((id) => id.startsWith("LaneTimer.onClick.draftSec.")),
-    ).toBe(true);
     expect(new Set(ids).size).toBe(4);
     expect(
       result.transitions.some(

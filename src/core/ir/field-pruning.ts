@@ -630,7 +630,7 @@ export function applySliceRecordDomainProjection(
   const fullDeclsById = new Map(fullModel.vars.map((decl) => [decl.id, decl]));
   const vars = slice.vars.map((decl) => {
     const fullDecl = fullDeclsById.get(decl.id);
-    if (!fullDecl || fullDecl.domain.kind !== "record") return decl;
+    if (fullDecl?.domain.kind !== "record") return decl;
     const usage = collectSliceRetainedFieldPaths(
       fullModel,
       property,
@@ -652,7 +652,7 @@ export function projectedFieldPathsForSlice(
   const result = new Map<string, readonly string[][]>();
   for (const sliceDecl of slice.vars) {
     const fullDecl = fullDeclsById.get(sliceDecl.id);
-    if (!fullDecl || fullDecl.domain.kind !== "record") continue;
+    if (fullDecl?.domain.kind !== "record") continue;
     if (sliceDecl.domain.kind !== "record") continue;
     const fullPaths = collectRecordDomainFieldPaths(fullDecl.domain);
     const slicePaths = collectRecordDomainFieldPaths(sliceDecl.domain);

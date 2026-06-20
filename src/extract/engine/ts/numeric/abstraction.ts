@@ -223,7 +223,7 @@ export function applyIntervalAbstraction(
 
 export function applyPredicateAbstraction(
   varId: string,
-  domain: AbstractDomain,
+  _domain: AbstractDomain,
   config: PredicateAbstractionConfig,
   observations: readonly ExprIR[],
 ): { domain: AbstractDomain; reduction: NumericReduction } {

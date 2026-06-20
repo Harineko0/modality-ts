@@ -37,7 +37,11 @@ const model: Model = {
       label: { kind: "click", text: "Toggle" },
       source: [],
       guard: { kind: "lit", value: true },
-      effect: { kind: "assign", var: "flag", expr: { kind: "lit", value: true } },
+      effect: {
+        kind: "assign",
+        var: "flag",
+        expr: { kind: "lit", value: true },
+      },
       reads: [],
       writes: ["flag"],
       confidence: "exact",

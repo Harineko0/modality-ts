@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import { always, reachable } from "../../helpers/property-builders.js";
-import {
-  and,
-  eq,
-  lit,
-  neq,
-  or,
-  readVar,
-  type Model,
-} from "modality-ts/core";
+import { and, eq, lit, neq, or, readVar, type Model } from "modality-ts/core";
 import {
   createSwrKeyWindowTemplate,
   createSwrTemplate,
@@ -565,7 +557,7 @@ describe("SWR template", () => {
     );
     expect(result.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.api_todos",
+        id: "App.onClick.Fill",
         effect: {
           kind: "assign",
           var: "swr:api_todos:data",
@@ -623,7 +615,7 @@ describe("SWR template", () => {
     );
     expect(result.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.api_todos.loop",
+        id: "App.onClick.Loop.loop",
         effect: { kind: "havoc", var: "swr:api_todos:data" },
         writes: ["swr:api_todos:data"],
         confidence: "over-approx",
@@ -646,7 +638,7 @@ describe("SWR template", () => {
     );
     expect(result.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.api_todos",
+        id: "App.onClick.Fill",
         effect: {
           kind: "assign",
           var: "swr:api_todos:data",

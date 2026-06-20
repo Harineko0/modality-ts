@@ -2823,7 +2823,7 @@ describe("checker", () => {
         m,
         or(
           neq(readVar("printerStatus"), lit("connected")),
-          enabled( `setDensity${index}`),
+          enabled(`setDensity${index}`),
         ),
         { name: `density${index}Guarded`, reads: ["printerStatus"] },
       ),
@@ -3644,13 +3644,13 @@ describe("checker", () => {
       ],
     };
     const exactEnabled = checkModel(m, [
-      always(m, enabled( resetPrefix), {
+      always(m, enabled(resetPrefix), {
         name: "exactResetIdAbsent",
       }),
     ]);
     expect(exactEnabled.verdicts[0]?.status).toBe("violated");
     const prefixEnabled = checkModel(m, [
-      always(m, enabledTransitionPrefix( resetPrefix), {
+      always(m, enabledTransitionPrefix(resetPrefix), {
         name: "resetFamilyAlwaysEnabled",
         reads: [draftSecVar, "sys:route"],
       }),
@@ -3839,10 +3839,7 @@ describe("checker", () => {
     const result = checkModel(m, [
       reachable(
         m,
-        and(
-          eq(readVar("source"), lit(true)),
-          eq(readVar("target"), lit(true)),
-        ),
+        and(eq(readVar("source"), lit(true)), eq(readVar("target"), lit(true))),
         {
           name: "triggerRuns",
           reads: ["source", "target"],
@@ -3967,10 +3964,7 @@ describe("checker", () => {
       ),
       reachable(
         m,
-        and(
-          eq(readVar("phase"), lit("start")),
-          eq(readVar("flag"), lit(true)),
-        ),
+        and(eq(readVar("phase"), lit("start")), eq(readVar("flag"), lit(true))),
         {
           name: "oracleImpossible",
         },
@@ -4834,10 +4828,7 @@ describe("checker", () => {
     };
     const property = always(
       model,
-      or(
-        neq(readVar("status"), lit("connected")),
-        enabled("setWide"),
-      ),
+      or(neq(readVar("status"), lit("connected")), enabled("setWide")),
       { name: "wideEnabledParity" },
     );
     const { model: slicedModel } = sliceModelForCheckProperty(model, property);
@@ -5722,14 +5713,10 @@ describe("checker", () => {
       })),
     };
     const result = checkModel(m, [
-      reachable(
-        m,
-        and(...toggleIds.map((id) => eq(readVar(id), lit(true)))),
-        {
-          name: "allToggled",
-          reads: toggleIds,
-        },
-      ),
+      reachable(m, and(...toggleIds.map((id) => eq(readVar(id), lit(true)))), {
+        name: "allToggled",
+        reads: toggleIds,
+      }),
     ]);
     expect(result.stats).toEqual({ states: 256, edges: 1024, depth: 8 });
     expect(result.verdicts[0]?.status).toBe("reachable");

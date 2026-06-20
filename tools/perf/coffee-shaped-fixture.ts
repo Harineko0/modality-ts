@@ -245,10 +245,7 @@ export function coffeeShapedPerformanceModel(): Model {
 export function coffeeShapedDensityOnePropertyInferred(model: Model): Property {
   return buildAlways(
     model,
-    or(
-      neq(readVar("printerStatus"), lit("connected")),
-      enabled("setDensity1"),
-    ),
+    or(neq(readVar("printerStatus"), lit("connected")), enabled("setDensity1")),
     { name: COFFEE_SHAPED_DENSITY_ONE_PROPERTY },
   );
 }

@@ -4960,8 +4960,7 @@ describe("React Router form action submits", () => {
     expect(
       result.transitions.find((transition) =>
         transition.writes.includes("local:App.count"),
-      )
-        ?.effect,
+      )?.effect,
     ).toMatchObject({
       kind: "assign",
       var: "local:App.count",

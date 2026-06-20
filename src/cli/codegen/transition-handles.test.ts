@@ -100,7 +100,8 @@ describe("buildTransitionTree", () => {
         leaves: [
           {
             path: ["actionData_isAutoPrintEnabled"],
-            transitionId: "CustomerHome.useEffect.actionData_isAutoPrintEnabled",
+            transitionId:
+              "CustomerHome.useEffect.actionData_isAutoPrintEnabled",
           },
         ],
       },

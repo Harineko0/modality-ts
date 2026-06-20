@@ -441,7 +441,8 @@ export function resolveHandlerExpression(
   if (!expression) return undefined;
   if (isExtractableHandler(expression)) {
     const name =
-      ts.isFunctionDeclaration(expression) || ts.isFunctionExpression(expression)
+      ts.isFunctionDeclaration(expression) ||
+      ts.isFunctionExpression(expression)
         ? expression.name?.text
         : undefined;
     return { handler: expression, ...(name ? { name } : {}) };

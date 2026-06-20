@@ -7,11 +7,7 @@ import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
 import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
 import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import {
-  always,
-  alwaysStep,
-  reachable,
-} from "../helpers/property-builders.js";
+import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 import {
   collectRecordDomainFieldPaths,
   domainCardinality,
@@ -133,10 +129,7 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      or(
-        neq(readVar("status"), lit("connected")),
-        enabled("setDensity1"),
-      ),
+      or(neq(readVar("status"), lit("connected")), enabled("setDensity1")),
       { name: "densityGuardedByConnection" },
     );
     const { model: sliced } = sliceModelForCheckProperty(m, property);
@@ -214,10 +207,7 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      or(
-        neq(readVar("status"), lit("connected")),
-        enabled("setDensity1"),
-      ),
+      or(neq(readVar("status"), lit("connected")), enabled("setDensity1")),
       { name: "densityGuardedByConnectionVerdictParity" },
     );
     const unsliced = checkModel(m, [property]);
@@ -356,7 +346,7 @@ describe("enabled transition guard-only slicing", () => {
     };
     const property = always(
       m,
-      enabledTransitionPrefix( "LaneTimer.onClick.draftSec"),
+      enabledTransitionPrefix("LaneTimer.onClick.draftSec"),
       {
         name: "prefixEnabled",
         reads: ["status"],
