@@ -199,7 +199,7 @@ eq(pending, "api.placeOrder");
     expect(source).toContain("eq(pending,");
   });
 
-  it("rewrites imported transition handles to string literals and strips the import", async () => {
+  it("rewrites nested transition member access and strips the root import", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-transition-"));
     const propsPath = join(dir, "app.props.ts");
     const transitionId = "App.onClick.phase.seq";
@@ -233,8 +233,8 @@ eq(pending, "api.placeOrder");
     await writeFile(
       propsPath,
       `import { alwaysStep, enabled, stepTransitionId } from "modality-ts/properties";
-import { app_advance } from "./App.modals";
-alwaysStep("clicked", { step: stepTransitionId(app_advance), pre: enabled(app_advance) });
+import { App } from "./App.modals";
+alwaysStep("clicked", { step: stepTransitionId(App.onClick.phase.seq), pre: enabled(App.onClick.phase.seq) });
 `,
       "utf8",
     );
@@ -243,6 +243,99 @@ alwaysStep("clicked", { step: stepTransitionId(app_advance), pre: enabled(app_ad
       propsPath,
       modelWithTransition,
     );
+    expect(source).toContain(
+      `stepTransitionId(${JSON.stringify(transitionId)})`,
+    );
+    expect(source).toContain(`enabled(${JSON.stringify(transitionId)})`);
+    expect(source).not.toContain("./App.modals");
+    expect(source).not.toMatch(/import \{ App \}/);
+  });
+
+  it("rewrites dotted property and quoted element access for nested handles", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-resolve-transition-nested-"),
+    );
+    const propsPath = join(dir, "app.props.ts");
+    const historyId = "CustomerHome.onClick.isHistoryOpen";
+    const submitId = "CustomerHome.onSubmit.ACTION /order.start";
+    const modelWithTransition: Model = {
+      ...localOnlyModel,
+      vars: [],
+      transitions: [
+        {
+          id: historyId,
+          cls: "user",
+          label: { kind: "click", text: "History" },
+          source: [{ file: join(dir, "Home.tsx"), line: 10 }],
+          guard: { kind: "true" },
+          effect: {
+            kind: "assign",
+            target: "local:CustomerHome.isHistoryOpen",
+            value: true,
+          },
+          reads: [],
+          writes: ["local:CustomerHome.isHistoryOpen"],
+          confidence: "exact",
+        },
+        {
+          id: submitId,
+          cls: "user",
+          label: { kind: "submit", text: "Start" },
+          source: [{ file: join(dir, "Home.tsx"), line: 11 }],
+          guard: { kind: "true" },
+          effect: {
+            kind: "assign",
+            target: "local:CustomerHome.step",
+            value: "start",
+          },
+          reads: [],
+          writes: ["local:CustomerHome.step"],
+          confidence: "exact",
+        },
+      ],
+    };
+    await writeFile(
+      propsPath,
+      `import { enabled, stepTransitionId } from "modality-ts/properties";
+import { CustomerHome } from "./Home.modals";
+enabled(CustomerHome.onClick.isHistoryOpen);
+stepTransitionId(CustomerHome.onSubmit["ACTION /order"].start);
+`,
+      "utf8",
+    );
+
+    const { source } = await rewriteImportedSymbols(
+      propsPath,
+      modelWithTransition,
+    );
+    expect(source).toContain(`enabled(${JSON.stringify(historyId)})`);
+    expect(source).toContain(`stepTransitionId(${JSON.stringify(submitId)})`);
+    expect(source).not.toContain("./Home.modals");
+    expect(source).not.toMatch(/import \{ CustomerHome \}/);
+  });
+
+  it("rewrites imported flat transition handles to string literals and strips the import", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-resolve-transition-"));
+    const propsPath = join(dir, "app.props.ts");
+    const handlePath = join(dir, "App.modals.ts");
+    const transitionId = "App.onClick.phase.seq";
+    await writeFile(
+      handlePath,
+      `import type { TransitionRef } from "modality-ts/properties";
+export const app_advance: TransitionRef<"${transitionId}"> = ${JSON.stringify(transitionId)} as TransitionRef<"${transitionId}">;
+`,
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `import { alwaysStep, enabled, stepTransitionId } from "modality-ts/properties";
+import { app_advance } from "./App.modals";
+alwaysStep("clicked", { step: stepTransitionId(app_advance), pre: enabled(app_advance) });
+`,
+      "utf8",
+    );
+
+    const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
     expect(source).toContain(
       `stepTransitionId(${JSON.stringify(transitionId)})`,
     );

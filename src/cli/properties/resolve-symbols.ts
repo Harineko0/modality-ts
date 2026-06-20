@@ -140,6 +140,169 @@ function transitionIdFromHandleDeclaration(
     : undefined;
 }
 
+function transitionIdFromPropertyDeclaration(
+  declaration: ts.Declaration,
+): string | undefined {
+  if (!ts.isPropertyAssignment(declaration)) return undefined;
+  const initializer = declaration.initializer;
+  if (!initializer || !ts.isAsExpression(initializer)) return undefined;
+  const type = initializer.type;
+  if (!type || !ts.isTypeReferenceNode(type)) return undefined;
+  if (
+    !ts.isIdentifier(type.typeName) ||
+    type.typeName.text !== "TransitionRef"
+  ) {
+    return undefined;
+  }
+  const idArgument = type.typeArguments?.[0];
+  if (!idArgument || !ts.isLiteralTypeNode(idArgument)) return undefined;
+  return ts.isStringLiteral(idArgument.literal)
+    ? idArgument.literal.text
+    : undefined;
+}
+
+function transitionIdFromTransitionRefType(type: ts.Type): string | undefined {
+  if (type.isStringLiteral()) return type.value;
+  if (type.isUnion()) {
+    for (const constituent of type.types) {
+      const id = transitionIdFromTransitionRefType(constituent);
+      if (id) return id;
+    }
+    return undefined;
+  }
+  if (type.isIntersection()) {
+    for (const constituent of type.types) {
+      if (constituent.isStringLiteral()) return constituent.value;
+    }
+  }
+  return undefined;
+}
+
+function leftmostIdentifier(
+  expr: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+): ts.Identifier | undefined {
+  let current: ts.Expression = expr;
+  while (
+    ts.isPropertyAccessExpression(current) ||
+    ts.isElementAccessExpression(current)
+  ) {
+    if (ts.isIdentifier(current.expression)) {
+      return current.expression;
+    }
+    current = current.expression;
+  }
+  return ts.isIdentifier(current) ? current : undefined;
+}
+
+function findPropertyAssignment(
+  object: ts.ObjectLiteralExpression,
+  key: string,
+): ts.PropertyAssignment | undefined {
+  for (const property of object.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = property.name;
+    if (ts.isIdentifier(name) && name.text === key) return property;
+    if (ts.isStringLiteral(name) && name.text === key) return property;
+    if (ts.isNumericLiteral(name) && name.text === key) return property;
+  }
+  return undefined;
+}
+
+function collectTransitionAccessChain(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+): { root: ts.Identifier; segments: string[] } | undefined {
+  const segments: string[] = [];
+  let current: ts.Expression = node;
+  while (
+    ts.isPropertyAccessExpression(current) ||
+    ts.isElementAccessExpression(current)
+  ) {
+    if (ts.isPropertyAccessExpression(current)) {
+      segments.unshift(current.name.text);
+      current = current.expression;
+    } else {
+      const argument = current.argumentExpression;
+      if (
+        !argument ||
+        (!ts.isStringLiteral(argument) &&
+          !ts.isNoSubstitutionTemplateLiteral(argument))
+      ) {
+        return undefined;
+      }
+      segments.unshift(argument.text);
+      current = current.expression;
+    }
+  }
+  if (!ts.isIdentifier(current)) return undefined;
+  return { root: current, segments };
+}
+
+function transitionIdFromObjectLiteralWalk(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+): string | undefined {
+  const chain = collectTransitionAccessChain(node);
+  if (!chain || chain.segments.length === 0) return undefined;
+
+  const symbol = checker.getSymbolAtLocation(chain.root);
+  if (!symbol) return undefined;
+  const resolved = resolveAliasedSymbol(symbol, checker);
+  for (const declaration of resolved.getDeclarations() ?? []) {
+    if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) {
+      continue;
+    }
+    let expression: ts.Expression = declaration.initializer;
+    if (ts.isAsExpression(expression)) expression = expression.expression;
+    if (!ts.isObjectLiteralExpression(expression)) continue;
+
+    let object = expression;
+    for (let index = 0; index < chain.segments.length; index++) {
+      const key = chain.segments[index]!;
+      const property = findPropertyAssignment(object, key);
+      if (!property) return undefined;
+      if (index === chain.segments.length - 1) {
+        const transitionId = transitionIdFromPropertyDeclaration(property);
+        if (transitionId) return transitionId;
+        let next = property.initializer;
+        if (ts.isAsExpression(next)) next = next.expression;
+        if (ts.isObjectLiteralExpression(next)) {
+          const underscore = findPropertyAssignment(next, "_");
+          if (underscore) {
+            return transitionIdFromPropertyDeclaration(underscore);
+          }
+        }
+        return undefined;
+      }
+      let next = property.initializer;
+      if (ts.isAsExpression(next)) next = next.expression;
+      if (!ts.isObjectLiteralExpression(next)) return undefined;
+      object = next;
+    }
+  }
+  return undefined;
+}
+
+function transitionIdFromAccessExpression(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+): string | undefined {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol) {
+    const resolved = resolveAliasedSymbol(symbol, checker);
+    for (const declaration of resolved.getDeclarations() ?? []) {
+      const transitionId = transitionIdFromPropertyDeclaration(declaration);
+      if (transitionId) return transitionId;
+    }
+  }
+
+  const typeId = transitionIdFromTransitionRefType(
+    checker.getTypeAtLocation(node),
+  );
+  if (typeId) return typeId;
+
+  return transitionIdFromObjectLiteralWalk(node, checker);
+}
+
 /**
  * Resolve an imported identifier whose declaration is a generated transition handle
  * (`export const name: TransitionRef<"Component.onClick.field.seq">`) to its transition id.
@@ -463,6 +626,23 @@ export async function rewriteImportedSymbols(
 
   const visit = (node: ts.Node): void => {
     if (rewrittenNodes.has(node)) return;
+    if (
+      ts.isPropertyAccessExpression(node) ||
+      ts.isElementAccessExpression(node)
+    ) {
+      const id = transitionIdFromAccessExpression(node, checker);
+      if (id) {
+        replacements.push({
+          start: node.getStart(),
+          end: node.getEnd(),
+          text: JSON.stringify(id),
+        });
+        const root = leftmostIdentifier(node);
+        if (root) rewrittenSymbolNames.add(root.text);
+        rewrittenNodes.add(node);
+        return;
+      }
+    }
     if (ts.isIdentifier(node)) {
       if (isBindingIdentifier(node) || isComponentAccessorArgument(node)) {
         ts.forEachChild(node, visit);
@@ -473,6 +653,15 @@ export async function rewriteImportedSymbols(
         parent &&
         ts.isPropertyAccessExpression(parent) &&
         parent.name === node
+      ) {
+        ts.forEachChild(node, visit);
+        return;
+      }
+      if (
+        parent &&
+        (ts.isPropertyAccessExpression(parent) ||
+          ts.isElementAccessExpression(parent)) &&
+        parent.expression === node
       ) {
         ts.forEachChild(node, visit);
         return;

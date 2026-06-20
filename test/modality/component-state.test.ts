@@ -62,9 +62,122 @@ describe("emitComponentModalModules", () => {
     expect(source).toContain("export const phase: Variable<");
     expect(source).toContain('variable("local:App.phase")');
     expect(source).toContain("// transitions");
-    expect(source).toContain('TransitionRef<"App.onClick.phase.seq">');
+    expect(source).toContain("export const App = {");
+    expect(source).toContain("onClick: {");
+    expect(source).toContain("phase: {");
     expect(source).toContain('"App.onClick.phase.seq"');
+    expect(source).toContain('TransitionRef<"App.onClick.phase.seq">');
+    expect(source).not.toContain('"phase.seq"');
     expect(source).not.toContain("authAtom");
+  });
+
+  it("nests multi-segment transition remainders under each period", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [],
+        transitions: [
+          {
+            id: "PrinterSettingsDialog.onClick.optimisticDensity.seq.1",
+            cls: "user",
+            label: { kind: "click", text: "Apply" },
+            source: [{ file: "PrinterSettingsDialog.tsx", line: 10 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              target: "local:PrinterSettingsDialog.optimisticDensity",
+              value: 1,
+            },
+            reads: [],
+            writes: ["local:PrinterSettingsDialog.optimisticDensity"],
+            confidence: "exact",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+    const source = modules[0]!.source;
+    expect(source).toContain("optimisticDensity: {");
+    expect(source).toContain("seq: {");
+    expect(source).toContain(
+      '"1": "PrinterSettingsDialog.onClick.optimisticDensity.seq.1"',
+    );
+    expect(source).not.toContain('"optimisticDensity.seq.1"');
+  });
+
+  it("uses _ when a period segment is both a leaf and a branch prefix", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [],
+        transitions: [
+          {
+            id: "App.onClick.api_todos",
+            cls: "user",
+            label: { kind: "click", text: "Fill" },
+            source: [{ file: "App.tsx", line: 10 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              target: "swr:api_todos:data",
+              value: "full",
+            },
+            reads: [],
+            writes: ["swr:api_todos:data"],
+            confidence: "exact",
+          },
+          {
+            id: "App.onClick.api_todos.loop",
+            cls: "user",
+            label: { kind: "click", text: "Loop" },
+            source: [{ file: "App.tsx", line: 12 }],
+            guard: { kind: "true" },
+            effect: { kind: "havoc", target: "swr:api_todos:data" },
+            reads: [],
+            writes: ["swr:api_todos:data"],
+            confidence: "over-approx",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+    const source = modules[0]!.source;
+    expect(source).toContain("api_todos: {");
+    expect(source).toContain('_: "App.onClick.api_todos"');
+    expect(source).toContain('loop: "App.onClick.api_todos.loop"');
+  });
+
+  it("emits quoted keys for non-identifier transition remainders", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [],
+        transitions: [
+          {
+            id: "CustomerHome.onSubmit.ACTION /order.start",
+            cls: "user",
+            label: { kind: "submit", text: "Start" },
+            source: [{ file: "Home.tsx", line: 10 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              target: "local:CustomerHome.step",
+              value: "start",
+            },
+            reads: [],
+            writes: ["local:CustomerHome.step"],
+            confidence: "exact",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+    const source = modules[0]!.source;
+    expect(source).toContain("export const CustomerHome = {");
+    expect(source).toContain('"ACTION /order": {');
+    expect(source).toContain(
+      'start: "CustomerHome.onSubmit.ACTION /order.start"',
+    );
   });
 
   it("emits transition-only modules without the state import", () => {

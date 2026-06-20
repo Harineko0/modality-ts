@@ -6,17 +6,16 @@ import type {
   Transition,
 } from "modality-ts/core";
 import { quoteProperty, stringLiteralType } from "./model.js";
-import { assignTransitionHandleNames } from "./transition-handles.js";
+import {
+  buildTransitionTree,
+  componentExportName,
+  type TransitionComponentGroup,
+} from "./transition-handles.js";
 
 interface LocalField {
   componentId: string;
   field: string;
   domain: AbstractDomain;
-}
-
-interface TransitionEntry {
-  name: string;
-  transitionId: string;
 }
 
 export interface ComponentModalModule {
@@ -83,7 +82,10 @@ function localFieldsByModule(
 
 function transitionsByModule(
   model: Model,
-): Map<string, { sourcePath?: string; transitions: TransitionEntry[] }> {
+): Map<
+  string,
+  { sourcePath?: string; components: TransitionComponentGroup[] }
+> {
   const grouped = new Map<
     string,
     { sourcePath?: string; transitions: Transition[] }
@@ -99,16 +101,12 @@ function transitionsByModule(
 
   const byModule = new Map<
     string,
-    { sourcePath?: string; transitions: TransitionEntry[] }
+    { sourcePath?: string; components: TransitionComponentGroup[] }
   >();
   for (const [path, entry] of grouped) {
-    const named = assignTransitionHandleNames(entry.transitions);
     byModule.set(path, {
       ...(entry.sourcePath ? { sourcePath: entry.sourcePath } : {}),
-      transitions: named.map(({ transition, name }) => ({
-        name,
-        transitionId: transition.id,
-      })),
+      components: buildTransitionTree(entry.transitions),
     });
   }
   return byModule;
@@ -170,12 +168,118 @@ function domainLiteral(domain: AbstractDomain): string {
   }
 }
 
+interface TransitionPathNode {
+  transitionId?: string;
+  children?: Map<string, TransitionPathNode>;
+}
+
+function ensureBranchChildren(
+  node: TransitionPathNode,
+): Map<string, TransitionPathNode> {
+  if (node.transitionId) {
+    if (!node.children) {
+      node.children = new Map();
+    }
+    if (!node.children.has("_")) {
+      node.children.set("_", { transitionId: node.transitionId });
+    }
+    delete node.transitionId;
+  }
+  if (!node.children) {
+    node.children = new Map();
+  }
+  return node.children;
+}
+
+function insertTransitionPath(
+  root: Map<string, TransitionPathNode>,
+  path: readonly string[],
+  transitionId: string,
+): void {
+  let current = root;
+  for (let index = 0; index < path.length; index++) {
+    const key = path[index]!;
+    const isLeaf = index === path.length - 1;
+    let node = current.get(key);
+    if (!node) {
+      node = {};
+      current.set(key, node);
+    }
+    if (isLeaf) {
+      if (node.children && node.children.size > 0) {
+        const children = ensureBranchChildren(node);
+        const existing = children.get("_");
+        if (existing?.transitionId && existing.transitionId !== transitionId) {
+          throw new Error(`Duplicate transition path "${path.join(".")}"`);
+        }
+        children.set("_", { transitionId });
+        return;
+      }
+      if (node.transitionId && node.transitionId !== transitionId) {
+        throw new Error(`Duplicate transition path "${path.join(".")}"`);
+      }
+      node.transitionId = transitionId;
+      return;
+    }
+    current = ensureBranchChildren(node);
+  }
+}
+
+function emitTransitionPathTree(
+  tree: ReadonlyMap<string, TransitionPathNode>,
+  indent: string,
+  lines: string[],
+): void {
+  for (const [key, node] of [...tree.entries()].sort((left, right) =>
+    left[0].localeCompare(right[0]),
+  )) {
+    if (node.children && node.children.size > 0) {
+      lines.push(`${indent}${quoteProperty(key)}: {`);
+      emitTransitionPathTree(node.children, `${indent}  `, lines);
+      lines.push(`${indent}},`);
+      continue;
+    }
+    if (!node.transitionId) continue;
+    const type = transitionHandleType(node.transitionId);
+    lines.push(
+      `${indent}${quoteProperty(key)}: ${JSON.stringify(node.transitionId)} as ${type},`,
+    );
+  }
+}
+
+function emitTransitionsSection(
+  components: readonly TransitionComponentGroup[],
+  stateExportNames: ReadonlySet<string>,
+): string[] {
+  const lines: string[] = ["// transitions"];
+  for (const group of components) {
+    const exportName = componentExportName(group.component);
+    if (stateExportNames.has(exportName)) {
+      throw new Error(
+        `Transition handle export "${exportName}" collides with a state export in the same module`,
+      );
+    }
+    lines.push(`export const ${exportName} = {`);
+    for (const eventGroup of group.events) {
+      const tree = new Map<string, TransitionPathNode>();
+      for (const leaf of eventGroup.leaves) {
+        insertTransitionPath(tree, leaf.path, leaf.transitionId);
+      }
+      lines.push(`  ${quoteProperty(eventGroup.event)}: {`);
+      emitTransitionPathTree(tree, "    ", lines);
+      lines.push("  },");
+    }
+    lines.push("};");
+  }
+  return lines;
+}
+
 function emitModuleSource(
   fields: readonly LocalField[],
-  transitions: readonly TransitionEntry[],
+  components: readonly TransitionComponentGroup[],
 ): string {
   const hasState = fields.length > 0;
-  const hasTransitions = transitions.length > 0;
+  const hasTransitions = components.length > 0;
   const lines: string[] = [];
 
   if (hasState) {
@@ -187,6 +291,8 @@ function emitModuleSource(
   if (lines.length > 0) {
     lines.push("");
   }
+
+  const stateExportNames = new Set<string>();
 
   if (hasState) {
     const sortedFields = [...fields].sort(
@@ -200,9 +306,11 @@ function emitModuleSource(
     }
     lines.push("// state");
     for (const entry of sortedFields) {
+      const exportName = collisionSafeExportName(entry, fieldCounts);
+      stateExportNames.add(exportName);
       const varId = `local:${entry.componentId}.${entry.field}`;
       lines.push(
-        `export const ${collisionSafeExportName(entry, fieldCounts)}: ${handleType(
+        `export const ${exportName}: ${handleType(
           entry.domain,
           varId,
         )} = variable(${JSON.stringify(varId)}) as ${handleType(
@@ -217,18 +325,7 @@ function emitModuleSource(
     if (hasState) {
       lines.push("");
     }
-    lines.push("// transitions");
-    const sortedTransitions = [...transitions].sort(
-      (left, right) =>
-        left.name.localeCompare(right.name) ||
-        left.transitionId.localeCompare(right.transitionId),
-    );
-    for (const entry of sortedTransitions) {
-      const type = transitionHandleType(entry.transitionId);
-      lines.push(
-        `export const ${entry.name}: ${type} = ${JSON.stringify(entry.transitionId)} as ${type};`,
-      );
-    }
+    lines.push(...emitTransitionsSection(components, stateExportNames));
   }
 
   lines.push("");
@@ -256,8 +353,8 @@ export function emitComponentModalModules(
     const fieldEntry = fieldsByModule.get(path);
     const transitionEntry = transitionsByPath.get(path);
     const fields = fieldEntry?.fields ?? [];
-    const transitions = transitionEntry?.transitions ?? [];
-    if (fields.length === 0 && transitions.length === 0) continue;
+    const components = transitionEntry?.components ?? [];
+    if (fields.length === 0 && components.length === 0) continue;
     modules.push({
       ...((fieldEntry?.sourcePath ?? transitionEntry?.sourcePath)
         ? {
@@ -266,7 +363,7 @@ export function emitComponentModalModules(
         : {}),
       fileName: parse(path).base,
       path,
-      source: emitModuleSource(fields, transitions),
+      source: emitModuleSource(fields, components),
     });
   }
 

@@ -58,8 +58,8 @@ Variable IDs come from the generated model / extraction report. Common prefixes:
 handles beside source files as `<source>.modals.ts`; import stable system handles from
 `modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
 built-in handle (usually via `import { variable } from "modality-ts/properties"`).
-Transition handles from the same module can be passed to `enabled(app_save)` instead of
-magic-string ids. See
+Transition handles from the same module are nested by component and event — for example
+`enabled(App.onClick.save)` — instead of magic-string ids. See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 4. Check the model
