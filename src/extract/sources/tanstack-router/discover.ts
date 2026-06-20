@@ -12,6 +12,7 @@ import {
   type TanstackRouteTreeNode,
   type TanstackSegmentKind,
 } from "./types.js";
+import { parseTanstackRouteModule } from "./route-options.js";
 
 const ROUTES_ROOT = /(?:^|\/)(?:src\/)?routes(?:\/|$)/;
 const ROUTE_FILE = /\.(?:tsx?|jsx?)$/;
@@ -243,6 +244,7 @@ interface DiscoveredTanstackRoute {
   discoveryMode: TanstackDiscoveryMode;
   component?: string;
   fromGeneratedTree?: boolean;
+  redirectTo?: string;
 }
 
 export async function discoverRoutes(
@@ -268,6 +270,10 @@ export async function discoverRoutes(
     const routeId = parsedLiteral?.routePath ?? fromPath!.routeId;
     const segmentKind = fromPath?.segmentKind ?? segmentKindForPattern(pattern);
     const absoluteFile = resolveRouteFilePath(file.path, rootDir);
+    const redirectTo = parseTanstackRouteModule(
+      file.text,
+      absoluteFile,
+    )?.redirectTo;
 
     addDiscoveredRoute(discovered, {
       pattern,
@@ -280,6 +286,7 @@ export async function discoverRoutes(
       ...(parsedLiteral?.component
         ? { component: parsedLiteral.component }
         : {}),
+      ...(redirectTo ? { redirectTo } : {}),
     });
   }
 
@@ -614,6 +621,7 @@ function finalizeRoutes(
       pattern: route.pattern,
       kind: route.kind,
       file: route.file,
+      ...(route.redirectTo ? { redirectTo: route.redirectTo } : {}),
       metadata: {
         tanstackRouteTree: tanstackRouteTreeToMetadata(metadataNode),
       },

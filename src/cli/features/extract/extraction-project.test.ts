@@ -2,10 +2,15 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { tanstackRouterAdapter } from "modality-ts/extract/sources/tanstack-router";
+import {
+  tanstackRouterAdapter,
+  tanstackRouterEffectApiProvider,
+  tanstackRouterModuleRoleAdapter,
+} from "modality-ts/extract/sources/tanstack-router";
 import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import {
   attachRouteInventory,
+  buildClientProjectSurface,
   loadExtractionProject,
   resolveExtractionRoute,
 } from "./extraction-project.js";
@@ -58,6 +63,54 @@ describe("attachRouteInventory", () => {
       tanstackRouterAdapter(),
     );
     expect(resolveExtractionRoute(project, {}, {}, [aboutPath])).toBe("/about");
+  });
+
+  it("does not inflate client interaction sources from loader-only server imports", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-tanstack-surface-"));
+    const entry = join(dir, "src/routes/posts.tsx");
+    await writeProject(dir, {
+      "src/routes/__root.tsx": `export const Route = {}`,
+      "src/routes/posts.tsx": `
+        import { createFileRoute } from '@tanstack/react-router'
+        import { fetchPosts } from '../server/posts.server'
+        export const Route = createFileRoute('/posts')({
+          loader: () => fetchPosts(),
+          component: PostsPage,
+        })
+        function PostsPage() {
+          return <button onClick={() => {}}>refresh</button>
+        }
+      `,
+      "src/server/posts.server.ts": `
+        export async function fetchPosts() {
+          return fetch('/api/posts')
+        }
+      `,
+    });
+    const project = await attachRouteInventory(
+      await loadExtractionProject([entry]),
+      tanstackRouterAdapter(),
+    );
+    const surfaced = await buildClientProjectSurface(project, {
+      navigation: tanstackRouterAdapter(),
+      moduleRoleAdapters: [tanstackRouterModuleRoleAdapter()],
+      effectApiProviders: [tanstackRouterEffectApiProvider()],
+      inventory: project.inventory,
+    });
+    expect(
+      surfaced.interactionSources.some((source) =>
+        source.path.endsWith("posts.server.ts"),
+      ),
+    ).toBe(false);
+    expect(
+      surfaced.effectApis.some((opId) => opId.includes("/api/posts")),
+    ).toBe(false);
+    expect(surfaced.effectApis).toContain("LOADER /posts");
+    expect(
+      surfaced.interactionSources.some((source) =>
+        source.text.includes("onClick"),
+      ),
+    ).toBe(true);
   });
 
   it("keeps React Router app/routes.ts fallback for the router adapter", async () => {

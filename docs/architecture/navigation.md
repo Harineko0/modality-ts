@@ -98,3 +98,25 @@ Default extraction models **client UI transitions** only. Server/full-route exec
 (loaders, actions, initial data loading) is future work. Server-only modules are
 excluded from the client model via the adapter's module-classification hints, so they do
 not inflate it.
+
+## TanStack Router module roles, effects, and cache
+
+When `@tanstack/react-router` is active (and `next` is not), the built-in registry also
+enables `tanstackRouterModuleRoleAdapter()`, `tanstackRouterEffectApiProvider()`, and
+`tanstackRouterCacheStorageProvider()` alongside `tanstackRouterAdapter()`.
+
+- **Module roles.** TanStack route modules are `shared` by default. Route option fields
+  such as `loader`, `beforeLoad`, `validateSearch`, `head`, and `headers` are treated as
+  server/data-loading surfaces; `component`, `pendingComponent`, `errorComponent`, and
+  `notFoundComponent` identifiers remain client interaction roots. `.server.` and
+  `/server/` paths are server-only.
+- **Effect APIs.** Discovered loader/beforeLoad operations appear as `LOADER <route>` and
+  `BEFORE_LOAD <route>` effect operations with source provenance. Loader/beforeLoad bodies
+  are not symbolically executed.
+- **Redirects.** Static `redirect({ to: "..." })` calls in loader/beforeLoad set
+  `RouteNode.redirectTo`, which lowers to automatic route-bound `replace` transitions via
+  the shared redirect synthesizer.
+- **Loader cache.** Routes with loaders may emit bounded `sys:tanstack:loader-cache:*`
+  vars (`empty | fresh | stale | refreshing | error`) plus stale/revalidate/error
+  environment transitions. High loader counts are reduced with structured `model-slack`
+  caveats rather than unbounded cache keys.

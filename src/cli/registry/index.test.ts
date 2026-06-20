@@ -378,12 +378,60 @@ describe("builtin module-role and effect API registration", () => {
     });
     expect(registry.routerPluginId).toBe("tanstack-router");
     expect(registry.adapters.navigation?.id).toBe("tanstack-router");
+    expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
+      "tanstack-module-roles",
+    ]);
+    expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
+      ["tanstack-effect-api"],
+    );
+    expect(
+      registry.adapters.cacheStorage.map((provider) => provider.id),
+    ).toEqual(["tanstack-cache-storage"]);
     expect(
       registry.plugins.some(
         (plugin) =>
           plugin.kind === "navigation" && plugin.id === "tanstack-router",
       ),
     ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "module-roles" &&
+          plugin.id === "tanstack-module-roles",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "effect-api" && plugin.id === "tanstack-effect-api",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "cache-storage" &&
+          plugin.id === "tanstack-cache-storage",
+      ),
+    ).toBe(true);
+    expect(
+      registry.adapters.observations.some(
+        (provider) => provider.id === "tanstack-router-observation",
+      ),
+    ).toBe(true);
+  });
+
+  it("omits TanStack Router when tanstack-router is disabled", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "@tanstack/react-router": "^1.0.0" },
+      disabledPlugins: ["tanstack-router"],
+    });
+    expect(registry.routerPluginId).toBeUndefined();
+    expect(registry.adapters.moduleRoles).toEqual([]);
+    expect(registry.adapters.effectApis).toEqual([]);
+    expect(registry.adapters.cacheStorage).toEqual([]);
+    expect(
+      registry.plugins.some((plugin) => plugin.id.startsWith("tanstack")),
+    ).toBe(false);
   });
 
   it("prefers Next over TanStack Router when both dependencies exist", () => {
@@ -394,14 +442,6 @@ describe("builtin module-role and effect API registration", () => {
       },
     });
     expect(registry.routerPluginId).toBe("next");
-  });
-
-  it("omits TanStack Router when tanstack-router is disabled", () => {
-    const registry = createBuiltinModalityRegistry({
-      dependencies: { "@tanstack/react-router": "^1.0.0" },
-      disabledPlugins: ["tanstack-router"],
-    });
-    expect(registry.routerPluginId).toBeUndefined();
   });
 
   it("still activates React Router when only react-router-dom is present", () => {
