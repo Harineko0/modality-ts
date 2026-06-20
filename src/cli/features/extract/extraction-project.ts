@@ -419,7 +419,12 @@ export async function attachRouteInventory(
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
   const files = [...project.rawEntries];
-  if (adapter.id === "router") {
+  if (
+    adapter.packageNames.some(
+      (packageName) =>
+        packageName === "react-router" || packageName === "react-router-dom",
+    )
+  ) {
     const manifestPath =
       files.find((file) => file.path.endsWith("routes.ts"))?.path ??
       (await findNearestRoutesManifest(project.configStartDir));
@@ -432,7 +437,7 @@ export async function attachRouteInventory(
         text: await readFile(manifestPath, "utf8"),
       });
     }
-  } else if (adapter.id === "tanstack-router") {
+  } else if (adapter.packageNames.includes("@tanstack/react-router")) {
     const routeRoots = await findNearestTanstackRouteRoots(
       project.configStartDir,
     );

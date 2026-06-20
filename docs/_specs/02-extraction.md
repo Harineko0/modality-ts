@@ -231,7 +231,12 @@ When the project depends on `@tanstack/react-router` and not `next`, the built-i
 
 **Metadata and classification.** Route nodes carry `metadata.tanstackRouteTree` with route id, full path, parent id, segment kind, discovery mode (`file`, `generated`, or `code`), and optional component identifiers. Only `page` and `index` routes enter `sys:route`; `layout` and `resource` routes are excluded from the UI route domain. TanStack `$param` and splat syntax normalize to Modality `:param` and `*` patterns.
 
-**Scope of this plan.** Navigation call classification, `<Link>` / `<Navigate>` lowering, loader redirects, router cache state, and replay extensions are handled in later TanStack Router plans. This adapter currently exposes flat `sys:route` / `sys:history` location vars and a minimal navigation harness matching the React Router baseline.
+**Scope of navigation modeling.** Navigation call classification, `<Link>` / `<Navigate>`
+lowering, loader redirects, router cache state, and replay harness extensions are
+implemented by the TanStack Router adapter slice. Flat `sys:route` / `sys:history`
+location vars are always emitted; optional `sys:tanstack:branch` and
+`sys:tanstack:loader-cache:*` vars appear when static trees and loaders are
+discoverable.
 
 **Module boundaries.** TanStack route modules are classified through `tanstackRouterModuleRoleAdapter()`. Route option `loader` / `beforeLoad` / `validateSearch` / `head` / `headers` surfaces are server/data-loading entry points; component option identifiers remain client interaction roots. `.server.` and `/server/` paths are server-only. Ambiguous shared imports stay included with warnings per the P0 safety rule.
 

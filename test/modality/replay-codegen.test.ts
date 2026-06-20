@@ -93,6 +93,14 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("resolve: replayAsync.resolve");
   });
 
+  it("routes TanStack navigation observation through the generic registry harness path", () => {
+    const artifact = generateReplayHarness();
+    expect(artifact.source).toContain("createBuiltinModalityRegistry");
+    expect(artifact.source).toContain("setupObservationProviders");
+    expect(artifact.source).toContain("observationSourcesFromProviders");
+    expect(artifact.source).toContain("navigation.harness.navigate");
+  });
+
   it(
     "emits generated action replay files that execute under jsdom",
     async () => {

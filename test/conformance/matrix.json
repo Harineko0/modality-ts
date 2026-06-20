@@ -168,6 +168,11 @@
     { "id": "jotai", "title": "Jotai", "adapterId": "jotai" },
     { "id": "swr", "title": "SWR", "adapterId": "swr" },
     { "id": "zustand", "title": "Zustand", "adapterId": "zustand" },
+    {
+      "id": "tanstack-router",
+      "title": "TanStack Router",
+      "adapterId": "tanstack-router"
+    },
     { "id": "zod", "title": "Zod", "adapterId": "zod" },
     { "id": "arktype", "title": "Arktype", "adapterId": "arktype" }
   ],
@@ -195,6 +200,33 @@
       "targetIds": ["react-router", "next-app-router", "next-pages-router"],
       "root": "test/conformance/fixtures/routing-location-assign",
       "notes": "Planned in 260617-22-2"
+    },
+    {
+      "id": "tanstack-file-routing",
+      "featureIds": [
+        "routing.location-assignment",
+        "routing.mount-scope-reset"
+      ],
+      "targetIds": ["tanstack-router", "react-use-state", "core"],
+      "root": "test/conformance/fixtures/tanstack-file-routing",
+      "notes": "Planned in 260621-04"
+    },
+    {
+      "id": "tanstack-code-routing",
+      "featureIds": ["routing.location-assignment"],
+      "targetIds": ["tanstack-router", "core"],
+      "root": "test/conformance/fixtures/tanstack-code-routing",
+      "notes": "Planned in 260621-04"
+    },
+    {
+      "id": "tanstack-loader-cache",
+      "featureIds": [
+        "routing.location-assignment",
+        "reports.structured-caveats"
+      ],
+      "targetIds": ["tanstack-router", "core"],
+      "root": "test/conformance/fixtures/tanstack-loader-cache",
+      "notes": "Planned in 260621-04"
     }
   ],
   "cells": [
@@ -317,6 +349,24 @@
       "targetId": "next-pages-router",
       "status": "partial",
       "fixtures": []
+    },
+    {
+      "featureId": "routing.location-assignment",
+      "targetId": "tanstack-router",
+      "status": "supported",
+      "fixtures": ["tanstack-file-routing", "tanstack-code-routing"]
+    },
+    {
+      "featureId": "routing.mount-scope-reset",
+      "targetId": "tanstack-router",
+      "status": "supported",
+      "fixtures": ["tanstack-file-routing"]
+    },
+    {
+      "featureId": "reports.structured-caveats",
+      "targetId": "tanstack-router",
+      "status": "partial",
+      "fixtures": ["tanstack-loader-cache"]
     },
     {
       "featureId": "routing.mount-scope-reset",
