@@ -5,7 +5,12 @@ import type {
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
-import { locationVars } from "./routes.js";
+import {
+  locationVars,
+  lowerNavigation,
+  mountScopeForComponent,
+  routeTreeVars,
+} from "./routes.js";
 
 export interface TanstackRouterSourceOptions {
   id?: string;
@@ -37,6 +42,10 @@ export function tanstackRouterAdapter(
     routeForComponent,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
+    routeTreeVars: (inventory, resolvedOptions) =>
+      routeTreeVars(inventory, withHistoryBounds(resolvedOptions)),
+    lowerNavigation,
+    mountScopeForComponent,
     harness,
   };
 }
