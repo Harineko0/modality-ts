@@ -72,6 +72,7 @@ Observability differs by source:
 | --- | --- | --- |
 | Jotai / Zustand | observation provider delegates to harness store reads | direct, full |
 | SWR cache | harness-provided cache `Map`, inspectable per key | direct, full |
+| TanStack Query | fresh `QueryClient` + `QueryClientProvider`; `getQueryState` / `getQueryData` / mutation cache | direct, full |
 | route | navigation observation provider / router test API | direct, full |
 | `sys:pending` | parked-MSW bookkeeping | direct, full |
 | `useState` | **not externally observable** | indirect |

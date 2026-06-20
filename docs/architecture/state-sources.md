@@ -7,7 +7,7 @@ sidebar_label: State sources & SPI
 Supporting a new state library is the most common way `modality-ts` grows. The
 architecture makes it a **vertical slice**: one new package under
 `src/extract/sources/`, with *zero* diffs elsewhere. The built-in sources
-(`use-state`, `jotai`, `swr`, `zustand`, `router`) use **exactly** the public contract —
+(`use-state`, `jotai`, `swr`, `zustand`, `tanstack-query`, `router`) use **exactly** the public contract —
 they are its permanent conformance suite.
 
 ## The `StateSourcePlugin` contract
@@ -119,6 +119,7 @@ sources and navigation. See [Navigation](./navigation.md) and
 | Jotai | `atom()` + utility creators + families | `useSetAtom`/`useAtom`/`store.set` | none | store handle (direct) | [details](../sources/jotai.md) |
 | SWR | `useSWR` key sites | `mutate` | **yes** (cache lifecycle) | cache `Map` (direct) | [details](../sources/swr.md) |
 | Zustand | `create`/`createStore` | actions / `setState` | none | store handle (direct) | [details](../sources/zustand.md) |
+| TanStack Query | `useQuery` / `useMutation` | QueryClient cache APIs, `mutate` | **yes** (query + mutation lifecycle) | `QueryClient` handle | [details](../sources/tanstack-query.md) |
 | Router | route manifest (adapter) | — | location semantics | router test API | [details](./navigation.md) |
 | TanStack Router | route manifest + loader cache (adapters) | — | loader cache semantics | router harness + branch vars | [details](../sources/tanstack.md) |
 

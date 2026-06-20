@@ -114,6 +114,13 @@
       "requiredFixtures": []
     },
     {
+      "id": "tanstack-query.cache-template",
+      "title": "TanStack Query cache template extraction",
+      "layer": "state-source",
+      "contract": "adapter-spi",
+      "requiredFixtures": ["tanstack-query-cache"]
+    },
+    {
       "id": "reports.structured-caveats",
       "title": "Structured caveat reporting in trust ledger",
       "layer": "reporting",
@@ -168,6 +175,11 @@
     { "id": "jotai", "title": "Jotai", "adapterId": "jotai" },
     { "id": "swr", "title": "SWR", "adapterId": "swr" },
     { "id": "zustand", "title": "Zustand", "adapterId": "zustand" },
+    {
+      "id": "tanstack-query",
+      "title": "TanStack Query",
+      "adapterId": "tanstack-query"
+    },
     {
       "id": "tanstack-router",
       "title": "TanStack Router",
@@ -227,6 +239,13 @@
       "targetIds": ["tanstack-router", "core"],
       "root": "test/conformance/fixtures/tanstack-loader-cache",
       "notes": "Planned in 260621-04"
+    },
+    {
+      "id": "tanstack-query-cache",
+      "featureIds": ["tanstack-query.cache-template"],
+      "targetIds": ["tanstack-query", "core"],
+      "root": "test/conformance/fixtures/tanstack-query-cache",
+      "notes": "TanStack Query source plugin conformance"
     }
   ],
   "cells": [
@@ -391,6 +410,18 @@
       "targetId": "swr",
       "status": "partial",
       "fixtures": []
+    },
+    {
+      "featureId": "tanstack-query.cache-template",
+      "targetId": "tanstack-query",
+      "status": "supported",
+      "fixtures": ["tanstack-query-cache"]
+    },
+    {
+      "featureId": "tanstack-query.cache-template",
+      "targetId": "core",
+      "status": "supported",
+      "fixtures": ["tanstack-query-cache"]
     },
     {
       "featureId": "reports.structured-caveats",

@@ -12,7 +12,7 @@ The corollary that drives the whole algorithm: the dangerous direction is **miss
 
 ```
 modality.config.ts ──► P0 project load (ts-morph / TS compiler API, full type checker)
-                       P1 state inventory        (atoms, useState, useSWR, routes)
+                       P1 state inventory        (atoms, useState, useSWR, TanStack Query, routes)
                        P2 domain inference       (TS types → AbstractDomain)
                        P3 handler discovery      (JSX events, effects, atom writers)
                        P4 effect summarization   (M0 abstract interpretation, async splitting)
@@ -54,6 +54,10 @@ Default extraction models **client UI transitions** only; server/full-route exec
 - multi-parameter keys (several abstract variables in one key) ⇒ instantiated against the template's **bounded key window** rather than the full parameter product (Spec 01 §9);
 - dynamically computed keys beyond the expression subset ⇒ `unextractable` (a havoc'd cache is useless).
 Options objects are evaluated if literal; non-literal options force conservative template settings (all revalidation events enabled — over-approximation).
+
+Options objects are evaluated if literal; non-literal options force conservative template settings (all revalidation events enabled — over-approximation).
+
+**TanStack Query (`@tanstack/react-query` v5).** Record `useQuery` / `useMutation` call sites and static `queryKey` / `mutationKey` values. Query keys follow the same classification rules as SWR keys (literals, tuples, conditionals, bounded windows, dynamic caveats). The hand-written template models per-key `status`, `fetchStatus`, stale/invalidated flags, bounded retries, and mutation lifecycle vars. `QueryClient` cache APIs (`invalidateQueries`, `setQueryData`, …) lower through `summarizeWrite` and write-channel discovery; predicate filters and dynamic updaters are caveated. `queryFn` / `mutationFn` bodies are not executed — outcomes come from environment resolve transitions over inferred payload domains. Replay observes through a fresh `QueryClient` handle.
 
 **Zustand stores.** Find `create`/`createStore` (`zustand`, `zustand/react`, `zustand/vanilla`), both curried `create<T>()(creator)` and direct `create(creator)`. The state creator `(set, get, store) => ({ ...state, ...actions })` yields var ids `store:<name>.<field>` for non-function fields; function fields become actions whose `set(partial)` / `set(partial, true)` bodies lower to `EffectIR` writes (P4), with `get()` reads supported. Read surfaces: `useStore(s => s.field)` selectors, `useStore.getState()`/`store.getState()`, and direct `setState`. Middlewares are unwrapped to the inner creator (`combine`, `persist`, `devtools`, `subscribeWithSelector`, static-`switch` `redux`); `immer` switches `set` to draft-mutation semantics, lowered for statically analyzable scalar/object mutations and marked over-approx (never silently dropped) for non-determinable container mutations. Persisted storage backends/migrations/rehydration are not modeled (storage-provenance note + SSR warning).
 
@@ -104,7 +108,7 @@ Locator extraction for `EventLabel` (Spec 01 §6): `data-testid` attr if present
 
 ## 5. P5 — Escape analysis (the E1 enforcer)
 
-Modeled state can be written only through known channels: `useState` setters (tracked as symbols), atom setters (`useSetAtom`/`useAtom`[1]/`store.set`), SWR `mutate`. The analysis computes, per handler, whether any write channel **escapes** summarization:
+Modeled state can be written only through known channels: `useState` setters (tracked as symbols), atom setters (`useSetAtom`/`useAtom`[1]/`store.set`), SWR `mutate`, TanStack Query `QueryClient` cache APIs and `mutate`. The analysis computes, per handler, whether any write channel **escapes** summarization:
 
 - A setter symbol passed as an argument to a function whose body is not analyzable (external module, dynamic) ⇒ that var is **tainted** in this handler ⇒ havoc on it at handler end (over-approx) — unless the setter escapes *beyond the handler* (stored in a ref, registered as a global callback), in which case the var is tainted **globally**: an `env` transition `external-write(var) = havoc(var)` is added, always enabled. Globally tainted vars make most properties about them unverifiable and are loudly reported — this is correct behavior, not a bug: the code genuinely admits arbitrary writes.
 - A call to a function in the project whose body is available ⇒ inline and summarize (depth cap 3, cycle ⇒ bail).

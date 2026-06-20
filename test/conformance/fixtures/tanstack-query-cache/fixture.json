@@ -1,0 +1,36 @@
+{
+  "id": "tanstack-query-cache",
+  "featureIds": ["tanstack-query.cache-template"],
+  "targetIds": ["tanstack-query", "core"],
+  "root": "test/conformance/fixtures/tanstack-query-cache",
+  "sourcePaths": ["app/App.tsx"],
+  "propsPaths": ["app/app.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": false,
+    "walkCount": 1,
+    "depth": 2,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 0.5,
+    "minConformPassRate": 0
+  },
+  "budgets": {
+    "maxStates": 25
+  },
+  "expectations": {
+    "vars": [
+      {
+        "id": "tanstack-query:todos:status",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}

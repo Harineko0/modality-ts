@@ -353,7 +353,15 @@ describe("extraction architecture surface", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(testDir, "../../package.json"), "utf8"),
     );
-    for (const source of ["use-state", "jotai", "swr", "router", "next"]) {
+    for (const source of [
+      "use-state",
+      "jotai",
+      "swr",
+      "zustand",
+      "tanstack-query",
+      "router",
+      "next",
+    ]) {
       expect(packageJson.exports[`./extract/sources/${source}`]).toBeTruthy();
       expect(
         packageJson.exports[`./extract/sources/${source}/harness`],

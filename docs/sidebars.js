@@ -67,6 +67,7 @@ const sidebars = {
         "sources/jotai",
         "sources/swr",
         "sources/zustand",
+        "sources/tanstack-query",
         "sources/router",
         "sources/next",
         "sources/react-features",

@@ -250,7 +250,15 @@ describe("observation providers", () => {
     const registry = createBuiltinModalityRegistry();
     expect(
       registry.adapters.observations.map((provider) => provider.id),
-    ).toEqual(expect.arrayContaining(["use-state", "jotai", "swr", "zustand"]));
+    ).toEqual(
+      expect.arrayContaining([
+        "use-state",
+        "jotai",
+        "swr",
+        "zustand",
+        "tanstack-query",
+      ]),
+    );
     expect(
       registry.plugins.some(
         (plugin) => plugin.kind === "observation" && plugin.id === "jotai",

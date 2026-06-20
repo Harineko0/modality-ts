@@ -6,7 +6,7 @@ Status: draft for review. Companion to `docs/design.md` and Specs 01–04.
 
 Three forces dominate, and the structure below is derived from them:
 
-1. **Two volatile axes, one stable core.** What changes over the tool's life: (a) supported state libraries (`useState`, Jotai, SWR, Zustand today; TanStack Query, `useReducer` tomorrow) and (b) user-facing capabilities (`extract`, `check`, `replay`, `conform` today; Playwright tier, AI suggestions tomorrow). What must *not* change casually: the IR, abstract domains, trace format, and report schemas — every subsystem communicates through them. Therefore: **vertical slices along both volatile axes; a small, schema-versioned kernel as the only coupling point.**
+1. **Two volatile axes, one stable core.** What changes over the tool's life: (a) supported state libraries (`useState`, Jotai, SWR, Zustand, TanStack Query today; `useReducer` tomorrow) and (b) user-facing capabilities (`extract`, `check`, `replay`, `conform` today; Playwright tier, AI suggestions tomorrow). What must *not* change casually: the IR, abstract domains, trace format, and report schemas — every subsystem communicates through them. Therefore: **vertical slices along both volatile axes; a small, schema-versioned kernel as the only coupling point.**
 2. **Three runtime contexts.** Extraction and checking run in Node; the replay harness runs inside the app's test environment (jsdom/Vitest); runtime assertions ship in the app's dev bundle. These have incompatible dependency budgets (TypeScript extraction must never reach the browser; optional app libraries such as `jotai` must never be a dependency of the core). Internal module boundaries follow runtime contexts, not team convenience.
 3. **The plugin contract must be real, not decorative.** "Flexible enough for future state libraries" fails in practice when built-in integrations use private hooks that external plugins can't. Hard rule: **the four built-in sources use exactly the public `StateSourcePlugin` contract** — they are the contract's permanent conformance suite.
 
@@ -158,7 +158,7 @@ The litmus test the architecture must keep passing: **supporting a new library =
 |---|---|---|---|---|---|
 | Zustand | `create()`/`createStore` stores | actions = store methods; `set`/`setState` (incl. immer drafts) | none | store handle, direct | **implemented (built-in)** |
 | `useReducer` | hook calls | `dispatch` symbol; reducer body is *good* M0 material (pure, switch-shaped) | none | DOM projection / probe (like `useState`) | fits cleanly |
-| TanStack Query | `useQuery/useMutation` | `mutate`, cache APIs | yes — heavier than SWR (mutation lifecycle, retries) | queryClient handle | fits; template effort is the cost |
+| TanStack Query | `useQuery/useMutation` | `mutate`, cache APIs | yes — mutation lifecycle, retries (bounded) | queryClient handle | **implemented** (`src/extract/sources/tanstack-query/`) |
 | XState | explicit machines | n/a — machines *are* transition systems | direct machine→IR import (bypasses M0 entirely — the design.md §8 pivot target drops out of this contract for free) | actor snapshot | fits, easiest of all |
 | React Context as state | — | — | — | — | does not fit (writes unanalyzable); stays a documented taint, not a plugin |
 
