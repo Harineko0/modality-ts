@@ -122,7 +122,7 @@ export function todoHandModel(): Model {
     ],
     transitions: [
       {
-        id: "App.onClick.authAtom",
+        id: "App.onClick.Login",
         cls: "user",
         label: {
           kind: "click",
@@ -136,7 +136,7 @@ export function todoHandModel(): Model {
         confidence: "exact",
       },
       {
-        id: "App.onClick.authAtom_draft_saveStatus.seq",
+        id: "App.onClick.Logout",
         cls: "user",
         label: {
           kind: "click",

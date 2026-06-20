@@ -140,13 +140,13 @@ export function checkoutHandModel(): Model {
     ],
     transitions: [
       userSeq(
-        "App.onClick.auth_userId.seq",
+        "App.onClick.Login",
         [assign("local:App.auth", "user"), assign("local:App.userId", "u1")],
         not(neq(read("local:App.auth"), lit("guest"))),
         ["local:App.auth"],
       ),
       userSeq(
-        "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+        "App.onClick.Logout",
         [
           assign("local:App.auth", "guest"),
           assign("local:App.userId", "none"),
@@ -200,7 +200,7 @@ export function checkoutHandModel(): Model {
         confidence: "exact",
       },
       userSeq(
-        "App.onClick.plan_quoteStatus.seq",
+        "App.onClick.Starter",
         [
           assign("local:App.plan", "starter"),
           assign("local:App.quoteStatus", "valid"),
@@ -209,7 +209,7 @@ export function checkoutHandModel(): Model {
         ["local:App.auth"],
       ),
       userAssign(
-        "App.onClick.step.my8cwv",
+        "App.onClick.Billing",
         "local:App.step",
         "billing",
         not(
@@ -221,7 +221,7 @@ export function checkoutHandModel(): Model {
         ["local:App.auth", "local:App.plan"],
       ),
       userAssign(
-        "App.onClick.paymentMethod",
+        "App.onClick.Use card",
         "local:App.paymentMethod",
         "valid",
         not(
@@ -233,7 +233,7 @@ export function checkoutHandModel(): Model {
         ["local:App.auth", "local:App.step"],
       ),
       userAssign(
-        "App.onClick.step.ny1ruq",
+        "App.onClick.Review order",
         "local:App.step",
         "review",
         not(
@@ -247,7 +247,7 @@ export function checkoutHandModel(): Model {
         ),
         ["local:App.auth", "local:App.step", "local:App.paymentMethod"],
       ),
-      userAssign("App.onClick.step.3k1mh1", "local:App.step", "plan"),
+      userAssign("App.onClick.Back to plans", "local:App.step", "plan"),
       {
         id: "App.onClick.api.submitOrder.start",
         cls: "user",

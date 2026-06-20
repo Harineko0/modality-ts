@@ -57,13 +57,10 @@ describe("demo app acceptance fixture", () => {
     const transitionIds = extracted.model.transitions.map(
       (transition) => transition.id,
     );
-    expect(
-      transitionIds.some((id) =>
-        /^App\.onClick\.authAtom\.[a-z0-9]{6}$/.test(id),
-      ),
-    ).toBe(true);
     expect(transitionIds).toEqual(
       expect.arrayContaining([
+        "App.onClick.Login",
+        "App.onClick.Logout",
         "App.onClick.navigate._admin",
         "App.onClick.api.placeOrder.start",
         "swr:api_user:resolve:success:0",
@@ -237,7 +234,7 @@ describe("demo app acceptance fixture", () => {
     });
     expectSlicedStats(checked.check, {
       states: 36,
-      edges: 97,
+      edges: 100,
       depth: 4,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
@@ -246,7 +243,7 @@ describe("demo app acceptance fixture", () => {
         "violated",
         [
           "App.onClick.api.createTodo.start",
-          "App.onClick.authAtom_draft_saveStatus.seq",
+          "App.onClick.Logout",
           "App.onClick.api.createTodo.start",
         ],
       ],
@@ -261,7 +258,7 @@ describe("demo app acceptance fixture", () => {
         "violated",
         [
           "App.onClick.api.createTodo.start",
-          "App.onClick.authAtom_draft_saveStatus.seq",
+          "App.onClick.Logout",
           "App.onChange.draft.nonEmpty",
           "App.onClick.api.createTodo.success",
         ],
@@ -308,7 +305,7 @@ describe("demo app acceptance fixture", () => {
       staleCompletion.trace.steps.map((step) => step.transitionId),
     ).toEqual([
       "App.onClick.api.createTodo.start",
-      "App.onClick.authAtom_draft_saveStatus.seq",
+      "App.onClick.Logout",
       "App.onChange.draft.nonEmpty",
       "App.onClick.api.createTodo.success",
     ]);
@@ -433,7 +430,7 @@ describe("demo app acceptance fixture", () => {
     });
     expectSlicedStats(checked.check, {
       states: 206,
-      edges: 1144,
+      edges: 1141,
       depth: 16,
     });
     expect(verdictSummary(checked.check.verdicts)).toEqual([
@@ -441,13 +438,13 @@ describe("demo app acceptance fixture", () => {
         "guestCannotReachSuccess",
         "violated",
         [
-          "App.onClick.auth_userId.seq",
-          "App.onClick.plan_quoteStatus.seq",
-          "App.onClick.step.my8cwv",
-          "App.onClick.paymentMethod",
-          "App.onClick.step.ny1ruq",
+          "App.onClick.Login",
+          "App.onClick.Starter",
+          "App.onClick.Billing",
+          "App.onClick.Use card",
+          "App.onClick.Review order",
           "App.onClick.api.submitOrder.start",
-          "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+          "App.onClick.Logout",
           "App.onClick.api.submitOrder.success",
         ],
       ],
@@ -455,13 +452,13 @@ describe("demo app acceptance fixture", () => {
         "orderSuccessMatchesUser",
         "violated",
         [
-          "App.onClick.auth_userId.seq",
-          "App.onClick.plan_quoteStatus.seq",
-          "App.onClick.step.my8cwv",
-          "App.onClick.paymentMethod",
-          "App.onClick.step.ny1ruq",
+          "App.onClick.Login",
+          "App.onClick.Starter",
+          "App.onClick.Billing",
+          "App.onClick.Use card",
+          "App.onClick.Review order",
           "App.onClick.api.submitOrder.start",
-          "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+          "App.onClick.Logout",
           "App.onClick.api.submitOrder.success",
         ],
       ],
@@ -469,11 +466,11 @@ describe("demo app acceptance fixture", () => {
         "orderSuccessMatchesCart",
         "violated",
         [
-          "App.onClick.auth_userId.seq",
-          "App.onClick.plan_quoteStatus.seq",
-          "App.onClick.step.my8cwv",
-          "App.onClick.paymentMethod",
-          "App.onClick.step.ny1ruq",
+          "App.onClick.Login",
+          "App.onClick.Starter",
+          "App.onClick.Billing",
+          "App.onClick.Use card",
+          "App.onClick.Review order",
           "App.onClick.api.submitOrder.start",
           "App.onClick.api.fetchQuote.start",
           "App.onClick.api.submitOrder.success",
@@ -483,13 +480,13 @@ describe("demo app acceptance fixture", () => {
         "staleFailureDoesNotMutateGuestStatus",
         "violated",
         [
-          "App.onClick.auth_userId.seq",
-          "App.onClick.plan_quoteStatus.seq",
-          "App.onClick.step.my8cwv",
-          "App.onClick.paymentMethod",
-          "App.onClick.step.ny1ruq",
+          "App.onClick.Login",
+          "App.onClick.Starter",
+          "App.onClick.Billing",
+          "App.onClick.Use card",
+          "App.onClick.Review order",
           "App.onClick.api.submitOrder.start",
-          "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+          "App.onClick.Logout",
           "App.onClick.api.submitOrder.error",
         ],
       ],
@@ -497,10 +494,10 @@ describe("demo app acceptance fixture", () => {
         "invalidQuoteCannotEnterBilling",
         "violated",
         [
-          "App.onClick.auth_userId.seq",
+          "App.onClick.Login",
           "App.onClick.api.fetchQuote.start",
           "App.onClick.api.fetchQuote.success",
-          "App.onClick.step.my8cwv",
+          "App.onClick.Billing",
         ],
       ],
       ["reviewCanReachSuccess", "verified-within-bounds", []],
@@ -544,50 +541,50 @@ describe("demo app acceptance fixture", () => {
     });
     const expectedTraces: Record<string, string[]> = {
       guestCannotReachSuccess: [
-        "App.onClick.auth_userId.seq",
-        "App.onClick.plan_quoteStatus.seq",
-        "App.onClick.step.my8cwv",
-        "App.onClick.paymentMethod",
-        "App.onClick.step.ny1ruq",
+        "App.onClick.Login",
+        "App.onClick.Starter",
+        "App.onClick.Billing",
+        "App.onClick.Use card",
+        "App.onClick.Review order",
         "App.onClick.api.submitOrder.start",
-        "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+        "App.onClick.Logout",
         "App.onClick.api.submitOrder.success",
       ],
       orderSuccessMatchesUser: [
-        "App.onClick.auth_userId.seq",
-        "App.onClick.plan_quoteStatus.seq",
-        "App.onClick.step.my8cwv",
-        "App.onClick.paymentMethod",
-        "App.onClick.step.ny1ruq",
+        "App.onClick.Login",
+        "App.onClick.Starter",
+        "App.onClick.Billing",
+        "App.onClick.Use card",
+        "App.onClick.Review order",
         "App.onClick.api.submitOrder.start",
-        "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+        "App.onClick.Logout",
         "App.onClick.api.submitOrder.success",
       ],
       orderSuccessMatchesCart: [
-        "App.onClick.auth_userId.seq",
-        "App.onClick.plan_quoteStatus.seq",
-        "App.onClick.step.my8cwv",
-        "App.onClick.paymentMethod",
-        "App.onClick.step.ny1ruq",
+        "App.onClick.Login",
+        "App.onClick.Starter",
+        "App.onClick.Billing",
+        "App.onClick.Use card",
+        "App.onClick.Review order",
         "App.onClick.api.submitOrder.start",
         "App.onClick.api.fetchQuote.start",
         "App.onClick.api.submitOrder.success",
       ],
       staleFailureDoesNotMutateGuestStatus: [
-        "App.onClick.auth_userId.seq",
-        "App.onClick.plan_quoteStatus.seq",
-        "App.onClick.step.my8cwv",
-        "App.onClick.paymentMethod",
-        "App.onClick.step.ny1ruq",
+        "App.onClick.Login",
+        "App.onClick.Starter",
+        "App.onClick.Billing",
+        "App.onClick.Use card",
+        "App.onClick.Review order",
         "App.onClick.api.submitOrder.start",
-        "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq",
+        "App.onClick.Logout",
         "App.onClick.api.submitOrder.error",
       ],
       invalidQuoteCannotEnterBilling: [
-        "App.onClick.auth_userId.seq",
+        "App.onClick.Login",
         "App.onClick.api.fetchQuote.start",
         "App.onClick.api.fetchQuote.success",
-        "App.onClick.step.my8cwv",
+        "App.onClick.Billing",
       ],
     };
 

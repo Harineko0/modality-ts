@@ -20,10 +20,8 @@ export const App = {
         success: "App.onClick.api.createTodo.success" as TransitionRef<"App.onClick.api.createTodo.success">,
       },
     },
-    authAtom: "App.onClick.authAtom" as TransitionRef<"App.onClick.authAtom">,
-    authAtom_draft_saveStatus: {
-      seq: "App.onClick.authAtom_draft_saveStatus.seq" as TransitionRef<"App.onClick.authAtom_draft_saveStatus.seq">,
-    },
+    Login: "App.onClick.Login" as TransitionRef<"App.onClick.Login">,
+    Logout: "App.onClick.Logout" as TransitionRef<"App.onClick.Logout">,
   },
 };
 export const swr_api_todos_fetch = {

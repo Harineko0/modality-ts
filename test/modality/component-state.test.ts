@@ -27,7 +27,7 @@ const model: Model = {
   ],
   transitions: [
     {
-      id: "App.onClick.phase.seq",
+      id: "App.onClick.handleAdvance",
       cls: "user",
       label: {
         kind: "click",
@@ -64,10 +64,10 @@ describe("emitComponentModalModules", () => {
     expect(source).toContain("// transitions");
     expect(source).toContain("export const App = {");
     expect(source).toContain("onClick: {");
-    expect(source).toContain("phase: {");
-    expect(source).toContain('"App.onClick.phase.seq"');
-    expect(source).toContain('TransitionRef<"App.onClick.phase.seq">');
-    expect(source).not.toContain('"phase.seq"');
+    expect(source).toContain("handleAdvance:");
+    expect(source).toContain('"App.onClick.handleAdvance"');
+    expect(source).toContain('TransitionRef<"App.onClick.handleAdvance">');
+    expect(source).not.toContain('"handleAdvance"');
     expect(source).not.toContain("authAtom");
   });
 
@@ -154,6 +154,21 @@ describe("emitComponentModalModules", () => {
         vars: [],
         transitions: [
           {
+            id: "CustomerHome.onClick.注文を確認する",
+            cls: "user",
+            label: { kind: "click", text: "注文を確認する" },
+            source: [{ file: "Home.tsx", line: 8 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              target: "local:CustomerHome.step",
+              value: "confirm",
+            },
+            reads: [],
+            writes: ["local:CustomerHome.step"],
+            confidence: "exact",
+          },
+          {
             id: "CustomerHome.onSubmit.ACTION /order.start",
             cls: "user",
             label: { kind: "submit", text: "Start" },
@@ -174,6 +189,9 @@ describe("emitComponentModalModules", () => {
     );
     const source = modules[0]!.source;
     expect(source).toContain("export const CustomerHome = {");
+    expect(source).toContain(
+      '"注文を確認する": "CustomerHome.onClick.注文を確認する"',
+    );
     expect(source).toContain('"ACTION /order": {');
     expect(source).toContain(
       'start: "CustomerHome.onSubmit.ACTION /order.start"',

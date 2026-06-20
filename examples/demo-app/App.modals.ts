@@ -13,10 +13,8 @@ export const App = {
         success: "App.onClick.api.placeOrder.success" as TransitionRef<"App.onClick.api.placeOrder.success">,
       },
     },
-    authAtom: {
-      "1bllkl": "App.onClick.authAtom.1bllkl" as TransitionRef<"App.onClick.authAtom.1bllkl">,
-      h4jaed: "App.onClick.authAtom.h4jaed" as TransitionRef<"App.onClick.authAtom.h4jaed">,
-    },
+    Login: "App.onClick.Login" as TransitionRef<"App.onClick.Login">,
+    Logout: "App.onClick.Logout" as TransitionRef<"App.onClick.Logout">,
     navigate: {
       _admin: "App.onClick.navigate._admin" as TransitionRef<"App.onClick.navigate._admin">,
     },

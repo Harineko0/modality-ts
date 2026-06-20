@@ -251,7 +251,7 @@ describe("Jotai source plugin", () => {
     );
     expect(result.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.authAtom.loop",
+        id: "App.onClick.Sync.loop",
         effect: { kind: "havoc", var: "atom:authAtom" },
         writes: ["atom:authAtom"],
         confidence: "over-approx",
@@ -276,7 +276,7 @@ describe("Jotai source plugin", () => {
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.authAtom.seq",
+      id: "App.onClick.Login",
       effect: {
         kind: "if",
         cond: {
@@ -316,7 +316,7 @@ describe("Jotai source plugin", () => {
     );
     expect(result.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.authAtom",
+        id: "App.onClick.Login",
         effect: {
           kind: "assign",
           var: "atom:authAtom",

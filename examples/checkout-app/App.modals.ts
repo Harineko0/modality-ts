@@ -24,20 +24,12 @@ export const App = {
         success: "App.onClick.api.submitOrder.success" as TransitionRef<"App.onClick.api.submitOrder.success">,
       },
     },
-    auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId: {
-      seq: "App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq" as TransitionRef<"App.onClick.auth_paymentMethod_plan_quoteStatus_step_submitStatus_userId.seq">,
-    },
-    auth_userId: {
-      seq: "App.onClick.auth_userId.seq" as TransitionRef<"App.onClick.auth_userId.seq">,
-    },
-    paymentMethod: "App.onClick.paymentMethod" as TransitionRef<"App.onClick.paymentMethod">,
-    plan_quoteStatus: {
-      seq: "App.onClick.plan_quoteStatus.seq" as TransitionRef<"App.onClick.plan_quoteStatus.seq">,
-    },
-    step: {
-      "3k1mh1": "App.onClick.step.3k1mh1" as TransitionRef<"App.onClick.step.3k1mh1">,
-      my8cwv: "App.onClick.step.my8cwv" as TransitionRef<"App.onClick.step.my8cwv">,
-      ny1ruq: "App.onClick.step.ny1ruq" as TransitionRef<"App.onClick.step.ny1ruq">,
-    },
+    "Back to plans": "App.onClick.Back to plans" as TransitionRef<"App.onClick.Back to plans">,
+    Billing: "App.onClick.Billing" as TransitionRef<"App.onClick.Billing">,
+    Login: "App.onClick.Login" as TransitionRef<"App.onClick.Login">,
+    Logout: "App.onClick.Logout" as TransitionRef<"App.onClick.Logout">,
+    "Review order": "App.onClick.Review order" as TransitionRef<"App.onClick.Review order">,
+    Starter: "App.onClick.Starter" as TransitionRef<"App.onClick.Starter">,
+    "Use card": "App.onClick.Use card" as TransitionRef<"App.onClick.Use card">,
   },
 };

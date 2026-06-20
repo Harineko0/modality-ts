@@ -15,10 +15,10 @@ import type { EffectOpAliases } from "../effect-op-aliases.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
 import {
-  handlerExpression,
   jsxTagIdentifier,
   jsxTagName,
   resolveComponentEntry,
+  resolveHandlerExpression,
   type ComponentRegistry,
 } from "../components.js";
 import { emptyContextBindings } from "../context.js";
@@ -88,6 +88,10 @@ import {
   labelForEvent,
   locatorForEventAttribute,
 } from "./ui.js";
+import {
+  semanticEventName,
+  transitionIdFromSemanticName,
+} from "./semantic-ids.js";
 
 function booleanControlledCallbackValues(attr: string): boolean[] | undefined {
   if (attr === "onOpenChange" || attr === "onCheckedChange") {
@@ -168,6 +172,7 @@ export interface HandlerExtractionContext {
   routerSubmitContext?: ReactRouterSubmitContext;
   effectOpAliases?: EffectOpAliases;
   types?: SemanticTypeContext;
+  semanticName?: string;
 }
 
 export function transitionsFromJsxAttribute(
@@ -192,11 +197,13 @@ export function transitionsFromJsxAttribute(
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
   if (!ts.isIdentifier(node.name)) return [];
   const attr = node.name.text;
   const locator = locatorForEventAttribute(node);
+  const resolvedHandler = resolveHandlerExpression(expression, handlers);
+  if (!resolvedHandler) return [];
+  const handler = resolvedHandler.handler;
+  const semanticName = semanticEventName(node, resolvedHandler.name, locator);
   const timerRegistrations = handlerContext.timerRegistrations ?? [];
   const envTransitions = handlerContext.envTransitions ?? [];
   const timerIndex = handlerContext.timerIndex ?? { value: 0 };
@@ -224,6 +231,7 @@ export function transitionsFromJsxAttribute(
           resetSymbols,
           {
             ...handlerContext,
+            ...(semanticName ? { semanticName } : {}),
             timerRegistrations,
             envTransitions,
             timerIndex,
@@ -345,8 +353,14 @@ function transitionsForComponentPropTrigger(
       }
     }
   }
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
+  const resolvedHandler = resolveHandlerExpression(expression, handlers);
+  if (!resolvedHandler) return [];
+  const handler = resolvedHandler.handler;
+  const semanticName = semanticEventName(
+    node,
+    resolvedHandler.name,
+    trigger.locator,
+  );
   const transitions = transitionsFromResolvedHandler(
     source,
     fileName,
@@ -366,7 +380,7 @@ function transitionsForComponentPropTrigger(
     contextBindings,
     warnings,
     resetSymbols,
-    handlerContext,
+    { ...handlerContext, ...(semanticName ? { semanticName } : {}) },
   );
   if (trigger.pathSuffix) {
     return transitions.map((transition) => ({
@@ -420,8 +434,9 @@ export function transitionsFromBoundedListComponentPropAttribute(
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
+  const resolvedHandler = resolveHandlerExpression(expression, handlers);
+  if (!resolvedHandler) return [];
+  const handler = resolvedHandler.handler;
   const guardLocals = componentGuardLocalsFor(node, setters);
   const callerGuard = combineParsedGuards([
     renderGuardFor(node, setters, warnings, source, component, guardLocals),
@@ -449,6 +464,11 @@ export function transitionsFromBoundedListComponentPropAttribute(
       const locator = baseLocator
         ? { kind: "positional" as const, base: baseLocator, index }
         : undefined;
+      const semanticName = semanticEventName(
+        node,
+        resolvedHandler.name,
+        trigger.locator,
+      );
       const extracted = applyParsedGuard(
         transitionsFromResolvedHandler(
           source,
@@ -471,6 +491,7 @@ export function transitionsFromBoundedListComponentPropAttribute(
           resetSymbols,
           {
             ...handlerContext,
+            ...(semanticName ? { semanticName } : {}),
             initialLocals,
             valueSuffix: String(index),
           },
@@ -511,8 +532,9 @@ export function transitionsFromBoundedListAttribute(
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
+  const resolvedHandler = resolveHandlerExpression(expression, handlers);
+  if (!resolvedHandler) return [];
+  const handler = resolvedHandler.handler;
   const attr = node.name.text;
   const summary = callSummaryFromHandler(
     handler,
@@ -523,6 +545,7 @@ export function transitionsFromBoundedListAttribute(
   const setterCall = setterCallFrom(summary.call, setters, types);
   if (!setterCall) return [];
   const baseLocator = locatorForEventAttribute(node);
+  const semanticName = semanticEventName(node, resolvedHandler.name, baseLocator);
   const transitions: Transition[] = [];
   for (let index = 0; index < listInfo.domain.maxLen; index += 1) {
     const locals = new Map(summary.locals);
@@ -539,7 +562,13 @@ export function transitionsFromBoundedListAttribute(
       : undefined;
     const guard = boundedListIndexGuard(listInfo.varId, index);
     transitions.push({
-      id: `${component}.${attr}.${setterCall.setter.stateName}.${index}`,
+      id: transitionIdFromSemanticName(
+        component,
+        attr,
+        semanticName,
+        setterCall.setter.stateName,
+        `.${index}`,
+      ),
       cls: "user" as const,
       label: labelForEvent(attr, locator),
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -583,14 +612,16 @@ export function transitionsFromLiteralListAttribute(
   const expression = ts.isJsxExpression(node.initializer)
     ? node.initializer.expression
     : undefined;
-  const handler = handlerExpression(expression, handlers);
-  if (!handler) return [];
+  const resolvedHandler = resolveHandlerExpression(expression, handlers);
+  if (!resolvedHandler) return [];
+  const handler = resolvedHandler.handler;
   const attr = node.name.text;
   const baseLocator = locatorForEventAttribute(node);
   return listInfo.values.flatMap((value, index) => {
     const locator = baseLocator
       ? { kind: "positional" as const, base: baseLocator, index }
       : undefined;
+    const semanticName = semanticEventName(node, resolvedHandler.name, locator);
     return transitionsFromResolvedHandler(
       source,
       fileName,
@@ -612,6 +643,7 @@ export function transitionsFromLiteralListAttribute(
       resetSymbols,
       {
         ...handlerContext,
+        ...(semanticName ? { semanticName } : {}),
         initialLocals: mergeLocals(
           handlerContext.initialLocals,
           new Map([
@@ -757,6 +789,7 @@ export function transitionsFromResolvedHandler(
           mergeLocals(handlerContext.initialLocals, initialLocals),
           valueSuffix,
           summaryOptions,
+          handlerContext.semanticName,
         ) ??
         conditionalTransitionFromHandler(
           source,
@@ -769,6 +802,7 @@ export function transitionsFromResolvedHandler(
           locator,
           mergeLocals(handlerContext.initialLocals, initialLocals),
           valueSuffix,
+          handlerContext.semanticName,
         ) ??
         singleSetterTransitionFromHandler(
           source,
@@ -783,6 +817,7 @@ export function transitionsFromResolvedHandler(
           resetSymbols,
           valueSuffix,
           handlerContext.types,
+          handlerContext.semanticName,
         );
       return transition ? [transition] : [];
     });
@@ -800,6 +835,8 @@ export function transitionsFromResolvedHandler(
     component,
     locator,
     handlerContext.initialLocals,
+    undefined,
+    handlerContext.semanticName,
   );
   if (conditionalTransition)
     return applyParsedGuard([conditionalTransition], disabledGuard);
@@ -817,6 +854,7 @@ export function transitionsFromResolvedHandler(
     handlerContext.initialLocals,
     handlerContext.valueSuffix,
     summaryOptions,
+    handlerContext.semanticName,
   );
   if (sequentialTransition)
     return applyParsedGuard([sequentialTransition], disabledGuard);
@@ -829,6 +867,7 @@ export function transitionsFromResolvedHandler(
     setters,
     component,
     locator,
+    handlerContext.semanticName,
   );
   if (loopTransitions.length > 0)
     return applyParsedGuard(loopTransitions, disabledGuard);
@@ -907,6 +946,7 @@ export function transitionsFromResolvedHandler(
         component,
         escaped,
         locator,
+        handlerContext.semanticName,
       ),
       disabledGuard,
     );
@@ -939,15 +979,22 @@ export function transitionsFromResolvedHandler(
   if (!assignment) {
     return applyParsedGuard(
       [
-        havocSetterTransition(
-          source,
-          fileName,
-          node,
-          attr,
+        semanticizeTransition(
+          havocSetterTransition(
+            source,
+            fileName,
+            node,
+            attr,
+            component,
+            setter,
+            locator,
+            "unrepresentable",
+          ),
           component,
-          setter,
-          locator,
-          "unrepresentable",
+          attr,
+          handlerContext.semanticName,
+          `${setter.stateName}.unrepresentable`,
+          ".unrepresentable",
         ),
       ],
       disabledGuard,
@@ -956,7 +1003,12 @@ export function transitionsFromResolvedHandler(
   return applyParsedGuard(
     [
       {
-        id: `${component}.${attr}.${setter.stateName}`,
+        id: transitionIdFromSemanticName(
+          component,
+          attr,
+          handlerContext.semanticName,
+          setter.stateName,
+        ),
         cls: "user",
         label: labelForEvent(attr, locator),
         source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -984,6 +1036,7 @@ function singleSetterTransitionFromHandler(
   resetSymbols: ReadonlySet<string>,
   valueSuffix?: string,
   types?: SemanticTypeContext,
+  semanticName?: string,
 ): Transition | undefined {
   const summary = callSummaryFromHandler(handler, setters, initialLocals);
   if (!summary) return undefined;
@@ -999,7 +1052,13 @@ function singleSetterTransitionFromHandler(
   if (!assignment) return undefined;
   const suffix = valueSuffix ? `.${valueSuffix}` : "";
   return {
-    id: `${component}.${attr}.${setterCall.setter.stateName}${suffix}`,
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      setterCall.setter.stateName,
+      suffix,
+    ),
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -1029,6 +1088,7 @@ export function sequentialTransitionFromHandler(
   initialLocals?: Map<string, BoundExpr>,
   valueSuffix?: string,
   summaryOptions: Parameters<typeof summarizeHandlerStatements>[2] = {},
+  semanticName?: string,
 ): Transition | undefined {
   const summaries = summarizeHandlerStatements(handler, setters, {
     handlers,
@@ -1051,8 +1111,15 @@ export function sequentialTransitionFromHandler(
   const effects = effect.kind === "seq" ? effect.effects : [effect];
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
   const suffix = valueSuffix ? `.${valueSuffix}` : "";
+  const writeSegment = `${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq`;
   return {
-    id: `${component}.${attr}.${writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_")}.seq${suffix}`,
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      writeSegment,
+      suffix,
+    ),
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -1075,6 +1142,7 @@ export function loopWriteTransitions(
   setters: Map<string, SetterBinding>,
   component: string,
   locator: Locator | undefined,
+  semanticName?: string,
 ): Transition[] {
   if (!ts.isBlock(handler.body)) return [];
   const loopSetters: SetterBinding[] = [];
@@ -1087,15 +1155,22 @@ export function loopWriteTransitions(
   };
   visit(handler.body);
   return uniqueSetters(loopSetters).map((setter) =>
-    havocSetterTransition(
-      source,
-      fileName,
-      node,
-      attr,
+    semanticizeTransition(
+      havocSetterTransition(
+        source,
+        fileName,
+        node,
+        attr,
+        component,
+        setter,
+        locator,
+        "loop",
+      ),
       component,
-      setter,
-      locator,
-      "loop",
+      attr,
+      semanticName,
+      `${setter.stateName}.loop`,
+      ".loop",
     ),
   );
 }
@@ -1111,6 +1186,7 @@ export function conditionalTransitionFromHandler(
   locator: Locator | undefined,
   initialLocals: Map<string, BoundExpr> = new Map(),
   valueSuffix?: string,
+  semanticName?: string,
 ): Transition | undefined {
   const body = handler.body;
   if (
@@ -1144,7 +1220,13 @@ export function conditionalTransitionFromHandler(
     "if";
   const suffix = valueSuffix ? `.${valueSuffix}` : "";
   return {
-    id: `${component}.${attr}.${writeSuffix}.if${suffix}`,
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      `${writeSuffix}.if`,
+      suffix,
+    ),
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -1178,9 +1260,16 @@ export function escapedSetterTransitions(
   component: string,
   setters: readonly SetterBinding[],
   locator: Locator | undefined,
+  semanticName?: string,
 ): Transition[] {
   return setters.map((setter) => ({
-    id: `${component}.${attr}.${setter.stateName}.escaped`,
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      `${setter.stateName}.escaped`,
+      ".escaped",
+    ),
     cls: "user" as const,
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -1190,6 +1279,27 @@ export function escapedSetterTransitions(
     writes: [setter.varId],
     confidence: "over-approx" as const,
   }));
+}
+
+function semanticizeTransition(
+  transition: Transition,
+  component: string,
+  attr: string,
+  semanticName: string | undefined,
+  fallbackSegment: string,
+  semanticSuffix: string,
+): Transition {
+  if (!semanticName) return transition;
+  return {
+    ...transition,
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      fallbackSegment,
+      semanticSuffix,
+    ),
+  };
 }
 
 function handlerSummaryOptions(

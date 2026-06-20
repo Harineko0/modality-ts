@@ -160,7 +160,7 @@ describe("runExtractCommand", () => {
     const result = await runExtractCommand({ sourcePath, modelPath });
 
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(
-      ["App.onClick.status"],
+      ["App.onClick.Save"],
     );
     expect(result.report.diagnostics?.pipeline?.discoveryFragments).toBe(2);
     expect(result.report.diagnostics?.surface?.rawEntries).toBe(1);
@@ -246,6 +246,110 @@ describe("runExtractCommand", () => {
           entry.id === "App.onAdd" && entry.kind === "unextractable",
       ),
     ).toBe(false);
+  });
+
+  it("uses named handler functions as transition IDs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [open, setOpen] = useState(true);
+        function handleCloseDialog() {
+          setOpen(false);
+        }
+        return <button onClick={handleCloseDialog}>Close</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.onClick.handleCloseDialog"],
+    );
+  });
+
+  it("uses anonymous control labels, including unicode labels, as transition IDs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [phase, setPhase] = useState<'menu' | 'confirm'>('menu');
+        return <button onClick={() => setPhase('confirm')}>注文を確認する</button>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.onClick.注文を確認する"],
+    );
+  });
+
+  it("keeps duplicate semantic labels deterministic with stable suffixes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [phase, setPhase] = useState<'idle' | 'a' | 'b'>('idle');
+        return <>
+          <button onClick={() => setPhase('a')}>Save</button>
+          <button onClick={() => setPhase('b')}>Save</button>
+        </>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const ids = result.model.transitions.map((transition) => transition.id);
+
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids.every((id) => id.startsWith("App.onClick.Save."))).toBe(true);
+  });
+
+  it("uses useEffect dependency names as transition IDs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-semantic-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useEffect, useState } from 'react';
+      export function App() {
+        const [actionData, setActionData] = useState(false);
+        const [isAutoPrintEnabled, setIsAutoPrintEnabled] = useState(false);
+        const [phase, setPhase] = useState<'menu' | 'complete'>('menu');
+        useEffect(() => {
+          if (actionData && isAutoPrintEnabled) setPhase('complete');
+        }, [actionData, isAutoPrintEnabled]);
+        return <span>{phase}</span>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+
+    expect(result.model.transitions.map((transition) => transition.id)).toEqual(
+      ["App.useEffect.actionData_isAutoPrintEnabled"],
+    );
   });
 
   it("includes extracted navigation targets in the route domain", async () => {
@@ -752,7 +856,7 @@ describe("runExtractCommand", () => {
       maxLen: 2,
     });
     expect(result.model.transitions.map((transition) => transition.id)).toEqual(
-      expect.arrayContaining(["App.onClick.status"]),
+      expect.arrayContaining(["App.onClick.Save"]),
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
@@ -877,7 +981,7 @@ describe("runExtractCommand", () => {
     });
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.authAtom",
+        id: "App.onClick.Login",
         cls: "user",
         effect: {
           kind: "assign",
@@ -910,7 +1014,7 @@ describe("runExtractCommand", () => {
     const result = await runExtractCommand({ sourcePath, modelPath });
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.modalAtom",
+        id: "App.onClick.Open",
         effect: {
           kind: "assign",
           var: "atom:modalAtom",
@@ -951,7 +1055,7 @@ describe("runExtractCommand", () => {
     });
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.phase",
+        id: "App.onClick.Submit",
         guard: {
           kind: "not",
           args: [
@@ -1091,7 +1195,7 @@ describe("runExtractCommand", () => {
     };
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.authAtom",
+        id: "App.onClick.Login",
         effect: {
           kind: "assign",
           var: "atom:authAtom",
@@ -1238,7 +1342,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.authAtom.loop",
+        id: "App.onClick.Sync.loop",
         effect: { kind: "havoc", var: "atom:authAtom" },
         writes: ["atom:authAtom"],
         confidence: "over-approx",

@@ -40,7 +40,7 @@ describe("runExtractCommand", () => {
     });
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.api_todos",
+        id: "App.onClick.Fill",
         effect: {
           kind: "assign",
           var: "swr:api_todos:data",
@@ -67,7 +67,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.model.transitions).toContainEqual(
       expect.objectContaining({
-        id: "App.onClick.api_todos.loop",
+        id: "App.onClick.Loop.loop",
         effect: { kind: "havoc", var: "swr:api_todos:data" },
         writes: ["swr:api_todos:data"],
         confidence: "over-approx",
@@ -151,7 +151,7 @@ describe("runExtractCommand", () => {
       .filter((transition) => transition.cls === "user")
       .map((transition) => transition.id);
     expect(userTransitionIds).toEqual([
-      "App.onClick.authAtom_phase_api_todos.seq",
+      "App.onClick.Apply",
     ]);
   });
 
@@ -302,7 +302,7 @@ describe("runExtractCommand", () => {
       },
     });
     const click = result.model.transitions.find((transition) =>
-      transition.id.startsWith("App.onClick.authAtom"),
+      transition.writes.includes("atom:authAtom"),
     );
     expect(click?.reads).toEqual(["atom:authAtom"]);
   });
@@ -492,7 +492,7 @@ describe("runExtractCommand", () => {
         "ImageDetail.onClick.POST /api/replace/:id.error",
         "ImageDetail.onClick.POST /api/delete/:id.start",
         "ImageDetail.onClick.POST /api/delete/:id.success",
-        "TopBar.onClick.theme",
+        "TopBar.onClick.Theme",
         "TopBar.Link.navigate._",
         "Home.Link.navigate._i_id",
       ]),
@@ -759,7 +759,7 @@ describe("runExtractCommand", () => {
       JSON.stringify({
         transitions: [
           {
-            id: "App.onClick.saveStatus",
+            id: "App.onClick.Save",
             cls: "user",
             label: { kind: "click", text: "Overlay save" },
             source: [],
@@ -797,17 +797,17 @@ describe("runExtractCommand", () => {
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(result.lines).toContain("overlay-drift=none");
     expect(model.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.Save",
       confidence: "manual",
     });
     expect(model.vars.map((decl: { id: string }) => decl.id)).not.toContain(
       "local:App.debug",
     );
     expect(report.warnings).toContain(
-      "Overlay overrides exact transition App.onClick.saveStatus",
+      "Overlay overrides exact transition App.onClick.Save",
     );
     expect(report.handlers).toEqual([
-      { id: "App.onClick.saveStatus", classification: "overlay", reasons: [] },
+      { id: "App.onClick.Save", classification: "overlay", reasons: [] },
     ]);
     expect(report.domains).toContainEqual({
       varId: "local:App.saveStatus",
@@ -966,7 +966,7 @@ describe("runExtractCommand", () => {
         explainDrift: true,
       }),
     ).rejects.toThrow(
-      /overlay-drift: transition App\.onClick\.status has no match; nearest=App\.onClick\.saveStatus\(\d+\)/,
+      /overlay-drift: transition App\.onClick\.status has no match; nearest=App\.onClick\.Save\(\d+\)/,
     );
     await expect(
       runExtractCommand({
@@ -1214,7 +1214,7 @@ describe("runExtractCommand", () => {
         "UploadForm.onChange.POST /api/upload.error",
         "ImageDetail.onClick.POST /api/delete/:id.start",
         "ImageDetail.onClick.POST /api/delete/:id.success",
-        "ThemeToggle.onClick.theme",
+        "ThemeToggle.onClick.Theme",
       ]),
     );
     expect(

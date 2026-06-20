@@ -23,7 +23,7 @@ describe("buildTransitionTree", () => {
     const tree = buildTransitionTree([
       transition({ id: "CustomerHome.onClick.isHistoryOpen" }),
       transition({ id: "CustomerHome.onClick.isPrinterSettingsOpen" }),
-      transition({ id: "App.onClick.phase.seq" }),
+      transition({ id: "App.onClick.handleAdvance" }),
     ]);
 
     expect(tree).toEqual([
@@ -34,8 +34,8 @@ describe("buildTransitionTree", () => {
             event: "onClick",
             leaves: [
               {
-                path: ["phase", "seq"],
-                transitionId: "App.onClick.phase.seq",
+                path: ["handleAdvance"],
+                transitionId: "App.onClick.handleAdvance",
               },
             ],
           },
@@ -64,12 +64,12 @@ describe("buildTransitionTree", () => {
 
   it("splits dotted remainders into path segments and preserves non-period tokens", () => {
     const tree = buildTransitionTree([
-      transition({ id: "CustomerHome.onClick.isFree_phase.seq.pj0iff" }),
+      transition({ id: "CustomerHome.onClick.注文を確認する" }),
       transition({
         id: "CustomerHome.onSubmit.ACTION /order.start",
       }),
       transition({
-        id: "CustomerHome.useEffect.printerStatus_printerStatusData_optimisticDensity",
+        id: "CustomerHome.useEffect.actionData_isAutoPrintEnabled",
       }),
     ]);
 
@@ -81,8 +81,8 @@ describe("buildTransitionTree", () => {
         event: "onClick",
         leaves: [
           {
-            path: ["isFree_phase", "seq", "pj0iff"],
-            transitionId: "CustomerHome.onClick.isFree_phase.seq.pj0iff",
+            path: ["注文を確認する"],
+            transitionId: "CustomerHome.onClick.注文を確認する",
           },
         ],
       },
@@ -99,9 +99,8 @@ describe("buildTransitionTree", () => {
         event: "useEffect",
         leaves: [
           {
-            path: ["printerStatus_printerStatusData_optimisticDensity"],
-            transitionId:
-              "CustomerHome.useEffect.printerStatus_printerStatusData_optimisticDensity",
+            path: ["actionData_isAutoPrintEnabled"],
+            transitionId: "CustomerHome.useEffect.actionData_isAutoPrintEnabled",
           },
         ],
       },

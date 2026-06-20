@@ -41,6 +41,17 @@ export function locatorForEventAttribute(
   return undefined;
 }
 
+export function semanticTextForEventAttribute(
+  attribute: ts.JsxAttribute,
+): string | undefined {
+  const attrs = attribute.parent;
+  if (!ts.isJsxAttributes(attrs)) return undefined;
+  const element = attrs.parent;
+  if (!ts.isJsxOpeningElement(element) && !ts.isJsxSelfClosingElement(element))
+    return undefined;
+  return stringAttribute(attrs, "aria-label") ?? simpleElementText(element);
+}
+
 export function locatorForJsxElement(
   element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
   source?: ts.SourceFile,

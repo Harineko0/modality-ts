@@ -283,7 +283,7 @@ describe("useState inventory", () => {
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.Save",
       cls: "user",
       label: {
         kind: "click",
@@ -368,7 +368,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(
       result.transitions.find(
-        (transition) => transition.id === "App.onClick.role",
+        (transition) => transition.id === "App.onClick.Copy",
       ),
     ).toMatchObject({
       effect: {
@@ -697,7 +697,7 @@ describe("useState inventory", () => {
     expect(result.vars).toHaveLength(1);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.Save",
       effect: {
         kind: "assign",
         var: "local:App.saveStatus",
@@ -740,7 +740,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.save",
       effect: {
         kind: "assign",
         var: "local:App.saveStatus",
@@ -765,7 +765,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.Save",
       effect: {
         kind: "assign",
         var: "local:App.saveStatus",
@@ -792,7 +792,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.save-button",
       label: {
         kind: "click",
         locator: { kind: "testId", value: "save-button" },
@@ -823,7 +823,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.save-button",
       label: {
         kind: "click",
         locator: { kind: "testId", value: "save-button" },
@@ -854,7 +854,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus",
+      id: "App.onClick.Save",
       guard: {
         kind: "not",
         args: [
@@ -908,8 +908,8 @@ describe("useState inventory", () => {
       openChange.every((transition) => transition.confidence === "exact"),
     ).toBe(true);
     expect(openChange.map((transition) => transition.id).sort()).toEqual([
-      "App.onOpenChange.open_pickedDim_query.seq.false",
-      "App.onOpenChange.open_pickedDim_query.seq.true",
+      "App.onOpenChange.handleOpenChange.false",
+      "App.onOpenChange.handleOpenChange.true",
     ]);
     const falseTransition = openChange.find((transition) =>
       transition.id.endsWith(".false"),
@@ -1541,7 +1541,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.open",
+      id: "App.onClick.Toggle",
       effect: {
         kind: "assign",
         var: "local:App.open",
@@ -1620,7 +1620,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saved",
+      id: "App.onClick.Save",
       effect: {
         kind: "assign",
         var: "local:App.saved",
@@ -1649,7 +1649,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saved",
+      id: "App.onClick.Save",
       effect: {
         kind: "assign",
         var: "local:App.saved",
@@ -1680,7 +1680,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.draft_saved.seq",
+      id: "App.onClick.Save",
       effect: {
         kind: "seq",
         effects: [
@@ -1776,7 +1776,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.mode",
+      id: "App.onClick.Copy",
       effect: {
         kind: "assign",
         var: "local:App.mode",
@@ -1801,7 +1801,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.auth",
+      id: "App.onClick.Login",
       effect: {
         kind: "assign",
         var: "local:App.auth",
@@ -1894,7 +1894,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.screen",
+      id: "App.onClick.Checkout",
       effect: {
         kind: "assign",
         var: "local:App.screen",
@@ -2005,7 +2005,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.canSubmit",
+      id: "App.onClick.Check",
       effect: {
         kind: "assign",
         var: "local:App.canSubmit",
@@ -2044,7 +2044,7 @@ describe("useState inventory", () => {
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.screen.if",
+      id: "App.onClick.Checkout",
       effect: {
         kind: "if",
         cond: {
@@ -2111,7 +2111,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.screen.if",
+      id: "App.onClick.Checkout",
       effect: {
         kind: "if",
         cond: {
@@ -2896,7 +2896,7 @@ describe("useState inventory", () => {
         transition.cls,
         transition.triggeredBy,
       ]),
-    ).toContainEqual(["App.useEffect.screen", "internal", ["local:App.auth"]]);
+    ).toContainEqual(["App.useEffect.auth", "internal", ["local:App.auth"]]);
 
     const model: Model = {
       schemaVersion: 1,
@@ -3104,7 +3104,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus.escaped",
+      id: "App.onClick.Save.escaped",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
       confidence: "over-approx",
@@ -3128,7 +3128,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus.escaped",
+      id: "App.onClick.Save.escaped",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
       confidence: "over-approx",
@@ -4029,7 +4029,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saveStatus.unrepresentable",
+      id: "App.onClick.save.unrepresentable",
       effect: { kind: "havoc", var: "local:App.saveStatus" },
       writes: ["local:App.saveStatus"],
       confidence: "over-approx",
@@ -4067,7 +4067,7 @@ describe("useState inventory", () => {
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.authAtom",
+      id: "App.onClick.Login",
       effect: {
         kind: "assign",
         var: "atom:authAtom",
@@ -4110,7 +4110,7 @@ describe("useState inventory", () => {
     );
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.authAtom",
+      id: "App.onClick.Login",
       effect: {
         kind: "assign",
         var: "atom:authAtom",
@@ -4129,8 +4129,8 @@ describe("useState inventory", () => {
       export function App() {
         const [auth, setAuth] = useState<'guest' | 'user'>('guest');
         return <>
-          <button onClick={() => setAuth('user')}>Login</button>
-          <button onClick={() => setAuth('guest')}>Logout</button>
+          <button onClick={() => setAuth('user')}>Auth</button>
+          <button onClick={() => setAuth('guest')}>Auth</button>
         </>;
       }
       `,
@@ -4148,8 +4148,8 @@ describe("useState inventory", () => {
         transition.effect.expr.kind === "lit" &&
         transition.effect.expr.value === "guest",
     );
-    expect(login?.id).toMatch(/^App\.onClick\.auth\.[a-z0-9]{6}$/);
-    expect(logout?.id).toMatch(/^App\.onClick\.auth\.[a-z0-9]{6}$/);
+    expect(login?.id).toMatch(/^App\.onClick\.Auth\.[a-z0-9]{6}$/);
+    expect(logout?.id).toMatch(/^App\.onClick\.Auth\.[a-z0-9]{6}$/);
     expect(login?.id).not.toBe(logout?.id);
 
     const withInsertedDuplicate = extractUseStateSkeleton(
@@ -4158,9 +4158,9 @@ describe("useState inventory", () => {
       export function App() {
         const [auth, setAuth] = useState<'guest' | 'user'>('guest');
         return <>
-          <button onClick={() => setAuth('guest')}>Reset</button>
-          <button onClick={() => setAuth('user')}>Login</button>
-          <button onClick={() => setAuth('guest')}>Logout</button>
+          <button onClick={() => setAuth('guest')}>Auth</button>
+          <button onClick={() => setAuth('user')}>Auth</button>
+          <button onClick={() => setAuth('guest')}>Auth</button>
         </>;
       }
       `,
@@ -4447,7 +4447,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toEqual([
       expect.objectContaining({
-        id: "App.onClick.saveStatus.loop",
+        id: "App.onClick.save.loop",
         effect: { kind: "havoc", var: "local:App.saveStatus" },
         reads: [],
         writes: ["local:App.saveStatus"],
@@ -4479,7 +4479,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.screen.seq",
+      id: "App.onClick.save",
       effect: {
         kind: "if",
         cond: {
@@ -4529,7 +4529,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saved.seq",
+      id: "App.onClick.save",
       effect: {
         kind: "if",
         cond: {
@@ -4576,7 +4576,7 @@ describe("useState inventory", () => {
     expect(result.warnings).toEqual([]);
     expect(result.transitions).toHaveLength(1);
     expect(result.transitions[0]).toMatchObject({
-      id: "App.onClick.saved_status.seq",
+      id: "App.onClick.save",
       effect: {
         kind: "seq",
         effects: [
@@ -4901,7 +4901,7 @@ describe("React Router form action submits", () => {
     );
     expect(
       increment.transitions.find((transition) =>
-        transition.id.includes("count"),
+        transition.writes.includes("local:App.count"),
       )?.effect,
     ).toMatchObject({
       kind: "assign",
@@ -4927,7 +4927,7 @@ describe("React Router form action submits", () => {
     );
     expect(
       decrement.transitions.find((transition) =>
-        transition.id.includes("count"),
+        transition.writes.includes("local:App.count"),
       )?.effect,
     ).toMatchObject({
       kind: "assign",
@@ -4958,7 +4958,9 @@ describe("React Router form action submits", () => {
       { route: "/", fileName: "App.tsx" },
     );
     expect(
-      result.transitions.find((transition) => transition.id.includes("count"))
+      result.transitions.find((transition) =>
+        transition.writes.includes("local:App.count"),
+      )
         ?.effect,
     ).toMatchObject({
       kind: "assign",
@@ -5012,7 +5014,7 @@ describe("React Router form action submits", () => {
       { route: "/", fileName: "App.tsx" },
     );
     const transition = result.transitions.find((entry) =>
-      entry.id.includes("label"),
+      entry.writes.includes("local:App.label"),
     );
     expect(transition?.effect.kind).toBe("havoc");
     expect(transition?.id).toContain(".unrepresentable");
@@ -5045,7 +5047,7 @@ describe("React Router form action submits", () => {
       overflow: "forbid",
     });
     const countTransitions = result.transitions.filter((transition) =>
-      transition.id.includes("count"),
+      transition.writes.includes("local:App.count"),
     );
     expect(
       countTransitions.every((transition) => transition.confidence === "exact"),
@@ -5101,7 +5103,7 @@ describe("React Router form action submits", () => {
       { route: "/", fileName: "App.tsx" },
     );
     const transition = result.transitions.find((entry) =>
-      entry.id.includes("label"),
+      entry.writes.includes("local:App.label"),
     );
     expect(transition?.effect.kind).toBe("havoc");
     expect(transition?.id).toContain(".unrepresentable");

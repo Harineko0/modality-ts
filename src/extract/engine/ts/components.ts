@@ -426,9 +426,30 @@ export function handlerExpression(
   expression: ts.Expression | undefined,
   handlers: Map<string, ExtractableHandler>,
 ): ExtractableHandler | undefined {
+  return resolveHandlerExpression(expression, handlers)?.handler;
+}
+
+export interface ResolvedHandlerExpression {
+  handler: ExtractableHandler;
+  name?: string;
+}
+
+export function resolveHandlerExpression(
+  expression: ts.Expression | undefined,
+  handlers: Map<string, ExtractableHandler>,
+): ResolvedHandlerExpression | undefined {
   if (!expression) return undefined;
-  if (isExtractableHandler(expression)) return expression;
-  if (ts.isIdentifier(expression)) return handlers.get(expression.text);
+  if (isExtractableHandler(expression)) {
+    const name =
+      ts.isFunctionDeclaration(expression) || ts.isFunctionExpression(expression)
+        ? expression.name?.text
+        : undefined;
+    return { handler: expression, ...(name ? { name } : {}) };
+  }
+  if (ts.isIdentifier(expression)) {
+    const handler = handlers.get(expression.text);
+    return handler ? { handler, name: expression.text } : undefined;
+  }
   return undefined;
 }
 

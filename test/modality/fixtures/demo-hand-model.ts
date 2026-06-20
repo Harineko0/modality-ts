@@ -117,7 +117,7 @@ export function demoHandModel(): Model {
     ],
     transitions: [
       {
-        id: "App.onClick.authAtom.h4jaed",
+        id: "App.onClick.Login",
         cls: "user",
         label: {
           kind: "click",
@@ -149,7 +149,7 @@ export function demoHandModel(): Model {
         confidence: "exact",
       },
       {
-        id: "App.onClick.authAtom.1bllkl",
+        id: "App.onClick.Logout",
         cls: "user",
         label: {
           kind: "click",

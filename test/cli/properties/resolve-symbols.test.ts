@@ -202,7 +202,7 @@ eq(pending, "api.placeOrder");
   it("rewrites nested transition member access and strips the root import", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-transition-"));
     const propsPath = join(dir, "app.props.ts");
-    const transitionId = "App.onClick.phase.seq";
+    const transitionId = "App.onClick.handleAdvance";
     const modelWithTransition: Model = {
       ...localOnlyModel,
       transitions: [
@@ -234,7 +234,7 @@ eq(pending, "api.placeOrder");
       propsPath,
       `import { alwaysStep, enabled, stepTransitionId } from "modality-ts/properties";
 import { App } from "./App.modals";
-alwaysStep("clicked", { step: stepTransitionId(App.onClick.phase.seq), pre: enabled(App.onClick.phase.seq) });
+alwaysStep("clicked", { step: stepTransitionId(App.onClick.handleAdvance), pre: enabled(App.onClick.handleAdvance) });
 `,
       "utf8",
     );
@@ -318,7 +318,7 @@ stepTransitionId(CustomerHome.onSubmit["ACTION /order"].start);
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-transition-"));
     const propsPath = join(dir, "app.props.ts");
     const handlePath = join(dir, "App.modals.ts");
-    const transitionId = "App.onClick.phase.seq";
+    const transitionId = "App.onClick.handleAdvance";
     await writeFile(
       handlePath,
       `import type { TransitionRef } from "modality-ts/properties";
@@ -353,7 +353,7 @@ alwaysStep("clicked", { step: stepTransitionId(app_advance), pre: enabled(app_ad
       ...localOnlyModel,
       transitions: [
         {
-          id: "App.onClick.phase.seq",
+          id: "App.onClick.handleAdvance",
           cls: "user",
           label: { kind: "click", text: "Go" },
           source: [{ file: join(dir, "App.tsx"), line: 10 }],

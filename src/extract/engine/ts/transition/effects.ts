@@ -17,6 +17,7 @@ import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { labelForEvent } from "./ui.js";
 import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
+import { dependencyNameSegment } from "./semantic-ids.js";
 export {
   effectWriteVars,
   PENDING_QUEUE_VAR,
@@ -123,6 +124,7 @@ export function transitionsFromUseEffect(
   const hasExplicitDependencyArray = Boolean(
     node.arguments[1] && ts.isArrayLiteralExpression(node.arguments[1]),
   );
+  const dependencySegment = dependencyNameSegment(node.arguments[1]);
   const hasUntriggeredHavocEffect =
     hasExplicitDependencyArray &&
     deps.length === 0 &&
@@ -147,10 +149,13 @@ export function transitionsFromUseEffect(
           )
         : { kind: "lit" as const, value: true };
     transitions.push({
-      id: `${component}.${hookName}.${effects
-        .flatMap(effectWriteVars)
-        .map((varId) => varId.split(".").at(-1) ?? varId)
-        .join("_")}`,
+      id: `${component}.${hookName}.${
+        dependencySegment ??
+        effects
+          .flatMap(effectWriteVars)
+          .map((varId) => varId.split(".").at(-1) ?? varId)
+          .join("_")
+      }`,
       cls: "internal",
       label: { kind: "internal", text: `${component}.${hookName}` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
@@ -175,10 +180,13 @@ export function transitionsFromUseEffect(
       cleanup.flatMap((summary) => summary.reads),
     );
     transitions.push({
-      id: `${component}.${hookName}.cleanup.${cleanupEffects
-        .flatMap(effectWriteVars)
-        .map((varId) => varId.split(".").at(-1) ?? varId)
-        .join("_")}`,
+      id: `${component}.${hookName}.cleanup.${
+        dependencySegment ??
+        cleanupEffects
+          .flatMap(effectWriteVars)
+          .map((varId) => varId.split(".").at(-1) ?? varId)
+          .join("_")
+      }`,
       cls: "internal",
       label: { kind: "internal", text: `${component}.${hookName}.cleanup` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
