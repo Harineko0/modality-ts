@@ -6,11 +6,14 @@ import type {
 import {
   colorize,
   formatArtifactLine,
+  formatCountValue,
   formatDuration,
+  formatDurationValue,
   formatMs,
   formatStatusSymbol,
-  formatSummaryLabel,
+  formatSummaryRow,
   formatTime,
+  formatTimeValue,
   type OutputOptions,
   statusSymbol,
   ANSI,
@@ -217,11 +220,17 @@ export function renderCheckSummary(
     (target) => targetStatusKind(target.check) === "pass",
   ).length;
   const failedTargets = totalTargets - passedTargets;
-  const testFilesValue =
-    failedTargets > 0
-      ? `${failedTargets} failed | ${passedTargets} passed (${totalTargets})`
-      : `${passedTargets} passed (${totalTargets})`;
-  lines.push(formatSummaryLabel("Test Files", testFilesValue));
+  lines.push(
+    formatSummaryRow(
+      "Test Files",
+      formatCountValue(
+        { passed: passedTargets, failed: failedTargets },
+        totalTargets,
+        { ...options, leadFailed: true },
+      ),
+      options,
+    ),
+  );
 
   const totalTests = results.reduce(
     (sum, target) => sum + target.check.verdicts.length,
@@ -243,19 +252,39 @@ export function renderCheckSummary(
     (sum, target) => sum + verdictCounts(target.check).warnings,
     0,
   );
-  let testsValue = `${passedTests} passed (${totalTests})`;
-  if (failedTests > 0 || errorTests > 0 || warningTests > 0) {
-    const parts = [`${passedTests} passed`];
-    if (failedTests > 0) parts.push(`${failedTests} failed`);
-    if (errorTests > 0) parts.push(`${errorTests} errors`);
-    if (warningTests > 0) parts.push(`${warningTests} warnings`);
-    parts.push(`(${totalTests})`);
-    testsValue = parts.join(", ");
-  }
-  lines.push(formatSummaryLabel("Tests", testsValue));
-  lines.push(formatSummaryLabel("Start at", formatTime(options.startedAt)));
   lines.push(
-    formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
+    formatSummaryRow(
+      "Tests",
+      formatCountValue(
+        {
+          passed: passedTests,
+          failed: failedTests,
+          errors: errorTests,
+          warnings: warningTests,
+        },
+        totalTests,
+        options,
+      ),
+      options,
+    ),
+  );
+  lines.push(
+    formatSummaryRow(
+      "Start at",
+      formatTimeValue(formatTime(options.startedAt), options),
+      options,
+    ),
+  );
+  lines.push(
+    formatSummaryRow(
+      "Duration",
+      formatDurationValue(
+        formatDuration(options.totalDurationMs),
+        undefined,
+        options,
+      ),
+      options,
+    ),
   );
 
   const artifacts: ArtifactPathEntry[] = [];
@@ -268,7 +297,7 @@ export function renderCheckSummary(
     }
   }
   if (options.showArtifacts === true && artifacts.length > 0) {
-    lines.push(formatSummaryLabel("Artifacts", ""));
+    lines.push(formatSummaryRow("Artifacts", "", options));
     for (const entry of artifacts) {
       lines.push(formatArtifactLine(entry.kind, entry.path, options));
     }

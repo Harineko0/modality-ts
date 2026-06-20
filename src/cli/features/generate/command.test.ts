@@ -116,9 +116,15 @@ describe("renderHumanGenerateTargets", () => {
           artifacts: [{ kind: "componentVars", path: "/tmp/App.modals.ts" }],
         },
       ],
-      { totalDurationMs: 12, showArtifacts: true },
+      {
+        totalDurationMs: 12,
+        showArtifacts: true,
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+      },
     );
     expect(lines.join("\n")).toContain("✓");
+    expect(lines.join("\n")).toContain("Generate Files");
+    expect(lines.join("\n")).toContain("Start at");
     expect(lines.join("\n")).toContain("Duration");
     expect(lines.join("\n")).toContain("(componentVars)");
   });
@@ -144,10 +150,19 @@ describe("renderHumanGenerateTargets", () => {
         artifacts: [],
       },
     ];
-    const options = { totalDurationMs: 12, showArtifacts: false };
+    const options = {
+      totalDurationMs: 12,
+      showArtifacts: false,
+      startedAt: new Date("2026-06-12T11:36:28.000Z"),
+    };
     const composed = targets
       .flatMap((target) => renderHumanGenerateTarget(target, options))
       .concat(renderGenerateSummary(targets, options));
     expect(composed).toEqual(renderHumanGenerateTargets(targets, options));
+    const summary = composed.slice(-4).join("\n");
+    expect(summary).toContain("Generate Files");
+    expect(summary).toContain("2 passed (2)");
+    expect(summary).toContain("Start at");
+    expect(summary).toContain("Duration");
   });
 });

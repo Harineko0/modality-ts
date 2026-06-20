@@ -1,9 +1,13 @@
 import {
   formatArtifactLine,
+  formatCountValue,
   formatDuration,
+  formatDurationValue,
   formatMs,
   formatStatusSymbol,
-  formatSummaryLabel,
+  formatSummaryRow,
+  formatTime,
+  formatTimeValue,
   type OutputOptions,
 } from "../../output.js";
 
@@ -23,6 +27,7 @@ export interface HumanGenerateTargetResult {
 }
 
 export interface HumanGenerateRenderOptions extends OutputOptions {
+  startedAt?: Date;
   totalDurationMs: number;
   showArtifacts?: boolean;
 }
@@ -45,12 +50,36 @@ export function renderGenerateSummary(
   if (results.length === 0) return [];
   const lines: string[] = [];
   lines.push("");
+
+  const targetCount = results.length;
   lines.push(
-    formatSummaryLabel("Duration", formatDuration(options.totalDurationMs)),
+    formatSummaryRow(
+      "Generate Files",
+      formatCountValue({ passed: targetCount }, targetCount, options),
+      options,
+    ),
+  );
+  lines.push(
+    formatSummaryRow(
+      "Start at",
+      formatTimeValue(formatTime(options.startedAt ?? new Date(0)), options),
+      options,
+    ),
+  );
+  lines.push(
+    formatSummaryRow(
+      "Duration",
+      formatDurationValue(
+        formatDuration(options.totalDurationMs),
+        undefined,
+        options,
+      ),
+      options,
+    ),
   );
   const artifacts = results.flatMap((target) => [...target.artifacts]);
   if (options.showArtifacts === true && artifacts.length > 0) {
-    lines.push(formatSummaryLabel("Artifacts", ""));
+    lines.push(formatSummaryRow("Artifacts", "", options));
     for (const entry of artifacts) {
       lines.push(formatArtifactLine(entry.kind, entry.path, options));
     }

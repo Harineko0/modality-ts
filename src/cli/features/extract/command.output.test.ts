@@ -38,10 +38,16 @@ describe("renderHumanExtractTargets", () => {
           artifacts: result.artifacts,
         },
       ],
-      { totalDurationMs: 12, showArtifacts: true },
+      {
+        totalDurationMs: 12,
+        showArtifacts: true,
+        startedAt: new Date("2026-06-12T11:36:28.000Z"),
+      },
     );
     expect(lines[0]).toMatch(/^ ✓ App\.tsx /);
     expect(lines.join("\n")).not.toContain("extracted vars=");
+    expect(lines.join("\n")).toContain("Extract Files");
+    expect(lines.join("\n")).toContain("Start at");
     expect(lines.join("\n")).toContain("Duration");
     expect(lines.join("\n")).toContain("(model)");
   });
@@ -599,10 +605,19 @@ export default [route('/', 'routes/home.tsx')];`,
       { ...baseEntry, label: "a.tsx", durationMs: 5 },
       { ...baseEntry, label: "b.tsx", durationMs: 7 },
     ];
-    const options = { totalDurationMs: 12, showArtifacts: false };
+    const options = {
+      totalDurationMs: 12,
+      showArtifacts: false,
+      startedAt: new Date("2026-06-12T11:36:28.000Z"),
+    };
     const composed = targets
       .flatMap((target) => renderHumanExtractTarget(target, options))
       .concat(renderExtractSummary(targets, options));
     expect(composed).toEqual(renderHumanExtractTargets(targets, options));
+    const summary = composed.slice(-4).join("\n");
+    expect(summary).toContain("Extract Files");
+    expect(summary).toContain("2 passed (2)");
+    expect(summary).toContain("Start at");
+    expect(summary).toContain("Duration");
   });
 });

@@ -557,6 +557,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   if (command === "generate") {
+    const startedAt = new Date();
     const startedMs = performance.now();
     const showArtifacts = args.includes("--artifact") || args.includes("-A");
     const effectApiFlags = args.flatMap((arg, index) => {
@@ -629,6 +630,7 @@ async function main(): Promise<void> {
     emitLines(
       renderGenerateSummary(generateEntries, {
         ...generateOpts,
+        startedAt,
         totalDurationMs: performance.now() - startedMs,
         showArtifacts,
       }),
