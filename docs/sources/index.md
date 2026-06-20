@@ -21,7 +21,7 @@ disable-able with `--disable-plugin <id>`).
 | [Zustand](./zustand.md) | store fields, actions, `set`/`get`, middleware, immer drafts | store handle (direct) | none |
 | [TanStack Query](./tanstack-query.md) | query/mutation cache, QueryClient APIs, aggregates | `QueryClient` handle (direct) | **yes** (hand-written) |
 | [Router](./router.md) | routes, navigation intents, history | router test API | location semantics |
-| [TanStack Router](./tanstack.md) | file/code route trees, loaders, bounded loader cache | router harness + branch vars | location + tree semantics |
+| [TanStack Router](./tanstack-router.md) | file/code route trees, loaders, bounded loader cache | router harness + branch vars | location + tree semantics |
 | [Next.js](./next.md) | App/Pages routes, route-tree slots, server effect APIs | router harness + slot vars | location + tree semantics |
 | [React features](./react-features.md) | timers, effects, batching, stale closures, concurrent, Suspense | — | — |
 

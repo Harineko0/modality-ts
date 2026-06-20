@@ -53,7 +53,7 @@ route-tree state for layouts, parallel slots, and intercepting routes. See
 **TanStack Router** (`tanstackRouterAdapter()`) activates when
 `@tanstack/react-router` is in your dependencies and Next is absent. It discovers
 file-based and static code-based route trees, models loader/beforeLoad effect APIs,
-and optional branch/loader-cache vars. See [TanStack Router source](./tanstack.md).
+and optional branch/loader-cache vars. See [TanStack Router source](./tanstack-router.md).
 
 **React Router** (`reactRouterAdapter()`) is used when neither Next nor TanStack
 Router is active. Export
