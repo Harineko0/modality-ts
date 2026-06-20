@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -475,6 +475,59 @@ export default [route('/', 'routes/home.tsx')];`,
     expect(lines.join("\n")).toContain("slices=properties:");
     expect(lines.join("\n")).toContain("slice-economics=largest:");
     expect(lines.join("\n")).not.toMatch(/topRetainedContributors/);
+  });
+
+  it("reports broken props without aborting extract", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-broken-props-"));
+    const sourcePath = join(dir, "App.tsx");
+    const propsPath = join(dir, "App.props.ts");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [flag, setFlag] = useState(false);
+        return <button onClick={() => setFlag(true)}>Set</button>;
+      }
+      `,
+      "utf8",
+    );
+    await writeFile(
+      propsPath,
+      `
+      import { always, eq } from "modality-ts/properties";
+      import { missingHandle } from "./App.modals";
+      always("broken", eq(missingHandle.flag, false));
+      `,
+      "utf8",
+    );
+    const result = await runExtractCommand({
+      sourcePath,
+      modelPath,
+      propsPaths: [propsPath],
+    });
+    expect(result.propsErrors).toHaveLength(1);
+    expect(result.propsErrors[0]?.propsPath).toBe(propsPath);
+    const lines = renderHumanExtractTargets(
+      [
+        {
+          label: "App.tsx",
+          durationMs: 12,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          report: result.report,
+          pluginLabels: result.pluginLabels,
+          artifacts: result.artifacts,
+          propsErrors: result.propsErrors,
+        },
+      ],
+      { totalDurationMs: 12, showArtifacts: true },
+    );
+    expect(lines.join("\n")).toContain(propsPath);
+    expect(lines.join("\n")).toMatch(/⚠/);
+    expect(lines.join("\n")).not.toContain("(componentVars)");
+    await expect(readFile(modelPath, "utf8")).resolves.toBeTruthy();
   });
 
   it("omits compact slice stats when no slices are produced", async () => {

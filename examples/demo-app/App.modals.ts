@@ -7,17 +7,12 @@ export const App = {
 
   // transitions
   onClick: {
-    api: {
-      placeOrder: {
-        start: "App.onClick.api.placeOrder.start" as TransitionRef<"App.onClick.api.placeOrder.start">,
-        success: "App.onClick.api.placeOrder.success" as TransitionRef<"App.onClick.api.placeOrder.success">,
-      },
-    },
     Login: "App.onClick.Login" as TransitionRef<"App.onClick.Login">,
     Logout: "App.onClick.Logout" as TransitionRef<"App.onClick.Logout">,
     navigate: {
       _admin: "App.onClick.navigate._admin" as TransitionRef<"App.onClick.navigate._admin">,
     },
+    "Place order": "App.onClick.Place order" as TransitionRef<"App.onClick.Place order">,
   },
 };
 

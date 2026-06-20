@@ -4,7 +4,7 @@ title: Quickstart
 sidebar_label: Quickstart
 ---
 
-This walks the full loop end to end: **extract → write a property → check → replay**.
+This walks the full loop end to end: **create props → generate handles → write properties → extract → check**.
 
 ## 1. Initialize
 
@@ -12,7 +12,28 @@ This walks the full loop end to end: **extract → write a property → check �
 npx modality init
 ```
 
-## 2. Extract a model
+## 2. Register targets and generate handles
+
+Create empty `*.props.ts` files beside the components you want to model. They register
+which `*.tsx` files belong in the pipeline even before properties are written.
+
+Generate typed local transition handles from source analysis alone — no properties
+required:
+
+```bash
+npx modality generate
+```
+
+Or target a single component:
+
+```bash
+npx modality generate src/App.tsx
+```
+
+This writes `<source>.modals.ts` next to each source file. Empty or broken props files
+do not block generation.
+
+## 3. Extract a model
 
 Discover models from your source automatically:
 
@@ -35,7 +56,10 @@ exactly, over-approximated, or left unextractable:
 npx modality extract src/App.tsx --report .modality/extraction-report.json
 ```
 
-## 3. Write a property
+Broken or missing props files no longer abort extract: model artifacts are still
+written, slices for failed props are skipped, and a per-file warning is printed.
+
+## 4. Write a property
 
 Properties live in files such as `app.props.ts` and import helpers from
 `modality-ts/properties`. Call property builders at module top level — predicates are built
@@ -54,15 +78,16 @@ always(
 Variable IDs come from the generated model / extraction report. Common prefixes:
 `local:<Component>.<state>` (a `useState`), `atom:<name>` (Jotai),
 `store:<name>.<field>` (Zustand), `swr:<key>` (SWR cache), and `sys:*`
-(system variables such as `sys:route`, `sys:pending`). Extract also writes typed local
-handles beside source files as `<source>.modals.ts`; import stable system handles from
+(system variables such as `sys:route`, `sys:pending`). Run `modality generate` to write
+typed local handles beside source files as `<source>.modals.ts`; import stable system
+handles from
 `modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
 built-in handle (usually via `import { variable } from "modality-ts/properties"`).
 Local state and transition handles from the same module are nested by component — for example
 `eq(App.step, "success")` and `enabled(App.onClick.save)` — instead of magic-string ids. See
 [State & domains](../concepts/state-and-domains.md).
 
-## 4. Check the model
+## 5. Check the model
 
 ```bash
 npx modality check
@@ -82,7 +107,7 @@ For an intentionally unbounded local run:
 npx modality check --no-search-limits
 ```
 
-## 5. Replay a counterexample
+## 6. Replay a counterexample
 
 When a property fails, a counterexample trace is written. Replay it:
 
@@ -94,7 +119,7 @@ Replay turns an abstract state-space failure into a concrete, debuggable path �
 classifies whether the real app actually reproduces it. See
 [Debugging counterexamples](../guides/debugging-counterexamples.md).
 
-## 6. Wire it into CI
+## 7. Wire it into CI
 
 Write model, report, traces, and conformance artifacts into one directory:
 

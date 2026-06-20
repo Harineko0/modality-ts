@@ -117,7 +117,9 @@ overlay author must re-confirm (`modality extract --explain-drift` helps).
 ### P7 — emit
 
 Writes `model.json`, the generated state-type module, and the **extraction report** —
-the trust ledger of everything the verification claim is conditional on.
+the trust ledger of everything the verification claim is conditional on. Run
+`modality generate` first to write sibling `*.modals.ts` typed-handle modules from source
+analysis alone; extract no longer emits those files.
 
 When properties are supplied (`modality extract --props …` or inferred per-tenant
 extract targets), extraction also emits a **property slice manifest**

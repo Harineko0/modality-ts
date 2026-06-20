@@ -51,6 +51,10 @@
       "types": "./dist/cli/extract.d.ts",
       "default": "./dist/cli/extract.js"
     },
+    "./cli/generate": {
+      "types": "./dist/cli/generate.d.ts",
+      "default": "./dist/cli/generate.js"
+    },
     "./cli/replay": {
       "types": "./dist/cli/replay.d.ts",
       "default": "./dist/cli/replay.js"

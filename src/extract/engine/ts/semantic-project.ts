@@ -358,7 +358,7 @@ export function createSemanticProject(
       program.getSourceFile(canonical) ?? program.getSourceFile(fileName);
     const isExternal =
       resolved.isExternalLibraryImport === true ||
-      sourceFile?.isDeclarationFile;
+      sourceFile?.isDeclarationFile === true;
     return {
       fileName,
       ...(sourceFile && !sourceFile.isDeclarationFile ? { sourceFile } : {}),

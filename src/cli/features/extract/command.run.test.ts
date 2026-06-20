@@ -1409,13 +1409,6 @@ describe("runExtractCommand", () => {
     expect(
       result.artifacts.some((entry) => entry.kind === "sliceManifest"),
     ).toBe(true);
-    expect(result.artifacts).toContainEqual({
-      kind: "componentVars",
-      path: join(dir, "App.modals.ts"),
-    });
-    expect(await readFile(join(dir, "App.modals.ts"), "utf8")).toContain(
-      '"local:App.flag"',
-    );
     expect(result.artifacts.some((entry) => entry.kind === "sliceModel")).toBe(
       true,
     );
@@ -1468,7 +1461,6 @@ describe("runExtractCommand", () => {
     expect(result.artifacts.map((entry) => entry.kind)).toEqual([
       "model",
       "appModel",
-      "componentVars",
     ]);
     expect(result.sliceStatsLine).toBeUndefined();
     expect(result.sliceEconomicsLine).toBeUndefined();

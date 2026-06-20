@@ -37,6 +37,10 @@ import {
   runExtractCommand,
 } from "./features/extract/index.js";
 import {
+  renderHumanGenerateTargets,
+  runGenerateCommand,
+} from "./features/generate/index.js";
+import {
   renderHumanInitResult,
   runInitCommand,
 } from "./features/init/index.js";
@@ -101,6 +105,7 @@ async function main(): Promise<void> {
     command !== "conform" &&
     command !== "export" &&
     command !== "extract" &&
+    command !== "generate" &&
     command !== "init" &&
     command !== "replay"
   ) {
@@ -110,6 +115,12 @@ async function main(): Promise<void> {
     );
     console.log(
       "         explicit sources write one configured output; no sources with discovered props writes .modality/models/**/*.model.json and .props.ts",
+    );
+    console.log(
+      "       modality generate [source.tsx ...] [--app-model <path>] [--config <path>] [--package-json <path>] [--disable-plugin id] [--effect-api name] [--artifact|-A]",
+    );
+    console.log(
+      "         writes *.modals.ts from source analysis alone; no properties required; no sources discovers targets via *.props.ts",
     );
     console.log(
       "       modality check [model.json] [props.ts ...] [--report .modality/report.json] [--max-states N] [--max-edges N] [--max-frontier N] [--memory-guard-mb N] [--partial-order-reduction] [--no-search-limits] [--artifact|-A]",
@@ -504,6 +515,83 @@ async function main(): Promise<void> {
           coarseDomainsLine: result.coarseDomainsLine,
           sliceStatsLine: result.sliceStatsLine,
           sliceEconomicsLine: result.sliceEconomicsLine,
+          artifacts: result.artifacts,
+          propsErrors: result.propsErrors,
+        })),
+        {
+          ...outputOptions(),
+          totalDurationMs: performance.now() - startedMs,
+          showArtifacts,
+        },
+      ),
+    );
+    process.exit(0);
+  }
+  if (command === "generate") {
+    const startedMs = performance.now();
+    const showArtifacts = args.includes("--artifact") || args.includes("-A");
+    const effectApiFlags = args.flatMap((arg, index) => {
+      if (arg !== "--effect-api") return [];
+      const value = args[index + 1];
+      return value ? [value] : [];
+    });
+    const disabledPlugins = args.flatMap((arg, index) => {
+      if (arg !== "--disable-plugin") return [];
+      const value = args[index + 1];
+      return value ? [value] : [];
+    });
+    const sourcePaths = positionals(
+      args.filter((arg) => arg !== "-A"),
+      ["--app-model", "--config", "--package-json"],
+      ["--effect-api", "--disable-plugin"],
+    );
+    const appModelFlag = flagValue(args, "--app-model");
+    const appModelPath = appModelFlag ?? defaultAppModelPath;
+    const configPath = flagValue(args, "--config");
+    const packageJsonPath = flagValue(args, "--package-json");
+    if (args.includes("--app-model") && !appModelFlag)
+      throw new Error("Missing --app-model path");
+    if (args.includes("--config") && !configPath)
+      throw new Error("Missing --config path");
+    if (args.includes("--package-json") && !packageJsonPath)
+      throw new Error("Missing --package-json path");
+    if (args.includes("--disable-plugin") && disabledPlugins.length === 0)
+      throw new Error("Missing --disable-plugin id");
+    const sharedOptions = {
+      appModelPath,
+      configPath,
+      packageJsonPath,
+      disabledPlugins,
+      effectApis: effectApiFlags,
+    };
+    const generateTargets: Array<{
+      label: string;
+      durationMs: number;
+      result: Awaited<ReturnType<typeof runGenerateCommand>>;
+    }> = [];
+    const effectiveSourcePaths =
+      sourcePaths.length > 0 ? sourcePaths : await inferSourceFilesFromProps();
+    for (const sourcePath of effectiveSourcePaths) {
+      const targetStartedMs = performance.now();
+      const result = await runGenerateCommand({
+        sourcePath,
+        ...sharedOptions,
+      });
+      generateTargets.push({
+        label: result.targetLabel,
+        durationMs: performance.now() - targetStartedMs,
+        result,
+      });
+    }
+    emitLines(
+      renderHumanGenerateTargets(
+        generateTargets.map(({ label, durationMs, result }) => ({
+          label,
+          durationMs,
+          moduleCount: result.moduleCount,
+          varCount: result.varCount,
+          transitionCount: result.transitionCount,
+          pluginLabels: result.pluginLabels,
           artifacts: result.artifacts,
         })),
         {

@@ -19,6 +19,11 @@ export interface ExtractArtifactEntry {
   path: string;
 }
 
+export interface ExtractPropsError {
+  propsPath: string;
+  message: string;
+}
+
 export interface HumanExtractTargetResult {
   label: string;
   varCount: number;
@@ -31,6 +36,7 @@ export interface HumanExtractTargetResult {
   sliceEconomicsLine?: string;
   artifacts: readonly ExtractArtifactEntry[];
   durationMs?: number;
+  propsErrors?: readonly ExtractPropsError[];
 }
 
 export interface HumanExtractRenderOptions extends OutputOptions {
@@ -81,6 +87,14 @@ export function renderHumanExtractTargets(
     }
     if (target.sliceEconomicsLine) {
       lines.push(`  - ${target.sliceEconomicsLine}`);
+    }
+    if (target.propsErrors && target.propsErrors.length > 0) {
+      for (const propsError of target.propsErrors) {
+        lines.push(
+          ` ${formatStatusSymbol("warn", options)} ${propsError.propsPath}`,
+        );
+        lines.push(`    ${propsError.message}`);
+      }
     }
   }
   if (results.length > 0) {

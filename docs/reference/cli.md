@@ -36,6 +36,24 @@ npx modality extract [source.tsx ...]
 | `--expect-model <path>` | compare output against an expected model |
 | `--explain-drift` | explain model/overlay drift against expected output |
 
+## `modality generate`
+
+Write sibling `*.modals.ts` typed-handle modules from source analysis alone. No
+properties or prior `model.json` required. With no sources, targets are discovered via
+`*.props.ts` files (at least one empty props file must exist to register targets).
+
+```bash
+npx modality generate [source.tsx ...]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--app-model <path>` | app-model path used for modal module resolution |
+| `--config <path>` | use a specific modality config file |
+| `--package-json <path>` | resolve package/plugin context from a specific package file |
+| `--disable-plugin <id>` | disable a built-in [state-source plugin](../architecture/state-sources.md) |
+| `--effect-api <name>` | model a named API function as an [async effect](../guides/modeling-side-effects.md) (repeatable) |
+
 ## `modality check`
 
 Check one model against one or more property files.
