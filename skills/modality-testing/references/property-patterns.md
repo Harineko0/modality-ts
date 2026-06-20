@@ -48,7 +48,8 @@ Handle rules:
 - `reachableFrom(name, when, goal)`: from every `when` state, some cooperative path can
   reach `goal`. Counterexamples assert path absence and are not action-replayable.
 - `leadsToWithin(name, trigger, goal, { budget })`: bounded response after a trigger.
-- `property(name, ctlFormula, options?)`: advanced CTL formulas through `ctl`.
+- `property(name, ctlFormula, options?)`: advanced CTL formulas through `ctl` when the
+  named convenience combinators do not express the exact temporal shape.
 
 ## Common Patterns
 
@@ -150,6 +151,34 @@ reachableFrom(
 );
 ```
 
+Advanced CTL formula:
+
+```ts
+import { ctl, eq, property } from "modality-ts/properties";
+import { App } from "./App.modals";
+
+property(
+  "validPaymentInevitablyCanReview",
+  ctl.always(
+    ctl.implies(
+      ctl.holds(eq(App.payment, "valid")),
+      ctl.eventually(ctl.holds(eq(App.step, "review"))),
+    ),
+  ),
+);
+```
+
+Fair temporal check:
+
+```ts
+import { ctl, eq, property } from "modality-ts/properties";
+import { App } from "./App.modals";
+
+property("spinnerCanStopFairly", ctl.eventually(ctl.holds(eq(App.loading, false))), {
+  fairness: [ctl.fairlyOften(ctl.holds(eq(App.network, "settled")), "network settles")],
+});
+```
+
 Enabledness:
 
 ```ts
@@ -178,6 +207,27 @@ with stable hash suffixes and an exact transition handle is not available.
 - Registration options: `reads`, `enabledTransitions`, `includeUnmounted`, and
   `fairness` for temporal properties. The loader infers reads, but explicit `reads`
   can improve diagnostics and slicing clarity.
+
+## CTL Surface
+
+Use `property(name, formula, options?)` for advanced formulas that should still serialize
+to the same structured property IR as the convenience helpers. Import `ctl` from
+`modality-ts/properties`.
+
+- `ctl.holds(predicate)`: lift a state predicate into a temporal atom.
+- Boolean formula helpers: `ctl.negate`, `ctl.allOf`, `ctl.anyOf`, `ctl.implies`.
+- Path/temporal helpers: `ctl.always` (`AG`), `ctl.canReach` (`EF`),
+  `ctl.eventually` (`AF`), `ctl.canStayForever` (`EG`), `ctl.afterEveryStep` (`AX`),
+  `ctl.afterSomeStep` (`EX`), `ctl.holdsUntil` (`AU`), and `ctl.canHoldUntil` (`EU`).
+- Fairness helper: `ctl.fairlyOften(condition, name?)`, passed via the registration
+  option `{ fairness: [...] }`.
+
+Prefer `always`, `alwaysStep`, `reachable`, `reachableFrom`, and `leadsToWithin` for
+standard frontend rules because they encode common intent. Reach for `property(...,
+ctl...)` when you need an explicit CTL shape rather than a new ad hoc predicate style.
+
+`inevitably(name, formula, options?)` is also exported as an alias for registering a
+pre-built temporal formula.
 
 ## Verdict Guidance
 

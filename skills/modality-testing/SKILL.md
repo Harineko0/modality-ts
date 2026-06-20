@@ -1,6 +1,6 @@
 ---
 name: modality-testing
-description: Guide Codex through modality-ts model-checking work for React and TypeScript apps. Use when Codex needs to decide whether modality-ts fits a bug class, initialize or run the modality CLI, generate typed *.modals.ts handles, write or debug *.props.ts property files, model async side effects and bounded state, read extraction trust-ledger/check reports, refine models with overlays/config, replay counterexamples, tune search limits, configure CI artifacts, or work with supported sources such as useState, Jotai, Zustand, SWR, React Router, Next.js, timers, effects, Suspense, and finite numeric/schema domains.
+description: Guide Codex through modality-ts model-checking work for React and TypeScript apps. Use when Codex needs to decide whether modality-ts fits a bug class, initialize or run the modality CLI, generate typed *.modals.ts handles, write or debug *.props.ts property files, choose property combinators including advanced property(..., ctl...) formulas, model async side effects and bounded state, read extraction trust-ledger/check reports, refine models with overlays/config, replay counterexamples, tune search limits, configure CI artifacts, or work with supported sources such as useState, Jotai, Zustand, SWR, React Router, Next.js, timers, effects, Suspense, and finite numeric/schema domains.
 ---
 
 # Modality Testing
@@ -63,6 +63,9 @@ Inside the `modality-ts` repository, follow repo instructions and run shell comm
 - Use `alwaysStep` for action-shaped rules such as "cannot trigger", "must not clear",
   enqueue/resolve constraints, and stale-response rules. State invariants are often the
   wrong formalization for action rules.
+- Use the common combinators first, but do not forget the advanced CTL surface:
+  `property(name, ctlFormula, options?)` with `ctl` helpers for explicit temporal shapes
+  such as `AF`, `EG`, `AX`, `EX`, `AU`, `EU`, and fairness-constrained checks.
 - Treat `vacuous-warning` as a problem to investigate, not a pass.
 - Treat CLI search-limit hits as `error` verdicts, never as verification. Configured
   model bounds and actual `trustLedger.boundHits` qualify the claim; search limits stop
