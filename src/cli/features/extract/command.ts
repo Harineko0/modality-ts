@@ -34,7 +34,7 @@ import {
   type NextParsedConfig,
 } from "modality-ts/extract/sources/next";
 import { emitAppModel } from "../../codegen/model.js";
-import { emitComponentVarModules } from "../../codegen/component-state.js";
+import { emitComponentModalModules } from "../../codegen/component-state.js";
 import { compareModelEconomics } from "../../../check/slicing/contributors.js";
 import {
   propertySlicingSkipReason,
@@ -472,7 +472,7 @@ export async function runExtractCommand(
       : undefined;
   let reportWithDiagnostics: ExtractionReport = report;
   const sliceArtifacts: ExtractArtifactEntry[] = [];
-  const componentVarModules = emitComponentVarModules(model, appModelPath);
+  const componentModalModules = emitComponentModalModules(model, appModelPath);
   await diagnosticsClock.measureAsync(
     "write-artifacts",
     "Write extraction artifacts",
@@ -481,10 +481,10 @@ export async function runExtractCommand(
       await writeFile(options.modelPath, `${canonicalJson(model)}\n`, "utf8");
       await mkdir(dirname(appModelPath), { recursive: true });
       await writeFile(appModelPath, emitAppModel(model), "utf8");
-      if (componentVarModules.length > 0) {
-        for (const varModule of componentVarModules) {
-          await mkdir(dirname(varModule.path), { recursive: true });
-          await writeFile(varModule.path, varModule.source, "utf8");
+      if (componentModalModules.length > 0) {
+        for (const modalModule of componentModalModules) {
+          await mkdir(dirname(modalModule.path), { recursive: true });
+          await writeFile(modalModule.path, modalModule.source, "utf8");
         }
       }
       if (propertySlicePlan) {
@@ -569,9 +569,9 @@ export async function runExtractCommand(
   const artifacts: ExtractArtifactEntry[] = [
     { kind: "model", path: options.modelPath },
     { kind: "appModel", path: appModelPath },
-    ...componentVarModules.map((varModule) => ({
+    ...componentModalModules.map((modalModule) => ({
       kind: "componentVars" as const,
-      path: varModule.path,
+      path: modalModule.path,
     })),
     ...sliceArtifacts,
   ];
@@ -608,8 +608,8 @@ export async function runExtractCommand(
       `plugins=${registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`).join(",") || "none"}`,
       `model=${options.modelPath}`,
       `appModel=${appModelPath}`,
-      ...(componentVarModules.length > 0
-        ? [`componentVars=${componentVarModules.length}`]
+      ...(componentModalModules.length > 0
+        ? [`componentModals=${componentModalModules.length}`]
         : []),
       ...(options.overlayPath ? [`overlay=${options.overlayPath}`] : []),
       ...(options.explainDrift

@@ -41,6 +41,11 @@ export {
   lift,
   variable,
 } from "./operand.js";
+
+/** Branded transition id for generated `*.modals.ts` handles. Plain strings remain assignable. */
+export type TransitionRef<Id extends string = string> = Id & {
+  readonly __transition?: Id;
+};
 export { s, type ComponentLike } from "./accessor.js";
 export {
   group,
@@ -132,8 +137,8 @@ export function mod(left: Operand, right: Operand): ExprIR {
   return { kind: "mod", args: [lift(left), lift(right)] };
 }
 
-export function enabled(transitionId: string): ExprIR {
-  return { kind: "transitionEnabled", transitionId };
+export function enabled(transitionId: string | TransitionRef<string>): ExprIR {
+  return { kind: "transitionEnabled", transitionId: String(transitionId) };
 }
 
 export function enabledTransitionPrefix(prefix: string): ExprIR {
@@ -148,8 +153,10 @@ export function stepResolved(op: string, outcome?: string): StepPredicateFlat {
   return { resolved: outcome === undefined ? [op] : [op, outcome] };
 }
 
-export function stepTransitionId(transitionId: string): StepPredicateFlat {
-  return { transitionId };
+export function stepTransitionId(
+  transitionId: string | TransitionRef<string>,
+): StepPredicateFlat {
+  return { transitionId: String(transitionId) };
 }
 
 export function stepAny(): StepPredicateFlat {

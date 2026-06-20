@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
 import {
-  componentVarsDir,
-  emitComponentVarModules,
+  componentModalsDir,
+  emitComponentModalModules,
 } from "../../src/cli/codegen/component-state.js";
 
 const model: Model = {
@@ -25,56 +25,114 @@ const model: Model = {
       initial: "guest",
     },
   ],
-  transitions: [],
+  transitions: [
+    {
+      id: "App.onClick.phase.seq",
+      cls: "user",
+      label: {
+        kind: "click",
+        locator: { kind: "testId", value: "advance" },
+      },
+      source: [{ file: "App.tsx", line: 10 }],
+      guard: { kind: "true" },
+      effect: { kind: "assign", target: "local:App.phase", value: "confirm" },
+      reads: [],
+      writes: ["local:App.phase"],
+      confidence: "exact",
+    },
+  ],
 };
 
-describe("emitComponentVarModules", () => {
-  it("emits one sibling module per source file with id-embedded handles", () => {
-    const modules = emitComponentVarModules(
+describe("emitComponentModalModules", () => {
+  it("emits one sibling module per source file with state and transition sections", () => {
+    const modules = emitComponentModalModules(
       model,
       "/tmp/.modality/app.model.ts",
     );
-    expect(modules.map((entry) => entry.fileName)).toEqual(["App.vars.ts"]);
-    expect(modules.map((entry) => entry.path)).toEqual(["App.vars.ts"]);
+    expect(modules.map((entry) => entry.fileName)).toEqual(["App.modals.ts"]);
+    expect(modules.map((entry) => entry.path)).toEqual(["App.modals.ts"]);
     const source = modules[0]!.source;
     expect(source).toContain(
       'import { variable, type Variable } from "modality-ts/core";',
     );
+    expect(source).toContain(
+      'import type { TransitionRef } from "modality-ts/properties";',
+    );
+    expect(source).toContain("// state");
     expect(source).toContain("export const phase: Variable<");
     expect(source).toContain('variable("local:App.phase")');
-    expect(source).toContain('"local:App.phase"');
-    // atoms are not component-local — they resolve via real source imports
+    expect(source).toContain("// transitions");
+    expect(source).toContain('TransitionRef<"App.onClick.phase.seq">');
+    expect(source).toContain('"App.onClick.phase.seq"');
     expect(source).not.toContain("authAtom");
   });
 
-  it("emits nothing for a model without local vars", () => {
+  it("emits transition-only modules without the state import", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+    expect(modules).toHaveLength(1);
+    const source = modules[0]!.source;
+    expect(source).toContain(
+      'import type { TransitionRef } from "modality-ts/properties";',
+    );
+    expect(source).not.toContain("modality-ts/core");
+    expect(source).not.toContain("// state");
+    expect(source).toContain("// transitions");
+  });
+
+  it("emits state-only modules without the TransitionRef import", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        transitions: [],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+    expect(modules).toHaveLength(1);
+    const source = modules[0]!.source;
+    expect(source).toContain(
+      'import { variable, type Variable } from "modality-ts/core";',
+    );
+    expect(source).not.toContain("TransitionRef");
+    expect(source).not.toContain("// transitions");
+    expect(source).toContain("// state");
+  });
+
+  it("emits nothing for a model without local vars or sourced transitions", () => {
     expect(
-      emitComponentVarModules(
-        { ...model, vars: [] },
+      emitComponentModalModules(
+        { ...model, vars: [], transitions: [] },
         "/tmp/.modality/app.model.ts",
       ),
     ).toEqual([]);
   });
 
-  it("falls back to a vars/ dir beside the app model for synthetic local vars", () => {
-    expect(componentVarsDir("/tmp/.modality/app.model.ts")).toBe(
-      "/tmp/.modality/vars",
+  it("falls back to a modals/ dir beside the app model for synthetic local vars", () => {
+    expect(componentModalsDir("/tmp/.modality/app.model.ts")).toBe(
+      "/tmp/.modality/modals",
     );
     expect(
-      emitComponentVarModules(
+      emitComponentModalModules(
         {
           ...model,
+          transitions: [],
           vars: [{ ...model.vars[0]!, origin: "system" }],
         },
         "/tmp/.modality/app.model.ts",
       ).map((entry) => entry.path),
-    ).toEqual(["/tmp/.modality/vars/App.vars.ts"]);
+    ).toEqual(["/tmp/.modality/modals/App.modals.ts"]);
   });
 
   it("qualifies colliding field exports within a source file", () => {
-    const modules = emitComponentVarModules(
+    const modules = emitComponentModalModules(
       {
         ...model,
+        transitions: [],
         vars: [
           model.vars[0]!,
           {

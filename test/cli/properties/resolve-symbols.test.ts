@@ -105,7 +105,7 @@ eq(local, "guest");
   it("rewrites imports from generated handle modules via the embedded id", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
     const propsPath = join(dir, "app.props.ts");
-    const handlePath = join(dir, "App.vars.ts");
+    const handlePath = join(dir, "App.modals.ts");
     await writeFile(
       handlePath,
       `import { variable, type Variable } from "modality-ts/core";
@@ -116,7 +116,7 @@ export const phase: Variable<{ readonly kind: "enum" }, "local:App.phase"> = var
     await writeFile(
       propsPath,
       `import { eq } from "modality-ts/properties";
-import { phase } from "./App.vars";
+import { phase } from "./App.modals";
 eq(phase, "confirm");
 `,
       "utf8",
@@ -124,7 +124,7 @@ eq(phase, "confirm");
 
     const { source } = await rewriteImportedSymbols(propsPath, localOnlyModel);
     expect(source).toContain('variable("local:App.phase")');
-    expect(source).not.toMatch(/import \{ phase \} from "\.\/App\.vars"/);
+    expect(source).not.toMatch(/import \{ phase \} from "\.\/App\.modals"/);
   });
 
   it("rewrites sibling generated handle imports from virtual declarations", async () => {
@@ -140,7 +140,7 @@ eq(phase, "confirm");
     await writeFile(
       propsPath,
       `import { always, and, eq } from "modality-ts/properties";
-import { count, phase } from "./App.vars";
+import { count, phase } from "./App.modals";
 always("ok", and(eq(phase, "confirm"), eq(count, 1)));
 `,
       "utf8",
@@ -152,7 +152,7 @@ always("ok", and(eq(phase, "confirm"), eq(count, 1)));
     );
     expect(source).toContain('variable("local:App.phase")');
     expect(source).toContain('variable("local:App.count")');
-    expect(source).not.toContain("./App.vars");
+    expect(source).not.toContain("./App.modals");
   });
 
   it("throws for stale generated handle imports", async () => {
@@ -161,7 +161,7 @@ always("ok", and(eq(phase, "confirm"), eq(count, 1)));
     await writeFile(
       propsPath,
       `import { eq } from "modality-ts/properties";
-import { missing } from "./App.vars";
+import { missing } from "./App.modals";
 eq(missing, "confirm");
 `,
       "utf8",
@@ -197,5 +197,100 @@ eq(pending, "api.placeOrder");
     expect(diagnostics).toEqual([]);
     expect(source).toMatch(/import \{ pending \} from "modality-ts\/vars"/);
     expect(source).toContain("eq(pending,");
+  });
+
+  it("rewrites imported transition handles to string literals and strips the import", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-resolve-transition-"));
+    const propsPath = join(dir, "app.props.ts");
+    const transitionId = "App.onClick.phase.seq";
+    const modelWithTransition: Model = {
+      ...localOnlyModel,
+      transitions: [
+        {
+          id: transitionId,
+          cls: "user",
+          label: {
+            kind: "click",
+            locator: { kind: "testId", value: "advance" },
+          },
+          source: [{ file: join(dir, "App.tsx"), line: 10 }],
+          guard: { kind: "true" },
+          effect: {
+            kind: "assign",
+            target: "local:App.phase",
+            value: "confirm",
+          },
+          reads: [],
+          writes: ["local:App.phase"],
+          confidence: "exact",
+        },
+      ],
+      vars: localOnlyModel.vars.map((decl, index) => ({
+        ...decl,
+        origin: { file: join(dir, "App.tsx"), line: index + 3 },
+      })),
+    };
+    await writeFile(
+      propsPath,
+      `import { alwaysStep, enabled, stepTransitionId } from "modality-ts/properties";
+import { app_advance } from "./App.modals";
+alwaysStep("clicked", { step: stepTransitionId(app_advance), pre: enabled(app_advance) });
+`,
+      "utf8",
+    );
+
+    const { source } = await rewriteImportedSymbols(
+      propsPath,
+      modelWithTransition,
+    );
+    expect(source).toContain(
+      `stepTransitionId(${JSON.stringify(transitionId)})`,
+    );
+    expect(source).toContain(`enabled(${JSON.stringify(transitionId)})`);
+    expect(source).not.toContain("./App.modals");
+    expect(source).not.toContain("app_advance");
+  });
+
+  it("throws for stale generated transition handle imports", async () => {
+    const dir = await mkdtemp(
+      join(tmpdir(), "modality-resolve-transition-stale-"),
+    );
+    const propsPath = join(dir, "app.props.ts");
+    const modelWithTransition: Model = {
+      ...localOnlyModel,
+      transitions: [
+        {
+          id: "App.onClick.phase.seq",
+          cls: "user",
+          label: { kind: "click", text: "Go" },
+          source: [{ file: join(dir, "App.tsx"), line: 10 }],
+          guard: { kind: "true" },
+          effect: {
+            kind: "assign",
+            target: "local:App.phase",
+            value: "confirm",
+          },
+          reads: [],
+          writes: ["local:App.phase"],
+          confidence: "exact",
+        },
+      ],
+      vars: localOnlyModel.vars.map((decl) => ({
+        ...decl,
+        origin: { file: join(dir, "App.tsx"), line: 3 },
+      })),
+    };
+    await writeFile(
+      propsPath,
+      `import { enabled } from "modality-ts/properties";
+import { missingTransition } from "./App.modals";
+enabled(missingTransition);
+`,
+      "utf8",
+    );
+
+    await expect(
+      rewriteImportedSymbols(propsPath, modelWithTransition),
+    ).rejects.toThrow(/Could not resolve imported symbol "missingTransition"/);
   });
 });

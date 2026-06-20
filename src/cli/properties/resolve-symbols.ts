@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Model, SourceAnchor } from "modality-ts/core";
-import { emitComponentVarModules } from "../codegen/component-state.js";
+import { emitComponentModalModules } from "../codegen/component-state.js";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
@@ -121,6 +121,43 @@ function varIdFromHandleDeclaration(
     : undefined;
 }
 
+function transitionIdFromHandleDeclaration(
+  declaration: ts.Declaration,
+): string | undefined {
+  if (!ts.isVariableDeclaration(declaration)) return undefined;
+  const type = declaration.type;
+  if (!type || !ts.isTypeReferenceNode(type)) return undefined;
+  if (
+    !ts.isIdentifier(type.typeName) ||
+    type.typeName.text !== "TransitionRef"
+  ) {
+    return undefined;
+  }
+  const idArgument = type.typeArguments?.[0];
+  if (!idArgument || !ts.isLiteralTypeNode(idArgument)) return undefined;
+  return ts.isStringLiteral(idArgument.literal)
+    ? idArgument.literal.text
+    : undefined;
+}
+
+/**
+ * Resolve an imported identifier whose declaration is a generated transition handle
+ * (`export const name: TransitionRef<"Component.onClick.field.seq">`) to its transition id.
+ */
+function handleTransitionIdForIdentifier(
+  node: ts.Identifier,
+  checker: ts.TypeChecker,
+): string | undefined {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (!symbol) return undefined;
+  const resolved = resolveAliasedSymbol(symbol, checker);
+  for (const declaration of resolved.getDeclarations() ?? []) {
+    const transitionId = transitionIdFromHandleDeclaration(declaration);
+    if (transitionId) return transitionId;
+  }
+  return undefined;
+}
+
 /**
  * Resolve an imported identifier whose declaration is a generated handle
  * (`export declare const field: Variable<_, "local:Component.field">`) to its var id, read
@@ -177,43 +214,43 @@ function importModuleSpecifierForIdentifier(
   return undefined;
 }
 
-function isGeneratedVarsSpecifier(specifier: string | undefined): boolean {
+function isGeneratedModalSpecifier(specifier: string | undefined): boolean {
   const normalized = specifier?.split("\\").join("/");
   return Boolean(
     normalized &&
-      (normalized.endsWith(".vars") ||
-        normalized.endsWith(".vars.ts") ||
-        normalized.endsWith(".vars.js") ||
-        normalized.includes(".modality/vars/") ||
-        normalized === "./vars" ||
-        normalized.startsWith("./vars/") ||
-        normalized === "../vars" ||
-        normalized.startsWith("../vars/")),
+      (normalized.endsWith(".modals") ||
+        normalized.endsWith(".modals.ts") ||
+        normalized.endsWith(".modals.js") ||
+        normalized.includes(".modality/modals/") ||
+        normalized === "./modals" ||
+        normalized.startsWith("./modals/") ||
+        normalized === "../modals" ||
+        normalized.startsWith("../modals/")),
   );
 }
 
-function componentIdFromGeneratedVarsSpecifier(
+function componentIdFromGeneratedModalSpecifier(
   specifier: string,
 ): string | undefined {
-  if (!isGeneratedVarsSpecifier(specifier)) return undefined;
+  if (!isGeneratedModalSpecifier(specifier)) return undefined;
   const normalized = specifier.split("\\").join("/");
-  if (!normalized.includes(".modality/vars/")) return undefined;
+  if (!normalized.includes(".modality/modals/")) return undefined;
   const last = normalized.split("/").at(-1);
   return last?.replace(/(\.d\.ts|\.ts|\.js)$/u, "");
 }
 
-function resolvedGeneratedVarsModulePath(
+function resolvedGeneratedModalModulePath(
   containingFile: string,
   specifier: string,
 ): string | undefined {
-  if (!isGeneratedVarsSpecifier(specifier)) return undefined;
+  if (!isGeneratedModalSpecifier(specifier)) return undefined;
   if (!specifier.startsWith(".")) return undefined;
   const basePath = resolve(dirname(containingFile), specifier);
-  if (basePath.endsWith(".vars.ts")) return basePath;
-  if (basePath.endsWith(".vars.js")) {
-    return basePath.replace(/\.vars\.js$/u, ".vars.ts");
+  if (basePath.endsWith(".modals.ts")) return basePath;
+  if (basePath.endsWith(".modals.js")) {
+    return basePath.replace(/\.modals\.js$/u, ".modals.ts");
   }
-  if (basePath.endsWith(".vars")) return `${basePath}.ts`;
+  if (basePath.endsWith(".modals")) return `${basePath}.ts`;
   return undefined;
 }
 
@@ -239,7 +276,7 @@ function localFieldNamesByGeneratedModule(
 ): Map<string, Set<string>> {
   const appModelPath = join(dirname(file), ".modality", "app.model.ts");
   const byModule = new Map<string, Set<string>>();
-  for (const module of emitComponentVarModules(model, appModelPath)) {
+  for (const module of emitComponentModalModules(model, appModelPath)) {
     const fields = new Set<string>();
     const sourceFile = ts.createSourceFile(
       module.path,
@@ -273,11 +310,11 @@ function generatedImportDiagnostics(
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const modulePath = resolvedGeneratedVarsModulePath(
+    const modulePath = resolvedGeneratedModalModulePath(
       file,
       statement.moduleSpecifier.text,
     );
-    const componentId = componentIdFromGeneratedVarsSpecifier(
+    const componentId = componentIdFromGeneratedModalSpecifier(
       statement.moduleSpecifier.text,
     );
     const namedBindings = statement.importClause?.namedBindings;
@@ -347,19 +384,19 @@ function generatedComponentVarEntries(
 ): SemanticSourceEntry[] {
   const propsDir = dirname(resolve(propsPath));
   const appModelPath = join(propsDir, ".modality", "app.model.ts");
-  const varsDirs = [
-    join(propsDir, ".modality", "vars"),
-    join(propsDir, "vars"),
+  const modalsDirs = [
+    join(propsDir, ".modality", "modals"),
+    join(propsDir, "modals"),
   ];
   const entries: SemanticSourceEntry[] = [];
-  for (const module of emitComponentVarModules(model, appModelPath)) {
+  for (const module of emitComponentModalModules(model, appModelPath)) {
     entries.push({
       path: module.path,
       text: module.source,
     });
-    for (const varsDir of varsDirs) {
+    for (const modalsDir of modalsDirs) {
       entries.push({
-        path: join(varsDir, module.fileName),
+        path: join(modalsDir, module.fileName),
         text: module.source,
       });
     }
@@ -460,9 +497,20 @@ export async function rewriteImportedSymbols(
         rewrittenNodes.add(node);
         return;
       }
+      const transitionId = handleTransitionIdForIdentifier(node, checker);
+      if (transitionId) {
+        replacements.push({
+          start: node.getStart(),
+          end: node.getEnd(),
+          text: JSON.stringify(transitionId),
+        });
+        rewrittenSymbolNames.add(node.text);
+        rewrittenNodes.add(node);
+        return;
+      }
       if (
         isImportedIdentifier(node, checker) &&
-        (anchorIndex.size > 0 || isGeneratedVarsSpecifier(importSpecifier))
+        (anchorIndex.size > 0 || isGeneratedModalSpecifier(importSpecifier))
       ) {
         diagnostics.push({
           symbol: node.text,

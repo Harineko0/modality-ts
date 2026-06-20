@@ -43,7 +43,7 @@ from small combinators, not arbitrary functions.
 
 ```ts
 import { always, or, not, eq } from "modality-ts/properties";
-import { auth, step } from "./App.vars";
+import { auth, step } from "./App.modals";
 
 always(
   "checkoutOnlySucceedsForUsers",
@@ -55,10 +55,11 @@ Variable IDs come from the generated model / extraction report. Common prefixes:
 `local:<Component>.<state>` (a `useState`), `atom:<name>` (Jotai),
 `store:<name>.<field>` (Zustand), `swr:<key>` (SWR cache), and `sys:*`
 (system variables such as `sys:route`, `sys:pending`). Extract also writes typed local
-handles beside source files as `<source>.vars.ts`; import stable system handles from
+handles beside source files as `<source>.modals.ts`; import stable system handles from
 `modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
 built-in handle (usually via `import { variable } from "modality-ts/properties"`).
-See
+Transition handles from the same module can be passed to `enabled(app_save)` instead of
+magic-string ids. See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 4. Check the model

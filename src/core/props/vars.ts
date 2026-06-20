@@ -4,7 +4,7 @@ import { variable } from "./operand.js";
  * Built-in handles for the stable, framework-synthesized system variables.
  *
  * These ids are fixed regardless of the app (unlike `local:*` component state, which is
- * generated beside their source files as `<source>.vars.ts`. Import them directly:
+ * generated beside their source files as `<source>.modals.ts`. Import them directly:
  *
  * ```ts
  * import { pending, route } from "modality-ts/vars";
