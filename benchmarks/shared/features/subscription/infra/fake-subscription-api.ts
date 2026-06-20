@@ -13,9 +13,7 @@ export async function requestApproval(
   };
 }
 
-export async function applyApproval(
-  request: ApprovalRequest,
-): Promise<{
+export async function applyApproval(request: ApprovalRequest): Promise<{
   applied: boolean;
   seats: number;
   plan: ApprovalRequest["requestedPlan"];
