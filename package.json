@@ -139,6 +139,14 @@
       "types": "./dist/extract/sources/router/harness.d.ts",
       "default": "./dist/extract/sources/router/harness.js"
     },
+    "./extract/sources/tanstack-router": {
+      "types": "./dist/extract/sources/tanstack-router/index.d.ts",
+      "default": "./dist/extract/sources/tanstack-router/index.js"
+    },
+    "./extract/sources/tanstack-router/harness": {
+      "types": "./dist/extract/sources/tanstack-router/harness.d.ts",
+      "default": "./dist/extract/sources/tanstack-router/harness.js"
+    },
     "./extract/sources/swr": {
       "types": "./dist/extract/sources/swr/index.d.ts",
       "default": "./dist/extract/sources/swr/index.js"

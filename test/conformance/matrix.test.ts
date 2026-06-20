@@ -30,6 +30,9 @@ describe("conformance matrix manifest", () => {
         "state-local-setter-batch",
         "scope-mount-reset",
         "routing-location-assign",
+        "tanstack-file-routing",
+        "tanstack-code-routing",
+        "tanstack-loader-cache",
       ]),
     );
   });
@@ -59,6 +62,8 @@ describe("conformance matrix manifest", () => {
         "state-local-setter-batch",
         "scope-mount-reset",
         "routing-location-assign",
+        "tanstack-file-routing",
+        "tanstack-code-routing",
       ]),
     );
   });

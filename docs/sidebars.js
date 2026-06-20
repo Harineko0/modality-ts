@@ -9,6 +9,20 @@ const sidebars = {
     },
     {
       type: "category",
+      label: "Guides",
+      link: { type: "doc", id: "guides/index" },
+      items: [
+        "guides/writing-properties",
+        "guides/refining-domains-and-overlays",
+        "guides/modeling-side-effects",
+        "guides/diagnostics-and-search-limits",
+        "guides/debugging-counterexamples",
+        "guides/ci-integration",
+        "guides/exporting-to-tla",
+      ],
+    },
+    {
+      type: "category",
       label: "Concepts",
       link: { type: "doc", id: "concepts/index" },
       items: [
@@ -46,20 +60,6 @@ const sidebars = {
     },
     {
       type: "category",
-      label: "Guides",
-      link: { type: "doc", id: "guides/index" },
-      items: [
-        "guides/writing-properties",
-        "guides/refining-domains-and-overlays",
-        "guides/modeling-side-effects",
-        "guides/diagnostics-and-search-limits",
-        "guides/debugging-counterexamples",
-        "guides/ci-integration",
-        "guides/exporting-to-tla",
-      ],
-    },
-    {
-      type: "category",
       label: "State Sources",
       link: { type: "doc", id: "sources/index" },
       items: [
@@ -70,6 +70,7 @@ const sidebars = {
         "sources/router",
         "sources/next",
         "sources/react-features",
+        "sources/tanstack-router",
       ],
     },
     {

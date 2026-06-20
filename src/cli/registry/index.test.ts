@@ -371,6 +371,85 @@ describe("builtin module-role and effect API registration", () => {
       true,
     );
   });
+
+  it("registers TanStack Router when @tanstack/react-router is present", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "@tanstack/react-router": "^1.0.0" },
+    });
+    expect(registry.routerPluginId).toBe("tanstack-router");
+    expect(registry.adapters.navigation?.id).toBe("tanstack-router");
+    expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
+      "tanstack-module-roles",
+    ]);
+    expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
+      ["tanstack-effect-api"],
+    );
+    expect(
+      registry.adapters.cacheStorage.map((provider) => provider.id),
+    ).toEqual(["tanstack-cache-storage"]);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "navigation" && plugin.id === "tanstack-router",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "module-roles" &&
+          plugin.id === "tanstack-module-roles",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "effect-api" && plugin.id === "tanstack-effect-api",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "cache-storage" &&
+          plugin.id === "tanstack-cache-storage",
+      ),
+    ).toBe(true);
+    expect(
+      registry.adapters.observations.some(
+        (provider) => provider.id === "tanstack-router-observation",
+      ),
+    ).toBe(true);
+  });
+
+  it("omits TanStack Router when tanstack-router is disabled", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "@tanstack/react-router": "^1.0.0" },
+      disabledPlugins: ["tanstack-router"],
+    });
+    expect(registry.routerPluginId).toBeUndefined();
+    expect(registry.adapters.moduleRoles).toEqual([]);
+    expect(registry.adapters.effectApis).toEqual([]);
+    expect(registry.adapters.cacheStorage).toEqual([]);
+    expect(
+      registry.plugins.some((plugin) => plugin.id.startsWith("tanstack")),
+    ).toBe(false);
+  });
+
+  it("prefers Next over TanStack Router when both dependencies exist", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: {
+        next: "^15.0.0",
+        "@tanstack/react-router": "^1.0.0",
+      },
+    });
+    expect(registry.routerPluginId).toBe("next");
+  });
+
+  it("still activates React Router when only react-router-dom is present", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "react-router-dom": "^6.0.0" },
+    });
+    expect(registry.routerPluginId).toBe("router");
+  });
 });
 
 // Type-level fixture: a complete adapter literal must satisfy NavigationAdapter.

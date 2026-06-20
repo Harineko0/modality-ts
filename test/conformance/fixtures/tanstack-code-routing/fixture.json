@@ -1,0 +1,39 @@
+{
+  "id": "tanstack-code-routing",
+  "featureIds": ["routing.location-assignment"],
+  "targetIds": ["tanstack-router", "core"],
+  "root": "test/conformance/fixtures/tanstack-code-routing",
+  "sourcePaths": ["app/src/router.tsx"],
+  "propsPaths": ["app/src/router.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json",
+    "route": "/"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 25
+  },
+  "expectations": {
+    "transitionIds": ["Home.onClick.goAbout", "Home.Link.navigate"],
+    "navigateTargets": ["/about", "/items/:itemId"],
+    "vars": [
+      {
+        "id": "sys:route",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}
