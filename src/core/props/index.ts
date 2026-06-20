@@ -6,21 +6,26 @@ import type {
   StatePredicateIR,
   StepPredicateFlat,
   StepPredicateIR,
+  TemporalFormula,
   Value,
 } from "../ir/types.js";
+import { mountGuardForScope } from "../ir/domains.js";
 import { exprReads } from "../ir/validator.js";
 import { isVariable, lift, type Operand, type Variable } from "./operand.js";
 import {
-  always as registerAlways,
   alwaysStep as registerAlwaysStep,
   leadsToWithin as registerLeadsToWithin,
   type PendingSpec,
+  property as registerProperty,
   reachable as registerReachable,
   reachableFrom as registerReachableFrom,
+  always as registerAlways,
+  inevitably as registerInevitably,
 } from "./registry.js";
 
 export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
 export type {
+  FairnessConstraint,
   Model,
   ModelState,
   Property,
@@ -30,6 +35,7 @@ export type {
   StepPredicateComposite,
   StepPredicateFlat,
   StepPredicateIR,
+  TemporalFormula,
   Value,
 } from "../ir/types.js";
 
@@ -41,6 +47,9 @@ export {
   lift,
   variable,
 } from "./operand.js";
+
+export { ctl } from "./formula.js";
+export type { FairnessConstraint as FormulaFairnessConstraint } from "./formula.js";
 
 /** Branded transition id for generated `*.modals.ts` handles. Plain strings remain assignable. */
 export type TransitionRef<Id extends string = string> = Id & {
@@ -176,21 +185,12 @@ export const always = registerAlways;
 export const alwaysStep = registerAlwaysStep;
 export const reachableFrom = registerReachableFrom;
 export const leadsToWithin = registerLeadsToWithin;
+export const property = registerProperty;
+export const inevitably = registerInevitably;
 
-function liftStatePredicate(predicate: Operand): StatePredicateIR {
-  return lift(predicate);
-}
-
-function liftStepPredicate(predicate: StepPredicateIR): StepPredicateIR {
-  if ("step" in predicate) {
-    return {
-      ...predicate,
-      ...(predicate.pre !== undefined ? { pre: lift(predicate.pre) } : {}),
-      ...(predicate.post !== undefined ? { post: lift(predicate.post) } : {}),
-    };
-  }
-  return predicate;
-}
+// ---------------------------------------------------------------------------
+// Finalization: PendingSpec → Property
+// ---------------------------------------------------------------------------
 
 export function finalizeProperties(
   model: Model,
@@ -201,36 +201,188 @@ export function finalizeProperties(
 
 function finalizeSpec(model: Model, spec: PendingSpec): Property {
   switch (spec.kind) {
-    case "always":
-      return finalizeAlways(model, spec);
+    case "temporal":
+      return finalizeTemporal(model, spec);
     case "alwaysStep":
       return finalizeAlwaysStep(model, spec);
-    case "reachable":
-      return finalizeReachable(model, spec);
-    case "reachableFrom":
-      return finalizeReachableFrom(model, spec);
     case "leadsToWithin":
       return finalizeLeadsToWithin(model, spec);
   }
 }
 
-function finalizeAlways(
+function finalizeTemporal(
   model: Model,
-  spec: Extract<PendingSpec, { kind: "always" }>,
+  spec: Extract<PendingSpec, { kind: "temporal" }>,
 ): Property {
-  const predicate = liftStatePredicate(spec.predicate);
+  const formula =
+    spec.options.includeUnmounted === true
+      ? spec.formula
+      : injectMountGuards(model, spec.formula, "witness");
+  const reads = temporalPropertyReads(
+    model,
+    spec.options,
+    spec.formula,
+    formula,
+  );
+  const enabledTransitions = propertyEnabledTransitions(
+    model,
+    spec.options,
+    formula,
+  );
   return {
-    kind: "always",
+    kind: "temporal",
     name: spec.name,
-    predicate,
-    reads: propertyReads(model, spec.options, predicate),
-    enabledTransitions: propertyEnabledTransitions(
-      model,
-      spec.options,
-      predicate,
-    ),
+    formula,
+    reads,
+    enabledTransitions,
     includeUnmounted: spec.options.includeUnmounted,
+    ...(spec.options.fairness ? { fairness: spec.options.fairness } : {}),
   };
+}
+
+type FormulaMountMode = "safety" | "witness";
+
+function injectMountGuards(
+  model: Model,
+  formula: TemporalFormula,
+  mode: FormulaMountMode,
+): TemporalFormula {
+  switch (formula.kind) {
+    case "atom":
+      return guardAtom(model, formula, mode);
+    case "fnot":
+      return {
+        kind: "fnot",
+        arg: injectMountGuards(model, formula.arg, oppositeMountMode(mode)),
+      };
+    case "fand":
+    case "for":
+      return {
+        kind: formula.kind,
+        args: formula.args.map((arg) => injectMountGuards(model, arg, mode)),
+      };
+    case "AG":
+    case "AX":
+      return {
+        kind: formula.kind,
+        arg: injectMountGuards(model, formula.arg, "safety"),
+      };
+    case "EX":
+    case "EF":
+    case "AF":
+    case "EG":
+      return {
+        kind: formula.kind,
+        arg: injectMountGuards(model, formula.arg, "witness"),
+      };
+    case "EU":
+      return {
+        kind: "EU",
+        left: injectMountGuards(model, formula.left, "safety"),
+        right: injectMountGuards(model, formula.right, "witness"),
+      };
+    case "AU":
+      return {
+        kind: "AU",
+        left: injectMountGuards(model, formula.left, "safety"),
+        right: injectMountGuards(model, formula.right, "witness"),
+      };
+  }
+}
+
+function oppositeMountMode(mode: FormulaMountMode): FormulaMountMode {
+  return mode === "safety" ? "witness" : "safety";
+}
+
+function guardAtom(
+  model: Model,
+  formula: Extract<TemporalFormula, { kind: "atom" }>,
+  mode: FormulaMountMode,
+): TemporalFormula {
+  const guards = mountGuardsForPredicateReads(model, formula.predicate);
+  if (guards.length === 0) return formula;
+  const mountGuard = andExprs(guards);
+  return {
+    kind: "atom",
+    predicate:
+      mode === "safety"
+        ? or(not(mountGuard), formula.predicate)
+        : and(mountGuard, formula.predicate),
+  };
+}
+
+function mountGuardsForPredicateReads(
+  model: Model,
+  predicate: StatePredicateIR,
+): ExprIR[] {
+  const varsById = new Map((model.vars ?? []).map((decl) => [decl.id, decl]));
+  const guards = new Map<string, ExprIR>();
+  for (const id of exprReads(predicate)) {
+    const decl = varsById.get(id);
+    if (!decl) continue;
+    const guard = mountGuardForScope(decl.scope);
+    if (guard) guards.set(JSON.stringify(guard), guard);
+  }
+  return [...guards.values()];
+}
+
+function andExprs(args: readonly ExprIR[]): ExprIR {
+  if (args.length === 0) return { kind: "lit", value: true };
+  if (args.length === 1) return args[0]!;
+  return { kind: "and", args };
+}
+
+function temporalPropertyReads(
+  model: Model,
+  options: PropertyOptions,
+  originalFormula: TemporalFormula,
+  formula: TemporalFormula,
+): readonly string[] | undefined {
+  if (options.reads === undefined) return inferReads(model, formula).sort();
+  return [
+    ...new Set([
+      ...options.reads,
+      ...mountGuardReadsForFormula(model, originalFormula),
+    ]),
+  ].sort();
+}
+
+function mountGuardReadsForFormula(
+  model: Model,
+  formula: TemporalFormula,
+): readonly string[] {
+  const reads = new Set<string>();
+  const walk = (f: TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        for (const guard of mountGuardsForPredicateReads(model, f.predicate)) {
+          for (const read of exprReads(guard)) reads.add(read);
+        }
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
+  return [...reads].sort();
 }
 
 function finalizeAlwaysStep(
@@ -252,52 +404,11 @@ function finalizeAlwaysStep(
   };
 }
 
-function finalizeReachable(
-  model: Model,
-  spec: Extract<PendingSpec, { kind: "reachable" }>,
-): Property {
-  const predicate = liftStatePredicate(spec.predicate);
-  return {
-    kind: "reachable",
-    name: spec.name,
-    predicate,
-    reads: propertyReads(model, spec.options, predicate),
-    enabledTransitions: propertyEnabledTransitions(
-      model,
-      spec.options,
-      predicate,
-    ),
-    includeUnmounted: spec.options.includeUnmounted,
-  };
-}
-
-function finalizeReachableFrom(
-  model: Model,
-  spec: Extract<PendingSpec, { kind: "reachableFrom" }>,
-): Property {
-  const when = liftStatePredicate(spec.when);
-  const goal = liftStatePredicate(spec.goal);
-  return {
-    kind: "reachableFrom",
-    name: spec.name,
-    when,
-    goal,
-    reads: propertyReads(model, spec.options, when, goal),
-    enabledTransitions: propertyEnabledTransitions(
-      model,
-      spec.options,
-      when,
-      goal,
-    ),
-    includeUnmounted: spec.options.includeUnmounted,
-  };
-}
-
 function finalizeLeadsToWithin(
   model: Model,
   spec: Extract<PendingSpec, { kind: "leadsToWithin" }>,
 ): Property {
-  const goal = liftStatePredicate(spec.goal);
+  const goal = lift(spec.goal);
   return {
     kind: "leadsToWithin",
     name: spec.name,
@@ -311,23 +422,39 @@ function finalizeLeadsToWithin(
   };
 }
 
+function liftStepPredicate(predicate: StepPredicateIR): StepPredicateIR {
+  if ("step" in predicate) {
+    return {
+      ...predicate,
+      ...(predicate.pre !== undefined ? { pre: lift(predicate.pre) } : {}),
+      ...(predicate.post !== undefined ? { post: lift(predicate.post) } : {}),
+    };
+  }
+  return predicate;
+}
+
 function propertyReads(
   model: Model,
   options: PropertyOptions,
-  ...predicates: readonly (StatePredicateIR | StepPredicateIR)[]
+  ...subjects: readonly (StatePredicateIR | StepPredicateIR | TemporalFormula)[]
 ): readonly string[] | undefined {
   if (options.reads !== undefined) return options.reads;
   const reads = new Set<string>();
-  for (const predicate of predicates) {
-    for (const read of inferReads(model, predicate)) reads.add(read);
+  for (const subject of subjects) {
+    for (const read of inferReads(model, subject)) reads.add(read);
   }
   return [...reads].sort();
 }
 
 function inferReads(
   model: Model,
-  predicate: StatePredicateIR | StepPredicateIR,
+  subject: StatePredicateIR | StepPredicateIR | TemporalFormula,
 ): string[] {
+  // TemporalFormula (has a `kind` but not an ExprIR kind) — recurse into atoms
+  if (isTemporalFormula(subject)) {
+    return inferTemporalReads(model, subject);
+  }
+  // ExprIR (state predicate)
   const varIds = new Set(model.vars.map((decl) => decl.id));
   const reads = new Set<string>();
   const walkExpr = (expr: ExprIR): void => {
@@ -392,17 +519,51 @@ function inferReads(
         break;
     }
   };
-  if ("kind" in predicate) {
-    walkExpr(predicate);
+  if ("kind" in subject && isExprKind(subject.kind)) {
+    walkExpr(subject as ExprIR);
     return [...reads];
   }
-  if ("step" in predicate) {
-    if (predicate.pre) walkExpr(predicate.pre);
-    if (predicate.post) walkExpr(predicate.post);
-    for (const id of inferStepFactReads(predicate.step)) reads.add(id);
+  if ("step" in subject) {
+    if (subject.pre) walkExpr(subject.pre);
+    if (subject.post) walkExpr(subject.post);
+    for (const id of inferStepFactReads(subject.step)) reads.add(id);
     return [...reads];
   }
-  for (const id of inferStepFactReads(predicate)) reads.add(id);
+  for (const id of inferStepFactReads(subject as StepPredicateFlat))
+    reads.add(id);
+  return [...reads];
+}
+
+function inferTemporalReads(model: Model, formula: TemporalFormula): string[] {
+  const reads = new Set<string>();
+  const walk = (f: TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        for (const id of inferReads(model, f.predicate)) reads.add(id);
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
   return [...reads];
 }
 
@@ -416,19 +577,22 @@ function inferStepFactReads(flat: StepPredicateFlat): string[] {
 function propertyEnabledTransitions(
   model: Model,
   options: PropertyOptions,
-  ...predicates: readonly (StatePredicateIR | StepPredicateIR)[]
+  ...subjects: readonly (StatePredicateIR | StepPredicateIR | TemporalFormula)[]
 ): readonly string[] | undefined {
   const ids = new Set(options.enabledTransitions ?? []);
-  for (const predicate of predicates) {
-    for (const id of inferEnabledTransitions(model, predicate)) ids.add(id);
+  for (const subject of subjects) {
+    for (const id of inferEnabledTransitions(model, subject)) ids.add(id);
   }
   return ids.size > 0 ? [...ids].sort() : undefined;
 }
 
 function inferEnabledTransitions(
   model: Model,
-  predicate: StatePredicateIR | StepPredicateIR,
+  subject: StatePredicateIR | StepPredicateIR | TemporalFormula,
 ): string[] {
+  if (isTemporalFormula(subject)) {
+    return inferTemporalEnabledTransitions(model, subject);
+  }
   const ids: string[] = [];
   const walkExpr = (expr: ExprIR): void => {
     switch (expr.kind) {
@@ -480,15 +644,107 @@ function inferEnabledTransitions(
         break;
     }
   };
-  if ("kind" in predicate) {
-    walkExpr(predicate);
+  if ("kind" in subject && isExprKind(subject.kind)) {
+    walkExpr(subject as ExprIR);
     return ids;
   }
-  if ("step" in predicate) {
-    if (predicate.pre) walkExpr(predicate.pre);
-    if (predicate.post) walkExpr(predicate.post);
-    if (predicate.step.transitionId) ids.push(predicate.step.transitionId);
+  if ("step" in subject) {
+    if (subject.pre) walkExpr(subject.pre);
+    if (subject.post) walkExpr(subject.post);
+    if (subject.step.transitionId) ids.push(subject.step.transitionId);
     return ids;
   }
   return ids;
+}
+
+function inferTemporalEnabledTransitions(
+  model: Model,
+  formula: TemporalFormula,
+): string[] {
+  const ids = new Set<string>();
+  const walk = (f: TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        for (const id of inferEnabledTransitions(model, f.predicate))
+          ids.add(id);
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
+  return [...ids];
+}
+
+// ---------------------------------------------------------------------------
+// Type narrowing helpers
+// ---------------------------------------------------------------------------
+
+const TEMPORAL_FORMULA_KINDS = new Set([
+  "atom",
+  "fnot",
+  "fand",
+  "for",
+  "EX",
+  "AX",
+  "EF",
+  "AF",
+  "EG",
+  "AG",
+  "EU",
+  "AU",
+]);
+
+function isTemporalFormula(
+  subject: StatePredicateIR | StepPredicateIR | TemporalFormula,
+): subject is TemporalFormula {
+  return "kind" in subject && TEMPORAL_FORMULA_KINDS.has(subject.kind);
+}
+
+const EXPR_IR_KINDS = new Set([
+  "lit",
+  "read",
+  "eq",
+  "neq",
+  "and",
+  "or",
+  "not",
+  "cond",
+  "updateField",
+  "tagIs",
+  "lenCat",
+  "freshToken",
+  "transitionEnabled",
+  "transitionEnabledPrefix",
+  "readPre",
+  "readOpArg",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+  "add",
+  "sub",
+  "mod",
+]);
+
+function isExprKind(kind: string): boolean {
+  return EXPR_IR_KINDS.has(kind);
 }

@@ -142,10 +142,11 @@ pub fn build_por_context(
 
     for property in properties {
         match property {
-            PropertyIR::Always { .. } => {}
+            // Temporal (CTL) properties require edge recording, so POR will be
+            // disabled below by the edge-mode check. Mark explicitly as unsupported
+            // to surface a clear diagnostic rather than silently proceeding.
+            PropertyIR::Temporal { .. } => return skipped("unsupported-property-kind"),
             PropertyIR::AlwaysStep { .. } => return skipped("unsupported-property-kind"),
-            PropertyIR::Reachable { .. } => return skipped("unsupported-property-kind"),
-            PropertyIR::ReachableFrom { .. } => return skipped("unsupported-property-kind"),
             PropertyIR::LeadsToWithin { .. } => return skipped("unsupported-property-kind"),
         }
     }
@@ -158,18 +159,14 @@ pub fn build_por_context(
     let mut visible_transition_indexes = HashSet::new();
 
     for property in properties {
-        let PropertyIR::Always {
+        let PropertyIR::Temporal {
             reads,
             enabled_transitions,
-            predicate,
             ..
         } = property
         else {
             continue;
         };
-        if reads.is_none() && predicate_has_state_reads(predicate) {
-            return skipped("missing-property-reads");
-        }
         if let Some(reads) = reads {
             for id in reads {
                 if let Some(&idx) = compiled.var_index.get(id) {
@@ -187,7 +184,7 @@ pub fn build_por_context(
     }
 
     for property in properties {
-        let PropertyIR::Always {
+        let PropertyIR::Temporal {
             reads,
             enabled_transitions,
             ..

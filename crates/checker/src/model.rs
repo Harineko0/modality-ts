@@ -309,10 +309,11 @@ pub struct StepPredicateComposite {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub enum PropertyIR {
-    #[serde(rename = "always")]
-    Always {
+    /// CTL temporal formula — covers all state-based temporal properties.
+    #[serde(rename = "temporal")]
+    Temporal {
         name: String,
-        predicate: ExprIR,
+        formula: TemporalFormulaIR,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reads: Option<Vec<String>>,
         #[serde(
@@ -327,26 +328,10 @@ pub enum PropertyIR {
             skip_serializing_if = "Option::is_none"
         )]
         include_unmounted: Option<bool>,
-    },
-    #[serde(rename = "reachable")]
-    Reachable {
-        name: String,
-        predicate: ExprIR,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        reads: Option<Vec<String>>,
-        #[serde(
-            rename = "enabledTransitions",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        enabled_transitions: Option<Vec<String>>,
-        #[serde(
-            rename = "includeUnmounted",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        include_unmounted: Option<bool>,
+        fairness: Option<Vec<FairnessConstraintIR>>,
     },
+    /// Action invariant: the step predicate must hold on every edge.
     #[serde(rename = "alwaysStep")]
     AlwaysStep {
         name: String,
@@ -366,26 +351,7 @@ pub enum PropertyIR {
         )]
         include_unmounted: Option<bool>,
     },
-    #[serde(rename = "reachableFrom")]
-    ReachableFrom {
-        name: String,
-        when: ExprIR,
-        goal: ExprIR,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reads: Option<Vec<String>>,
-        #[serde(
-            rename = "enabledTransitions",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        enabled_transitions: Option<Vec<String>>,
-        #[serde(
-            rename = "includeUnmounted",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        include_unmounted: Option<bool>,
-    },
+    /// Scheduler-constrained bounded response.
     #[serde(rename = "leadsToWithin")]
     LeadsToWithin {
         name: String,
@@ -413,6 +379,55 @@ pub enum PropertyIR {
         )]
         include_unmounted: Option<bool>,
     },
+}
+
+// ---------------------------------------------------------------------------
+// CTL temporal formula IR
+// ---------------------------------------------------------------------------
+
+/// A CTL formula node mirroring `TemporalFormula` in the TypeScript IR.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind")]
+pub enum TemporalFormulaIR {
+    #[serde(rename = "atom")]
+    Atom { predicate: ExprIR },
+    #[serde(rename = "fnot")]
+    Fnot { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "fand")]
+    Fand { args: Vec<TemporalFormulaIR> },
+    #[serde(rename = "for")]
+    For { args: Vec<TemporalFormulaIR> },
+    #[serde(rename = "EX")]
+    EX { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "AX")]
+    AX { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "EF")]
+    EF { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "AF")]
+    AF { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "EG")]
+    EG { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "AG")]
+    AG { arg: Box<TemporalFormulaIR> },
+    #[serde(rename = "EU")]
+    EU {
+        left: Box<TemporalFormulaIR>,
+        right: Box<TemporalFormulaIR>,
+    },
+    #[serde(rename = "AU")]
+    AU {
+        left: Box<TemporalFormulaIR>,
+        right: Box<TemporalFormulaIR>,
+    },
+}
+
+/// A fairness constraint: the condition must hold in infinitely many states
+/// on every fair path (Emerson–Lei generalized fairness).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FairnessConstraintIR {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub condition: TemporalFormulaIR,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

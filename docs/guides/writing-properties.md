@@ -108,9 +108,10 @@ alwaysStep(
 import { App } from "./App.modals";
 
 leadsToWithin(
+  "submitResolves",
   stepEnqueued("api.placeOrder"),
   or(eq(App.order, "success"), eq(App.order, "error")),
-  { name: "submitResolves", budget: { environment: 3 } },
+  { budget: { environment: 3 } },
 );
 ```
 
@@ -125,15 +126,43 @@ By default only environment/library/internal steps count toward the goal. Set
 import { App } from "./App.modals";
 
 reachableFrom(
+  "reviewStaysReachable",
   eq(App.payment, "valid"),
   eq(App.step, "review"),
-  { name: "reviewStaysReachable" },
 );
 ```
 
 Counterexamples for `reachableFrom` are non-replayable by nature (they assert path
-*absence*) — the report shows a trace to the witness `when`-state plus an exhausted-search
-certificate.
+*absence*) in the temporal formula `AG(when -> EF goal)`. The report shows the
+violating `when`-state as a standard temporal counterexample.
+
+## Pattern: advanced CTL formulas (`property` + `ctl`)
+
+Use the named helpers above for common frontend checks. When you need a more explicit CTL
+shape, register a formula with `property(name, formula, options?)` and build it with
+`ctl`. Predicates are still ordinary structured expressions lifted with `ctl.holds(...)`.
+
+```ts
+import { ctl, eq, property } from "modality-ts/properties";
+import { App } from "./App.modals";
+
+property(
+  "validPaymentInevitablyCanReview",
+  ctl.always(
+    ctl.implies(
+      ctl.holds(eq(App.payment, "valid")),
+      ctl.eventually(ctl.holds(eq(App.step, "review"))),
+    ),
+  ),
+);
+```
+
+The `ctl` namespace exposes boolean formula composition (`holds`, `negate`, `allOf`,
+`anyOf`, `implies`) plus CTL operators: `always` (`AG`), `canReach` (`EF`),
+`eventually` (`AF`), `canStayForever` (`EG`), `afterEveryStep` (`AX`),
+`afterSomeStep` (`EX`), `holdsUntil` (`AU`), and `canHoldUntil` (`EU`). For fair
+temporal checks, pass `fairness: [ctl.fairlyOften(condition, name?)]` in the trailing
+registration options.
 
 ## Pattern: enabledness (`enabled`)
 
@@ -186,7 +215,11 @@ not have a stable importable handle.
 ## Naming and verdicts
 
 Give every property a stable `name` — it is the key for trace filenames, report verdicts,
-and CI gating. Verdicts are `verified-within-bounds`, `violated`, `reachable`,
-`vacuous-warning`, or `error`. A `vacuous-warning` (e.g. a `reachable` premise never
-witnessed, or a `leadsToWithin` trigger that never fires) is **not** a pass — investigate
-it, because an over-constrained model "verifies" everything.
+and CI gating. State properties are checked as CTL temporal formulas: `always(p)` lowers
+to `AG p`, `reachable(p)` to `EF p`, and `reachableFrom(when, goal)` to
+`AG(when -> EF goal)`. A successful temporal property reports `verified` when the explored
+graph was exhaustive and `verified-within-bounds` when the search stopped at a bound; it
+does not emit a reachability witness trace. A `vacuous-warning` (e.g. a `reachable`
+predicate never witnessed, or a `leadsToWithin` trigger that never fires) is **not** a pass
+— investigate it, because an over-constrained model "verifies" everything. Other verdicts
+are `violated` and `error`.

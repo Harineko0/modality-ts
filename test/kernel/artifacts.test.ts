@@ -461,11 +461,17 @@ describe("artifact parsers", () => {
           schemaVersion: 1,
           properties: [
             {
-              kind: "always",
+              kind: "temporal",
               name: "resetFamilyEnabled",
-              predicate: {
-                kind: "transitionEnabledPrefix",
-                prefix: "LaneTimer.onClick.draftSec",
+              formula: {
+                kind: "AG",
+                arg: {
+                  kind: "atom",
+                  predicate: {
+                    kind: "transitionEnabledPrefix",
+                    prefix: "LaneTimer.onClick.draftSec",
+                  },
+                },
               },
             },
           ],

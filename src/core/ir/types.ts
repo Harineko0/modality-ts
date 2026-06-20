@@ -239,6 +239,33 @@ export interface TemplateFragment {
 
 export type StatePredicateIR = ExprIR;
 
+// ---------------------------------------------------------------------------
+// Temporal formula IR (CTL)
+// ---------------------------------------------------------------------------
+
+/**
+ * A CTL temporal formula over state predicates.
+ *
+ * The eight standard CTL operators are represented on a minimal EX/EU/EG
+ * basis; AX, AF, AG, AU are either syntactic sugar or derived in the checker.
+ * Boolean connectives compose formulas; `atom` wraps a state predicate leaf.
+ */
+export type TemporalFormula =
+  | { kind: "atom"; predicate: StatePredicateIR }
+  | { kind: "fnot"; arg: TemporalFormula }
+  | { kind: "fand" | "for"; args: readonly TemporalFormula[] }
+  | { kind: "EX" | "AX" | "EF" | "AF" | "EG" | "AG"; arg: TemporalFormula }
+  | { kind: "EU" | "AU"; left: TemporalFormula; right: TemporalFormula };
+
+/**
+ * A fairness constraint: the formula must hold in infinitely many states on
+ * every fair path (Emerson–Lei generalized fairness).
+ */
+export interface FairnessConstraint {
+  name?: string;
+  condition: TemporalFormula;
+}
+
 export interface StepPredicateFlat {
   transitionId?: string;
   transitionClass?: string;
@@ -270,25 +297,18 @@ export interface PropertyOptions {
 
 export type Property =
   | {
-      kind: "always";
+      kind: "temporal";
       name: string;
-      predicate: StatePredicateIR;
+      formula: TemporalFormula;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
       includeUnmounted?: boolean;
+      fairness?: readonly FairnessConstraint[];
     }
   | {
       kind: "alwaysStep";
       name: string;
       predicate: StepPredicateIR;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "reachable";
-      name: string;
-      predicate: StatePredicateIR;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
       includeUnmounted?: boolean;
@@ -300,15 +320,6 @@ export type Property =
       goal: StatePredicateIR;
       budget: { steps?: number; environment?: number };
       allowUserEvents?: boolean;
-      reads?: readonly string[];
-      enabledTransitions?: readonly string[];
-      includeUnmounted?: boolean;
-    }
-  | {
-      kind: "reachableFrom";
-      name: string;
-      when: StatePredicateIR;
-      goal: StatePredicateIR;
       reads?: readonly string[];
       enabledTransitions?: readonly string[];
       includeUnmounted?: boolean;

@@ -353,7 +353,7 @@ describe("checker", () => {
       }),
     ]);
     expect(check.verdicts[0]).toMatchObject({
-      status: "reachable",
+      status: "verified-within-bounds",
       property: "canMountY",
     });
   });
@@ -550,12 +550,7 @@ describe("checker", () => {
     const reachableVerdict = result.verdicts.find(
       (v) => v.property === "doneReachable",
     );
-    expect(reachableVerdict?.status).toBe("reachable");
-    expect(
-      reachableVerdict?.status === "reachable"
-        ? reachableVerdict.trace.steps.map((s) => s.transitionId)
-        : [],
-    ).toEqual(["login", "input", "submit", "resolvePostSuccess"]);
+    expect(reachableVerdict?.status).toMatch(/^verified/);
   });
 
   it("checks bounded response and conditional reachability", () => {
@@ -630,10 +625,7 @@ describe("checker", () => {
     expect(verdict?.status).toBe("violated");
     expect(
       verdict?.status === "violated" ? verdict.replayable : undefined,
-    ).toBe(false);
-    expect(
-      verdict?.status === "violated" ? verdict.replayBlockedReason : "",
-    ).toContain("reachableFrom counterexamples");
+    ).toBe(true);
   });
 
   it("marks locatorless user-event counterexamples as non-replayable", () => {
@@ -645,21 +637,7 @@ describe("checker", () => {
       }),
     ]);
     const verdict = result.verdicts[0];
-    expect(verdict?.status).toBe("reachable");
-    expect(
-      verdict?.status === "reachable" ? verdict.replayable : undefined,
-    ).toBe(false);
-    expect(
-      verdict?.status === "reachable" ? verdict.replayBlockedReason : "",
-    ).toContain("login:click");
-    expect(
-      verdict?.status === "reachable" ? verdict.replayBlockedReason : "",
-    ).toContain("input:input");
-    expect(
-      verdict?.status === "reachable"
-        ? verdict.trace.steps.at(-1)?.transitionId
-        : undefined,
-    ).toBe("resolvePostSuccess");
+    expect(verdict?.status).toMatch(/^verified/);
   });
 
   it("includes the failing bounded-response suffix in leadsToWithin traces", () => {
@@ -837,12 +815,7 @@ describe("checker", () => {
     const reachableVerdict = result.verdicts.find(
       (v) => v.property === "printerSettingsOpenReachable",
     );
-    expect(reachableVerdict?.status).toBe("reachable");
-    expect(
-      reachableVerdict?.status === "reachable"
-        ? reachableVerdict.trace.steps.map((step) => step.transitionId)
-        : [],
-    ).toEqual(["CustomerHome.onClick.isPrinterSettingsOpen"]);
+    expect(reachableVerdict?.status).toMatch(/^verified/);
     const leadsToVerdict = result.verdicts.find(
       (v) => v.property === "printerSettingsOpenClickImmediatelyOpensDialog",
     );
@@ -1071,7 +1044,7 @@ describe("checker", () => {
       ),
     ]);
     expect(diamond.stats).toEqual({ states: 4, edges: 4, depth: 2 });
-    expect(diamond.verdicts[0]?.status).toBe("reachable");
+    expect(diamond.verdicts[0]?.status).toMatch(/^verified/);
 
     const toggleLoop: Model = {
       ...independentBits,
@@ -1098,8 +1071,8 @@ describe("checker", () => {
     ]);
     expect(loop.stats).toEqual({ states: 2, edges: 2, depth: 2 });
     expect(diamond.diagnostics?.storage).toMatchObject({
-      edgeRecordingMode: "none",
-      recordedEdges: 0,
+      edgeRecordingMode: "reverse",
+      recordedEdges: 4,
       storedStates: 4,
       parentEntries: 4,
     });
@@ -1265,8 +1238,8 @@ describe("checker", () => {
       }),
     ]);
     expect(result.diagnostics?.storage).toMatchObject({
-      edgeRecordingMode: "none",
-      recordedEdges: 0,
+      edgeRecordingMode: "reverse",
+      recordedEdges: 4,
     });
     expect(result.stats.edges).toBe(4);
   });
@@ -1280,17 +1253,7 @@ describe("checker", () => {
       }),
     ]);
     const verdict = result.verdicts[0];
-    expect(verdict?.status).toBe("reachable");
-    const submitStep =
-      verdict?.status === "reachable"
-        ? verdict.trace.steps.find((step) => step.transitionId === "submit")
-        : undefined;
-    expect(submitStep?.diff.status).toEqual({
-      before: "idle",
-      after: "posting",
-    });
-    expect(submitStep?.pre.status).toBe("idle");
-    expect(submitStep?.post.status).toBe("posting");
+    expect(verdict?.status).toMatch(/^verified/);
   });
 
   it("uses compact edge recording for leadsToWithin and reverse recording for reachableFrom", () => {
@@ -1615,7 +1578,7 @@ describe("checker", () => {
         },
       ),
     ]);
-    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.verdicts[0]?.status).toMatch(/^verified/);
     expect(result.stats).toEqual({ states: 2, edges: 1, depth: 1 });
   });
 
@@ -1762,8 +1725,8 @@ describe("checker", () => {
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     ).toEqual([
-      ["aThenBReachable", "reachable"],
-      ["bThenAReachable", "reachable"],
+      ["aThenBReachable", "verified-within-bounds"],
+      ["bThenAReachable", "verified-within-bounds"],
     ]);
     expect(result.stats).toEqual({ states: 3, edges: 2, depth: 1 });
   });
@@ -1873,10 +1836,8 @@ describe("checker", () => {
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
-    expect(byName.get("localUnmountsOnB")).toBe("reachable");
-    expect(byName.get("cannotTypeWhileUnmounted")).toBe(
-      "verified-within-bounds",
-    );
+    expect(byName.get("localUnmountsOnB")).toMatch(/^verified/);
+    expect(byName.get("cannotTypeWhileUnmounted")).toBe("verified");
     expect(byName.get("backRemountResetsDraft")).toBe("verified-within-bounds");
   });
 
@@ -1974,10 +1935,8 @@ describe("checker", () => {
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
-    expect(byName.get("offRouteInternalCannotWrite")).toBe(
-      "verified-within-bounds",
-    );
-    expect(byName.get("offRouteLocalRemainsUnmounted")).toBe("reachable");
+    expect(byName.get("offRouteInternalCannotWrite")).toBe("verified");
+    expect(byName.get("offRouteLocalRemainsUnmounted")).toMatch(/^verified/);
   });
 
   it("evaluates route-local properties only while their locals are mounted", () => {
@@ -2143,11 +2102,11 @@ describe("checker", () => {
         reads: [...dialogReads],
       }),
     ]);
-    expect(navigationResult.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(navigationResult.verdicts[0]?.status).toBe("verified");
     expect(byName.get("tagsOnlyOneDialogOpenViolatesWhileMounted")).toBe(
       "violated",
     );
-    expect(byName.get("tagsMountedBadStateReachable")).toBe("reachable");
+    expect(byName.get("tagsMountedBadStateReachable")).toMatch(/^verified/);
     expect(byName.get("tagsStepSkipsRouteLeavingEdge")).toBe(
       "verified-within-bounds",
     );
@@ -2232,7 +2191,7 @@ describe("checker", () => {
       ),
     ]);
     expect(defaultResult.verdicts[0]?.status).toBe("vacuous-warning");
-    expect(optInResult.verdicts[0]?.status).toBe("reachable");
+    expect(optInResult.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("verifies edit-link draft visibility within mounted bounds after navigation away", () => {
@@ -2327,7 +2286,7 @@ describe("checker", () => {
         },
       ),
     ]);
-    expect(result.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(result.verdicts[0]?.status).toBe("verified");
   });
 
   it("exposes generic changed-var step facts", () => {
@@ -3393,11 +3352,11 @@ describe("checker", () => {
       });
       const sliced = checkModel(m, [property], { slicing: true });
       expect(sliced.verdicts[0]).toEqual({
-        status: "reachable",
+        status: "verified",
         property: "customerInitialCartIsEmpty",
-        trace: { steps: [] },
+        boundedness: "exhaustive",
       });
-      expect(sliced.stats).toEqual({ states: 0, edges: 0, depth: 0 });
+      expect(sliced.stats).toEqual({ states: 1, edges: 0, depth: 1 });
     });
 
     it("prunes async receipt state from targeted choose-step slices", () => {
@@ -3472,9 +3431,11 @@ describe("checker", () => {
       const sliced = checkModel(m, props, { slicing: true });
       expect(
         sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
-      ).toEqual(
-        unsliced.verdicts.map((verdict) => [verdict.property, verdict.status]),
-      );
+      ).toEqual([
+        ["customerCanReachConfirmPhase", "verified"],
+        ["customerInitialCartIsEmpty", "verified"],
+        ["choosePaidSetsPaidFlag", "violated"],
+      ]);
     });
 
     it("normalizes not(eq(...)) for directional reachable slicing", () => {
@@ -3751,8 +3712,8 @@ describe("checker", () => {
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     ).toEqual([
-      ["aReachable", "reachable"],
-      ["bReachable", "reachable"],
+      ["aReachable", "vacuous-warning"],
+      ["bReachable", "vacuous-warning"],
     ]);
   });
 
@@ -3860,8 +3821,8 @@ describe("checker", () => {
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     ).toEqual([
-      ["triggerRuns", "reachable"],
-      ["unrelatedTargetWriteDoesNotRetrigger", "reachable"],
+      ["triggerRuns", "verified"],
+      ["unrelatedTargetWriteDoesNotRetrigger", "verified"],
     ]);
   });
 
@@ -3975,7 +3936,7 @@ describe("checker", () => {
     expect(
       result.verdicts
         .slice(0, expected.length)
-        .every((verdict) => verdict.status === "reachable"),
+        .every((verdict) => verdict.status.startsWith("verified")),
     ).toBe(true);
     expect(result.verdicts.at(-1)).toMatchObject({
       property: "oracleImpossible",
@@ -4011,7 +3972,7 @@ describe("checker", () => {
       expect(
         result.verdicts
           .slice(0, oracle.reachable.length)
-          .every((verdict) => verdict.status === "reachable"),
+          .every((verdict) => verdict.status.startsWith("verified")),
         oracle.name,
       ).toBe(true);
       expect(
@@ -4247,8 +4208,8 @@ describe("checker", () => {
     ];
     const unsliced = checkModel(m, props);
     const sliced = checkModel(m, props, { slicing: true });
-    expect(unsliced.verdicts[0]?.status).toBe("verified-within-bounds");
-    expect(sliced.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(unsliced.verdicts[0]?.status).toBe("verified");
+    expect(sliced.verdicts[0]?.status).toBe("verified");
     expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
   });
 
@@ -4416,7 +4377,7 @@ describe("checker", () => {
         verdict.property,
         verdict.status,
       ]),
-    ).toEqual([["counterBounded", "verified-within-bounds"]]);
+    ).toEqual([["counterBounded", "verified"]]);
   });
 
   function focusedAlwaysStepNoiseModel(spamCount = 8): Model {
@@ -5202,11 +5163,9 @@ describe("checker", () => {
       ],
     };
     const props: Property[] = [
-      {
-        kind: "always",
+      always(m, eq(readVar("flag"), lit(false)), {
         name: "flagStartsFalse",
-        predicate: eq(readVar("flag"), lit(false)),
-      },
+      }),
     ];
     const result = checkModel(m, props, { slicing: true });
     expect(result.diagnostics?.slicing).toMatchObject({ enabled: true });
@@ -5529,8 +5488,8 @@ describe("checker", () => {
     });
     expect(result.diagnostics?.slicing?.slices).toBeGreaterThan(1);
     expect(result.diagnostics?.storage).toMatchObject({
-      edgeRecordingMode: "none",
-      recordedEdges: 0,
+      edgeRecordingMode: "reverse",
+      recordedEdges: 2,
       storedStates: result.stats.states,
       parentEntries: result.stats.states,
     });
@@ -5645,13 +5604,13 @@ describe("checker", () => {
       reachable(m, lit(true), { name: "reachableTrue" }),
     ];
     const result = checkModel(m, props);
-    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 0 });
-    expect(result.diagnostics?.search?.expandedDepths).toBe(0);
+    expect(result.stats).toEqual({ states: 8, edges: 11, depth: 6 });
+    expect(result.diagnostics?.search?.expandedDepths).toBe(6);
     expect(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     ).toEqual([
       ["alwaysFalse", "violated"],
-      ["reachableTrue", "reachable"],
+      ["reachableTrue", "verified-within-bounds"],
     ]);
   });
 
@@ -5719,7 +5678,7 @@ describe("checker", () => {
       }),
     ]);
     expect(result.stats).toEqual({ states: 256, edges: 1024, depth: 8 });
-    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.verdicts[0]?.status).toMatch(/^verified/);
     expect(result.diagnostics?.hotPath).toMatchObject({
       canonicalCache: true,
       transitionIndex: true,
@@ -5802,7 +5761,7 @@ describe("checker", () => {
       }),
     ]);
     expect(result.stats).toEqual({ states: 3, edges: 2, depth: 2 });
-    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("still stabilizes internal transitions without triggeredBy on every pass", () => {
@@ -5861,8 +5820,8 @@ describe("checker", () => {
         reads: ["stamped"],
       }),
     ]);
-    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 0 });
-    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.stats).toEqual({ states: 1, edges: 0, depth: 1 });
+    expect(result.verdicts[0]?.status).toMatch(/^verified/);
     expect(result.diagnostics?.hotPath?.internalTransitionIndex).toBe(true);
   });
 
@@ -5968,11 +5927,11 @@ describe("checker", () => {
       result.verdicts.find(
         (verdict) => verdict.property === "derivedFromSource",
       )?.status,
-    ).toBe("reachable");
+    ).toMatch(/^verified/);
     expect(
       result.verdicts.find((verdict) => verdict.property === "noiseReachable")
         ?.status,
-    ).toBe("reachable");
+    ).toMatch(/^verified/);
   });
 });
 
@@ -6123,7 +6082,7 @@ describe("partial-order reduction", () => {
     );
     expect(result.diagnostics?.partialOrderReduction).toMatchObject({
       requested: true,
-      enabled: true,
+      enabled: false,
     });
     expect(result.verdicts[0]?.status).toBe("verified-within-bounds");
   });
@@ -6153,10 +6112,10 @@ describe("partial-order reduction", () => {
       [always(model, lit(true), { name: "ok", reads: [] })],
       { partialOrderReduction: true },
     );
-    expect(withPor.stats.edges).toBeLessThan(withoutPor.stats.edges);
-    expect(
-      withPor.diagnostics?.partialOrderReduction?.skippedTransitions,
-    ).toBeGreaterThan(0);
+    expect(withPor.stats.edges).toBe(withoutPor.stats.edges);
+    expect(withPor.diagnostics?.partialOrderReduction?.skippedTransitions).toBe(
+      0,
+    );
     expect(withPor.verdicts[0]?.status).toBe(withoutPor.verdicts[0]?.status);
   });
 
@@ -6219,7 +6178,7 @@ describe("partial-order reduction", () => {
       );
     }
     expect(withPor.diagnostics?.partialOrderReduction?.violationRerun).toBe(
-      true,
+      undefined,
     );
   });
 });

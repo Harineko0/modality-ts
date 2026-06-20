@@ -1,5 +1,5 @@
 use crate::domain::initial_values;
-use crate::expr::{eval_expr, mount_guard_holds, EvalOptions};
+use crate::expr::mount_guard_holds;
 use crate::model::{mount_guard_for_scope, CompiledModel, UNMOUNTED};
 use crate::state::ModelState;
 

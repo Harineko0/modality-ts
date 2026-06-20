@@ -78,32 +78,42 @@ describe("loadProperties golden", () => {
       (property) => property.name === "guestCannotReachSuccess",
     );
     expect(guestCannotReachSuccess).toMatchObject({
-      kind: "always",
+      kind: "temporal",
       reads: ["local:App.auth", "local:App.step"],
     });
-    expect(guestCannotReachSuccess?.predicate).toEqual({
-      kind: "not",
-      args: [
-        {
-          kind: "and",
+    expect(
+      guestCannotReachSuccess?.kind === "temporal"
+        ? guestCannotReachSuccess.formula
+        : undefined,
+    ).toEqual({
+      kind: "AG",
+      arg: {
+        kind: "atom",
+        predicate: {
+          kind: "not",
           args: [
             {
-              kind: "eq",
+              kind: "and",
               args: [
-                { kind: "read", var: "local:App.auth" },
-                { kind: "lit", value: "guest" },
-              ],
-            },
-            {
-              kind: "eq",
-              args: [
-                { kind: "read", var: "local:App.step" },
-                { kind: "lit", value: "success" },
+                {
+                  kind: "eq",
+                  args: [
+                    { kind: "read", var: "local:App.auth" },
+                    { kind: "lit", value: "guest" },
+                  ],
+                },
+                {
+                  kind: "eq",
+                  args: [
+                    { kind: "read", var: "local:App.step" },
+                    { kind: "lit", value: "success" },
+                  ],
+                },
               ],
             },
           ],
         },
-      ],
+      },
     });
   });
 });

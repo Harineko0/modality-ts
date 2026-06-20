@@ -1,11 +1,12 @@
 use crate::canon::canonical_key;
+use crate::ctl::check_temporal;
 use crate::expr::{allowed_reads, eval_state_predicate, mount_guard_holds};
 use crate::graph::GraphRecording;
 use crate::model::{CompiledModel, PropertyIR, UNMOUNTED};
 use crate::state::ModelState;
 use crate::step::{matches_step_spec, StepFacts};
 use crate::trace::{
-    replay_checked_verdict, trace_to, trace_with_edge, trace_with_suffix, TraceContext,
+    replay_checked_verdict, trace_with_edge, trace_with_suffix, TraceContext,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -19,86 +20,18 @@ struct FullEdge {
     transition: crate::model::Transition,
 }
 
+/// Called per-state during BFS. Only `alwaysStep` on-the-fly checks remain here;
+/// `temporal` properties are evaluated globally in `finalize_properties`.
 pub fn observe_states(
-    compiled: &CompiledModel,
-    properties: &[PropertyIR],
-    candidates: &[ModelState],
-    ctx: &TraceContext,
-    verdicts: &mut HashMap<String, Value>,
+    _compiled: &CompiledModel,
+    _properties: &[PropertyIR],
+    _candidates: &[ModelState],
+    _ctx: &TraceContext,
+    _verdicts: &mut HashMap<String, Value>,
 ) {
-    for state in candidates {
-        let canon = canonical_key(compiled, state);
-        for property in properties {
-            let name = property_name(property);
-            if verdicts.contains_key(&name) {
-                continue;
-            }
-            let result = match property {
-                PropertyIR::Always {
-                    predicate,
-                    reads,
-                    enabled_transitions,
-                    include_unmounted,
-                    ..
-                } => {
-                    if !property_mounted(compiled, property, state, *include_unmounted) {
-                        continue;
-                    }
-                    let allowed =
-                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
-                    match eval_state_predicate(
-                        compiled,
-                        state,
-                        predicate,
-                        &allowed,
-                        &name,
-                        "state predicate",
-                    ) {
-                        Ok(true) => None,
-                        Ok(false) => Some(replay_checked_verdict(
-                            "violated",
-                            &name,
-                            trace_to(ctx, &canon),
-                        )),
-                        Err(msg) => Some(error_verdict(&name, &msg)),
-                    }
-                }
-                PropertyIR::Reachable {
-                    predicate,
-                    reads,
-                    enabled_transitions,
-                    include_unmounted,
-                    ..
-                } => {
-                    if !property_mounted(compiled, property, state, *include_unmounted) {
-                        continue;
-                    }
-                    let allowed =
-                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
-                    match eval_state_predicate(
-                        compiled,
-                        state,
-                        predicate,
-                        &allowed,
-                        &name,
-                        "state predicate",
-                    ) {
-                        Ok(true) => Some(replay_checked_verdict(
-                            "reachable",
-                            &name,
-                            trace_to(ctx, &canon),
-                        )),
-                        Ok(false) => None,
-                        Err(msg) => Some(error_verdict(&name, &msg)),
-                    }
-                }
-                _ => None,
-            };
-            if let Some(verdict) = result {
-                verdicts.insert(name, verdict);
-            }
-        }
-    }
+    // All state-based temporal properties are now evaluated by the global CTL labeling
+    // engine in finalize_properties after the full BFS completes.
+    // The on-the-fly observation path is intentionally empty here.
 }
 
 pub fn observe_edge(
@@ -148,12 +81,18 @@ pub fn observe_edge(
     }
 }
 
+/// Called after BFS completes. Evaluates temporal (CTL) and leadsToWithin properties.
+///
+/// `initial_canons` is the canonical encoding of each initial state.
+/// `exhaustive` is true when BFS drained the frontier with no limit hit.
 pub fn finalize_properties(
     compiled: &CompiledModel,
     properties: &[PropertyIR],
     ctx: &TraceContext,
     graph: &GraphRecording,
     verdicts: &mut HashMap<String, Value>,
+    initial_canons: &[Vec<u8>],
+    exhaustive: bool,
 ) {
     for property in properties {
         let name = property_name(property);
@@ -162,43 +101,24 @@ pub fn finalize_properties(
         }
         let result = (|| -> Result<Option<Value>, String> {
             Ok(match property {
-                PropertyIR::Reachable { .. } => Some(json!({
-                    "status": "vacuous-warning",
-                    "property": name,
-                    "message": "No reachable witness within bounds",
-                })),
-                PropertyIR::ReachableFrom {
-                    when,
-                    goal,
+                PropertyIR::Temporal {
+                    formula,
                     reads,
                     enabled_transitions,
-                    include_unmounted,
+                    fairness,
                     ..
-                } => {
-                    let allowed_when =
-                        allowed_reads(reads.as_deref(), enabled_transitions.as_deref(), compiled);
-                    let allowed_goal = allowed_when.clone();
-                    if let Some((canon, _)) = unreachable_witness(
-                        compiled,
-                        graph,
-                        ctx,
-                        when,
-                        goal,
-                        &allowed_when,
-                        &allowed_goal,
-                        *include_unmounted,
-                    ) {
-                        Some(json!({
-                            "status": "violated",
-                            "property": name,
-                            "trace": trace_to(ctx, &canon),
-                            "replayable": false,
-                            "replayBlockedReason": "reachableFrom counterexamples assert absence of a path and are not replayable",
-                        }))
-                    } else {
-                        None
-                    }
-                }
+                } => Some(check_temporal(
+                    &name,
+                    formula,
+                    compiled,
+                    ctx,
+                    graph,
+                    reads.as_deref(),
+                    enabled_transitions.as_deref(),
+                    fairness.as_deref(),
+                    initial_canons,
+                    exhaustive,
+                )?),
                 PropertyIR::LeadsToWithin {
                     goal,
                     budget,
@@ -219,7 +139,7 @@ pub fn finalize_properties(
                     enabled_transitions.as_deref(),
                     *include_unmounted,
                 )?,
-                _ => None,
+                PropertyIR::AlwaysStep { .. } => None,
             })
         })();
         match result {
@@ -320,65 +240,6 @@ fn materialize_edge(
         post: post.clone(),
         transition,
     })
-}
-
-fn unreachable_witness(
-    compiled: &CompiledModel,
-    graph: &GraphRecording,
-    ctx: &TraceContext,
-    when: &crate::model::ExprIR,
-    goal: &crate::model::ExprIR,
-    allowed_when: &HashSet<String>,
-    allowed_goal: &HashSet<String>,
-    include_unmounted: Option<bool>,
-) -> Option<(Vec<u8>, ModelState)> {
-    let goal_canons: HashSet<Vec<u8>> = ctx
-        .states
-        .iter()
-        .filter(|(_, state)| {
-            eval_state_predicate(
-                compiled,
-                state,
-                goal,
-                allowed_goal,
-                "reachableFrom",
-                "reachableFrom goal",
-            )
-            .unwrap_or(false)
-        })
-        .map(|(canon, _)| canon.clone())
-        .collect();
-    let mut backward = goal_canons;
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for edge in &graph.reverse_edges {
-            if backward.contains(&edge.post_canon) && !backward.contains(&edge.pre_canon) {
-                backward.insert(edge.pre_canon.clone());
-                changed = true;
-            }
-        }
-    }
-    for (canon, state) in ctx.states.iter() {
-        if backward.contains(canon) {
-            continue;
-        }
-        if property_mounted_for_property(compiled, include_unmounted, state) {
-            if eval_state_predicate(
-                compiled,
-                state,
-                when,
-                allowed_when,
-                "reachableFrom",
-                "reachableFrom when",
-            )
-            .unwrap_or(false)
-            {
-                return Some((canon.clone(), state.clone()));
-            }
-        }
-    }
-    None
 }
 
 fn failing_suffix_within(
@@ -524,10 +385,8 @@ fn scheduler_allows(transition: &crate::model::Transition, allow_user_events: bo
 
 fn property_name(property: &PropertyIR) -> String {
     match property {
-        PropertyIR::Always { name, .. }
-        | PropertyIR::Reachable { name, .. }
+        PropertyIR::Temporal { name, .. }
         | PropertyIR::AlwaysStep { name, .. }
-        | PropertyIR::ReachableFrom { name, .. }
         | PropertyIR::LeadsToWithin { name, .. } => name.clone(),
     }
 }
@@ -535,16 +394,13 @@ fn property_name(property: &PropertyIR) -> String {
 pub fn property_verdict_terminal(property: &PropertyIR, verdict: &Value) -> bool {
     let status = verdict.get("status").and_then(|v| v.as_str()).unwrap_or("");
     match property {
-        PropertyIR::Always { .. } | PropertyIR::AlwaysStep { .. } => {
+        // Temporal properties are always finalized after BFS, not on-the-fly.
+        // They are not terminal until finalize_properties runs.
+        PropertyIR::Temporal { .. } => false,
+        PropertyIR::AlwaysStep { .. } => {
             matches!(status, "violated" | "error" | "verified-within-bounds")
         }
-        PropertyIR::Reachable { .. } => {
-            matches!(
-                status,
-                "reachable" | "error" | "vacuous-warning"
-            )
-        }
-        PropertyIR::ReachableFrom { .. } | PropertyIR::LeadsToWithin { .. } => matches!(
+        PropertyIR::LeadsToWithin { .. } => matches!(
             status,
             "violated" | "error" | "vacuous-warning" | "verified-within-bounds"
         ),
@@ -572,19 +428,6 @@ fn error_verdict(property: &str, message: &str) -> Value {
     })
 }
 
-fn property_mounted(
-    compiled: &CompiledModel,
-    property: &PropertyIR,
-    state: &ModelState,
-    include_unmounted: Option<bool>,
-) -> bool {
-    if include_unmounted == Some(true) {
-        return true;
-    }
-    property_mounted_for_property(compiled, include_unmounted, state)
-        && local_scoped_reads_ok(compiled, property, state)
-}
-
 fn property_mounted_edge(
     compiled: &CompiledModel,
     property: &PropertyIR,
@@ -592,20 +435,20 @@ fn property_mounted_edge(
     post: &ModelState,
     include_unmounted: Option<bool>,
 ) -> bool {
-    property_mounted(compiled, property, pre, include_unmounted)
-        && property_mounted(compiled, property, post, include_unmounted)
+    property_mounted_state(compiled, property, pre, include_unmounted)
+        && property_mounted_state(compiled, property, post, include_unmounted)
 }
 
-fn property_mounted_for_property(
-    _compiled: &CompiledModel,
-    include_unmounted: Option<bool>,
+fn property_mounted_state(
+    compiled: &CompiledModel,
+    property: &PropertyIR,
     state: &ModelState,
+    include_unmounted: Option<bool>,
 ) -> bool {
     if include_unmounted == Some(true) {
         return true;
     }
-    let _ = state;
-    true
+    local_scoped_reads_ok(compiled, property, state)
 }
 
 fn local_scoped_reads_ok(
@@ -636,10 +479,8 @@ fn local_scoped_reads_ok(
 
 fn property_reads(property: &PropertyIR) -> Vec<&str> {
     match property {
-        PropertyIR::Always { reads, .. }
-        | PropertyIR::Reachable { reads, .. }
+        PropertyIR::Temporal { reads, .. }
         | PropertyIR::AlwaysStep { reads, .. }
-        | PropertyIR::ReachableFrom { reads, .. }
         | PropertyIR::LeadsToWithin { reads, .. } => reads
             .as_ref()
             .map(|r| r.iter().map(|s| s.as_str()).collect())

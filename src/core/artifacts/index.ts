@@ -404,25 +404,11 @@ export function assertSerializableProperty(
   }
   assertNoFunctions(value, path);
   switch (value.kind) {
-    case "always":
-    case "reachable":
-      if (
-        !isRecord(value.predicate) ||
-        typeof value.predicate.kind !== "string"
-      ) {
-        throw new Error(`${path} missing predicate IR`);
-      }
+    case "temporal":
+      assertSerializableTemporalFormula(value.formula, `${path}.formula`);
       break;
     case "alwaysStep":
       assertSerializableStepPredicate(value.predicate, `${path}.predicate`);
-      break;
-    case "reachableFrom":
-      if (!isRecord(value.when) || typeof value.when.kind !== "string") {
-        throw new Error(`${path} missing when predicate IR`);
-      }
-      if (!isRecord(value.goal) || typeof value.goal.kind !== "string") {
-        throw new Error(`${path} missing goal predicate IR`);
-      }
       break;
     case "leadsToWithin":
       assertSerializableStepPredicate(value.trigger, `${path}.trigger`);
@@ -451,6 +437,71 @@ const STEP_PREDICATE_FLAT_KEYS = new Set<keyof StepPredicateFlat>([
   "continuation",
   "opArgs",
 ]);
+
+const TEMPORAL_FORMULA_KINDS = new Set([
+  "atom",
+  "fnot",
+  "fand",
+  "for",
+  "EX",
+  "AX",
+  "EF",
+  "AF",
+  "EG",
+  "AG",
+  "EU",
+  "AU",
+]);
+
+function assertSerializableTemporalFormula(value: unknown, path: string): void {
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  if (
+    typeof value.kind !== "string" ||
+    !TEMPORAL_FORMULA_KINDS.has(value.kind)
+  ) {
+    throw new Error(
+      `${path} has unsupported formula kind ${String(value.kind)}`,
+    );
+  }
+  switch (value.kind) {
+    case "atom":
+      if (
+        !isRecord(value.predicate) ||
+        typeof value.predicate.kind !== "string"
+      ) {
+        throw new Error(`${path}.predicate missing or invalid ExprIR`);
+      }
+      break;
+    case "fnot":
+      assertSerializableTemporalFormula(value.arg, `${path}.arg`);
+      break;
+    case "fand":
+    case "for": {
+      if (!Array.isArray(value.args)) {
+        throw new Error(`${path}.args must be an array`);
+      }
+      for (let i = 0; i < value.args.length; i++) {
+        assertSerializableTemporalFormula(value.args[i], `${path}.args[${i}]`);
+      }
+      break;
+    }
+    case "EX":
+    case "AX":
+    case "EF":
+    case "AF":
+    case "EG":
+    case "AG":
+      assertSerializableTemporalFormula(value.arg, `${path}.arg`);
+      break;
+    case "EU":
+    case "AU":
+      assertSerializableTemporalFormula(value.left, `${path}.left`);
+      assertSerializableTemporalFormula(value.right, `${path}.right`);
+      break;
+  }
+}
 
 const STEP_PREDICATE_COMPOSITE_KEYS = new Set([
   "pre",

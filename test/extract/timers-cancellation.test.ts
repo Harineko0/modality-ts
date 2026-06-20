@@ -214,7 +214,7 @@ describe("timers cancellation", () => {
         { name: "timerScheduled", reads: [scheduleTimer] },
       ),
     ]);
-    expect(scheduledReachable.verdicts[0]?.status).toBe("reachable");
+    expect(scheduledReachable.verdicts[0]?.status).toMatch(/^verified/);
 
     const scheduleClear = extractUseStateSkeleton(
       `

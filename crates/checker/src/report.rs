@@ -22,10 +22,8 @@ pub fn build_check_result(
         .iter()
         .map(|p| {
             let name = match p {
-                crate::model::PropertyIR::Always { name, .. }
-                | crate::model::PropertyIR::Reachable { name, .. }
+                crate::model::PropertyIR::Temporal { name, .. }
                 | crate::model::PropertyIR::AlwaysStep { name, .. }
-                | crate::model::PropertyIR::ReachableFrom { name, .. }
                 | crate::model::PropertyIR::LeadsToWithin { name, .. } => name,
             };
             verdicts
@@ -62,10 +60,8 @@ pub fn invalid_model_result(
         .iter()
         .map(|p| {
             let name = match p {
-                crate::model::PropertyIR::Always { name, .. }
-                | crate::model::PropertyIR::Reachable { name, .. }
+                crate::model::PropertyIR::Temporal { name, .. }
                 | crate::model::PropertyIR::AlwaysStep { name, .. }
-                | crate::model::PropertyIR::ReachableFrom { name, .. }
                 | crate::model::PropertyIR::LeadsToWithin { name, .. } => name,
             };
             json!({

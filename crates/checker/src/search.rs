@@ -258,7 +258,22 @@ fn check_model_compiled_once(
     if let Some(limit) = &limit_hit {
         apply_search_limit_verdicts(properties, &mut verdicts, limit);
     } else {
-        finalize_properties(compiled, properties, &trace_ctx, &graph, &mut verdicts);
+        // Collect initial state canonical bytes for the CTL engine
+        let initial_canons: Vec<Vec<u8>> = {
+            let changed = crate::domain::initial_changed_var_indexes(compiled);
+            crate::domain::initial_states(compiled)
+                .into_iter()
+                .flat_map(|state| {
+                    crate::stabilize::stabilize(compiled, state, changed.clone(), &mut |s| {
+                        crate::canon::canonical_key(compiled, s)
+                    })
+                    .unwrap_or_default()
+                })
+                .map(|state| crate::canon::canonical_key(compiled, &state))
+                .collect()
+        };
+        let exhaustive = frontier.is_empty();
+        finalize_properties(compiled, properties, &trace_ctx, &graph, &mut verdicts, &initial_canons, exhaustive);
     }
 
     let mut bound_hit_list: Vec<String> = bound_hits.into_iter().collect();
@@ -850,10 +865,8 @@ fn apply_search_limit_verdicts(
         .unwrap_or("search limit exceeded");
     for property in properties {
         let name = match property {
-            crate::model::PropertyIR::Always { name, .. }
-            | crate::model::PropertyIR::Reachable { name, .. }
+            crate::model::PropertyIR::Temporal { name, .. }
             | crate::model::PropertyIR::AlwaysStep { name, .. }
-            | crate::model::PropertyIR::ReachableFrom { name, .. }
             | crate::model::PropertyIR::LeadsToWithin { name, .. } => name,
         };
         if let Some(verdict) = verdicts.get(name) {
@@ -1318,16 +1331,25 @@ mod tests {
         );
     }
 
-    #[test]
-    fn max_edges_limit_stops_in_deterministic_edge_order() {
-        let compiled = toggle_model();
-        let properties = vec![PropertyIR::Always {
+    fn temporal_always_true_property() -> PropertyIR {
+        PropertyIR::Temporal {
             name: "p".into(),
-            predicate: ExprIR::Lit { value: json!(true) },
+            formula: crate::model::TemporalFormulaIR::AG {
+                arg: Box::new(crate::model::TemporalFormulaIR::Atom {
+                    predicate: ExprIR::Lit { value: json!(true) },
+                }),
+            },
             reads: None,
             enabled_transitions: None,
             include_unmounted: None,
-        }];
+            fairness: None,
+        }
+    }
+
+    #[test]
+    fn max_edges_limit_stops_in_deterministic_edge_order() {
+        let compiled = toggle_model();
+        let properties = vec![temporal_always_true_property()];
         let result = check_model_compiled(
             &compiled,
             &properties,
@@ -1396,13 +1418,7 @@ mod tests {
     #[test]
     fn max_states_limit_produces_structured_error() {
         let compiled = toggle_model();
-        let properties = vec![PropertyIR::Always {
-            name: "p".into(),
-            predicate: ExprIR::Lit { value: json!(true) },
-            reads: None,
-            enabled_transitions: None,
-            include_unmounted: None,
-        }];
+        let properties = vec![temporal_always_true_property()];
         let result = check_model_compiled(
             &compiled,
             &properties,
@@ -1431,13 +1447,7 @@ mod tests {
     #[test]
     fn max_frontier_limit_produces_structured_error() {
         let compiled = toggle_model();
-        let properties = vec![PropertyIR::Always {
-            name: "p".into(),
-            predicate: ExprIR::Lit { value: json!(true) },
-            reads: None,
-            enabled_transitions: None,
-            include_unmounted: None,
-        }];
+        let properties = vec![temporal_always_true_property()];
         let result = check_model_compiled(
             &compiled,
             &properties,
@@ -1462,13 +1472,7 @@ mod tests {
     #[test]
     fn memory_guard_limit_produces_structured_error() {
         let compiled = toggle_model();
-        let properties = vec![PropertyIR::Always {
-            name: "p".into(),
-            predicate: ExprIR::Lit { value: json!(true) },
-            reads: None,
-            enabled_transitions: None,
-            include_unmounted: None,
-        }];
+        let properties = vec![temporal_always_true_property()];
         let result = check_model_compiled(
             &compiled,
             &properties,
@@ -1580,13 +1584,7 @@ mod tests {
     #[test]
     fn wide_havoc_respects_max_edges_during_generation() {
         let compiled = wide_havoc_model(500);
-        let properties = vec![PropertyIR::Always {
-            name: "p".into(),
-            predicate: ExprIR::Lit { value: json!(true) },
-            reads: None,
-            enabled_transitions: None,
-            include_unmounted: None,
-        }];
+        let properties = vec![temporal_always_true_property()];
         let started = Instant::now();
         let result = check_model_compiled(
             &compiled,
@@ -1622,32 +1620,29 @@ mod tests {
     }
 
     #[test]
-    fn all_terminal_properties_stop_before_max_depth() {
+    fn temporal_ag_false_is_violated_after_full_bfs() {
+        // AG(false) should be violated: the initial state itself falsifies it.
         let compiled = toggle_model();
-        let properties = vec![
-            PropertyIR::Always {
-                name: "alwaysFalse".into(),
-                predicate: ExprIR::Lit { value: json!(false) },
-                reads: None,
-                enabled_transitions: None,
-                include_unmounted: None,
+        let properties = vec![PropertyIR::Temporal {
+            name: "agFalse".into(),
+            formula: crate::model::TemporalFormulaIR::AG {
+                arg: Box::new(crate::model::TemporalFormulaIR::Atom {
+                    predicate: ExprIR::Lit { value: json!(false) },
+                }),
             },
-            PropertyIR::Reachable {
-                name: "reachableTrue".into(),
-                predicate: ExprIR::Lit { value: json!(true) },
-                reads: None,
-                enabled_transitions: None,
-                include_unmounted: None,
-            },
-        ];
+            reads: None,
+            enabled_transitions: None,
+            include_unmounted: None,
+            fairness: None,
+        }];
         let result = check_model_compiled(
             &compiled,
             &properties,
             Some(&CheckOptionsIR {
                 slicing: None,
-            sliced_model: None,
-            partial_order_reduction: None,
-            max_states: None,
+                sliced_model: None,
+                partial_order_reduction: None,
+                max_states: None,
                 max_edges: None,
                 max_frontier: None,
                 track_elapsed: None,
@@ -1655,13 +1650,47 @@ mod tests {
             }),
         )
         .unwrap();
-        let depth = result.pointer("/stats/depth").and_then(|v| v.as_u64());
-        assert_eq!(depth, Some(0));
-        let edges = result.pointer("/stats/edges").and_then(|v| v.as_u64());
-        assert_eq!(edges, Some(0));
-        let expanded = result
-            .pointer("/diagnostics/search/expandedDepths")
-            .and_then(|v| v.as_u64());
-        assert_eq!(expanded, Some(0));
+        let status = result
+            .pointer("/verdicts/0/status")
+            .and_then(|v| v.as_str());
+        assert_eq!(status, Some("violated"));
+    }
+
+    #[test]
+    fn temporal_ef_true_is_verified_after_full_bfs() {
+        // EF(true) should be verified: every initial state is in EF(true).
+        let compiled = toggle_model();
+        let properties = vec![PropertyIR::Temporal {
+            name: "efTrue".into(),
+            formula: crate::model::TemporalFormulaIR::EF {
+                arg: Box::new(crate::model::TemporalFormulaIR::Atom {
+                    predicate: ExprIR::Lit { value: json!(true) },
+                }),
+            },
+            reads: None,
+            enabled_transitions: None,
+            include_unmounted: None,
+            fairness: None,
+        }];
+        let result = check_model_compiled(
+            &compiled,
+            &properties,
+            Some(&CheckOptionsIR {
+                slicing: None,
+                sliced_model: None,
+                partial_order_reduction: None,
+                max_states: None,
+                max_edges: None,
+                max_frontier: None,
+                track_elapsed: None,
+                memory_guard_bytes: None,
+            }),
+        )
+        .unwrap();
+        let status = result
+            .pointer("/verdicts/0/status")
+            .and_then(|v| v.as_str());
+        // Initial state satisfies atom(true), so EF(true) holds.
+        assert!(matches!(status, Some("verified") | Some("verified-within-bounds")));
     }
 }

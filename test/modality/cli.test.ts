@@ -423,8 +423,8 @@ describe("modality CLI", () => {
     expect(stdout).not.toContain("Properties\n");
     expect(stdout).not.toContain("Stats\n");
     expect(stdout).toContain("Test Files");
-    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue reachable");
-    expect(stdout).toContain("  ✓ homeFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue verified");
+    expect(stdout).toContain("  ✓ homeFlagCanBecomeTrue verified");
     await access(join(dir, ".modality", "models", "app", "root.report.json"));
     await access(
       join(dir, ".modality", "models", "app", "routes", "home.report.json"),
@@ -443,7 +443,7 @@ describe("modality CLI", () => {
       expect(execError.code).toBe(2);
       stdout = execError.stdout ?? "";
     }
-    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue reachable");
+    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue verified");
     expect(stdout).toContain("  × homeFlagAlwaysFalse violated");
   });
 

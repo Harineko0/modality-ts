@@ -1,4 +1,5 @@
 mod canon;
+mod ctl;
 mod diagnostics;
 mod domain;
 mod effect;
@@ -11,6 +12,7 @@ mod mount;
 mod por;
 mod property;
 mod report;
+mod scc;
 mod search;
 mod stabilize;
 mod state;
@@ -96,9 +98,9 @@ mod tests {
         let request = json!({
             "model": model,
             "properties": [{
-                "kind": "always",
+                "kind": "temporal",
                 "name": "p",
-                "predicate": { "kind": "lit", "value": true }
+                "formula": { "kind": "AG", "arg": { "kind": "atom", "predicate": { "kind": "lit", "value": true } } }
             }],
             "options": {}
         });

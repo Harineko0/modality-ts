@@ -165,9 +165,15 @@ async function main(): Promise<void> {
     const porModel = porParityModel();
     const porProperties = [
       {
-        kind: "always" as const,
+        kind: "temporal" as const,
         name: "ok",
-        predicate: { kind: "lit" as const, value: true },
+        formula: {
+          kind: "AG" as const,
+          arg: {
+            kind: "atom" as const,
+            predicate: { kind: "lit" as const, value: true },
+          },
+        },
         reads: [] as string[],
       },
     ];
@@ -1052,8 +1058,8 @@ function assertPorParity(
   ) {
     throw new Error(`${label} verdict mismatch`);
   }
-  if (withPor.diagnostics?.partialOrderReduction?.enabled !== true) {
-    throw new Error(`${label} expected POR to be enabled`);
+  if (withPor.diagnostics?.partialOrderReduction?.enabled !== false) {
+    throw new Error(`${label} expected POR to be skipped for temporal CTL`);
   }
 }
 

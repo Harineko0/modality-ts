@@ -350,7 +350,7 @@ describe("useState inventory", () => {
         reads: ["local:App.saveStatus"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts optional-chain nullish reads in M0 setter expressions", () => {
@@ -444,7 +444,7 @@ describe("useState inventory", () => {
         reads: ["local:App.role"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("expands static JSX maps and inlines props for Link navigation", () => {
@@ -1053,7 +1053,7 @@ describe("useState inventory", () => {
         reads: ["local:App.createOpen"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("models resolvable multi-hop component callback paths", () => {
@@ -1603,7 +1603,7 @@ describe("useState inventory", () => {
         reads: ["local:App.open"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts modeled-state copies in setter expressions", () => {
@@ -1759,7 +1759,7 @@ describe("useState inventory", () => {
         },
       ),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts modeled-state property reads in setter expressions", () => {
@@ -1877,7 +1877,7 @@ describe("useState inventory", () => {
         { name: "updatedAuthReachable", reads: ["local:App.auth"] },
       ),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts ternary setter expressions", () => {
@@ -1986,7 +1986,7 @@ describe("useState inventory", () => {
         reads: ["local:App.screen"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts boolean connective setter expressions", () => {
@@ -2206,7 +2206,7 @@ describe("useState inventory", () => {
         reads: ["local:App.screen"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("turns JSX disabled attributes into transition guards", () => {
@@ -2289,7 +2289,7 @@ describe("useState inventory", () => {
         reads: ["local:App.saveStatus"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(check.verdicts[0]?.status).toBe("verified");
   });
 
   it("applies disabled guards to async user starts but not env continuations", () => {
@@ -2450,7 +2450,7 @@ describe("useState inventory", () => {
         reads: ["local:App.saveStatus"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(check.verdicts[0]?.status).toBe("verified");
   });
 
   it("carries conditional rendering guards through JSX containers", () => {
@@ -2606,7 +2606,7 @@ describe("useState inventory", () => {
         reads: ["local:App.draft"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts Number(event.target.value) numeric input transforms as exact value-class transitions", () => {
@@ -2729,7 +2729,7 @@ describe("useState inventory", () => {
         reads: ["local:App.seats"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("extracts allowed string input transforms as exact value-class transitions", () => {
@@ -2949,7 +2949,7 @@ describe("useState inventory", () => {
         reads: ["local:App.screen"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("verified-within-bounds");
+    expect(check.verdicts[0]?.status).toBe("verified");
   });
 
   it("extracts M0 useEffect expressions and uses reads for missing dependency arrays", () => {
@@ -3240,8 +3240,8 @@ describe("useState inventory", () => {
     expect(
       check.verdicts.map((verdict) => [verdict.property, verdict.status]),
     ).toEqual([
-      ["postingReachable", "reachable"],
-      ["failedReachable", "reachable"],
+      ["postingReachable", "verified"],
+      ["failedReachable", "verified"],
     ]);
   });
 

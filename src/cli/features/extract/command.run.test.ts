@@ -381,7 +381,7 @@ describe("runExtractCommand", () => {
         reads: ["sys:route"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("discovers UI routes from a manifest in single-file mode", async () => {
@@ -668,7 +668,7 @@ describe("runExtractCommand", () => {
         reads: ["local:App.color"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("includes Jotai atom declarations through the source plugin SPI", async () => {

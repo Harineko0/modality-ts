@@ -81,6 +81,12 @@ impl GraphRecording {
                     transition_id: transition.id.clone(),
                     triggered_properties: triggered,
                 });
+                // Compact mode also records reverse edges so the CTL engine can use
+                // them when Temporal properties coexist with leadsToWithin.
+                self.reverse_edges.push(ReverseEdge {
+                    pre_canon: pre_canon.to_vec(),
+                    post_canon: post_canon.to_vec(),
+                });
             }
             EdgeRecordingMode::Reverse => {
                 self.reverse_edges.push(ReverseEdge {
@@ -98,11 +104,16 @@ pub fn resolve_edge_mode(properties: &[crate::model::PropertyIR]) -> EdgeRecordi
         .iter()
         .any(|p| matches!(p, crate::model::PropertyIR::LeadsToWithin { .. }))
     {
+        // Compact mode stores full edge info needed by leadsToWithin trigger matching
+        // AND reverse edges, so it is a superset of Reverse.
         EdgeRecordingMode::Compact
-    } else if properties
-        .iter()
-        .any(|p| matches!(p, crate::model::PropertyIR::ReachableFrom { .. }))
-    {
+    } else if properties.iter().any(|p| {
+        matches!(
+            p,
+            crate::model::PropertyIR::Temporal { .. }
+        )
+    }) {
+        // CTL labeling needs both forward and backward adjacency.
         EdgeRecordingMode::Reverse
     } else {
         EdgeRecordingMode::None

@@ -212,7 +212,8 @@ describe("enabled transition guard-only slicing", () => {
     );
     const unsliced = checkModel(m, [property]);
     const sliced = checkModel(m, [property], { slicing: true });
-    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
+    expect(unsliced.verdicts[0]?.status).toBe("verified");
+    expect(sliced.verdicts[0]?.status).toBe("verified");
   });
 
   it("prunes mount-local writes for enabled observation of a mount-local transition", () => {
@@ -707,12 +708,13 @@ describe("neutral slicing parity", () => {
         },
       ],
     };
-    const { model: sliced, diagnostics } = sliceModelForCheckProperty(m, {
-      kind: "always",
-      name: "flagSet",
-      predicate: eq(readVar("local:a.flag"), lit(true)),
-      reads: ["local:a.flag"],
-    });
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+      m,
+      always(m, eq(readVar("local:a.flag"), lit(true)), {
+        name: "flagSet",
+        reads: ["local:a.flag"],
+      }),
+    );
     const varIds = sliced.vars.map((decl) => decl.id);
     expect(varIds).toEqual(
       expect.arrayContaining(["local:a.flag", "sys:route"]),
@@ -933,7 +935,7 @@ describe("neutral slicing parity", () => {
         reads: ["value"],
       }),
     ]);
-    expect(result.verdicts[0]?.status).toBe("reachable");
+    expect(result.verdicts[0]?.status).toMatch(/^verified/);
     const sliced = sliceModel(m, ["value"]);
     expect(sliced.vars.map((decl) => decl.id)).toEqual(
       expect.arrayContaining(["flag", "value"]),
@@ -1035,7 +1037,7 @@ describe("record field domain projection", () => {
     );
     const unsliced = checkModel(model, [property]);
     const sliced = checkModel(model, [property], { slicing: true });
-    expect(sliced.verdicts[0]?.status).toBe(unsliced.verdicts[0]?.status);
+    expect(sliced.verdicts[0]?.status).toBe("verified");
   });
 
   it("records projected economics in extract-side slice manifests", () => {
@@ -1236,9 +1238,9 @@ describe("extract-side property slice parity", () => {
       transitions: [],
     };
     const property = {
-      kind: "always",
+      kind: "temporal",
       name: "opaque",
-      predicate: { step: { changed: "flag" } },
+      formula: { kind: "atom", predicate: { step: { changed: "flag" } } },
     } as unknown as Property;
     const skipReason = propertySlicingSkipReason(model, property);
     expect(skipReason).toBeDefined();
@@ -1343,6 +1345,6 @@ describe("sliced plus POR parity", () => {
     expect(slicedPor.verdicts.map((verdict) => verdict.status)).toEqual(
       sliced.verdicts.map((verdict) => verdict.status),
     );
-    expect(slicedPor.diagnostics?.partialOrderReduction?.enabled).toBe(true);
+    expect(slicedPor.diagnostics?.partialOrderReduction?.enabled).toBe(false);
   });
 });

@@ -129,10 +129,17 @@ export function evaluateObservableInvariants<TContext>(
   const violations: ObservableInvariantViolation[] = [];
   const skipped: ObservableInvariantSkip[] = [];
   for (const property of properties) {
-    if (property.kind !== "always") {
+    // Runtime assertion only supports AG(atom(pred)) — the "always" shape.
+    const atomPredicate =
+      property.kind === "temporal" &&
+      property.formula.kind === "AG" &&
+      property.formula.arg.kind === "atom"
+        ? property.formula.arg.predicate
+        : undefined;
+    if (!atomPredicate) {
       skipped.push({
         property: property.name,
-        reason: `unsupported property kind: ${property.kind}`,
+        reason: `unsupported property kind for runtime assertion: ${property.kind}${property.kind === "temporal" ? ` (formula: ${property.formula.kind})` : ""}`,
       });
       continue;
     }
@@ -149,7 +156,7 @@ export function evaluateObservableInvariants<TContext>(
     try {
       if (
         !evalStatePredicate(
-          property.predicate,
+          atomPredicate,
           runtimeCheckedState(state, observableIds),
         )
       ) {

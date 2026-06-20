@@ -1,37 +1,12 @@
-import type { ExprIR, Model, Property } from "modality-ts/core";
-import { evalStatePredicate, StatePredicateEvalError } from "modality-ts/core";
-import { modelInitialStates } from "./model-api.js";
+import type { Model, Property } from "modality-ts/core";
 import type { PropertyVerdict } from "./types.js";
 
-function isExprIR(value: unknown): value is ExprIR {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "kind" in value &&
-    typeof (value as { kind: unknown }).kind === "string"
-  );
-}
-
+// This fast-path was used for the old `reachable` property kind.
+// With the CTL engine handling EF via global labeling after BFS,
+// it is no longer needed and always returns undefined.
 export function initialStateReachableVerdict(
-  model: Model,
-  property: Property,
+  _model: Model,
+  _property: Property,
 ): PropertyVerdict | undefined {
-  if (property.kind !== "reachable") return undefined;
-  if (!isExprIR(property.predicate)) return undefined;
-  try {
-    const initials = modelInitialStates(model);
-    for (const state of initials) {
-      if (evalStatePredicate(property.predicate, state)) {
-        return {
-          status: "reachable",
-          property: property.name,
-          trace: { steps: [] },
-        };
-      }
-    }
-  } catch (error) {
-    if (error instanceof StatePredicateEvalError) return undefined;
-    throw error;
-  }
   return undefined;
 }

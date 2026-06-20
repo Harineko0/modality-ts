@@ -441,7 +441,7 @@ describe("TLA export", () => {
     expect(
       result.verdicts
         .slice(0, expectedReachable.size)
-        .every((verdict) => verdict.status === "reachable"),
+        .every((verdict) => verdict.status.startsWith("verified")),
     ).toBe(true);
     expect(result.verdicts.at(-1)).toMatchObject({
       property: "oracleExcludedState",
@@ -1012,7 +1012,7 @@ describe("TLA export", () => {
         reads: ["local:panel"],
       }),
     ]);
-    expect(checker.verdicts[0]?.status).toBe("reachable");
+    expect(checker.verdicts[0]?.status).toMatch(/^verified/);
   });
 
   it("rejects TLA identifier collisions before emitting ambiguous modules", () => {

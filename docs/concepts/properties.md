@@ -5,14 +5,17 @@ sidebar_label: Properties
 ---
 
 Properties say what must hold across the explored graph. `modality-ts` deliberately
-does **not** expose raw LTL/CTL. Instead it offers a small, **closed** set of
-combinators whose predicates are built from IR expressions. The design principle:
-*usability at the surface, standard modal logic underneath.*
+does **not** expose raw temporal-logic strings or arbitrary user-defined operators.
+Instead it offers a **closed** set of combinators whose predicates are built from IR
+expressions. The common helpers cover the usual frontend checks, and the advanced
+`property(..., ctl...)` API exposes CTL through named constructors that still serialize
+to the same structured property IR. The design principle: *usability at the surface,
+standard modal logic underneath.*
 
 ## Why a closed combinator set
 
-- Frontend developers are the audience; `G (admin → auth)` vs `AG` vs `U`-operator
-  precedence is a wall, and LTL formulas cannot be type-checked against app state.
+- Frontend developers are the audience; `G (admin -> auth)` vs `AG` vs `U`-operator
+  precedence is a wall, and raw formulas cannot be type-checked against app state.
 - Standard notation does **not** prevent *mis*-formalization. `G(guest → ¬pending)` is
   perfectly standard LTL and is exactly the *wrong* encoding of "a guest cannot
   *trigger* a submit" — logging out while a request is in flight legally yields
@@ -22,8 +25,8 @@ combinators whose predicates are built from IR expressions. The design principle
   **normative formal semantics**, and the TLA+ export and differential tests are checked
   against those definitions, not against the implementation.
 
-Missing expressiveness is met by adding *one* well-defined combinator — never by opening
-the surface to raw temporal logic.
+Missing expressiveness is met by adding *one* well-defined combinator or a named `ctl`
+constructor — never by opening the surface to untyped temporal-logic strings.
 
 ## The combinators and their semantics
 
@@ -31,12 +34,37 @@ Over the stabilized LTS `M = (S, S₀, A, →)`:
 
 | Combinator | Normative meaning |
 | --- | --- |
-| `always(p)` | `G p` — `p` holds in every reachable (stabilized) state. |
+| `always(p)` | `AG p` — `p` holds in every reachable (stabilized) state. |
 | `alwaysStep(q)` | action invariant: `q(s, t, s′)` holds for **every reachable edge** `s —t→ s′` (the TLA `□[A]` tradition). |
-| `reachable(p)` | existential witness `EF p`; exhaustion without a witness is a **vacuity warning**, not a pass. |
+| `reachable(p)` | `EF p`; success proves the state is reachable in the explored graph, and exhaustion without a witness is a **vacuity warning**, not a pass. |
 | `reachableFrom(when, goal)` | `AG(when → EF goal)` — from every `when`-state some path (with a cooperative environment) reaches `goal`. Checked by backward reachability. |
 | `leadsToWithin(trigger, goal, k)` | bounded response: from every edge satisfying `trigger`, **all** scheduler-admitted continuations reach `goal` within budget `k`. |
 | `enabled(t)` | state predicate: `guard_t(s) ∧ mounted_t(s)` — exact, since guards are structured IR. |
+
+The convenience state builders lower to CTL (`always(p)` = `AG p`,
+`reachable(p)` = `EF p`, `reachableFrom(when, goal)` = `AG(when -> EF goal)`). Advanced
+callers can register a temporal formula directly with `property(name, formula, options?)`
+and the `ctl` namespace:
+
+```ts
+import { ctl, eq, property } from "modality-ts/properties";
+import { App } from "./App.modals";
+
+property(
+  "validPaymentInevitablyCanReview",
+  ctl.always(
+    ctl.implies(
+      ctl.holds(eq(App.payment, "valid")),
+      ctl.eventually(ctl.holds(eq(App.step, "review"))),
+    ),
+  ),
+);
+```
+
+`ctl` exposes `holds`, `negate`, `allOf`, `anyOf`, `implies`, `always` (`AG`),
+`canReach` (`EF`), `eventually` (`AF`), `canStayForever` (`EG`), `afterEveryStep`
+(`AX`), `afterSomeStep` (`EX`), `holdsUntil` (`AU`), `canHoldUntil` (`EU`), and
+`fairlyOften` for fairness constraints.
 
 ## Building predicates
 
@@ -98,9 +126,10 @@ import { leadsToWithin, or, eq, stepEnqueued } from "modality-ts/properties";
 import { App } from "./App.modals";
 
 leadsToWithin(
+  "submitResolves",
   stepEnqueued("api.placeOrder"),
   or(eq(App.order, "success"), eq(App.order, "error")),
-  { name: "submitResolves", budget: { environment: 3 } },
+  { budget: { environment: 3 } },
 );
 ```
 

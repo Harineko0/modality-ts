@@ -44,6 +44,7 @@ export interface HumanCheckRenderOptions extends OutputOptions {
 
 export function symbolForStatus(status: PropertyVerdict["status"]): string {
   switch (status) {
+    case "verified":
     case "verified-within-bounds":
     case "reachable":
       return statusSymbol("pass");
@@ -59,6 +60,7 @@ function verdictStatusKind(
   status: PropertyVerdict["status"],
 ): "pass" | "fail" | "warn" {
   switch (status) {
+    case "verified":
     case "verified-within-bounds":
     case "reachable":
       return "pass";
@@ -88,6 +90,7 @@ function verdictCounts(check: CheckResult) {
   const tests = check.verdicts.length;
   const passed = check.verdicts.filter(
     (verdict) =>
+      verdict.status === "verified" ||
       verdict.status === "verified-within-bounds" ||
       verdict.status === "reachable",
   ).length;

@@ -241,12 +241,13 @@ describe("mounted scopes", () => {
       ],
       transitions: [],
     };
-    const { model: sliced, diagnostics } = sliceModelForCheckProperty(model, {
-      kind: "reachable",
-      name: "panelReachable",
-      predicate: eq(readVar("local:panel"), lit(true)),
-      reads: ["local:panel"],
-    });
+    const { model: sliced, diagnostics } = sliceModelForCheckProperty(
+      model,
+      reachable(model, eq(readVar("local:panel"), lit(true)), {
+        name: "panelReachable",
+        reads: ["local:panel"],
+      }),
+    );
     expect(sliced.vars.map((decl) => decl.id).sort()).toEqual([
       "local:panel",
       "sys:route",
@@ -299,12 +300,13 @@ describe("mounted scopes", () => {
       ],
       transitions: [],
     };
-    const { model: sliced } = sliceModelForCheckProperty(model, {
-      kind: "always",
-      name: "onRouteA",
-      predicate: eq(readVar("sys:route"), lit("/a")),
-      reads: ["sys:route"],
-    });
+    const { model: sliced } = sliceModelForCheckProperty(
+      model,
+      always(model, eq(readVar("sys:route"), lit("/a")), {
+        name: "onRouteA",
+        reads: ["sys:route"],
+      }),
+    );
     expect(sliced.vars.map((decl) => decl.id).sort()).toEqual(["sys:route"]);
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("local:panel");
     expect(sliced.vars.map((decl) => decl.id)).not.toContain("local:slotPanel");
@@ -440,10 +442,8 @@ describe("mounted scopes", () => {
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
-    expect(byName.get("unmountedWhenSlotOff")).toBe("verified-within-bounds");
-    expect(byName.get("turnOnDisabledWhenUnmounted")).toBe(
-      "verified-within-bounds",
-    );
-    expect(byName.get("panelInitializesOnActivation")).toBe("reachable");
+    expect(byName.get("unmountedWhenSlotOff")).toBe("verified");
+    expect(byName.get("turnOnDisabledWhenUnmounted")).toBe("verified");
+    expect(byName.get("panelInitializesOnActivation")).toMatch(/^verified/);
   });
 });

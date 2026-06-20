@@ -40,6 +40,7 @@ export interface DomainReportEntry {
 export type { ExtractionCaveat, FieldPruningEntry, FieldPruningMetadata };
 
 export type ReportVerdictStatus =
+  | "verified"
   | "verified-within-bounds"
   | "violated"
   | "reachable"

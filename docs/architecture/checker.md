@@ -90,10 +90,16 @@ requirement for CI reproducibility and for differential testing.
 
 ## Monitors
 
-- **`always`** — evaluated on every newly visited stabilized state; first violation (BFS
-  ⇒ minimal depth) reconstructs the trace.
+- **Temporal formulas** — state properties are serialized as CTL formulas and evaluated
+  over the explored graph. The convenience builders lower to CTL (`always(p)` = `AG p`,
+  `reachable(p)` = `EF p`, `reachableFrom(when, goal)` = `AG(when -> EF goal)`), while
+  advanced callers can register `property(name, ctl...)` formulas using `EX`, `AX`, `EF`,
+  `AF`, `EG`, `AG`, `EU`, and `AU`.
+- **`always`** — a convenience `AG` formula; first violation (BFS ⇒ minimal depth)
+  reconstructs the trace.
 - **`alwaysStep`** — evaluated on *every edge*, including edges into visited states.
-- **`reachable`** — success is a witness trace; exhaustion is a vacuity warning.
+- **`reachable`** — a convenience `EF` formula; success is a temporal verdict over the
+  explored graph, while exhaustion is a vacuity warning.
 - **`reachableFrom`** — `AG(when → EF goal)`, checked by reverse BFS from goal states
   (`graph.rs`); counterexamples are *non-replayable* by nature (they assert path
   absence), rendered as a trace to the witness `when`-state plus an exhausted-search

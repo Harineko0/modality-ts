@@ -8,6 +8,7 @@ import {
   type NumericReductionClaim,
   type Property,
   type SourceAnchor,
+  type TemporalFormula,
   type Transition,
 } from "modality-ts/core";
 
@@ -288,15 +289,45 @@ export function collectNumericCutPoints(
   return [...cuts].sort((left, right) => left - right);
 }
 
+function collectFormulaAtomExprs(formula: TemporalFormula): ExprIR[] {
+  const atoms: ExprIR[] = [];
+  const walk = (f: TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        atoms.push(f.predicate);
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
+  return atoms;
+}
+
 function collectPropertyCutPoints(property: Property, cuts: Set<number>): void {
   switch (property.kind) {
-    case "always":
-    case "reachable":
-      collectExprCutPoints(property.predicate, cuts);
-      break;
-    case "reachableFrom":
-      collectExprCutPoints(property.when, cuts);
-      collectExprCutPoints(property.goal, cuts);
+    case "temporal":
+      for (const atom of collectFormulaAtomExprs(property.formula)) {
+        collectExprCutPoints(atom, cuts);
+      }
       break;
     case "alwaysStep":
       if ("pre" in property.predicate && property.predicate.pre) {
@@ -334,13 +365,10 @@ function collectPropertyObservations(
   varId?: string,
 ): void {
   switch (property.kind) {
-    case "always":
-    case "reachable":
-      collectExprObservations(property.predicate, observations, varId);
-      break;
-    case "reachableFrom":
-      collectExprObservations(property.when, observations, varId);
-      collectExprObservations(property.goal, observations, varId);
+    case "temporal":
+      for (const atom of collectFormulaAtomExprs(property.formula)) {
+        collectExprObservations(atom, observations, varId);
+      }
       break;
     case "alwaysStep":
       if ("pre" in property.predicate && property.predicate.pre) {
@@ -432,9 +460,12 @@ export function reductionsAffectingProperty(
 }
 
 export function downgradeVerdictForReductions(
-  status: "verified-within-bounds",
+  status: "verified" | "verified-within-bounds",
   reductions: readonly NumericReduction[],
-): { status: "verified-within-bounds" | "vacuous-warning"; message?: string } {
+): {
+  status: "verified" | "verified-within-bounds" | "vacuous-warning";
+  message?: string;
+} {
   const worst = worstNumericClaim(reductions);
   if (worst !== "heuristic") return { status };
   return {

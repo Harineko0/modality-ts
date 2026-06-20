@@ -8,6 +8,7 @@ import {
   type StatePredicateIR,
   type StepPredicateFlat,
   type StepPredicateIR,
+  type TemporalFormula,
   type Transition,
 } from "modality-ts/core";
 import type { MountScopeDependency, PendingQueueDependency } from "../types.js";
@@ -236,43 +237,27 @@ function collectPropertyDependencyRequest(
   }
 
   switch (property.kind) {
-    case "always":
-    case "reachable":
-      return finalizePropertyDependencyRequest(model, property, {
-        stateReads: collectStatePredicateReads(
-          property.reads,
-          property.predicate,
-        ),
-        enabledTransitions: collectEnabledTransitions(
-          model,
-          property.enabledTransitions,
-          property.predicate,
-        ),
-        targetTransitionIds: [],
-        stepFactVars: [],
-        pendingQueueDependencies: [],
-        directionalPredicate:
-          property.kind === "reachable" && isExprIR(property.predicate)
-            ? property.predicate
-            : undefined,
-      });
-    case "reachableFrom":
+    case "temporal": {
+      const atoms = collectFormulaAtomExprs(property.formula);
+      const directionalPredicate = temporalDirectionalPredicate(
+        property.formula,
+      );
       return finalizePropertyDependencyRequest(model, property, {
         stateReads: unionSorted(
           property.reads,
-          collectExprStateReads(property.when),
-          collectExprStateReads(property.goal),
+          ...atoms.map(collectExprStateReads),
         ),
         enabledTransitions: collectEnabledTransitions(
           model,
           property.enabledTransitions,
-          property.when,
-          property.goal,
+          ...atoms,
         ),
         targetTransitionIds: [],
         stepFactVars: [],
         pendingQueueDependencies: [],
+        ...(directionalPredicate ? { directionalPredicate } : {}),
       });
+    }
     case "leadsToWithin":
       return finalizePropertyDependencyRequest(model, property, {
         stateReads: unionSorted(
@@ -439,16 +424,55 @@ function isPositiveTargetedAlwaysStep(
   return predicate.transitionId !== undefined;
 }
 
+function collectFormulaAtomExprs(formula: TemporalFormula): ExprIR[] {
+  const atoms: ExprIR[] = [];
+  const walk = (f: TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        atoms.push(f.predicate);
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
+  return atoms;
+}
+
+function temporalDirectionalPredicate(
+  formula: TemporalFormula,
+): ExprIR | undefined {
+  return formula.kind === "EF" && formula.arg.kind === "atom"
+    ? formula.arg.predicate
+    : undefined;
+}
+
 function opaquePropertyReason(property: Property): string | undefined {
   switch (property.kind) {
-    case "always":
-    case "reachable":
-      return statePredicateOpaqueReason(property.predicate);
-    case "reachableFrom":
-      return (
-        statePredicateOpaqueReason(property.when) ??
-        statePredicateOpaqueReason(property.goal)
-      );
+    case "temporal":
+      for (const atom of collectFormulaAtomExprs(property.formula)) {
+        const reason = statePredicateOpaqueReason(atom);
+        if (reason) return reason;
+      }
+      return undefined;
     case "leadsToWithin":
       return (
         statePredicateOpaqueReason(property.goal) ??

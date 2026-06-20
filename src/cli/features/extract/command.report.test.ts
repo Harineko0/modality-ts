@@ -128,7 +128,7 @@ describe("runExtractCommand", () => {
         reads: ["local:App.saveStatus"],
       }),
     ]);
-    expect(check.verdicts[0]?.status).toBe("reachable");
+    expect(check.verdicts[0]?.status).toMatch(/^verified/);
     expect(report.diagnostics?.phaseTimings?.length).toBeGreaterThan(0);
     for (const timing of report.diagnostics?.phaseTimings ?? []) {
       expect(timing.elapsedMs).toBeGreaterThanOrEqual(0);

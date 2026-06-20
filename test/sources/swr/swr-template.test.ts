@@ -278,9 +278,9 @@ describe("SWR template", () => {
     const byName = new Map(
       result.verdicts.map((verdict) => [verdict.property, verdict.status]),
     );
-    expect(byName.get("loadingReachable")).toBe("reachable");
-    expect(byName.get("loadedSomeReachable")).toBe("reachable");
-    expect(byName.get("staleDataWithErrorReachable")).toBe("reachable");
+    expect(byName.get("loadingReachable")).toMatch(/^verified/);
+    expect(byName.get("loadedSomeReachable")).toMatch(/^verified/);
+    expect(byName.get("staleDataWithErrorReachable")).toMatch(/^verified/);
     expect(byName.get("inactiveGuestDoesNotFetch")).toBe(
       "verified-within-bounds",
     );

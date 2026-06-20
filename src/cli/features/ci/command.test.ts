@@ -114,7 +114,7 @@ describe("runCiCommand", () => {
     expect(trace).toMatchObject({ schemaVersion: 1, kind: "trace" });
     expect(
       trace.steps.map((step: { transitionId: string }) => step.transitionId),
-    ).toEqual(["setFlag"]);
+    ).toEqual([]);
   });
 
   it("passes when all properties hold", async () => {

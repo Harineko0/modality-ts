@@ -1,36 +1,28 @@
 import type {
+  FairnessConstraint,
   PropertyOptions,
   StepPredicateFlat,
   StepPredicateIR,
+  TemporalFormula,
 } from "../ir/types.js";
 import type { Operand } from "./operand.js";
+import { always as ctlAlways, canReach, holds, implies } from "./formula.js";
 
-export interface PendingAlwaysSpec {
-  kind: "always";
+// ---------------------------------------------------------------------------
+// Pending spec shapes (pre-finalization)
+// ---------------------------------------------------------------------------
+
+export interface PendingTemporalSpec {
+  kind: "temporal";
   name: string;
-  predicate: Operand;
-  options: PropertyOptions;
+  formula: TemporalFormula;
+  options: PropertyOptions & { fairness?: readonly FairnessConstraint[] };
 }
 
 export interface PendingAlwaysStepSpec {
   kind: "alwaysStep";
   name: string;
   predicate: StepPredicateIR;
-  options: PropertyOptions;
-}
-
-export interface PendingReachableSpec {
-  kind: "reachable";
-  name: string;
-  predicate: Operand;
-  options: PropertyOptions;
-}
-
-export interface PendingReachableFromSpec {
-  kind: "reachableFrom";
-  name: string;
-  when: Operand;
-  goal: Operand;
   options: PropertyOptions;
 }
 
@@ -46,11 +38,13 @@ export interface PendingLeadsToWithinSpec {
 }
 
 export type PendingSpec =
-  | PendingAlwaysSpec
+  | PendingTemporalSpec
   | PendingAlwaysStepSpec
-  | PendingReachableSpec
-  | PendingReachableFromSpec
   | PendingLeadsToWithinSpec;
+
+// ---------------------------------------------------------------------------
+// Registry state
+// ---------------------------------------------------------------------------
 
 let specs: PendingSpec[] = [];
 let prefix: string[] = [];
@@ -80,31 +74,66 @@ export function group(name: string, fn: () => void): void {
   }
 }
 
-export function reachable(
+// ---------------------------------------------------------------------------
+// General registration verb
+// ---------------------------------------------------------------------------
+
+export function property(
   name: string,
-  predicate: Operand,
-  options: PropertyOptions = {},
+  formula: TemporalFormula,
+  options: PropertyOptions & { fairness?: readonly FairnessConstraint[] } = {},
 ): void {
-  specs.push({
-    kind: "reachable",
-    name: qualifiedName(name),
-    predicate,
-    options,
-  });
+  specs.push({ kind: "temporal", name: qualifiedName(name), formula, options });
 }
 
+// ---------------------------------------------------------------------------
+// Convenience wrappers (preserve old call-shapes, lower to CTL)
+// ---------------------------------------------------------------------------
+
+/** Register AG p — p holds in every reachable state. */
 export function always(
   name: string,
   predicate: Operand,
   options: PropertyOptions = {},
 ): void {
-  specs.push({
-    kind: "always",
-    name: qualifiedName(name),
-    predicate,
-    options,
-  });
+  property(name, ctlAlways(holds(predicate)), options);
 }
+
+/** Register EF p — p is reachable from the initial state. */
+export function reachable(
+  name: string,
+  predicate: Operand,
+  options: PropertyOptions = {},
+): void {
+  property(name, canReach(holds(predicate)), options);
+}
+
+/** Register AG(when → EF goal) — from every when-state, some path reaches goal. */
+export function reachableFrom(
+  name: string,
+  when: Operand,
+  goal: Operand,
+  options: PropertyOptions = {},
+): void {
+  property(
+    name,
+    ctlAlways(implies(holds(when), canReach(holds(goal)))),
+    options,
+  );
+}
+
+/** Register an AG p using a pre-built TemporalFormula (advanced usage). */
+export function inevitably(
+  name: string,
+  formula: TemporalFormula,
+  options: PropertyOptions = {},
+): void {
+  property(name, formula, options);
+}
+
+// ---------------------------------------------------------------------------
+// Non-CTL verbs (unchanged)
+// ---------------------------------------------------------------------------
 
 export function alwaysStep(
   name: string,
@@ -115,21 +144,6 @@ export function alwaysStep(
     kind: "alwaysStep",
     name: qualifiedName(name),
     predicate,
-    options,
-  });
-}
-
-export function reachableFrom(
-  name: string,
-  when: Operand,
-  goal: Operand,
-  options: PropertyOptions = {},
-): void {
-  specs.push({
-    kind: "reachableFrom",
-    name: qualifiedName(name),
-    when,
-    goal,
     options,
   });
 }

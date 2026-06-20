@@ -19,16 +19,65 @@ Each builder registers a property when the module is evaluated. Pass `reads` or
 
 | Helper | Signature | Kind |
 | --- | --- | --- |
-| `always` | `(name, predicate, options?)` | `G p` — state invariant |
+| `always` | `(name, predicate, options?)` | `AG p` — state invariant |
 | `alwaysStep` | `(name, stepPredicate, options?)` | action invariant over edges |
-| `reachable` | `(name, predicate, options?)` | `EF p` — existential witness |
-| `reachableFrom` | `(when, goal, options?)` | `AG(when → EF goal)` — `name` in options |
-| `leadsToWithin` | `(trigger, goal, options & { budget, allowUserEvents? })` | bounded response — `name` in options |
+| `reachable` | `(name, predicate, options?)` | `EF p` — existential reachability |
+| `reachableFrom` | `(name, when, goal, options?)` | `AG(when -> EF goal)` |
+| `leadsToWithin` | `(name, trigger, goal, options & { budget, allowUserEvents? })` | bounded response |
+| `property` | `(name, formula, options?)` | registers a pre-built temporal formula |
+| `inevitably` | `(name, formula, options?)` | alias for registering a pre-built temporal formula |
 | `group` | `(prefix, fn)` | prefixes registered property names |
 
-`options` is `{ name?, reads?, enabledTransitions?, includeUnmounted? }`. The `budget` is
-`{ steps?, environment? }`. `includeUnmounted` keeps mount-local variables in the read set
-even when their owning component is unmounted.
+`options` is `{ reads?, enabledTransitions?, includeUnmounted?, fairness? }` for temporal
+properties and `{ reads?, enabledTransitions?, includeUnmounted? }` for step and bounded
+response properties. The `budget` is `{ steps?, environment? }`. `includeUnmounted` keeps
+mount-local variables in the read set even when their owning component is unmounted.
+
+## CTL formulas
+
+For properties that do not fit the common helpers, import `property` and `ctl` to build a
+closed CTL formula over the same structured predicates. `ctl.holds(predicate)` lifts an
+`ExprIR` predicate into a temporal atom; the other helpers compose atoms and formulas.
+
+```ts
+import { ctl, eq, property } from "modality-ts/properties";
+import { App } from "./App.modals";
+
+property(
+  "reviewIsInevitableAfterPayment",
+  ctl.always(
+    ctl.implies(
+      ctl.holds(eq(App.payment, "valid")),
+      ctl.eventually(ctl.holds(eq(App.step, "review"))),
+    ),
+  ),
+);
+```
+
+| `ctl` helper | CTL form |
+| --- | --- |
+| `holds(predicate)` | atomic state formula |
+| `negate(f)` | `not f` |
+| `allOf(...formulas)` | conjunction |
+| `anyOf(...formulas)` | disjunction |
+| `implies(a, b)` | implication, encoded as `not a or b` |
+| `always(f)` | `AG f` — all paths, globally |
+| `canReach(f)` | `EF f` — some path eventually reaches `f` |
+| `eventually(f)` | `AF f` — all paths eventually reach `f` |
+| `canStayForever(f)` | `EG f` — some path keeps `f` true forever |
+| `afterEveryStep(f)` | `AX f` — every immediate successor satisfies `f` |
+| `afterSomeStep(f)` | `EX f` — some immediate successor satisfies `f` |
+| `holdsUntil(p, q)` | `A[p U q]` — every path keeps `p` true until `q` |
+| `canHoldUntil(p, q)` | `E[p U q]` — some path keeps `p` true until `q` |
+| `fairlyOften(condition, name?)` | fairness constraint for fair temporal checks |
+
+Pass fairness constraints in the registration options:
+
+```ts
+property("spinnerCanStopFairly", ctl.eventually(ctl.holds(eq(App.loading, false))), {
+  fairness: [ctl.fairlyOften(ctl.holds(eq(App.network, "settled")), "network settles")],
+});
+```
 
 ## Expression helpers
 
@@ -127,10 +176,14 @@ alwaysStep("guestCannotSubmit", {
   pre: eq(authAtom, "guest"),
 });
 
-leadsToWithin(stepEnqueued("api.placeOrder"), or(eq(App.step, "success"), eq(App.step, "error")), {
-  name: "submitResolves",
-  budget: { environment: 3 },
-});
+leadsToWithin(
+  "submitResolves",
+  stepEnqueued("api.placeOrder"),
+  or(eq(App.step, "success"), eq(App.step, "error")),
+  {
+    budget: { environment: 3 },
+  },
+);
 ```
 
 See the [writing-properties guide](../guides/writing-properties.md) for patterns.

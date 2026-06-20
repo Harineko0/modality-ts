@@ -6,14 +6,29 @@ import type {
   Transition,
 } from "modality-ts/core";
 
+/** How much of the state space was covered when this verdict was produced. */
+export type VerificationBoundedness = "exhaustive" | "bounded";
+
 export type PropertyVerdict =
-  | { status: "verified-within-bounds"; property: string }
+  | {
+      /** Property holds over the exhaustively explored state space. */
+      status: "verified";
+      property: string;
+      boundedness: "exhaustive";
+    }
+  | {
+      /** Property holds within the explored bounds but the exploration was truncated. */
+      status: "verified-within-bounds";
+      property: string;
+      boundedness?: VerificationBoundedness;
+    }
   | {
       status: "violated";
       property: string;
       trace: Trace;
       replayable?: boolean;
       replayBlockedReason?: string;
+      boundedness?: VerificationBoundedness;
     }
   | {
       status: "reachable";

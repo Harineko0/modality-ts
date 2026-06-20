@@ -1318,11 +1318,12 @@ describe("property DSL", () => {
   it("allows slicing eligibility without explicit reads when predicate is walkable", () => {
     const model = baseModel();
     expect(
-      canSliceProperty(model, {
-        kind: "always",
-        name: "flagFalse",
-        predicate: eq(readVar("flag"), lit(false)),
-      }),
+      canSliceProperty(
+        model,
+        always(model, eq(readVar("flag"), lit(false)), {
+          name: "flagFalse",
+        }),
+      ),
     ).toBe(true);
   });
 

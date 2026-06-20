@@ -338,13 +338,45 @@ export function buildFieldPruningMetadata(model: Model): FieldPruningMetadata {
   return { entries };
 }
 
+function collectFormulaAtoms(
+  formula: import("../ir/types.js").TemporalFormula,
+): ExprIR[] {
+  const atoms: ExprIR[] = [];
+  const walk = (f: import("../ir/types.js").TemporalFormula): void => {
+    switch (f.kind) {
+      case "atom":
+        atoms.push(f.predicate);
+        break;
+      case "fnot":
+        walk(f.arg);
+        break;
+      case "fand":
+      case "for":
+        for (const arg of f.args) walk(arg);
+        break;
+      case "EX":
+      case "AX":
+      case "EF":
+      case "AF":
+      case "EG":
+      case "AG":
+        walk(f.arg);
+        break;
+      case "EU":
+      case "AU":
+        walk(f.left);
+        walk(f.right);
+        break;
+    }
+  };
+  walk(formula);
+  return atoms;
+}
+
 function propertyPredicates(property: Property): readonly ExprIR[] {
   switch (property.kind) {
-    case "always":
-    case "reachable":
-      return [property.predicate];
-    case "reachableFrom":
-      return [property.when, property.goal];
+    case "temporal":
+      return collectFormulaAtoms(property.formula);
     case "alwaysStep":
       if ("step" in property.predicate) {
         const preds: ExprIR[] = [];

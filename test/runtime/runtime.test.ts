@@ -89,7 +89,8 @@ describe("modality-ts/cli/runtime observable assertions", () => {
       { property: "missingObservable", reason: "unobservable reads: missing" },
       {
         property: "notAnInvariant",
-        reason: "unsupported property kind: reachable",
+        reason:
+          "unsupported property kind for runtime assertion: temporal (formula: EF)",
       },
     ]);
   });
