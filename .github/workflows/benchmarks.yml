@@ -7,9 +7,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
-  ledgerops:
-    name: LedgerOps benchmark
+  benchmarks:
+    name: Modality benchmarks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,12 +27,24 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Build native checker
+        run: pnpm build:rust
       - name: Typecheck
         run: pnpm typecheck
       - name: Benchmarks
         run: pnpm benchmarks -- --report .modality/benchmarks/report.json
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            Benchmark report: [link](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          comment-id: ${{ steps.comment.outputs.comment-id }}
       - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v4
