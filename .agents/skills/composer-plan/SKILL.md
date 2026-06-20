@@ -14,14 +14,12 @@ The plan must include:
 1. Goal
 2. Non-goals
 3. Current-state findings
-4. Exact file paths and relevant symbols
-5. Existing patterns to follow
-6. Atomic implementation steps
-7. Per-step files to edit
+4. Existing patterns to follow
+5. Atomic implementation steps
+6. Tests to add or update
+7. Verification
 8. Acceptance criteria
-9. Tests to add or update
-10. Verification commands
-11. Risks, ambiguities, and stop conditions
+9. Risks, ambiguities, and stop conditions
 
 Optimize for an implementation agent:
 
@@ -34,4 +32,5 @@ Optimize for an implementation agent:
 - Rather than overfitting to a specific library or framework, abstract it so that it can accommodate different ones.
 - Never consider backward compatibility.
 
+If the plan may be large, consider splitting it into multiple plans at proper granularity.
 Output only the plan.
