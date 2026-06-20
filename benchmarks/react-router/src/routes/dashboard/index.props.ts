@@ -11,11 +11,13 @@ import {
   or,
   property,
   reachable,
+  type Variable,
   variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
+import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.js";
 
-const selectedAccount = variable("atom:selectedAccountAtom");
+const selectedAccount = selectedAccountAtom as unknown as Variable;
 const dashboardSummary = variable("swr:dashboard_selectedAccount:data");
 const summaryValidating = variable(
   "swr:dashboard_selectedAccount:isValidating",

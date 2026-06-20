@@ -9,13 +9,18 @@ import {
   property,
   reachableFrom,
   stepAny,
-  variable,
+  type Variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
+import {
+  permissionCacheAtom,
+  sessionAtom,
+  targetRoleAtom,
+} from "../../../features/auth/state/session-atoms.js";
 
-const sessionRole = variable("atom:sessionAtom").at("role");
-const permissionRole = variable("atom:permissionCacheAtom").at("role");
-const targetRole = variable("atom:targetRoleAtom");
+const sessionRole = (sessionAtom as unknown as Variable).at("role");
+const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
+const targetRole = targetRoleAtom as unknown as Variable;
 
 group("rbac", () => {
   always(

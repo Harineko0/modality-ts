@@ -14,15 +14,17 @@ import {
   property,
   readOpArg,
   stepResolved,
+  type Variable,
   variable,
 } from "modality-ts/properties";
+import { permissionCacheAtom } from "../../../features/auth/state/session-atoms.js";
 
 const selectedRiskBucket = variable(
   "zustand:useManagementStore.selectedRiskBucket",
 );
 const bulkStatus = variable("zustand:useManagementStore.bulkStatus");
 const riskFilter = variable("zustand:useManagementStore.riskFilter");
-const permissionRole = variable("atom:permissionCacheAtom").at("role");
+const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
 
 group("management", () => {
   always(

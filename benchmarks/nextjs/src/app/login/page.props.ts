@@ -12,19 +12,25 @@ import {
   property,
   reachable,
   readOpArg,
-  s,
   stepAny,
   stepEnqueued,
   stepResolved,
   stepTransitionId,
+  type Variable,
   variable,
 } from "modality-ts/properties";
 import { pending, route } from "modality-ts/vars";
+import {
+  permissionCacheAtom,
+  returnToAtom,
+  sessionAtom,
+} from "../../features/auth/state/session-atoms.js";
+import { LoginForm } from "./_components/LoginForm.modals";
 
-const sessionRole = variable("atom:sessionAtom").at("role");
-const permissionRole = variable("atom:permissionCacheAtom").at("role");
-const returnTo = variable("atom:returnToAtom");
-const loginRole = s({ name: "LoginForm" }).role;
+const sessionRole = (sessionAtom as unknown as Variable).at("role");
+const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
+const returnTo = returnToAtom as unknown as Variable;
+const loginRole = LoginForm.role;
 
 group("auth", () => {
   alwaysStep("auth.failedLoginKeepsGuest", {
