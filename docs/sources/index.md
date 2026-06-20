@@ -6,7 +6,7 @@ sidebar_label: Overview
 ---
 
 A *state source* is a library or React mechanism that holds modeled state.
-`modality-ts` ships five built-in sources plus first-class modeling of several React
+`modality-ts` ships six built-in sources plus first-class modeling of several React
 features. Each is a [vertical slice](../architecture/state-sources.md) implementing the
 public plugin contract, activated when its package appears in your dependencies (and
 disable-able with `--disable-plugin <id>`).
@@ -19,6 +19,7 @@ disable-able with `--disable-plugin <id>`).
 | [Jotai](./jotai.md) | atoms, derived/writable atoms, utility atoms, store scoping | store handle (direct) | none |
 | [SWR](./swr.md) | per-key cache lifecycle, revalidation, dedup, stale-on-error | cache `Map` (direct) | **yes** (hand-written) |
 | [Zustand](./zustand.md) | store fields, actions, `set`/`get`, middleware, immer drafts | store handle (direct) | none |
+| [TanStack Query](./tanstack-query.md) | query/mutation cache, QueryClient APIs, aggregates | `QueryClient` handle (direct) | **yes** (hand-written) |
 | [Router](./router.md) | routes, navigation intents, history | router test API | location semantics |
 | [TanStack Router](./tanstack.md) | file/code route trees, loaders, bounded loader cache | router harness + branch vars | location + tree semantics |
 | [Next.js](./next.md) | App/Pages routes, route-tree slots, server effect APIs | router harness + slot vars | location + tree semantics |

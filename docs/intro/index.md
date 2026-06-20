@@ -80,7 +80,8 @@ Read [Soundness & Validity](../soundness/index.md) before you trust a verdict in
 - Components driven by local `useState` flows.
 - Apps using supported sources — [`useState`](../sources/use-state.md),
   [Jotai](../sources/jotai.md), [SWR](../sources/swr.md),
-  [Zustand](../sources/zustand.md), [router state](../sources/router.md).
+  [Zustand](../sources/zustand.md), [TanStack Query](../sources/tanstack-query.md),
+  [router state](../sources/router.md).
 - Finite domains, bounded collections, finite numeric ranges, and named side effects.
 - Business rules expressible as safety properties over reachable states.
 
@@ -115,7 +116,7 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | MobX / Recoil | ❌ | no source plugin |
 | SWR | ✅ | [hand-written cache template](../sources/swr.md) (lifecycle, revalidation, stale-on-error) |
 | `fetch` / named effect APIs | ✅ | [async split into enqueue + resolve](../concepts/transitions.md#async-split-transitions) |
-| TanStack Query | ❌ 🔜 | template effort like SWR; fits the contract |
+| TanStack Query | ✅ | [query/mutation cache template](../sources/tanstack-query.md) |
 | React Router | ✅ | the built-in [navigation adapter](../sources/router.md) |
 | TanStack Router | ✅ | the built-in [navigation adapter](../sources/tanstack-router.md) |
 | Zod | ✅ | static `z.number().int().min(a).max(b)` via [type-library adapter](../architecture/type-library-adapters.md) |

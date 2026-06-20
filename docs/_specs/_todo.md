@@ -5,7 +5,7 @@ This list captures features described in `docs/design.md` and `docs/specs/*.md` 
 ## Extraction
 
 - Add first-class `useReducer` extraction. The specs call this a natural v2 target because reducers are model-friendly, while current extraction reports `useReducer` as unsupported.
-- Add future state-source slices for Zustand, TanStack Query, Redux, and similar libraries via the public plugin contracts, with no checker/exporter changes.
+- Add future state-source slices for Redux and similar libraries via the public plugin contracts, with no checker/exporter changes.
 - Implement automatic predicate harvesting from guards, with report visibility, while preserving the E1 review story.
 - Expand predicate-refinement support so witness obligations are required and validated at extract time.
 - Improve M0 expression coverage where still partial: bounded-list comprehensions such as `find`/`some`/`every`/`includes`, richer input coercion pipelines, and condition-only nondeterministic branch modeling.

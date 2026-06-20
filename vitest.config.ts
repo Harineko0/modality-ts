@@ -70,6 +70,14 @@ export default defineConfig({
         "./src/extract/sources/swr/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/tanstack-query/harness": new URL(
+        "./src/extract/sources/tanstack-query/harness.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/sources/tanstack-query": new URL(
+        "./src/extract/sources/tanstack-query/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/sources/use-state/harness": new URL(
         "./src/extract/sources/use-state/harness.ts",
         import.meta.url,

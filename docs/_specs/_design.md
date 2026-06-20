@@ -112,7 +112,7 @@ The server is pure nondeterminism by default, optionally constrained by develope
 
 ### Known, documented exclusions
 
-Render *internals* (reconciliation, fiber bailouts, StrictMode double-invoke — invisible at event granularity), refs/imperative DOM, third-party component internal state, `useReducer`/Redux/TanStack Query (later), value computation inside handlers (abstracted or havoc'd), and components rendered multiple times under one route (lists of stateful children).
+Render *internals* (reconciliation, fiber bailouts, StrictMode double-invoke — invisible at event granularity), refs/imperative DOM, third-party component internal state, `useReducer`/Redux (later), value computation inside handlers (abstracted or havoc'd), and components rendered multiple times under one route (lists of stateful children).
 
 *(Update: several items originally listed here are now **modeled**, not excluded — React-18 batching (via `readPre`), stale closures across `await` (via `readOpArg` snapshots into pending-op args), effect ordering (both-orders exploration + commit-`phase` tiers), timers, concurrent rendering, and Suspense; see Spec 02 §11. **Zustand** is now a built-in state source. The remaining exclusions above are still excluded by design.)*
 

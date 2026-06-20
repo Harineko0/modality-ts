@@ -155,6 +155,14 @@
       "types": "./dist/extract/sources/swr/harness.d.ts",
       "default": "./dist/extract/sources/swr/harness.js"
     },
+    "./extract/sources/tanstack-query": {
+      "types": "./dist/extract/sources/tanstack-query/index.d.ts",
+      "default": "./dist/extract/sources/tanstack-query/index.js"
+    },
+    "./extract/sources/tanstack-query/harness": {
+      "types": "./dist/extract/sources/tanstack-query/harness.d.ts",
+      "default": "./dist/extract/sources/tanstack-query/harness.js"
+    },
     "./extract/sources/use-state": {
       "types": "./dist/extract/sources/use-state/index.d.ts",
       "default": "./dist/extract/sources/use-state/index.js"

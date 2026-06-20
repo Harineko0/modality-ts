@@ -66,7 +66,7 @@ soundness:
 
 - **`useReducer`** — warned, not modeled (a natural future addition; reducers are *good*
   extraction material — pure, switch-shaped).
-- **Redux / TanStack Query** — not built-in sources yet (the
+- **Redux** — no built-in source yet (the
   [plugin SPI](../architecture/state-sources.md) is designed to accommodate them).
 - **ErrorBoundary** — not modeled; unhandled error paths are reported.
 - **Server / full-route execution** — loaders, actions, and initial data loading are

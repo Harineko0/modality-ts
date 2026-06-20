@@ -36,6 +36,7 @@ import {
   tanstackRouterModuleRoleAdapter,
 } from "modality-ts/extract/sources/tanstack-router";
 import { swrSource } from "modality-ts/extract/sources/swr";
+import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
 
@@ -87,6 +88,7 @@ export function createBuiltinModalityRegistry(
     jotaiSource(),
     swrSource(),
     zustandSource(),
+    tanstackQuerySource(),
   ];
   const sourcePlugins = [
     ...builtins.filter(
