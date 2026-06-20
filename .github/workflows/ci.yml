@@ -25,6 +25,17 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Fetch Rust dependencies
+        run: cargo fetch --locked --manifest-path crates/checker/Cargo.toml
+
       - name: Install
         run: pnpm install --frozen-lockfile
 

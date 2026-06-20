@@ -110,3 +110,18 @@ thresholds, budgets, caveats, and failure classifications.
 
 See [Conformance & replay](../architecture/conformance-and-replay.md) for matrix
 rows, fixtures, canaries, and how failures are classified.
+
+## LedgerOps benchmarks
+
+The repository also runs the LedgerOps benchmark suite through a separate GitHub Actions
+workflow (`.github/workflows/benchmarks.yml`). From the repo root:
+
+```bash
+pnpm benchmarks
+pnpm benchmarks:react-router
+pnpm benchmarks:nextjs
+```
+
+`pnpm benchmarks` reads `benchmarks/manifest.json`, extracts and checks both framework
+apps, and writes a structured benchmark report. Use this workflow when you need parity
+coverage across React Router and Next.js rather than the smaller example-app canaries.
