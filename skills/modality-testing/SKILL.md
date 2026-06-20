@@ -1,361 +1,89 @@
 ---
 name: modality-testing
-description: Guide use of modality-ts for bounded model checking of React and TypeScript state-transition behavior. Use when Codex needs to choose whether a UI flow is a good fit, extract a finite model, write or refine serializable property files, model async side effects, use overlays/configuration, run modality CLI checks, inspect trust-ledger reports, debug/replay counterexamples, tune search limits, configure CI artifacts, or work with supported sources such as useState, Jotai, Zustand, SWR, Next.js, React Router, timers, effects, Suspense, and route state.
+description: Guide Codex through modality-ts model-checking work for React and TypeScript apps. Use when Codex needs to decide whether modality-ts fits a bug class, initialize or run the modality CLI, generate typed *.modals.ts handles, write or debug *.props.ts property files, model async side effects and bounded state, read extraction trust-ledger/check reports, refine models with overlays/config, replay counterexamples, tune search limits, configure CI artifacts, or work with supported sources such as useState, Jotai, Zustand, SWR, React Router, Next.js, timers, effects, Suspense, and finite numeric/schema domains.
 ---
 
 # Modality Testing
 
-## Fit
+Use `modality-ts` as a bounded model-checking layer for React state-transition bugs:
+double submits, stale async completions, route/auth bypasses, impossible state
+combinations, timer races, and cache/state interleavings. Keep DOM layout, CSS, visual
+correctness, browser quirks, and arbitrary server behavior in unit/component/E2E tests.
 
-Use `modality-ts` for bounded, deterministic exploration of React state transitions:
-local state, route/history state, atoms/stores, cache templates, async effects, timers,
-and named side effects. Keep DOM layout, CSS, animation timing, browser quirks,
-unbounded server/database behavior, and visual correctness in ordinary unit,
-integration, or end-to-end tests.
+## Start Here
 
-Treat the extracted model plus its trust ledger as the source of truth. Do not guess
-variable IDs, transition IDs, bounds, or caveats from code alone; inspect
-`.modality/model.json`, `.modality/app.model.ts`, and extraction/check reports.
-
-## Core Workflow
-
-1. Initialize a project when no local workspace/config exists:
+1. Read the local app and current artifacts before guessing. Prefer actual
+   `.modality/model.json`, `.modality/*report*.json`, `*.props.ts`, generated
+   `*.modals.ts`, and `modality.config.ts` over assumptions from source code alone.
+2. Use the current default loop:
 
 ```bash
 npx modality init
-```
-
-2. Extract a model. With discovered/colocated property files, the CLI can infer sources:
-
-```bash
+npx modality generate
 npx modality extract
-```
-
-Target sources explicitly when needed, and write the trust ledger report when judging
-model precision:
-
-```bash
-npx modality extract src/App.tsx \
-  --effect-api api.placeOrder \
-  --report .modality/extraction-report.json
-```
-
-Useful extraction flags:
-
-```bash
-npx modality extract [source.tsx ...] \
-  --out .modality/model.json \
-  --app-model .modality/app.model.ts \
-  --overlay modality.overlay.ts \
-  --config modality.config.ts \
-  --disable-plugin <id> \
-  --effect-api api.placeOrder
-```
-
-3. Inspect the trust ledger before writing or trusting properties. Confirm:
-
-- expected plugins/adapters activated and route coverage is sensible;
-- key variables appear with usable domains;
-- important handlers are not missing or only `unextractable`;
-- async operations, pending bound `maxPending`, stale reads, unhandled rejections,
-  over-approx/manual transitions, ignored vars, and bound-hit events are understood.
-
-4. Write `*.props.ts` files that register properties at module top level. Import builders
-from `modality-ts/properties`:
-
-```ts
-import { always, or, not, eq } from "modality-ts/properties";
-import { route } from "modality-ts/vars";
-import { sessionAtom } from "./store";
-
-always(
-  "adminRequiresAuth",
-  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
-);
-```
-
-Reference state through handles, never a raw-id wrapper: `import` a module-scoped atom/store
-directly (resolved to its var by symbol rewriting, so renames stay in sync), import generated
-`useState` locals from `./.modality/vars/<Component>`, import stable system vars from
-`modality-ts/vars`, or use `varHandle(id)` (+ `handle.at(...path)`) for synthesized ids such
-as `swr:*` and parameterized `sys:*`. Use `group("prefix", () => { ... })` to namespace
-related properties. Extraction emits `.modality/vars/<Component>.d.ts` type-only modules
-for component locals; with `moduleResolution: "nodenext"`, source may need a `.js` specifier.
-
-5. Check the model:
-
-```bash
 npx modality check
 ```
 
-Default search limits are active. Override them deliberately:
+3. If a component calls network/effect wrappers, name them during extraction:
 
 ```bash
-npx modality check --max-states 50000 --max-edges 150000
-npx modality check --no-search-limits
+npx modality extract src/App.tsx --effect-api api.placeOrder
 ```
 
-A search-limit hit is an `error` verdict, never verified. Use diagnostics
-(`dominantVars`, slicing data, limit reason) to refine domains, bounds, or properties.
+4. Read reports before changing app code. A failed property can be a real bug, an overly
+   broad model, a missing effect API, a coarse domain, an unextractable handler, a
+   too-small bound, or a mistaken/vacuous property.
 
-6. Replay violated traces when possible:
+Inside the `modality-ts` repository, follow repo instructions and run shell commands via
+`rtk` where practical, for example `rtk pnpm test`.
 
-```bash
-npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json
-npx modality replay .modality/traces/noDoubleSubmit.violated.trace.json \
-  --mode action --harness test/replay-harness.ts
-```
+## Load References As Needed
 
-Replay verdicts mean:
+- Read [workflow-cli.md](references/workflow-cli.md) when initializing a project,
+  choosing CLI commands, configuring CI, interpreting artifact paths, or running
+  validation in this repository.
+- Read [property-patterns.md](references/property-patterns.md) before writing or
+  repairing `*.props.ts` files, choosing a property combinator, importing state handles,
+  or using CTL/numeric/step helpers.
+- Read [modeling-and-triage.md](references/modeling-and-triage.md) when modeling async
+  effects, reading the trust ledger, dealing with search limits/state explosion,
+  deciding whether to add an overlay, replaying counterexamples, or working with
+  source adapters.
 
-- `reproduced`: real app behavior; fix the app and keep the generated test.
-- `not-reproduced`: model divergence; inspect the diverging step provenance and refine
-  extraction/overlay/modeling.
-- `inconclusive`: harness, locator, provider, or timeout problem.
+## Core Rules
 
-7. Use CI artifacts for automation:
+- Prefer generated typed handles for local component state and transitions. Run
+  `modality generate`; import from sibling modules such as `./App.modals`.
+- Write property files as top-level registrations using serializable combinators from
+  `modality-ts/properties`. Do not write callback predicates or raw temporal-logic
+  strings.
+- Import stable system handles from `modality-ts/vars` (`route`, `history`, `pending`).
+  Use `variable(id)` from `modality-ts/properties` only for synthesized or bare IDs that
+  have no importable handle.
+- Use `alwaysStep` for action-shaped rules such as "cannot trigger", "must not clear",
+  enqueue/resolve constraints, and stale-response rules. State invariants are often the
+  wrong formalization for action rules.
+- Treat `vacuous-warning` as a problem to investigate, not a pass.
+- Treat CLI search-limit hits as `error` verdicts, never as verification. Configured
+  model bounds and actual `trustLedger.boundHits` qualify the claim; search limits stop
+  exploration.
+- Trust a green run only in light of the trust ledger: active plugins, assumptions,
+  abstractions, taints, unextractables, manual/over-approx transitions, ignored vars,
+  stale reads, unhandled rejections, and bound hits.
+- Replay violated traces whenever possible. `reproduced` means fix the app;
+  `not-reproduced` means refine/debug the model; `inconclusive` means fix the harness,
+  locator, provider, or timeout.
 
-```bash
-npx modality ci .modality/model.json app.props.ts --artifacts .modality
-npx modality ci app.props.ts --artifacts .modality
-```
+## Current Surface Notes
 
-Gate hard on reproduced violations, stale model hashes, new severe trust-ledger caveats,
-or conformance pass-rate drops. Treat not-reproduced violations as model-maintenance
-signals until the model is stable enough to hard-fail them.
-
-## Property Files
-
-Predicates are data interpreted by the Rust checker. Do not put callback predicates in
-property registrations.
-
-Import property and predicate helpers from `modality-ts/properties` and call builders at
-module top level:
-
-```ts
-import {
-  always,
-  alwaysStep,
-  reachable,
-  reachableFrom,
-  leadsToWithin,
-  and,
-  or,
-  not,
-  eq,
-  neq,
-  pre,
-  readOpArg,
-  enabled,
-  stepAny,
-  stepEnqueued,
-  stepResolved,
-  stepTransitionId,
-} from "modality-ts/properties";
-import { route } from "modality-ts/vars";
-import { sessionAtom, authAtom } from "./store";
-import { order } from "./.modality/vars/App";
-
-always(
-  "adminRequiresAuth",
-  or(not(eq(route, "/admin")), eq(sessionAtom, "authenticated")),
-);
-
-alwaysStep("guestCannotSubmit", {
-  negate: true,
-  step: stepEnqueued("api.createTodo"),
-  pre: eq(authAtom, "guest"),
-});
-
-leadsToWithin(
-  stepEnqueued("api.placeOrder"),
-  or(eq(order, "success"), eq(order, "error")),
-  { name: "submitResolves", budget: { environment: 3 } },
-);
-```
-
-Choose the property kind by intent:
-
-- `always`: invariant over every reachable state.
-- `alwaysStep`: edge/action invariant; prefer for "cannot trigger", enqueue/resolve,
-  stale-response, and "must not clear/mutate on this transition" rules.
-- `reachable`: sanity/vacuity witness that some useful state is reachable.
-- `reachableFrom`: every state matching `when` can reach `goal`; counterexamples assert
-  path absence and are not replayable by nature.
-- `leadsToWithin`: bounded response after a trigger; set `budget` and use
-  `allowUserEvents: true` only when adversarial user interference should count.
-
-
-Builders infer `reads` and `enabledTransitions` when the loader finalizes specs against the
-model. Properties are registered by calling builders at module top level — there is no
-`export const properties` array. Declare `reads` explicitly in the trailing options object
-when you need focused diagnostics or predictable slicing:
-
-```ts
-import { auth, submitStatus } from "./.modality/vars/App";
-
-alwaysStep(
-  "staleFailureDoesNotMutateStatus",
-  {
-    negate: true,
-    step: stepResolved("api.placeOrder", "error"),
-    pre: eq(auth, "guest"),
-    post: neq(submitStatus, pre(submitStatus)),
-  },
-  { reads: ["local:App.auth", "local:App.submitStatus", "sys:pending"] },
-);
-```
-
-Use `handle.at("field", "nested")` for nested records and string index segments for bounded
-lists such as `pending.at("0", "opId")` from `modality-ts/vars`. Use `pre(handle)` and `readOpArg`
-only inside step predicates/response properties where pre-state or enqueue-time operation
-args exist.
-
-Step predicates may use helper forms or flat metadata matchers such as
-`transitionId`, `transitionClass`, `labelKind`, `enqueued`, `resolved`, `navigated`,
-`navigatedTo`, `opId`, `continuation`, and `opArgs`. Composite step predicates are
-`{ step, pre?, post?, negate? }`.
-
-Verdicts include `verified-within-bounds`, `violated`, `reachable`,
-`vacuous-warning`, and `error`. Investigate `vacuous-warning`; it is not a pass.
-
-## Source And Variable Notes
-
-Common variable IDs:
-
-- `local:<Component>.<state>`: React `useState`, route-scoped and unmounted while
-  outside its route.
-- `atom:<name>` or `atom:<name>@store:<id>`: Jotai atoms.
-- `store:<name>.<field>`: Zustand store fields; actions become write transitions.
-- SWR cache/view variables derived from key classes, commonly data/error/validating
-  projections; inspect the model for exact IDs.
-- `sys:route`, `sys:history`, `sys:pending`, `sys:timer:*`, `sys:suspense:*`, and
-  Next-specific `sys:next:slot:*` / `sys:next:phase:*`.
-
-Supported sources and adapters:
-
-- `useState`: exact finite domains from TypeScript where possible; functional updaters
-  and React 18 batching are modeled.
-- Jotai: primitive/derived/writable atoms, store scoping, hydration; default-store
-  escape risks appear as global taints.
-- Zustand: `create`/`createStore`, fields/actions, selectors, `set`/`get`, common
-  middleware unwrapping, and many immer scalar/object mutations.
-- SWR: trusted per-key cache template, data/error/validating states, revalidation,
-  key windows, stale-data retention on failed revalidate.
-- Router/Next: `sys:route` and bounded `sys:history`; Next takes priority when present
-  and models App/Pages routes, layout/template/page mount scopes, route-tree vars, and
-  server APIs as nondeterministic async effects.
-- React features: effects become internal stabilization transitions; timers are env
-  transitions; Suspense gates subtrees; transitions/deferred values are modeled at
-  macro-step granularity.
-
-Finite domains are essential. Literal unions, discriminated unions, boolean domains,
-finite numeric aliases (`Bounded`, `Uint8`, etc.), and static schemas can be exact.
-Unbounded strings/numbers default to tokens or caveats; refine them only when a property
-needs sharper distinctions.
-
-## Side Effects And Bounds
-
-Name network/effect wrappers with repeated `--effect-api` flags or config. Async
-handlers split into:
-
-- a user transition for the synchronous prefix plus enqueue;
-- environment resolve transitions for success/error outcomes;
-- continuations guarded by outcome and pending operation identity.
-
-The concurrency bound `maxPending`/`K` is load-bearing. Raise it when a property needs
-multiple simultaneous requests, such as double-submit checks. Bound hits are recorded in
-the trust ledger and qualify any verdict.
-
-Continuations should reason about stale closures via `readOpArg` when values are captured
-at enqueue. Stale-read caveats are reported; replay/conformance decides whether a
-reported abstract failure is real app behavior.
-
-## Overlays And Config
-
-Use config for extraction shape and bounds: entry points/routes, plugins/adapters,
-effect APIs, `maxDepth`, `maxPending`, `maxInternalSteps`, `maxHistory`, and replay
-locator conventions.
-
-Use overlays for additive, reviewable model refinements. Prefer overlays when:
-
-- a `tokens` domain hides a property-relevant distinction;
-- a handler is `unextractable`;
-- the environment is too permissive;
-- async outcome payloads/errors need classes;
-- replay needs a missing locator;
-- an irrelevant variable should be explicitly ignored.
-
-Overlay examples:
-
-```ts
-import { overlay, enumOf, byTestId } from "modality-ts/core";
-
-export default overlay(M)
-  .transition("CheckoutPage.onRetry", {
-    reads: ["local:CheckoutPage.order"],
-    writes: ["local:CheckoutPage.order"],
-    effect: (s) => ({
-      ...s,
-      "local:CheckoutPage.order": { kind: "submitting" },
-    }),
-  })
-  .refineDomain("atom:cartTotal", enumOf("zero", "positive"), {
-    witness: { zero: () => 0, positive: () => 42 },
-  })
-  .refinePayload("POST /api/quote", "total", {
-    nonpositive: (t) => t <= 0,
-    positive: (t) => t > 0,
-  })
-  .assume("POST /login", (o) => o.kind !== "success" || o.token !== null)
-  .outcomes("POST /todos", { unauthorized: {}, server: {} })
-  .locator("CheckoutPage.onRetry", byTestId("retry-btn"))
-  .ignoreVar("local:DebugPanel.open");
-```
-
-Overlay entries override matching extracted entries. An entry matching nothing is drift
-and should fail. Use `modality extract --explain-drift` after refactors.
-
-## Failure Triage
-
-Read the check report before changing code. For each failure, decide whether it is:
-
-- a real product bug (`replay` reproduced);
-- an overly broad model or domain abstraction;
-- a missing/incorrect effect API declaration;
-- an unextractable or over-approx transition that needs an overlay;
-- an incorrect or vacuous property;
-- a bound/search-limit issue;
-- a harness/locator/provider problem.
-
-For `violated`, open the shortest trace and inspect focused diffs over the property's
-read set. For `leadsToWithin`, distinguish true non-convergence from a too-small budget.
-For `reachableFrom`, use the witness state and nearest-miss/certificate rather than
-expecting an action replay.
-
-Trust-ledger caveats matter. A green run with new global taints, unsound-risk caveats,
-stale model hashes, severe unextractables, or actual bound hits is not the same claim as
-a clean `verified-within-bounds` run.
-
-## Command Reference
-
-```bash
-npm i -D modality-ts
-npx modality init
-npx modality extract [source.tsx ...]
-npx modality check [model.json] [props.ts ...]
-npx modality replay <trace.json>
-npx modality conform --model .modality/model.json --count 8 --depth 4
-npx modality export .modality/model.json --format tla --out .modality/model.tla
-npx modality ci .modality/model.json [props.ts] --artifacts .modality
-```
-
-Inside this repository, run validation commands through the project package manager:
-
-```bash
-rtk pnpm typecheck
-rtk pnpm test
-rtk pnpm architecture
-rtk pnpm phase7
-rtk pnpm fix
-```
+- Generated local handles are sibling `*.modals.ts` files, not `.modality/vars/*`
+  modules.
+- Public property imports are `modality-ts/properties`; stable system vars are
+  `modality-ts/vars`; overlay/domain helpers are exposed through `modality-ts/core`.
+- The implemented overlay builder currently supports `transition`, `refineDomain`,
+  `locator`, and `ignoreVar`. Do not rely on `assume`, `refinePayload`, or `outcomes`
+  unless the local implementation has added them.
+- Built-in sources currently documented by the project include `useState`, Jotai, SWR,
+  Zustand, React Router, Next.js, and React features such as effects, timers, batching,
+  stale closures, concurrent primitives, and Suspense. Static Zod and ArkType adapters
+  contribute finite type refinements where provable.
