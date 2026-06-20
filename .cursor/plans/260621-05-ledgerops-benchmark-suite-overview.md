@@ -7,13 +7,13 @@ Add a benchmark suite under `benchmarks/` with the same LedgerOps business appli
 - `benchmarks/react-router/`
 - `benchmarks/nextjs/`
 
-LedgerOps is a B2B subscription operations console with authentication, authorization/RBAC, management dashboards, account management, billing, payment processing, approvals, support escalation, audit export, and settings. Both apps must use every currently supported third-party integration surface across the app:
+LedgerOps is a B2B subscription operations console with authentication, authorization/RBAC, management dashboards, account management, billing, payment processing, approvals, support escalation, audit export, and settings. Both apps must use every currently supported third-party integration surface across the app, but with a deliberate mixed allocation rather than every page using every library:
 
-- Jotai for session, RBAC, selected account, and cross-page UI atoms.
-- Zustand for workflow stores and complex local-business state machines.
+- Jotai for route-adjacent and cross-page state on selected pages: session, return path, selected account, selected invoice, and permission cache.
+- Zustand for workflow-machine state on selected pages: management operations, billing, subscription, approvals, support, and settings.
 - SWR for read-model caches and async list/detail resources.
-- Zod for form/input/API payload schemas.
-- ArkType for domain-level finite business constraints and fixtures.
+- Zod for form/input/API payload schemas in the auth, billing, support, and settings domains.
+- ArkType for finite domain constraints and fixtures in the RBAC, account, subscription, management, and audit domains.
 
 The benchmark must classify true positives, true negatives, false positives, and false negatives against a machine-readable expected-outcome ledger.
 
@@ -31,6 +31,7 @@ This plan set is split as:
 - Do not add generated build output, `.next/`, `dist/`, coverage output, or local env files.
 - Do not allow the React Router and Next.js apps to drift in business rules, seeded bugs, state names, property names, or expected outcomes.
 - Do not replace supported library usage with hand-rolled state when the benchmark is intended to exercise Jotai, Zustand, SWR, Zod, and ArkType.
+- Do not import Jotai and Zustand into every page just to satisfy coverage. Use the mixed page/domain allocation from plan 06.
 - Do not use real external auth, payment, or analytics providers.
 - Do not hide benchmark expectations in prose only; the implementation must include structured metadata.
 
@@ -86,7 +87,7 @@ Run from the repo root:
 ## 8. Acceptance Criteria
 
 - Both benchmark apps exist and implement the same LedgerOps app.
-- Both apps use Jotai, Zustand, SWR, Zod, and ArkType in extractable app code.
+- Both apps use Jotai, Zustand, SWR, Zod, and ArkType in extractable app code according to the mixed allocation from plan 06.
 - Both apps implement all pages in the shared page matrix from plan 06.
 - Both apps use the same fake infra operations and seeded-bug ledger.
 - The benchmark runner reports TP/TN/FP/FN classification counts for both frameworks.

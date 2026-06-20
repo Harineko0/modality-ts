@@ -26,7 +26,7 @@ Add the shared DDD benchmark specification used by both framework apps. This pla
 
 ## 5. Atomic Implementation Steps
 
-1. Add this shared directory structure:
+1. Add this shared feature-sliced directory structure:
 
 ```text
 benchmarks/shared/
@@ -36,61 +36,78 @@ benchmarks/shared/
     pages.ts
     seeded-outcomes.ts
     property-catalog.ts
-  domain/
+  features/
     auth/
-      rbac.ts
-      session.ts
-      session.schema.ts
-      session.ark.ts
+      domain/
+        rbac.ts
+        session.ts
+        session.schema.ts
+        session.ark.ts
+      application/
+        auth-service.ts
+      infra/
+        fake-auth-provider.ts
     accounts/
-      account.ts
-      account.schema.ts
-      account.ark.ts
+      domain/
+        account.ts
+        account.ark.ts
+      application/
+        account-service.ts
+      infra/
+        fake-account-repository.ts
     billing/
-      invoice.ts
-      payment.ts
-      billing.schema.ts
-      billing.ark.ts
+      domain/
+        invoice.ts
+        payment.ts
+        billing.schema.ts
+      application/
+        billing-service.ts
+      infra/
+        fake-payment-gateway.ts
     subscription/
-      plan.ts
-      approval.ts
-      subscription.schema.ts
-      subscription.ark.ts
+      domain/
+        plan.ts
+        approval.ts
+        subscription.ark.ts
+      application/
+        subscription-service.ts
+      infra/
+        fake-subscription-api.ts
     management/
-      dashboard.ts
-      dashboard.schema.ts
-      dashboard.ark.ts
+      domain/
+        dashboard.ts
+        dashboard.ark.ts
+      application/
+        management-service.ts
+      infra/
+        fake-management-api.ts
     support/
-      escalation.ts
-      support.schema.ts
-      support.ark.ts
+      domain/
+        escalation.ts
+        support.schema.ts
+      application/
+        support-service.ts
+      infra/
+        fake-support-api.ts
     audit/
-      audit.ts
-      audit.schema.ts
-      audit.ark.ts
+      domain/
+        audit.ts
+        audit.ark.ts
+      application/
+        audit-service.ts
+      infra/
+        fake-audit-api.ts
     settings/
-      settings.ts
-      settings.schema.ts
-      settings.ark.ts
-  application/
-    auth-service.ts
-    account-service.ts
-    billing-service.ts
-    subscription-service.ts
-    management-service.ts
-    support-service.ts
-    audit-service.ts
-    settings-service.ts
-  infrastructure/
-    fake/
-      fake-auth-provider.ts
-      fake-account-repository.ts
-      fake-payment-gateway.ts
-      fake-management-api.ts
-      fake-support-api.ts
-      fake-audit-api.ts
-      fake-settings-api.ts
-      fixtures.ts
+      domain/
+        settings.ts
+        settings.schema.ts
+      application/
+        settings-service.ts
+      infra/
+        fake-settings-api.ts
+    fixtures/
+      domain/
+        fixtures.ts
   testing/
     parity.ts
     route-fixtures.ts
@@ -141,7 +158,7 @@ export type RevenueHealth = "healthy" | "watch" | "critical";
 export type AsyncStatus = "idle" | "loading" | "submitting" | "success" | "error";
 ```
 
-4. Use this RBAC matrix in `benchmarks/shared/domain/auth/rbac.ts`:
+4. Use this RBAC matrix in `benchmarks/shared/features/auth/domain/rbac.ts`:
 
 ```ts
 export const permissionsByRole = {
@@ -196,27 +213,29 @@ export const ledgerOpsRoutes = [
 ] as const;
 ```
 
-6. Use this page-by-page UI and state matrix. The React Router and Next.js plans map these logical files to framework-specific route files.
+Each concrete page file has a sibling suffix props file. In React Router, route components are named `index.tsx`, so properties live in `index.props.ts`. In Next.js, route components are named `page.tsx`, so properties live in `page.props.ts`. Do not create standalone `props.ts` files for benchmark pages.
 
-| Route | UI controls and outputs | Jotai state | Zustand state | SWR resource | Validation |
-| --- | --- | --- | --- | --- | --- |
-| `/login` | role segmented control, email field, password field, login button, login error banner, return-path notice | `presentation/state/session-atoms.ts` (`sessionAtom`, `returnToAtom`, `permissionCacheAtom`) | `presentation/state/auth-workflow-store.ts` (`loginStatus`, `loginAttemptRole`) | none | Zod `LoginFormSchema`, ArkType `RoleType` |
-| `/dashboard` | status summary cards, selected account switcher, start checkout button, support badge, audit shortcut | `selectedAccountAtom`, `sessionAtom` | `dashboard-store.ts` (`checkoutIntent`, `supportBadge`) | `useDashboardSummary` from `infrastructure/swr/dashboard-queries.ts` | Zod dashboard filter schema, ArkType queue buckets |
-| `/management` | management tab list, revenue/risk/operations cards, refresh summary button, drill-down links | `managementTabAtom`, `permissionCacheAtom` | `management-store.ts` (`summaryStatus`, `bulkDraft`) | `useManagementSummary` | Zod management filter schema, ArkType `RevenueHealthType` |
-| `/management/risk` | risk filter, high-risk account bucket, select bucket button, bulk suspend button, warning banner | `managementFilterAtom` | `management-store.ts` (`riskFilter`, `selectedRiskBucket`, `bulkStatus`) | `useRiskQueue` | Zod bulk action schema, ArkType risk bucket |
-| `/management/revenue` | revenue health cards, failed payment queue, retry all draft button, export CSV button | `managementTabAtom` | `management-store.ts` (`revenueHealth`, `exportStatus`) | `useRevenueQueue` | Zod export schema |
-| `/management/operations` | approval queue, support breach queue, assign reviewer button, bulk request approvals button | `managementTabAtom` | `management-store.ts` (`opsQueue`, `assignmentStatus`) | `useOperationsQueue` | Zod operations action schema |
-| `/accounts` | account status filter, account list bucket, open account button, suspended account warning | `selectedAccountAtom` | `accounts-store.ts` (`statusFilter`, `listStatus`) | `useAccounts` | Zod account filter schema |
-| `/accounts/:accountId` | account profile panel, plan badge, status badge, tabs to subscription/billing/payment/support | `selectedAccountAtom` | `accounts-store.ts` (`detailStatus`, `selectedTab`) | `useAccountDetail` | ArkType account id and account status |
-| `/accounts/:accountId/subscription` | plan selector, seat stepper, request approval button, apply approval button, approval banner | `selectedAccountAtom`, `sessionAtom` | `subscription-store.ts` (`planDraft`, `seatDraft`, `approvalStatus`) | `useSubscription` | Zod subscription change schema, ArkType bounded seats |
-| `/accounts/:accountId/billing` | invoice bucket, amount bucket, create payment intent button, capture payment button, retry invoice button | `selectedInvoiceAtom` | `billing-store.ts` (`paymentIntentStatus`, `retryCount`, `riskScore`) | `useBillingAccount` | Zod payment intent schema, ArkType invoice amount/risk/retry |
-| `/accounts/:accountId/payment-methods` | payment method status, add method button, mark expired button, set primary button, requires action banner | `selectedAccountAtom` | `payment-method-store.ts` (`methodStatus`, `saveStatus`) | `usePaymentMethods` | Zod payment method schema |
-| `/accounts/:accountId/invoices/:invoiceId` | invoice detail, void button, dispute button, pay button, retry count output | `selectedInvoiceAtom` | `invoice-store.ts` (`invoiceStatus`, `retryCount`) | `useInvoiceDetail` | Zod invoice action schema |
-| `/accounts/:accountId/support` | priority selector, escalation text bucket, open escalation button, assign owner button | `selectedAccountAtom` | `support-store.ts` (`priority`, `escalationStatus`) | `useSupportCase` | Zod support escalation schema |
-| `/approvals` | approval queue filter, approval detail card, approve button, reject button, apply approved change button | `sessionAtom` | `approval-store.ts` (`queueFilter`, `decisionStatus`) | `useApprovals` | Zod approval decision schema |
-| `/audit` | action filter, actor role filter, export button, export status, results bucket | `sessionAtom` | `audit-store.ts` (`auditFilter`, `exportStatus`) | `useAuditEvents` | Zod audit filter/export schema |
-| `/settings` | tenant name field, billing policy toggle, save settings button, settings save status | `sessionAtom` | `settings-store.ts` (`settingsDraft`, `saveStatus`) | `useSettings` | Zod settings schema |
-| `/settings/rbac` | user selector, target role selector, permission preview, save role assignment button, stale cache warning | `sessionAtom`, `permissionCacheAtom` | `rbac-store.ts` (`targetUser`, `targetRole`, `saveRoleStatus`) | `useRoleAssignments` | Zod role assignment schema, ArkType role/permission |
+6. Use this page-by-page UI and primary state-owner matrix. A page should use the listed primary state library for its interactive UI state. Cross-page reads from `sessionAtom` or selected-account atoms are allowed where needed for guards, but do not import both Jotai and Zustand into every page just for coverage.
+
+| Route | UI controls and outputs | Primary state owner and file | SWR resource | Domain validation owner |
+| --- | --- | --- | --- | --- |
+| `/login` | role segmented control, email field, password field, login button, login error banner, return-path notice | Jotai: `features/auth/state/session-atoms.ts` (`sessionAtom`, `returnToAtom`, `permissionCacheAtom`, `loginStatusAtom`) | none | Zod: `features/auth/domain/session.schema.ts` |
+| `/dashboard` | status summary cards, selected account switcher, start checkout button, support badge, audit shortcut | Jotai: `features/accounts/state/selection-atoms.ts` (`selectedAccountAtom`, `selectedInvoiceAtom`) | `useDashboardSummary` from `features/dashboard/infra/dashboard-queries.ts` | ArkType: `features/accounts/domain/account.ark.ts` |
+| `/management` | management tab list, revenue/risk/operations cards, refresh summary button, drill-down links | Jotai: `features/management/state/management-atoms.ts` (`managementTabAtom`) | `useManagementSummary` | ArkType: `features/management/domain/dashboard.ark.ts` |
+| `/management/risk` | risk filter, high-risk account bucket, select bucket button, bulk suspend button, warning banner | Zustand: `features/management/state/management-store.ts` (`riskFilter`, `selectedRiskBucket`, `bulkStatus`) | `useRiskQueue` | ArkType: `features/management/domain/dashboard.ark.ts` |
+| `/management/revenue` | revenue health cards, failed payment queue, retry all draft button, export CSV button | Zustand: `features/management/state/management-store.ts` (`revenueHealth`, `failedPaymentQueue`, `exportStatus`) | `useRevenueQueue` | ArkType: `features/management/domain/dashboard.ark.ts` |
+| `/management/operations` | approval queue, support breach queue, assign reviewer button, bulk request approvals button | Zustand: `features/management/state/management-store.ts` (`opsQueue`, `assignmentStatus`) | `useOperationsQueue` | ArkType: `features/management/domain/dashboard.ark.ts` |
+| `/accounts` | account status filter, account list bucket, open account button, suspended account warning | Jotai: `features/accounts/state/selection-atoms.ts` (`selectedAccountAtom`, `accountStatusFilterAtom`) | `useAccounts` | ArkType: `features/accounts/domain/account.ark.ts` |
+| `/accounts/:accountId` | account profile panel, plan badge, status badge, tabs to subscription/billing/payment/support | Jotai: `features/accounts/state/selection-atoms.ts` (`selectedAccountAtom`, `accountDetailTabAtom`) | `useAccountDetail` | ArkType: `features/accounts/domain/account.ark.ts` |
+| `/accounts/:accountId/subscription` | plan selector, seat stepper, request approval button, apply approval button, approval banner | Zustand: `features/subscription/state/subscription-store.ts` (`planDraft`, `seatDraft`, `approvalStatus`) | `useSubscription` | ArkType: `features/subscription/domain/subscription.ark.ts` |
+| `/accounts/:accountId/billing` | invoice bucket, amount bucket, create payment intent button, capture payment button, retry invoice button | Zustand: `features/billing/state/billing-store.ts` (`paymentIntentStatus`, `retryCount`, `riskScore`) | `useBillingAccount` | Zod: `features/billing/domain/billing.schema.ts` |
+| `/accounts/:accountId/payment-methods` | payment method status, add method button, mark expired button, set primary button, requires action banner | Zustand: `features/billing/state/payment-method-store.ts` (`methodStatus`, `saveStatus`) | `usePaymentMethods` | Zod: `features/billing/domain/billing.schema.ts` |
+| `/accounts/:accountId/invoices/:invoiceId` | invoice detail, void button, dispute button, pay button, retry count output | Zustand: `features/billing/state/invoice-store.ts` (`invoiceStatus`, `retryCount`) | `useInvoiceDetail` | Zod: `features/billing/domain/billing.schema.ts` |
+| `/accounts/:accountId/support` | priority selector, escalation text bucket, open escalation button, assign owner button | Zustand: `features/support/state/support-store.ts` (`priority`, `escalationStatus`) | `useSupportCase` | Zod: `features/support/domain/support.schema.ts` |
+| `/approvals` | approval queue filter, approval detail card, approve button, reject button, apply approved change button | Zustand: `features/subscription/state/approval-store.ts` (`queueFilter`, `decisionStatus`) | `useApprovals` | ArkType: `features/subscription/domain/subscription.ark.ts` |
+| `/audit` | action filter, actor role filter, export button, export status, results bucket | Jotai: `features/audit/state/audit-atoms.ts` (`auditActionFilterAtom`, `auditActorRoleFilterAtom`, `auditExportStatusAtom`) | `useAuditEvents` | ArkType: `features/audit/domain/audit.ark.ts` |
+| `/settings` | tenant name field, billing policy toggle, save settings button, settings save status | Zustand: `features/settings/state/settings-store.ts` (`settingsDraft`, `saveStatus`) | `useSettings` | Zod: `features/settings/domain/settings.schema.ts` |
+| `/settings/rbac` | user selector, target role selector, permission preview, save role assignment button, stale cache warning | Jotai: `features/auth/state/session-atoms.ts` (`permissionCacheAtom`, `targetRoleAtom`, `roleSaveStatusAtom`) | `useRoleAssignments` | ArkType: `features/auth/domain/session.ark.ts` |
 
 7. Use these fake infra effect API names exactly:
 
@@ -241,7 +260,7 @@ export const ledgerOpsEffectApis = [
 ] as const;
 ```
 
-8. Use this DDD library responsibility map in both apps:
+8. Use this mixed DDD library responsibility map in both apps:
 
 - Jotai:
   - `sessionAtom`
@@ -251,19 +270,22 @@ export const ledgerOpsEffectApis = [
   - `selectedInvoiceAtom`
   - `managementTabAtom`
   - `managementFilterAtom`
+  - `auditActionFilterAtom`
+  - `targetRoleAtom`
+  - primary page owner for `/login`, `/dashboard`, `/management`, `/accounts`, `/accounts/:accountId`, `/audit`, and `/settings/rbac`
 - Zustand:
-  - one store per workflow listed in the page matrix
+  - workflow-machine stores for `/management/risk`, `/management/revenue`, `/management/operations`, `/subscription`, `/billing`, `/payment-methods`, `/invoices/:invoiceId`, `/support`, `/approvals`, and `/settings`
   - state names must stay stable because props use `s(component, idOverride)` or generated handles
 - SWR:
   - one read hook per page list/detail resource listed in the page matrix
-  - deterministic fake fetchers from `infrastructure/fake/*`
+  - deterministic fake fetchers from each feature's `infra/` directory
   - bounded data buckets only: `empty`, `some`, `many`, or fixed enum records
 - Zod:
-  - one schema per user form/effect API payload
-  - component submit handlers call schema parse/safeParse before enqueueing fake API effects
+  - schemas for auth, billing/payment/invoice, support, and settings domains only
+  - component submit handlers in those domains call schema parse/safeParse before enqueueing fake API effects
 - ArkType:
-  - finite domain constraints for roles, permissions, status buckets, bounded seats, retry count, risk score, and amount bucket
-  - app fixtures use ArkType validation before they reach fake repositories
+  - schemas/guards for RBAC, accounts, subscription/approvals, management, and audit domains only
+  - app fixtures in those domains use ArkType validation before they reach fake repositories
 
 9. Use this seeded expected-outcome ledger in `benchmarks/shared/app-spec/seeded-outcomes.ts`:
 
@@ -290,7 +312,7 @@ export const ledgerOpsEffectApis = [
 | `auth.crossTabSessionStorageRace` | no property; metadata-only FN probe | FN probe | not checked | none | both |
 | `rbac.remotePolicyDocumentDrift` | no property; metadata-only FN probe | FN probe | not checked | both |
 
-10. Add `benchmarks/shared/README.md` with the route matrix, library map, seeded ledger, and the rule that apps may duplicate presentation handlers but not change domain outcomes.
+10. Add `benchmarks/shared/README.md` with the route matrix, library map, seeded ledger, and the rule that apps may duplicate route components but not change domain outcomes.
 
 ## 6. Tests to Add or Update
 

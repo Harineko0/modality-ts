@@ -26,39 +26,14 @@ Add benchmark props files, property API coverage, expected-outcome classificatio
 
 ## 5. Atomic Implementation Steps
 
-1. Add props files:
+1. Add one suffix `*.props.ts` file beside every page route file:
 
 ```text
-benchmarks/react-router/src/
-  app.props.ts
-  props/
-    auth.props.ts
-    rbac.props.ts
-    management.props.ts
-    accounts.props.ts
-    billing.props.ts
-    subscription.props.ts
-    support.props.ts
-    approvals.props.ts
-    audit.props.ts
-    settings.props.ts
-
-benchmarks/nextjs/src/
-  app.props.ts
-  props/
-    auth.props.ts
-    rbac.props.ts
-    management.props.ts
-    accounts.props.ts
-    billing.props.ts
-    subscription.props.ts
-    support.props.ts
-    approvals.props.ts
-    audit.props.ts
-    settings.props.ts
+benchmarks/react-router/src/routes/**/index.props.ts
+benchmarks/nextjs/src/app/**/page.props.ts
 ```
 
-`app.props.ts` imports each feature props module for side effects. Feature files use identical property names across frameworks.
+Every route in plan 06 has exactly one colocated suffix props file. For React Router, `index.tsx` has sibling `index.props.ts`. For Next.js, `page.tsx` has sibling `page.props.ts`. Property names stay identical across frameworks, but imports point at framework-local route/feature files. Do not add `app.props.ts` aggregators.
 
 2. Cover every public Property API across the two apps:
 
@@ -137,8 +112,8 @@ benchmarks/nextjs/src/
       "framework": "react-router",
       "root": "benchmarks/react-router",
       "packageJsonPath": "package.json",
-      "sourcePaths": ["src/App.tsx", "src/app/router.tsx"],
-      "propsPaths": ["src/app.props.ts"],
+      "sourcePaths": ["src/App.tsx", "src/app/router.tsx", "src/routes/login/index.tsx", "src/routes/dashboard/index.tsx", "src/routes/management/index.tsx", "src/routes/management/risk/index.tsx", "src/routes/management/revenue/index.tsx", "src/routes/management/operations/index.tsx", "src/routes/accounts/index.tsx", "src/routes/accounts/$accountId/index.tsx", "src/routes/accounts/$accountId/subscription/index.tsx", "src/routes/accounts/$accountId/billing/index.tsx", "src/routes/accounts/$accountId/payment-methods/index.tsx", "src/routes/accounts/$accountId/invoices/$invoiceId/index.tsx", "src/routes/accounts/$accountId/support/index.tsx", "src/routes/approvals/index.tsx", "src/routes/audit/index.tsx", "src/routes/settings/index.tsx", "src/routes/settings/rbac/index.tsx"],
+      "propsPaths": ["src/routes/login/index.props.ts", "src/routes/dashboard/index.props.ts", "src/routes/management/index.props.ts", "src/routes/management/risk/index.props.ts", "src/routes/management/revenue/index.props.ts", "src/routes/management/operations/index.props.ts", "src/routes/accounts/index.props.ts", "src/routes/accounts/$accountId/index.props.ts", "src/routes/accounts/$accountId/subscription/index.props.ts", "src/routes/accounts/$accountId/billing/index.props.ts", "src/routes/accounts/$accountId/payment-methods/index.props.ts", "src/routes/accounts/$accountId/invoices/$invoiceId/index.props.ts", "src/routes/accounts/$accountId/support/index.props.ts", "src/routes/approvals/index.props.ts", "src/routes/audit/index.props.ts", "src/routes/settings/index.props.ts", "src/routes/settings/rbac/index.props.ts"],
       "effectApis": ["api.login", "api.refreshSession", "api.loadDashboardSummary", "api.loadAccount", "api.loadManagementSummary", "api.bulkSuspendAccounts", "api.requestApproval", "api.applyApproval", "api.createPaymentIntent", "api.capturePayment", "api.retryInvoice", "api.savePaymentMethod", "api.openSupportEscalation", "api.exportAudit", "api.saveSettings", "api.saveRoleAssignment"],
       "expected": {
         "truePositiveViolations": 7,
@@ -152,8 +127,8 @@ benchmarks/nextjs/src/
       "framework": "nextjs",
       "root": "benchmarks/nextjs",
       "packageJsonPath": "package.json",
-      "sourcePaths": ["app/page.tsx", "app/login/page.tsx", "app/dashboard/page.tsx", "app/management/page.tsx", "app/accounts/page.tsx", "app/settings/rbac/page.tsx"],
-      "propsPaths": ["src/app.props.ts"],
+      "sourcePaths": ["src/app/page.tsx", "src/app/login/page.tsx", "src/app/dashboard/page.tsx", "src/app/management/page.tsx", "src/app/management/risk/page.tsx", "src/app/management/revenue/page.tsx", "src/app/management/operations/page.tsx", "src/app/accounts/page.tsx", "src/app/accounts/[accountId]/page.tsx", "src/app/accounts/[accountId]/subscription/page.tsx", "src/app/accounts/[accountId]/billing/page.tsx", "src/app/accounts/[accountId]/payment-methods/page.tsx", "src/app/accounts/[accountId]/invoices/[invoiceId]/page.tsx", "src/app/accounts/[accountId]/support/page.tsx", "src/app/approvals/page.tsx", "src/app/audit/page.tsx", "src/app/settings/page.tsx", "src/app/settings/rbac/page.tsx"],
+      "propsPaths": ["src/app/login/page.props.ts", "src/app/dashboard/page.props.ts", "src/app/management/page.props.ts", "src/app/management/risk/page.props.ts", "src/app/management/revenue/page.props.ts", "src/app/management/operations/page.props.ts", "src/app/accounts/page.props.ts", "src/app/accounts/[accountId]/page.props.ts", "src/app/accounts/[accountId]/subscription/page.props.ts", "src/app/accounts/[accountId]/billing/page.props.ts", "src/app/accounts/[accountId]/payment-methods/page.props.ts", "src/app/accounts/[accountId]/invoices/[invoiceId]/page.props.ts", "src/app/accounts/[accountId]/support/page.props.ts", "src/app/approvals/page.props.ts", "src/app/audit/page.props.ts", "src/app/settings/page.props.ts", "src/app/settings/rbac/page.props.ts"],
       "effectApis": ["api.login", "api.refreshSession", "api.loadDashboardSummary", "api.loadAccount", "api.loadManagementSummary", "api.bulkSuspendAccounts", "api.requestApproval", "api.applyApproval", "api.createPaymentIntent", "api.capturePayment", "api.retryInvoice", "api.savePaymentMethod", "api.openSupportEscalation", "api.exportAudit", "api.saveSettings", "api.saveRoleAssignment"],
       "expected": {
         "truePositiveViolations": 7,
@@ -206,11 +181,11 @@ Runner behavior:
 - `test/benchmarks/property-api-coverage.test.ts`
   - parses props files and reports missing APIs from the table above
 - `test/benchmarks/manifest.test.ts`
-  - validates ids, paths, effect APIs, expected counts, library requirements, and seeded outcome references
+  - validates ids, paths, effect APIs, expected counts, mixed library allocation requirements, and seeded outcome references
 - `test/benchmarks/ledgerops-benchmark.test.ts`
   - runs the runner on both apps with bounded search limits
   - checks all 17 routes exist for both frameworks
-  - checks all five supported libraries are present in both apps
+  - checks all five supported libraries are present in both apps and assigned to the planned pages/domains rather than every page
   - checks expected classification counts
   - checks RBAC and management properties exist and have expected outcomes
 
