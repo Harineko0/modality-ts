@@ -29,6 +29,7 @@ import {
   reactRouterEffectApiProvider,
   reactRouterModuleRoleAdapter,
 } from "modality-ts/extract/sources/router";
+import { tanstackRouterAdapter } from "modality-ts/extract/sources/tanstack-router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
@@ -141,6 +142,16 @@ function resolveBuiltinNavigationBundle(
       navigation: nextAdapter(),
       moduleRoles: [nextModuleRoleAdapter()],
       effectApis: [nextEffectApiProvider()],
+    };
+  }
+  if (
+    !disabled.has("tanstack-router") &&
+    hasDependency(dependencies, "@tanstack/react-router")
+  ) {
+    return {
+      navigation: tanstackRouterAdapter(),
+      moduleRoles: [],
+      effectApis: [],
     };
   }
   if (

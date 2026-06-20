@@ -222,3 +222,13 @@ When the project depends on `next`, the built-in **Next adapter** (`nextAdapter(
 **Platform no-ops.** `next/image`, `next/font`, metadata files, CSS modules, and static asset imports do not expand the client interaction surface unless a user callback, navigation, or cache/revalidation hook is present.
 
 **Module boundaries.** `"use client"` islands, default server components, `"use server"` action modules, and asset-only imports are classified through registered `ModuleRoleAdapter` providers (`classifyModule` / `moduleEntryExports` / `classifyImportEdge`) so server-only code does not inflate the client model (same P0 safety rule as React Router loaders).
+
+## 13. TanStack Router extraction
+
+When the project depends on `@tanstack/react-router` and not `next`, the built-in **TanStack Router adapter** (`tanstackRouterAdapter()`) replaces the React Router adapter. Next still wins when both `next` and TanStack Router are present.
+
+**Route inventory.** File-based routes are discovered from `routes/` and `src/routes/` using TanStack filename conventions (directory routes, flat dot-separated routes, dynamic `$param` segments, splat `$` segments, and pathless `_layout` segments). When route modules export `createFileRoute("...")`, the literal path is authoritative over filename inference. Committed `routeTree.gen.ts` may enrich parent-child metadata and pull in referenced route files without executing the generated module. Static code-based route trees built with `createRootRoute`, `createRoute`, `.addChildren(...)`, and `createRouter` are parsed from the same file when declarations are simple enough to resolve.
+
+**Metadata and classification.** Route nodes carry `metadata.tanstackRouteTree` with route id, full path, parent id, segment kind, discovery mode (`file`, `generated`, or `code`), and optional component identifiers. Only `page` and `index` routes enter `sys:route`; `layout` and `resource` routes are excluded from the UI route domain. TanStack `$param` and splat syntax normalize to Modality `:param` and `*` patterns.
+
+**Scope of this plan.** Navigation call classification, `<Link>` / `<Navigate>` lowering, loader redirects, router cache state, and replay extensions are handled in later TanStack Router plans. This adapter currently exposes flat `sys:route` / `sys:history` location vars and a minimal navigation harness matching the React Router baseline.

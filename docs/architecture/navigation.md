@@ -66,7 +66,8 @@ dependencies (React Router remains the default otherwise).
 | Adapter | Activates when | Route model |
 | --- | --- | --- |
 | `reactRouterAdapter()` | `react-router` / `react-router-dom` in deps (or no deps in dev) | flat manifest (`app/routes.ts`) |
-| `nextAdapter()` | `next` in deps (takes priority over React Router) | App/Pages filesystem + optional route-tree vars |
+| `tanstackRouterAdapter()` | `@tanstack/react-router` in deps (after Next, before React Router) | file-based `routes/` / `src/routes/` plus optional `routeTree.gen.ts` and static code-based trees |
+| `nextAdapter()` | `next` in deps (takes priority over React Router and TanStack Router) | App/Pages filesystem + optional route-tree vars |
 
 ## Route classification
 

@@ -371,6 +371,45 @@ describe("builtin module-role and effect API registration", () => {
       true,
     );
   });
+
+  it("registers TanStack Router when @tanstack/react-router is present", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "@tanstack/react-router": "^1.0.0" },
+    });
+    expect(registry.routerPluginId).toBe("tanstack-router");
+    expect(registry.adapters.navigation?.id).toBe("tanstack-router");
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "navigation" && plugin.id === "tanstack-router",
+      ),
+    ).toBe(true);
+  });
+
+  it("prefers Next over TanStack Router when both dependencies exist", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: {
+        next: "^15.0.0",
+        "@tanstack/react-router": "^1.0.0",
+      },
+    });
+    expect(registry.routerPluginId).toBe("next");
+  });
+
+  it("omits TanStack Router when tanstack-router is disabled", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "@tanstack/react-router": "^1.0.0" },
+      disabledPlugins: ["tanstack-router"],
+    });
+    expect(registry.routerPluginId).toBeUndefined();
+  });
+
+  it("still activates React Router when only react-router-dom is present", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "react-router-dom": "^6.0.0" },
+    });
+    expect(registry.routerPluginId).toBe("router");
+  });
 });
 
 // Type-level fixture: a complete adapter literal must satisfy NavigationAdapter.
