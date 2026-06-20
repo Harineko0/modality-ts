@@ -50,7 +50,13 @@ discovers App and Pages Router routes from the filesystem and models optional
 route-tree state for layouts, parallel slots, and intercepting routes. See
 [Next.js source](./next.md).
 
-**React Router** (`reactRouterAdapter()`) is used when Next is absent. Export
+**TanStack Router** (`tanstackRouterAdapter()`) activates when
+`@tanstack/react-router` is in your dependencies and Next is absent. It discovers
+file-based and static code-based route trees, models loader/beforeLoad effect APIs,
+and optional branch/loader-cache vars. See [TanStack Router source](./tanstack.md).
+
+**React Router** (`reactRouterAdapter()`) is used when neither Next nor TanStack
+Router is active. Export
 `reactRouterModuleRoleAdapter()` and `reactRouterEffectApiProvider()` when
 registering a custom bundle. The engine itself contains **no**
 framework-specific identifiers — it only calls the adapter — so other frameworks can

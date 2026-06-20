@@ -29,6 +29,12 @@ import {
   reactRouterEffectApiProvider,
   reactRouterModuleRoleAdapter,
 } from "modality-ts/extract/sources/router";
+import {
+  tanstackRouterAdapter,
+  tanstackRouterCacheStorageProvider,
+  tanstackRouterEffectApiProvider,
+  tanstackRouterModuleRoleAdapter,
+} from "modality-ts/extract/sources/tanstack-router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
@@ -144,6 +150,16 @@ function resolveBuiltinNavigationBundle(
     };
   }
   if (
+    !disabled.has("tanstack-router") &&
+    hasDependency(dependencies, "@tanstack/react-router")
+  ) {
+    return {
+      navigation: tanstackRouterAdapter(),
+      moduleRoles: [tanstackRouterModuleRoleAdapter()],
+      effectApis: [tanstackRouterEffectApiProvider()],
+    };
+  }
+  if (
     !disabled.has("router") &&
     (hasDependency(dependencies, "react-router") ||
       hasDependency(dependencies, "react-router-dom"))
@@ -179,6 +195,15 @@ function resolveBuiltinCacheStorageProviders(
   if (!disabled.has("next") && hasDependency(dependencies, "next")) {
     return [
       nextCacheStorageProvider(),
+      ...(options.extraCacheStorageProviders ?? []),
+    ];
+  }
+  if (
+    !disabled.has("tanstack-router") &&
+    hasDependency(dependencies, "@tanstack/react-router")
+  ) {
+    return [
+      tanstackRouterCacheStorageProvider(),
       ...(options.extraCacheStorageProviders ?? []),
     ];
   }

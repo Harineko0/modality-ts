@@ -101,7 +101,7 @@ the CLI registry bundle (`RegistryAdaptersBundle`):
 | Navigation | `NavigationAdapter` | route discovery, navigation classification/lowering, location vars, mount scopes, navigation harness |
 | Module roles | `ModuleRoleAdapter` | server/client/shared classification, entry exports, import-edge context, server-only exclusion |
 | Effect APIs | `EffectApiProvider` | discover server actions, route handlers, and other nondeterministic async surfaces |
-| Cache/storage | `CacheStorageProvider` | framework cache vars and invalidation transitions (Next.js today) |
+| Cache/storage | `CacheStorageProvider` | framework cache vars and invalidation transitions (Next.js, TanStack Router loader cache) |
 | Observation | `ObservationProvider` | replay `setup` / `observe` / optional `witness` for state sources and navigation |
 | Domain refinement | `DomainRefinementProvider` | schema-driven finite domains (Zod, ArkType) |
 
@@ -120,6 +120,7 @@ sources and navigation. See [Navigation](./navigation.md) and
 | SWR | `useSWR` key sites | `mutate` | **yes** (cache lifecycle) | cache `Map` (direct) | [details](../sources/swr.md) |
 | Zustand | `create`/`createStore` | actions / `setState` | none | store handle (direct) | [details](../sources/zustand.md) |
 | Router | route manifest (adapter) | — | location semantics | router test API | [details](./navigation.md) |
+| TanStack Router | route manifest + loader cache (adapters) | — | loader cache semantics | router harness + branch vars | [details](../sources/tanstack.md) |
 
 A future source like **XState** fits especially well (machines *are* transition systems
 — a direct machine→IR import, bypassing the M0 interpreter). **React Context as state**

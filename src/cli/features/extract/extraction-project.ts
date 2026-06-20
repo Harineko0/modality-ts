@@ -419,17 +419,36 @@ export async function attachRouteInventory(
   adapter: NavigationAdapter,
 ): Promise<ExtractionProject> {
   const files = [...project.rawEntries];
-  const manifestPath =
-    files.find((file) => file.path.endsWith("routes.ts"))?.path ??
-    (await findNearestRoutesManifest(project.configStartDir));
   if (
-    manifestPath &&
-    !files.some((file) => resolve(file.path) === resolve(manifestPath))
+    adapter.packageNames.some(
+      (packageName) =>
+        packageName === "react-router" || packageName === "react-router-dom",
+    )
   ) {
-    files.push({
-      path: manifestPath,
-      text: await readFile(manifestPath, "utf8"),
-    });
+    const manifestPath =
+      files.find((file) => file.path.endsWith("routes.ts"))?.path ??
+      (await findNearestRoutesManifest(project.configStartDir));
+    if (
+      manifestPath &&
+      !files.some((file) => resolve(file.path) === resolve(manifestPath))
+    ) {
+      files.push({
+        path: manifestPath,
+        text: await readFile(manifestPath, "utf8"),
+      });
+    }
+  } else if (adapter.packageNames.includes("@tanstack/react-router")) {
+    const routeRoots = await findNearestTanstackRouteRoots(
+      project.configStartDir,
+    );
+    for (const routeFile of routeRoots) {
+      if (
+        files.some((file) => resolve(file.path) === resolve(routeFile.path))
+      ) {
+        continue;
+      }
+      files.push(routeFile);
+    }
   }
   const inventory = await adapter.discoverRoutes({
     rootDir: resolveRouterDiscoveryRoot(project) ?? project.configStartDir,
@@ -446,7 +465,8 @@ function resolveRouterDiscoveryRoot(
     const normalized = entry.path.replace(/\\/g, "/");
     const match =
       normalized.match(/^(.*)\/(?:src\/)?app(?:\/|$)/) ??
-      normalized.match(/^(.*)\/(?:src\/)?pages(?:\/|$)/);
+      normalized.match(/^(.*)\/(?:src\/)?pages(?:\/|$)/) ??
+      normalized.match(/^(.*)\/(?:src\/)?routes(?:\/|$)/);
     if (match?.[1]) return match[1];
   }
   return undefined;
@@ -481,16 +501,17 @@ function routesForSourceFile(
   project: ExtractionProject,
 ): string[] {
   const manifestPath = findManifestPath(project);
-  if (!manifestPath) return [];
-  const manifestDir = dirname(manifestPath);
+  const manifestDir = manifestPath ? dirname(manifestPath) : undefined;
   const resolvedSource = resolve(sourcePath);
   return project.inventory.routes
-    .filter(
-      (node) =>
-        (node.kind === "page" || node.kind === "index") &&
-        node.file !== undefined &&
-        resolve(manifestDir, node.file) === resolvedSource,
-    )
+    .filter((node) => {
+      if (node.kind !== "page" && node.kind !== "index") return false;
+      if (node.file === undefined) return false;
+      const resolvedFile = resolve(node.file);
+      if (resolvedFile === resolvedSource) return true;
+      if (!manifestDir) return false;
+      return resolve(manifestDir, node.file) === resolvedSource;
+    })
     .map((node) => node.pattern)
     .sort((left, right) => left.localeCompare(right));
 }
@@ -508,14 +529,20 @@ function manifestRouteFiles(project: ExtractionProject): string[] {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function isManifestRouteSource(
+function isInventoryRouteSource(
   sourcePath: string,
   project: ExtractionProject,
 ): boolean {
   const resolvedSource = resolve(sourcePath);
-  return manifestRouteFiles(project).some(
-    (filePath) => resolve(filePath) === resolvedSource,
-  );
+  if (
+    project.inventory.routes.some(
+      (node) =>
+        node.file !== undefined && resolve(node.file) === resolvedSource,
+    )
+  ) {
+    return true;
+  }
+  return isManifestRouteSource(sourcePath, project);
 }
 
 export function resolveExtractionRoute(
@@ -543,7 +570,7 @@ export function resolveExtractionRoute(
       );
     }
 
-    if (isManifestRouteSource(sourcePath, project)) {
+    if (isInventoryRouteSource(sourcePath, project)) {
       if (!manifestPath || !hasRouteInventory) {
         throw new Error(
           `Cannot resolve route for ${relativeSource}: route inventory is unavailable.`,
@@ -588,6 +615,100 @@ async function findNearestRoutesManifest(
     current = parent;
   }
   return undefined;
+}
+
+async function findNearestTanstackRouteRoots(
+  startDir: string,
+): Promise<Array<{ path: string; text: string }>> {
+  const found = new Map<string, string>();
+  let current = resolve(startDir);
+  for (let depth = 0; depth < 8; depth += 1) {
+    for (const routesDir of [
+      join(current, "src", "routes"),
+      join(current, "routes"),
+    ]) {
+      await collectTanstackRouteFiles(routesDir, found);
+    }
+    for (const generated of [
+      join(current, "src", "routeTree.gen.ts"),
+      join(current, "routeTree.gen.ts"),
+    ]) {
+      await readRouteFileIfPresent(generated, found);
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return [...found.entries()]
+    .map(([path, text]) => ({ path, text }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+async function collectTanstackRouteFiles(
+  routesDir: string,
+  found: Map<string, string>,
+): Promise<void> {
+  try {
+    const info = await stat(routesDir);
+    if (!info.isDirectory()) return;
+  } catch {
+    return;
+  }
+  await walkTanstackRouteDir(routesDir, found, 0);
+}
+
+async function walkTanstackRouteDir(
+  dir: string,
+  found: Map<string, string>,
+  depth: number,
+): Promise<void> {
+  if (depth > 8) return;
+  let entries: Array<{
+    name: string;
+    isFile: () => boolean;
+    isDirectory: () => boolean;
+  }>;
+  try {
+    const { readdir } = await import("node:fs/promises");
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const absolutePath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await walkTanstackRouteDir(absolutePath, found, depth + 1);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (!/\.(?:tsx?|jsx?)$/.test(entry.name)) continue;
+    if (/\.(?:test|spec)\.(?:tsx?|jsx?)$/.test(entry.name)) continue;
+    await readRouteFileIfPresent(absolutePath, found);
+  }
+}
+
+async function readRouteFileIfPresent(
+  path: string,
+  found: Map<string, string>,
+): Promise<void> {
+  if (found.has(path)) return;
+  try {
+    const info = await stat(path);
+    if (!info.isFile()) return;
+    found.set(path, await readFile(path, "utf8"));
+  } catch {
+    // missing route file
+  }
+}
+
+function isManifestRouteSource(
+  sourcePath: string,
+  project: ExtractionProject,
+): boolean {
+  const resolvedSource = resolve(sourcePath);
+  return manifestRouteFiles(project).some(
+    (filePath) => resolve(filePath) === resolvedSource,
+  );
 }
 
 async function existingFiles(paths: readonly string[]): Promise<string[]> {

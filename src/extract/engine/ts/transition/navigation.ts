@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { callName, lineAndColumn, literalValue } from "../ast.js";
+import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
 import { safeId, uniqueStrings } from "../ids.js";
 import {
   normalizeRouteTarget,
@@ -492,6 +492,24 @@ export function navigationRouteJsxAttribute(
   return undefined;
 }
 
+function jsxLiteralValue(expression: ts.Expression): unknown {
+  const literal = literalValue(expression);
+  if (literal !== undefined) return literal;
+  if (ts.isObjectLiteralExpression(expression)) {
+    const fields: Record<string, unknown> = {};
+    for (const property of expression.properties) {
+      if (!ts.isPropertyAssignment(property)) return undefined;
+      const name = propertyName(property.name);
+      if (!name) return undefined;
+      const value = jsxLiteralValue(property.initializer);
+      if (value === undefined) return undefined;
+      fields[name] = value;
+    }
+    return fields;
+  }
+  return undefined;
+}
+
 function jsxLiteralAttrs(
   source: ts.SourceFile,
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
@@ -522,7 +540,7 @@ function jsxLiteralAttrs(
         attrs.set(name, routeValue);
         continue;
       }
-      const literal = literalValue(property.initializer.expression);
+      const literal = jsxLiteralValue(property.initializer.expression);
       if (literal !== undefined) attrs.set(name, literal);
     }
   }

@@ -222,3 +222,24 @@ When the project depends on `next`, the built-in **Next adapter** (`nextAdapter(
 **Platform no-ops.** `next/image`, `next/font`, metadata files, CSS modules, and static asset imports do not expand the client interaction surface unless a user callback, navigation, or cache/revalidation hook is present.
 
 **Module boundaries.** `"use client"` islands, default server components, `"use server"` action modules, and asset-only imports are classified through registered `ModuleRoleAdapter` providers (`classifyModule` / `moduleEntryExports` / `classifyImportEdge`) so server-only code does not inflate the client model (same P0 safety rule as React Router loaders).
+
+## 13. TanStack Router extraction
+
+When the project depends on `@tanstack/react-router` and not `next`, the built-in **TanStack Router adapter** (`tanstackRouterAdapter()`) replaces the React Router adapter. Next still wins when both `next` and TanStack Router are present.
+
+**Route inventory.** File-based routes are discovered from `routes/` and `src/routes/` using TanStack filename conventions (directory routes, flat dot-separated routes, dynamic `$param` segments, splat `$` segments, and pathless `_layout` segments). When route modules export `createFileRoute("...")`, the literal path is authoritative over filename inference. Committed `routeTree.gen.ts` may enrich parent-child metadata and pull in referenced route files without executing the generated module. Static code-based route trees built with `createRootRoute`, `createRoute`, `.addChildren(...)`, and `createRouter` are parsed from the same file when declarations are simple enough to resolve.
+
+**Metadata and classification.** Route nodes carry `metadata.tanstackRouteTree` with route id, full path, parent id, segment kind, discovery mode (`file`, `generated`, or `code`), and optional component identifiers. Only `page` and `index` routes enter `sys:route`; `layout` and `resource` routes are excluded from the UI route domain. TanStack `$param` and splat syntax normalize to Modality `:param` and `*` patterns.
+
+**Scope of navigation modeling.** Navigation call classification, `<Link>` / `<Navigate>`
+lowering, loader redirects, router cache state, and replay harness extensions are
+implemented by the TanStack Router adapter slice. Flat `sys:route` / `sys:history`
+location vars are always emitted; optional `sys:tanstack:branch` and
+`sys:tanstack:loader-cache:*` vars appear when static trees and loaders are
+discoverable.
+
+**Module boundaries.** TanStack route modules are classified through `tanstackRouterModuleRoleAdapter()`. Route option `loader` / `beforeLoad` / `validateSearch` / `head` / `headers` surfaces are server/data-loading entry points; component option identifiers remain client interaction roots. `.server.` and `/server/` paths are server-only. Ambiguous shared imports stay included with warnings per the P0 safety rule.
+
+**Effect APIs and redirects.** `tanstackRouterEffectApiProvider()` discovers `LOADER <routePattern>` and `BEFORE_LOAD <routePattern>` operations with source provenance. Loader and beforeLoad bodies are modeled as effect APIs, not executed code. Static `redirect({ to: "..." })` calls set `RouteNode.redirectTo` for automatic route-bound replace transitions; dynamic redirect targets emit structured `model-slack` caveats.
+
+**Loader cache.** `tanstackRouterCacheStorageProvider()` emits bounded `sys:tanstack:loader-cache:<route>` vars (`empty | fresh | stale | refreshing | error`) for routes with discovered loaders, plus stale/revalidate/error environment transitions. High loader counts are reduced to the current route plus a bounded subset with `model-slack` caveats rather than unbounded per-param cache keys.

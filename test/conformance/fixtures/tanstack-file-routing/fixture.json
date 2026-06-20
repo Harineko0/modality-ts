@@ -1,0 +1,58 @@
+{
+  "id": "tanstack-file-routing",
+  "featureIds": ["routing.location-assignment", "routing.mount-scope-reset"],
+  "targetIds": ["tanstack-router", "react-use-state", "core"],
+  "root": "test/conformance/fixtures/tanstack-file-routing",
+  "sourcePaths": ["app/src/routes/posts.tsx"],
+  "propsPaths": ["app/src/routes/posts.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json",
+    "route": "/posts"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 30
+  },
+  "expectations": {
+    "transitionIds": [
+      "PostsPage.onClick.count",
+      "PostsPage.onClick.Open_post",
+      "PostsPage.Link.navigate"
+    ],
+    "navigateTargets": ["/posts/:postId"],
+    "vars": [
+      {
+        "id": "local:PostsPage.count",
+        "scope": {
+          "kind": "mount-local",
+          "id": "tanstack:page:/posts",
+          "when": {
+            "kind": "eq",
+            "args": [
+              { "kind": "read", "var": "sys:route" },
+              { "kind": "lit", "value": "/posts" }
+            ]
+          }
+        },
+        "domainKind": "boundedInt"
+      },
+      {
+        "id": "sys:route",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}

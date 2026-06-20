@@ -1,0 +1,38 @@
+{
+  "id": "tanstack-loader-cache",
+  "featureIds": ["routing.location-assignment", "reports.structured-caveats"],
+  "targetIds": ["tanstack-router", "core"],
+  "root": "test/conformance/fixtures/tanstack-loader-cache",
+  "sourcePaths": ["app/src/routes/dashboard.tsx"],
+  "propsPaths": ["app/src/routes/dashboard.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json",
+    "route": "/dashboard"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": true,
+    "walkCount": 2,
+    "depth": 3,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 1,
+    "minConformPassRate": 1
+  },
+  "budgets": {
+    "maxStates": 35
+  },
+  "expectations": {
+    "transitionIds": ["DashboardPage.onClick.refresh"],
+    "vars": [
+      {
+        "id": "sys:route",
+        "domainKind": "enum"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}
