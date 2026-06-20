@@ -117,7 +117,7 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | `fetch` / named effect APIs | ✅ | [async split into enqueue + resolve](../concepts/transitions.md#async-split-transitions) |
 | TanStack Query | ❌ 🔜 | template effort like SWR; fits the contract |
 | React Router | ✅ | the built-in [navigation adapter](../sources/router.md) |
-| TanStack Router | ❌ 🔜 | the [engine is framework-blind](../architecture/navigation.md); a new adapter can add it |
+| TanStack Router | ✅ | the built-in [navigation adapter](../sources/tanstack-router.md) |
 | Zod | ✅ | static `z.number().int().min(a).max(b)` via [type-library adapter](../architecture/type-library-adapters.md) |
 | ArkType | ✅ | static `"a <= number.integer <= b"` via [type-library adapter](../architecture/type-library-adapters.md) |
 | Valibot | ❌ 🔜 | no adapter yet |
