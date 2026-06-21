@@ -1,23 +1,28 @@
 # Workflow And CLI
 
-Use this reference for project setup, artifact flow, command selection, CI, and repo
-validation.
+Use this reference for project setup, artifact flow, command selection, CI,
+conformance, export, and repo validation.
 
-## Adoption Loop
+## Quickstart Order
 
-1. Create or locate a `*.props.ts` file beside each modeled component. Empty props files
-   are valid target-registration signals.
-2. Generate typed handles before writing properties that read local `useState` values:
+1. Initialize:
 
 ```bash
 npx modality init
+```
+
+2. Create empty `*.props.ts` files beside modeled components. They register the
+   `*.tsx` targets before properties are written.
+3. Generate typed handles:
+
+```bash
 npx modality generate
 npx modality generate src/App.tsx
 ```
 
-3. Write properties in the props file, importing component handles from sibling modules
-   such as `./App.modals`.
-4. Extract the model:
+4. Write properties in the props file, importing from sibling generated modules such
+   as `./App.modals`.
+5. Extract:
 
 ```bash
 npx modality extract
@@ -25,70 +30,79 @@ npx modality extract src/App.tsx --effect-api api.placeOrder
 npx modality extract src/App.tsx --report .modality/extraction-report.json
 ```
 
-5. Check the model:
+6. Check:
 
 ```bash
 npx modality check
 npx modality check .modality/model.json src/App.props.ts
 ```
 
-6. Replay failures:
+7. Replay violations:
 
 ```bash
 npx modality replay .modality/traces/<property>.violated.trace.json
-npx modality replay .modality/traces/<property>.violated.trace.json --mode action --harness test/replay-harness.ts
+npx modality replay <trace.json> --mode action --harness test/replay-harness.ts
 ```
 
 ## Commands
 
-- `modality init`: create the default local workspace and starter files.
-- `modality generate [source.tsx ...]`: write sibling `*.modals.ts` typed state and
-  transition handles from source analysis. With no sources, targets are discovered from
-  `*.props.ts` files.
+- `modality init`: create the local `.modality/` workspace and starter files.
+- `modality generate [source.tsx ...]`: write sibling `*.modals.ts` typed handles
+  from source analysis alone. With no sources, targets are discovered via
+  `*.props.ts`; at least one empty props file must exist to register targets.
 - `modality extract [source.tsx ...]`: write `.modality/model.json` from React +
-  TypeScript source. Important flags: `--out`, `--app-model`, `--report`, `--overlay`,
-  `--config`, `--package-json`, `--disable-plugin`, repeatable `--effect-api`,
-  `--expect-model`, `--explain-drift`.
-- `modality check [model.json] [props.ts ...]`: evaluate properties. Important flags:
-  `--report`, `--overlay`, `--traces`, `--replay-tests`,
-  `--action-replay-tests`, `--states`, `--max-states`, `--max-edges`,
-  `--max-frontier`, `--memory-guard-mb`, `--no-search-limits`, `--artifact`.
+  TypeScript source. Use repeatable `--effect-api` to model named async effects;
+  use `--report` for the extraction report/trust ledger; use `--overlay`,
+  `--config`, `--disable-plugin`, and `--explain-drift` as needed.
+- `modality check [model.json] [props.ts ...]`: evaluate properties. Use
+  `--report`, `--traces`, `--replay-tests`, `--action-replay-tests`, `--states`,
+  search-limit flags, `--no-search-limits`, and `--artifact` as needed.
 - `modality replay <trace.json>`: classify a counterexample as `reproduced`,
-  `not-reproduced`, or `inconclusive`.
+  `not-reproduced`, or `inconclusive`; use `--mode abstract|action`, `--harness`,
+  `--states`, `--observed`, and `--report` as needed.
 - `modality conform`: generate or replay random walks for proactive conformance.
 - `modality export [model.json] --format tla --out .modality/model.tla`: export a
   conservative TLA+ model.
-- `modality ci <model.json> [props.ts] --artifacts .modality`: write model, report,
-  traces, conformance output, and baseline-comparison artifacts for automation.
+- `modality ci <model.json> [props.ts] --artifacts .modality`: run the bundled
+  automation workflow and write model, report, traces, and conformance artifacts.
+  CI can also derive the model path from a discovered props file.
 
 ## Artifact Reading Order
 
-1. Props file: property intent, imports, and whether targets are registered.
-2. Generated `*.modals.ts`: actual component-local state and transition handles available
-   to property authors.
-3. `.modality/model.json`: variable IDs, domains, transitions, bounds, labels, effects,
-   and provenance.
-4. Extraction/check reports: trust ledger, warnings, diagnostics, confidence, traces,
-   and bound/search-limit details.
-5. Trace JSON and generated replay tests: the shortest violating path and replayability
-   blockers.
+1. `*.props.ts`: target registration, property intent, imports.
+2. `*.modals.ts`: generated source-anchored state and transition handles.
+3. `.modality/model.json`: variables, domains, transitions, bounds, labels,
+   effects, and metadata.
+4. Extraction report: handlers classified as `exact`, `over-approx`,
+   `unextractable`, or `overlay`; caveats, domains, coverage, warnings, and effect
+   operations.
+5. Check report: verdicts, traces, diagnostics, confidence, and trust ledger.
+6. Trace/replay artifacts: shortest violating paths and replay blockers.
 
 ## CI Gating
 
-Use `modality ci ... --artifacts .modality` for repeatable automation. Gate hard on:
+Use `modality ci ... --artifacts .modality` for package-user automation. Gate hard
+on reproduced counterexamples, stale model hashes, overlay drift, new severe trust
+ledger caveats, and conformance pass-rate drops. Treat `not-reproduced`
+violations as model-maintenance work until the model stabilizes; treat
+`inconclusive` replay as harness debt.
 
-- reproduced counterexamples;
-- stale model hashes or overlay drift;
-- new severe trust-ledger caveats such as global taints or unsound-risk caveats;
-- new or changed model-slack caveats when the team is ratcheting model precision;
-- conformance pass-rate drops.
+Inside this repository, maintainer workflows are pnpm scripts, not extra public CLI
+commands:
 
-Treat `not-reproduced` violations as model-maintenance work until the model is stable
-enough to make them hard failures. Treat `inconclusive` replay as harness debt.
+```bash
+rtk pnpm ci:conformance
+rtk pnpm ci:canaries
+rtk pnpm ci:examples
+rtk pnpm benchmarks
+rtk pnpm phase7
+```
+
+Run `pnpm phase7` for checker, extraction, export, or semantics-sensitive changes.
 
 ## Repository Validation
 
-When changing this repository, prefer:
+For code changes, choose from:
 
 ```bash
 rtk pnpm typecheck
@@ -98,5 +112,4 @@ rtk pnpm phase7
 rtk pnpm fix
 ```
 
-Run the checks that match the risk of the change. For docs/skill-only changes, at least
-validate the skill metadata and inspect the diff.
+For docs/skill-only changes, validate the skill metadata and inspect the diff.
