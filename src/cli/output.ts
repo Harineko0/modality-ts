@@ -1,21 +1,31 @@
+import { createColors } from "picocolors";
+
 export interface OutputOptions {
   color?: boolean;
 }
 
 export const ANSI = {
-  reset: "\u001b[0m",
-  bold: "\u001b[1m",
-  green: "\u001b[32m",
-  red: "\u001b[31m",
-  yellow: "\u001b[33m",
-  cyan: "\u001b[36m",
-  dim: "\u001b[2m",
-  gray: "\u001b[90m",
-  white: "\u001b[37m",
+  reset: "[0m",
+  bold: "[1m",
+  green: "[32m",
+  red: "[31m",
+  yellow: "[33m",
+  cyan: "[36m",
+  dim: "[2m",
+  gray: "[90m",
+  white: "[37m",
 } as const;
+
+const pcOn = createColors(true);
+const pcOff = createColors(false);
+type Colors = typeof pcOn;
 
 export function useColor(options: OutputOptions): boolean {
   return options.color === true;
+}
+
+function colors(options: OutputOptions): Colors {
+  return useColor(options) ? pcOn : pcOff;
 }
 
 export function colorize(
@@ -57,7 +67,16 @@ export function formatStatusSymbol(
   kind: StatusKind,
   options: OutputOptions,
 ): string {
-  return colorize(statusSymbol(kind), statusColor(kind), options);
+  const sym = statusSymbol(kind);
+  const c = colors(options);
+  switch (kind) {
+    case "pass":
+      return c.green(sym);
+    case "fail":
+      return c.red(sym);
+    case "warn":
+      return c.yellow(sym);
+  }
 }
 
 export function formatMs(ms: number): string {
@@ -87,7 +106,7 @@ export function formatSummaryRow(
   options: OutputOptions,
 ): string {
   const paddedLabel = label.padStart(SUMMARY_LABEL_WIDTH);
-  return `${colorize(paddedLabel, ANSI.gray, options)}  ${value}`;
+  return `${colors(options).gray(paddedLabel)}  ${value}`;
 }
 
 export interface FormatCountValueOptions extends OutputOptions {
@@ -100,17 +119,14 @@ function formatCountSegment(
   options: OutputOptions,
 ): string {
   const text = `${count} ${kind === "passed" ? "passed" : kind === "failed" ? "failed" : kind === "errors" ? "errors" : "warnings"}`;
-  const color =
-    kind === "passed"
-      ? ANSI.green
-      : kind === "warnings"
-        ? ANSI.yellow
-        : ANSI.red;
-  return colorize(text, color, options);
+  const c = colors(options);
+  if (kind === "passed") return c.green(text);
+  if (kind === "warnings") return c.yellow(text);
+  return c.red(text);
 }
 
 function formatTotalParen(total: number, options: OutputOptions): string {
-  return colorize(`(${total})`, ANSI.gray, options);
+  return colors(options).gray(`(${total})`);
 }
 
 export function formatCountValue(
@@ -157,7 +173,7 @@ export function formatCountValue(
 }
 
 export function formatTimeValue(text: string, options: OutputOptions): string {
-  return colorize(text, ANSI.white, options);
+  return colors(options).white(text);
 }
 
 export function formatDurationValue(
@@ -168,9 +184,9 @@ export function formatDurationValue(
   if (!paren) {
     return formatTimeValue(text, options);
   }
-  const plain = `${text} (${paren})`;
-  if (!useColor(options)) return plain;
-  return `${colorize(text, ANSI.white, options)} ${colorize(`(${paren})`, ANSI.gray, options)}`;
+  if (!useColor(options)) return `${text} (${paren})`;
+  const c = colors(options);
+  return `${c.white(text)} ${c.gray(`(${paren})`)}`;
 }
 
 export interface ArtifactLineEntry {
@@ -184,28 +200,5 @@ export function formatArtifactLine(
   options: OutputOptions = {},
 ): string {
   const line = `     - (${kind}) ${path}`;
-  return colorize(line, ANSI.dim, options);
-}
-
-export interface RunProgress {
-  start(label: string): void;
-  done(): void;
-}
-
-export function createRunProgress(options: OutputOptions): RunProgress {
-  const enabled = process.stderr.isTTY === true && useColor(options);
-  if (!enabled) {
-    return {
-      start() {},
-      done() {},
-    };
-  }
-  return {
-    start(label: string) {
-      process.stderr.write(`◌ ${label} running…\r`);
-    },
-    done() {
-      process.stderr.write("\r\x1b[K");
-    },
-  };
+  return colors(options).dim(line);
 }

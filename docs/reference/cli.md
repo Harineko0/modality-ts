@@ -35,6 +35,7 @@ npx modality extract [source.tsx ...]
 | `--effect-api <name>` | model a named API function as an [async effect](../guides/modeling-side-effects.md) (repeatable) |
 | `--expect-model <path>` | compare output against an expected model |
 | `--explain-drift` | explain model/overlay drift against expected output |
+| `--reporter <name>` | output format: `default` (pretty, live progress), `basic` (plain text), `json` (machine-readable JSON) |
 
 ## `modality generate`
 
@@ -56,6 +57,7 @@ npx modality generate [source.tsx ...]
 | `--package-json <path>` | resolve package/plugin context from a specific package file |
 | `--disable-plugin <id>` | disable a built-in [state-source plugin](../architecture/state-sources.md) |
 | `--effect-api <name>` | model a named API function as an [async effect](../guides/modeling-side-effects.md) (repeatable) |
+| `--reporter <name>` | output format: `default`, `basic`, `json` |
 
 ## `modality check`
 
@@ -79,6 +81,7 @@ npx modality check [model.json] [props.ts ...]
 | `--memory-guard-mb <n>` | stop after a memory threshold |
 | `--no-search-limits` | disable default [search limits](../guides/diagnostics-and-search-limits.md) |
 | `--artifact`, `-A` | show artifact paths in human output |
+| `--reporter <name>` | output format: `default` (pretty, live progress), `basic` (plain text), `json` (machine-readable JSON) |
 
 A run stopped by a limit produces an `error` verdict with a limit reason — never
 `verified-within-bounds`.

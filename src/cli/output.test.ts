@@ -1,6 +1,6 @@
+import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import {
-  ANSI,
   formatCountValue,
   formatDurationValue,
   formatSummaryRow,
@@ -16,7 +16,8 @@ describe("summary formatting helpers", () => {
       color: true,
     });
     expect(plain).toBe(" Test Files  2 passed (2)");
-    expect(colored).toContain(`${ANSI.gray} Test Files${ANSI.reset}`);
+    expect(stripAnsi(colored)).toBe(" Test Files  2 passed (2)");
+    expect(colored).not.toBe(stripAnsi(colored));
     expect(colored).toContain("2 passed (2)");
   });
 
@@ -43,18 +44,20 @@ describe("summary formatting helpers", () => {
       4,
       { color: true },
     );
-    expect(colored).toContain(`${ANSI.green}1 passed${ANSI.reset}`);
-    expect(colored).toContain(`${ANSI.red}1 failed${ANSI.reset}`);
-    expect(colored).toContain(`${ANSI.red}1 errors${ANSI.reset}`);
-    expect(colored).toContain(`${ANSI.yellow}1 warnings${ANSI.reset}`);
-    expect(colored).toContain(`${ANSI.gray}(4)${ANSI.reset}`);
+    expect(stripAnsi(colored)).toContain("1 passed");
+    expect(stripAnsi(colored)).toContain("1 failed");
+    expect(stripAnsi(colored)).toContain("1 errors");
+    expect(stripAnsi(colored)).toContain("1 warnings");
+    expect(stripAnsi(colored)).toContain("(4)");
+    expect(colored).not.toBe(stripAnsi(colored));
   });
 
   it("formatTimeValue colorizes time text when color is enabled", () => {
     const plain = formatTimeValue("19:15:14", { color: false });
     const colored = formatTimeValue("19:15:14", { color: true });
     expect(plain).toBe("19:15:14");
-    expect(colored).toBe(`${ANSI.white}19:15:14${ANSI.reset}`);
+    expect(stripAnsi(colored)).toBe("19:15:14");
+    expect(colored).not.toBe("19:15:14");
   });
 
   it("formatDurationValue colorizes duration and parenthetical breakdown", () => {
@@ -65,7 +68,7 @@ describe("summary formatting helpers", () => {
       color: true,
     });
     expect(plain).toBe("99.82s (transform 11.87s)");
-    expect(colored).toContain(`${ANSI.white}99.82s${ANSI.reset}`);
-    expect(colored).toContain(`${ANSI.gray}(transform 11.87s)${ANSI.reset}`);
+    expect(stripAnsi(colored)).toBe("99.82s (transform 11.87s)");
+    expect(colored).not.toBe(plain);
   });
 });
