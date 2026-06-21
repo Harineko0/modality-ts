@@ -29,6 +29,10 @@ Model-checking-based testing tool for React state-transition bugs.
 </a>
 <p>
 
+<p align="center">
+  English | <a href="README.ja.md">日本語</a>
+</p>
+
 ### [Read the docs »](https://modality-ts.yuni.cat)
 
 `modality-ts` extracts a finite transition model from React + TypeScript code, checks developer-defined properties against every reachable state within stated bounds, and turns counterexamples into replayable tests.
