@@ -4,11 +4,15 @@ import { useParams } from "next/navigation";
 import { useInvoiceStore } from "../../../../../../features/billing/state/invoice-store.js";
 import { useInvoiceDetail } from "../../../../../../features/billing/infra/billing-queries.js";
 import { invoiceActionSchema } from "../../../../../../shared/features/billing/domain/billing.schema.js";
+import type { InvoiceId } from "../../../../../../shared/features/billing/domain/invoice.js";
 import { InvoiceStatusBadge } from "../../../../../../features/billing/_components/InvoiceStatusBadge.js";
 import { api } from "../../../../../../features/auth/infra/api.js";
 
 export function InvoiceActions() {
-  const { invoiceId = "inv-100" } = useParams();
+  const { invoiceId: rawInvoiceId = "inv-100" } = useParams();
+  const invoiceId = (
+    Array.isArray(rawInvoiceId) ? rawInvoiceId[0] : rawInvoiceId
+  ) as InvoiceId;
   const invoiceStatus = useInvoiceStore((s) => s.invoiceStatus);
   const retryCount = useInvoiceStore((s) => s.retryCount);
   const setInvoiceStatus = useInvoiceStore((s) => s.setInvoiceStatus);

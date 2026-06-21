@@ -11,13 +11,12 @@ import {
   property,
   readOpArg,
   stepEnqueued,
-  type Variable,
 } from "modality-ts/properties";
-import { auditActionFilterAtom } from "../../features/audit/state/audit-atoms.js";
-import { permissionCacheAtom } from "../../features/auth/state/session-atoms.js";
+import { auditActionFilterAtom } from "../../features/audit/state/audit-atoms.modals";
+import { permissionCacheAtom } from "../../features/auth/state/session-atoms.modals";
 
-const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
-const actionFilter = auditActionFilterAtom as unknown as Variable;
+const permissionRole = permissionCacheAtom.at("role");
+const actionFilter = auditActionFilterAtom;
 
 group("audit", () => {
   always(

@@ -11,8 +11,7 @@ import {
   stepResolved,
 } from "modality-ts/properties";
 import { pending } from "modality-ts/vars";
-import { authAtom } from "./App";
-import { App } from "./App.modals";
+import { App, authAtom } from "./App.modals";
 
 function atMostOnePendingOp(opId: string) {
   return and(

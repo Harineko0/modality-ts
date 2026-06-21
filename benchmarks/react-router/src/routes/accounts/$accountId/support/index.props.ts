@@ -5,11 +5,11 @@ import {
   neq,
   readOpArg,
   stepResolved,
-  variable,
 } from "modality-ts/properties";
+import { useSupportStore } from "../../../../features/support/state/support-store.modals";
 
-const enqueuedAccountId = variable("zustand:useSupportStore.enqueuedAccountId");
-const activeAccountId = variable("zustand:useSupportStore.activeAccountId");
+const enqueuedAccountId = useSupportStore.enqueuedAccountId;
+const activeAccountId = useSupportStore.activeAccountId;
 
 group("support", () => {
   alwaysStep("support.escalationUsesEnqueuedAccount", {

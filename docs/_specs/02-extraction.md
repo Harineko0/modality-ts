@@ -176,6 +176,20 @@ Merge rules: overlay entries override extracted entries of the same id; an overl
 
 Transition/var ids must survive `modality extract` re-runs or overlays rot. Id = `«componentOrModule».«handlerName|attrName»[«disambiguator»]` where the disambiguator is a short hash of the *normalized* AST of the handler (whitespace/comment-insensitive). Renames break ids by design (the overlay author must re-confirm); the CLI offers `modality extract --explain-drift` showing orphaned overlay entries against new candidates by AST similarity. Never auto-rebind — E1 again.
 
+`modality generate` writes sibling `*.modals.ts` modules as the typed property-authoring
+surface for source-anchored vars and transitions. For each var id shaped
+`<kind>:<rest>`, split `<rest>` on `.` and `:`. If the first segment is a valid JavaScript
+identifier, it is the export name and the remaining segments are the member path:
+`local:App.draft` exports `App.draft`, `atom:selectedAccountAtom` exports standalone
+`selectedAccountAtom`, `zustand:useStore.status` exports `useStore.status`, and
+`swr:management_summary:data` exports `management_summary.data`. Vars without a
+`SourceAnchor` origin, or whose export segment is not a valid identifier, stay addressable
+only by raw id or built-in handles. Standalone exports must carry an explicit
+`Variable<Domain, "id">` annotation; object members carry `variable("id") as Variable<...>`
+so the property loader can rewrite generated imports before executing props modules.
+Transition refs keep their existing component/event/path object shape and merge with state
+exports that share the same top-level name.
+
 ## 10. Extraction report (the trust ledger)
 
 Emitted on every extract; embedded in check reports:

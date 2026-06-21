@@ -175,6 +175,84 @@ describe("SWR template", () => {
     );
   });
 
+  it("uses the enclosing custom hook name as the SWR instance id", () => {
+    const source = `
+      import useSWR from 'swr';
+      export function useDashboardSummary(selectedAccount: string) {
+        return useSWR(["dashboard", selectedAccount], fetchSummary);
+      }
+    `;
+    const decl = swrSource().discover({
+      sourceText: source,
+      fileName: "dashboard-queries.ts",
+      route: "/",
+    })[0];
+    if (!decl) throw new Error("Expected discovered SWR declaration");
+
+    expect(decl).toMatchObject({
+      id: "swr:useDashboardSummary",
+      metadata: {
+        key: "dashboard:selectedAccount",
+        id: "useDashboardSummary",
+        op: "GET dashboard:selectedAccount",
+      },
+    });
+    const fragment = swrSource().template?.(decl, { route: "/" });
+    expect(fragment?.vars.map((decl) => decl.id)).toEqual([
+      "swr:useDashboardSummary:data",
+      "swr:useDashboardSummary:isValidating",
+      "swr:useDashboardSummary:error",
+    ]);
+    expect(fragment?.transitions.map((transition) => transition.id)).toContain(
+      "swr:useDashboardSummary:fetch",
+    );
+  });
+
+  it("keeps key-derived ids for direct component useSWR calls", () => {
+    const source = `
+      import useSWR from 'swr';
+      export function DashboardPage() {
+        return useSWR(["dashboard", selectedAccount], fetchSummary).data;
+      }
+    `;
+    const decl = swrSource().discover({
+      sourceText: source,
+      fileName: "dashboard.tsx",
+      route: "/",
+    })[0];
+    if (!decl) throw new Error("Expected discovered SWR declaration");
+
+    expect(decl).toMatchObject({
+      id: "swr:dashboard_selectedAccount",
+      metadata: { id: "dashboard_selectedAccount" },
+    });
+  });
+
+  it("suffixes hook ids when one custom hook owns multiple SWR calls", () => {
+    const source = `
+      import useSWR from 'swr';
+      export const useThing = () => {
+        const x = useSWR(["thing", "x"], fetchX);
+        const y = useSWR(["thing", "y"], fetchY);
+        return { x, y };
+      };
+    `;
+    const decls = swrSource().discover({
+      sourceText: source,
+      fileName: "thing.ts",
+      route: "/",
+    });
+
+    expect(decls.map((decl) => decl.id)).toEqual([
+      "swr:useThing_thing_x",
+      "swr:useThing_thing_y",
+    ]);
+    expect(decls.map((decl) => decl.metadata.id)).toEqual([
+      "useThing_thing_x",
+      "useThing_thing_y",
+    ]);
+  });
+
   it("extracts conditional literal keys as guarded template declarations", () => {
     const source = `
       import { useSWR } from 'swr';

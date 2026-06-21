@@ -2,11 +2,13 @@ import { useParams } from "react-router-dom";
 import { useSupportStore } from "../../../../../features/support/state/support-store.js";
 import { useSupportCase } from "../../../../../features/support/infra/support-queries.js";
 import { supportEscalationSchema } from "../../../../../shared/features/support/domain/support.schema.js";
+import type { AccountId } from "../../../../../shared/features/accounts/domain/account.js";
 import { PrioritySelect } from "../../../../../features/support/_components/PrioritySelect.js";
 import { api } from "../../../../../features/auth/infra/api.js";
 
 export function SupportEscalationForm() {
   const { accountId = "acct-alpha" } = useParams();
+  const typedAccountId = accountId as AccountId;
   const priority = useSupportStore((s) => s.priority);
   const escalationStatus = useSupportStore((s) => s.escalationStatus);
   const enqueuedAccountId = useSupportStore((s) => s.enqueuedAccountId);
@@ -14,7 +16,7 @@ export function SupportEscalationForm() {
   const setPriority = useSupportStore((s) => s.setPriority);
   const openEscalation = useSupportStore((s) => s.openEscalation);
   const assignOwner = useSupportStore((s) => s.assignOwner);
-  useSupportCase(accountId);
+  useSupportCase(typedAccountId);
 
   return (
     <section>
@@ -24,12 +26,12 @@ export function SupportEscalationForm() {
         type="button"
         onClick={() => {
           const parsed = supportEscalationSchema.safeParse({
-            accountId,
+            accountId: typedAccountId,
             priority,
             escalationBucket: "some",
           });
           if (!parsed.success) return;
-          openEscalation(accountId);
+          openEscalation(typedAccountId);
         }}
       >
         open escalation button
@@ -38,16 +40,16 @@ export function SupportEscalationForm() {
         type="button"
         onClick={async () => {
           await api.openSupportEscalation({
-            accountId: enqueuedAccountId ?? accountId,
+            accountId: enqueuedAccountId ?? typedAccountId,
             priority,
             escalationBucket: "some",
           });
-          assignOwner(enqueuedAccountId ?? accountId);
+          assignOwner(enqueuedAccountId ?? typedAccountId);
         }}
       >
         assign owner button
       </button>
-      <p>display account: {enqueuedAccountId ?? accountId}</p>
+      <p>display account: {enqueuedAccountId ?? typedAccountId}</p>
       <p>active account: {activeAccountId}</p>
       <p>escalation status: {escalationStatus}</p>
     </section>

@@ -294,6 +294,7 @@ export interface PropertyOptions {
   reads?: readonly string[];
   enabledTransitions?: readonly string[];
   includeUnmounted?: boolean;
+  fairness?: readonly FairnessConstraint[];
 }
 
 export type Property =

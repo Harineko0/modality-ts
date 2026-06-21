@@ -3,7 +3,7 @@ import { route } from "modality-ts/vars";
 import {
   loginStatusAtom,
   sessionAtom,
-} from "../../../features/auth/state/session-atoms.js";
+} from "../../features/auth/state/session-atoms.modals";
 
 group("auth", () => {
   always("auth.failedLoginKeepsGuest", eq(loginStatusAtom, "idle"));

@@ -1,16 +1,9 @@
-import {
-  always,
-  and,
-  eq,
-  group,
-  not,
-  type Variable,
-  variable,
-} from "modality-ts/properties";
-import { permissionCacheAtom } from "../../features/auth/state/session-atoms.js";
+import { always, and, eq, group, not } from "modality-ts/properties";
+import { permissionCacheAtom } from "../../features/auth/state/session-atoms.modals";
+import { useSettingsStore } from "../../features/settings/state/settings-store.modals";
 
-const saveStatus = variable("zustand:useSettingsStore.saveStatus");
-const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
+const saveStatus = useSettingsStore.saveStatus;
+const permissionRole = permissionCacheAtom.at("role");
 
 group("settings", () => {
   always(

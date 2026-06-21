@@ -8,13 +8,14 @@ import {
   property,
   reachable,
   stepEnqueued,
-  variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
+import { useManagementStore } from "../../features/management/state/management-store.modals";
+import { useManagementSummary } from "../../features/management/infra/management-queries.modals";
 
-const summaryStatus = variable("zustand:useManagementStore.summaryStatus");
-const managementSummary = variable("swr:management_summary:data");
-const summaryValidating = variable("swr:management_summary:isValidating");
+const summaryStatus = useManagementStore.summaryStatus;
+const managementSummary = useManagementSummary.data;
+const summaryValidating = useManagementSummary.isValidating;
 
 group("management", () => {
   reachable("management.summaryRouteReachable", eq(route, "/management"));

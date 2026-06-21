@@ -16,19 +16,16 @@ import {
   stepEnqueued,
   stepResolved,
   stepTransitionId,
-  type Variable,
 } from "modality-ts/properties";
 import { pending, route } from "modality-ts/vars";
 import {
-  permissionCacheAtom,
   returnToAtom,
   sessionAtom,
-} from "../../features/auth/state/session-atoms.js";
+} from "../../features/auth/state/session-atoms.modals";
 import { LoginForm } from "./_components/LoginForm.modals";
 
-const sessionRole = (sessionAtom as unknown as Variable).at("role");
-const permissionRole = (permissionCacheAtom as unknown as Variable).at("role");
-const returnTo = returnToAtom as unknown as Variable;
+const sessionRole = sessionAtom.at("role");
+const returnTo = returnToAtom;
 const loginRole = LoginForm.role;
 
 group("auth", () => {

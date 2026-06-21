@@ -30,6 +30,7 @@ export function discoverSwrHooks(
   const useSwrNames = useSwrImportNames(source, types);
   if (useSwrNames.size === 0) return [];
   const typeAliases = compilerBackedTypeAliases(source, types);
+  const swrNamingContext = swrInstanceNamingContext(source, useSwrNames);
 
   const decls: SourceDecl[] = [];
   const visit = (node: ts.Node): void => {
@@ -40,7 +41,7 @@ export function discoverSwrHooks(
     ) {
       const key = keyFromExpression(node.arguments[0]);
       if (key) {
-        const id = swrIdFromKey(key.id);
+        const id = swrInstanceId(node, swrNamingContext, key.id);
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         decls.push({
           id: `swr:${id}`,
@@ -139,6 +140,91 @@ export function keyFromExpression(
     if (key && activeWhen) return { ...key, activeWhen: negateIr(activeWhen) };
   }
   return undefined;
+}
+
+const hookNamePattern = /^use[A-Z0-9]/u;
+
+function functionInitializerName(node: ts.Node): string | undefined {
+  if (
+    ts.isFunctionDeclaration(node) &&
+    node.name &&
+    hookNamePattern.test(node.name.text)
+  ) {
+    return node.name.text;
+  }
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    hookNamePattern.test(node.name.text) &&
+    node.initializer &&
+    (ts.isFunctionExpression(node.initializer) ||
+      ts.isArrowFunction(node.initializer))
+  ) {
+    return node.name.text;
+  }
+  if (
+    ts.isPropertyAssignment(node) &&
+    ts.isIdentifier(node.name) &&
+    hookNamePattern.test(node.name.text) &&
+    (ts.isFunctionExpression(node.initializer) ||
+      ts.isArrowFunction(node.initializer))
+  ) {
+    return node.name.text;
+  }
+  return undefined;
+}
+
+function enclosingHookName(node: ts.Node): string | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    const name = functionInitializerName(current);
+    if (name) return name;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+export interface SwrInstanceNamingContext {
+  hookCallCounts: ReadonlyMap<string, number>;
+  enclosingHookByCall: ReadonlyMap<ts.Node, string>;
+}
+
+export function swrInstanceNamingContext(
+  source: ts.SourceFile,
+  useSwrNames: ReadonlySet<string>,
+): SwrInstanceNamingContext {
+  const counts = new Map<string, number>();
+  const enclosingHookByCall = new Map<ts.Node, string>();
+  const visit = (node: ts.Node, currentHook?: string): void => {
+    const nodeHook = functionInitializerName(node) ?? currentHook;
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      useSwrNames.has(node.expression.text)
+    ) {
+      const hookName = nodeHook;
+      if (hookName) counts.set(hookName, (counts.get(hookName) ?? 0) + 1);
+      if (hookName) enclosingHookByCall.set(node, hookName);
+    }
+    ts.forEachChild(node, (child) => visit(child, nodeHook));
+  };
+  visit(source);
+  return { hookCallCounts: counts, enclosingHookByCall };
+}
+
+export function swrInstanceId(
+  node: ts.Node,
+  context: SwrInstanceNamingContext,
+  keyId: string,
+): string {
+  const hookName =
+    context.enclosingHookByCall.get(node) ?? enclosingHookName(node);
+  const keyBasedId = swrIdFromKey(keyId);
+  if (!hookName) return keyBasedId;
+  if ((context.hookCallCounts.get(hookName) ?? 0) > 1) {
+    return `${hookName}_${keyBasedId}`;
+  }
+  return hookName;
 }
 
 function keyPartFromExpression(expr: ts.Expression): string | undefined {

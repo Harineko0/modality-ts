@@ -9,7 +9,10 @@ import { ApprovalBanner } from "../../../../../features/subscription/_components
 import { api } from "../../../../../features/auth/infra/api.js";
 
 export function SubscriptionEditor() {
-  const { accountId = "acct-alpha" } = useParams();
+  const { accountId: rawAccountId = "acct-alpha" } = useParams();
+  const accountId = Array.isArray(rawAccountId)
+    ? rawAccountId[0]
+    : rawAccountId;
   const planDraft = useSubscriptionStore((s) => s.planDraft);
   const seatDraft = useSubscriptionStore((s) => s.seatDraft);
   const approvalStatus = useSubscriptionStore((s) => s.approvalStatus);

@@ -9,7 +9,10 @@ import { PaymentIntentPanel } from "../../../../../features/billing/_components/
 import { api } from "../../../../../features/auth/infra/api.js";
 
 export function BillingWorkbench() {
-  const { accountId = "acct-alpha" } = useParams();
+  const { accountId: rawAccountId = "acct-alpha" } = useParams();
+  const accountId = Array.isArray(rawAccountId)
+    ? rawAccountId[0]
+    : rawAccountId;
   const paymentIntentStatus = useBillingStore((s) => s.paymentIntentStatus);
   const retryCount = useBillingStore((s) => s.retryCount);
   const riskScore = useBillingStore((s) => s.riskScore);

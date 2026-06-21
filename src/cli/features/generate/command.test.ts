@@ -100,6 +100,56 @@ describe("runGenerateCommand", () => {
       result.artifacts.some((entry) => entry.path.endsWith(".modals.ts")),
     ).toBe(true);
   });
+
+  it("writes handles for source-anchored atoms and store fields", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-generate-state-"));
+    const sourcePath = join(dir, "state.ts");
+    const modelPath = join(dir, "model.json");
+    const appModelPath = join(dir, "app.model.ts");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: {
+          jotai: "^2.0.0",
+          react: "^18.0.0",
+          zustand: "^4.0.0",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      sourcePath,
+      `
+      import { atom } from 'jotai';
+      import { create } from 'zustand';
+      export const selectedAccountAtom = atom<'none' | 'selected'>('none');
+      export const useManagementStore = create(() => ({
+        summaryStatus: 'idle' as 'idle' | 'ready',
+      }));
+      `,
+      "utf8",
+    );
+
+    const result = await runGenerateCommand({
+      sourcePath,
+      modelPath,
+      appModelPath,
+    });
+
+    const modalsPath = join(dir, "state.modals.ts");
+    const source = await readFile(modalsPath, "utf8");
+    expect(source).toContain("export const selectedAccountAtom: Variable");
+    expect(source).toContain('variable("atom:selectedAccountAtom")');
+    expect(source).toContain("export const useManagementStore = {");
+    expect(source).toContain(
+      'summaryStatus: variable("zustand:useManagementStore.summaryStatus") as Variable',
+    );
+    expect(result.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "componentVars", path: modalsPath }),
+      ]),
+    );
+  });
 });
 
 describe("renderHumanGenerateTargets", () => {

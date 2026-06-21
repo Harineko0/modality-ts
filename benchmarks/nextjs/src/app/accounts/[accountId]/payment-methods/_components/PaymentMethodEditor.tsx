@@ -7,7 +7,10 @@ import { paymentMethodSchema } from "../../../../../shared/features/billing/doma
 import { api } from "../../../../../features/auth/infra/api.js";
 
 export function PaymentMethodEditor() {
-  const { accountId = "acct-alpha" } = useParams();
+  const { accountId: rawAccountId = "acct-alpha" } = useParams();
+  const accountId = Array.isArray(rawAccountId)
+    ? rawAccountId[0]
+    : rawAccountId;
   const methodStatus = usePaymentMethodStore((s) => s.methodStatus);
   const saveStatus = usePaymentMethodStore((s) => s.saveStatus);
   const setMethodStatus = usePaymentMethodStore((s) => s.setMethodStatus);

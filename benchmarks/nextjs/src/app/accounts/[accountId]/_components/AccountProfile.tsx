@@ -12,7 +12,10 @@ import { parseAccountRecord } from "../../../../../shared/features/accounts/doma
 import { AccountStatusBadge } from "../../../../features/accounts/_components/AccountStatusBadge.js";
 
 export function AccountProfile() {
-  const { accountId = "acct-alpha" } = useParams();
+  const { accountId: rawAccountId = "acct-alpha" } = useParams();
+  const accountId = Array.isArray(rawAccountId)
+    ? rawAccountId[0]
+    : rawAccountId;
   const [selectedAccount, setSelectedAccount] = useAtom(selectedAccountAtom);
   const [tab, setTab] = useAtom(accountDetailTabAtom);
   const { data } = useAccountDetail(accountId as typeof selectedAccount);

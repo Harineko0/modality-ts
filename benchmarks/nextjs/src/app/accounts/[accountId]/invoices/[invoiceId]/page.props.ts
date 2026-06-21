@@ -7,11 +7,11 @@ import {
   lessThan,
   not,
   stepChangedTo,
-  variable,
 } from "modality-ts/properties";
+import { useInvoiceStore } from "../../../../../features/billing/state/invoice-store.modals";
 
-const invoiceStatus = variable("zustand:useInvoiceStore.invoiceStatus");
-const retryCount = variable("zustand:useInvoiceStore.retryCount");
+const invoiceStatus = useInvoiceStore.invoiceStatus;
+const retryCount = useInvoiceStore.retryCount;
 
 group("invoice", () => {
   always("invoice.retryBudgetNeverExceedsTwo", lessThan(retryCount, 3));

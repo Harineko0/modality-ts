@@ -5,13 +5,11 @@ import {
   lessThanOrEqual,
   neq,
   property,
-  variable,
 } from "modality-ts/properties";
+import { useManagementStore } from "../../../features/management/state/management-store.modals";
 
-const revenueHealth = variable("zustand:useManagementStore.revenueHealth");
-const failedPaymentQueue = variable(
-  "zustand:useManagementStore.failedPaymentQueue",
-);
+const revenueHealth = useManagementStore.revenueHealth;
+const failedPaymentQueue = useManagementStore.failedPaymentQueue;
 
 group("management", () => {
   property(

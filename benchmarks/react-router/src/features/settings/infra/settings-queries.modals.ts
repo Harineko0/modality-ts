@@ -1,43 +1,34 @@
+import { variable, type Variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
-export const swr_role_assignments_fetch = {
+export const useRoleAssignments = {
+  // state
+  data: variable("swr:useRoleAssignments:data") as Variable<{ readonly kind: "option"; readonly inner: { readonly kind: "tokens"; readonly count: 1 } }, "swr:useRoleAssignments:data">,
+  error: variable("swr:useRoleAssignments:error") as Variable<{ readonly kind: "bool" }, "swr:useRoleAssignments:error">,
+  isValidating: variable("swr:useRoleAssignments:isValidating") as Variable<{ readonly kind: "bool" }, "swr:useRoleAssignments:isValidating">,
+
   // transitions
-  _: {
-    _: "swr:role_assignments:fetch" as TransitionRef<"swr:role_assignments:fetch">,
+  fetch: "swr:useRoleAssignments:fetch" as TransitionRef<"swr:useRoleAssignments:fetch">,
+  resolve: {
+    error: "swr:useRoleAssignments:resolve:error" as TransitionRef<"swr:useRoleAssignments:resolve:error">,
+    success: {
+      "0": "swr:useRoleAssignments:resolve:success:0" as TransitionRef<"swr:useRoleAssignments:resolve:success:0">,
+    },
   },
 };
 
-export const swr_role_assignments_resolve_error = {
-  // transitions
-  _: {
-    _: "swr:role_assignments:resolve:error" as TransitionRef<"swr:role_assignments:resolve:error">,
-  },
-};
+export const useSettings = {
+  // state
+  data: variable("swr:useSettings:data") as Variable<{ readonly kind: "option"; readonly inner: { readonly kind: "tokens"; readonly count: 1 } }, "swr:useSettings:data">,
+  error: variable("swr:useSettings:error") as Variable<{ readonly kind: "bool" }, "swr:useSettings:error">,
+  isValidating: variable("swr:useSettings:isValidating") as Variable<{ readonly kind: "bool" }, "swr:useSettings:isValidating">,
 
-export const swr_role_assignments_resolve_success_0 = {
   // transitions
-  _: {
-    _: "swr:role_assignments:resolve:success:0" as TransitionRef<"swr:role_assignments:resolve:success:0">,
-  },
-};
-
-export const swr_settings_fetch = {
-  // transitions
-  _: {
-    _: "swr:settings:fetch" as TransitionRef<"swr:settings:fetch">,
-  },
-};
-
-export const swr_settings_resolve_error = {
-  // transitions
-  _: {
-    _: "swr:settings:resolve:error" as TransitionRef<"swr:settings:resolve:error">,
-  },
-};
-
-export const swr_settings_resolve_success_0 = {
-  // transitions
-  _: {
-    _: "swr:settings:resolve:success:0" as TransitionRef<"swr:settings:resolve:success:0">,
+  fetch: "swr:useSettings:fetch" as TransitionRef<"swr:useSettings:fetch">,
+  resolve: {
+    error: "swr:useSettings:resolve:error" as TransitionRef<"swr:useSettings:resolve:error">,
+    success: {
+      "0": "swr:useSettings:resolve:success:0" as TransitionRef<"swr:useSettings:resolve:success:0">,
+    },
   },
 };

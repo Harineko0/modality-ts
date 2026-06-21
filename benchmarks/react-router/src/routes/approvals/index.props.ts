@@ -5,11 +5,11 @@ import {
   group,
   not,
   stepChangedTo,
-  variable,
 } from "modality-ts/properties";
+import { useApprovalStore } from "../../features/subscription/state/approval-store.modals";
 
-const approvalStatus = variable("zustand:useApprovalStore.approvalStatus");
-const decisionStatus = variable("zustand:useApprovalStore.decisionStatus");
+const approvalStatus = useApprovalStore.approvalStatus;
+const decisionStatus = useApprovalStore.decisionStatus;
 
 group("approvals", () => {
   always(

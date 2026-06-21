@@ -1,15 +1,16 @@
 import { create } from "zustand";
+import type { AccountId } from "../../../../shared/features/accounts/domain/account.js";
 import type { AsyncStatus } from "../../../../shared/features/fixtures/domain/fixtures.js";
 import type { SupportPriority } from "../../../../shared/features/support/domain/escalation.js";
 
 type SupportState = {
   priority: SupportPriority;
   escalationStatus: AsyncStatus;
-  enqueuedAccountId: string | null;
-  activeAccountId: string;
+  enqueuedAccountId: AccountId | null;
+  activeAccountId: AccountId;
   setPriority: (priority: SupportPriority) => void;
-  openEscalation: (accountId: string) => void;
-  assignOwner: (accountId: string) => void;
+  openEscalation: (accountId: AccountId) => void;
+  assignOwner: (accountId: AccountId) => void;
 };
 
 export const useSupportStore = create<SupportState>((set, get) => ({

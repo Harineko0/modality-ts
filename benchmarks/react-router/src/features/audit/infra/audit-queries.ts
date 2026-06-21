@@ -9,6 +9,6 @@ export function useAuditEvents(
   actorRole: Role | "all",
 ) {
   return useSWR(["audit", action, actorRole], () =>
-    loadAuditEvents({ action, actorRole }),
+    loadAuditEvents({ actionFilter: action, actorRoleFilter: actorRole }),
   );
 }

@@ -80,14 +80,22 @@ export function todoHandModel(): Model {
       {
         id: "local:App.draft",
         domain: { kind: "enum", values: ["empty", "nonEmpty"] },
-        origin: "system",
+        origin: {
+          file: resolve("examples/todo-app/App.tsx"),
+          line: 11,
+          column: 29,
+        },
         scope: routeMountScope("/"),
         initial: "empty",
       },
       {
         id: "local:App.saveStatus",
         domain: { kind: "enum", values: ["idle", "posting", "failed"] },
-        origin: "system",
+        origin: {
+          file: resolve("examples/todo-app/App.tsx"),
+          line: 12,
+          column: 39,
+        },
         scope: routeMountScope("/"),
         initial: "idle",
       },

@@ -2,19 +2,24 @@ import { dirname, join, parse } from "node:path";
 import type {
   AbstractDomain,
   Model,
+  SourceAnchor,
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
 import { quoteProperty, stringLiteralType } from "./model.js";
+import { varHandleNaming } from "./handle-naming.js";
 import {
   buildTransitionTree,
   componentExportName,
   type TransitionComponentGroup,
 } from "./transition-handles.js";
 
-interface LocalField {
-  componentId: string;
-  field: string;
+export { varHandleNaming } from "./handle-naming.js";
+
+interface VarHandle {
+  varId: string;
+  exportName: string;
+  path: string[];
   domain: AbstractDomain;
 }
 
@@ -25,54 +30,33 @@ export interface ComponentModalModule {
   source: string;
 }
 
-function componentAndField(
-  varId: string,
-): { componentId: string; field: string } | undefined {
-  if (!varId.startsWith("local:")) return undefined;
-  const rest = varId.slice("local:".length);
-  const dot = rest.indexOf(".");
-  if (dot < 0) return undefined;
-  return {
-    componentId: rest.slice(0, dot),
-    field: rest.slice(dot + 1),
-  };
-}
-
 function modulePathForSource(sourcePath: string): string {
   const parsed = parse(sourcePath);
   return join(parsed.dir, `${parsed.name}.modals.ts`);
 }
 
-function fallbackModulePath(appModelPath: string, componentId: string): string {
-  return join(componentModalsDir(appModelPath), `${componentId}.modals.ts`);
-}
-
-function sourcePathForLocalVar(decl: StateVarDecl): string | undefined {
-  return typeof decl.origin === "object" ? decl.origin.file : undefined;
-}
-
-function localFieldsByModule(
+function varHandlesByModule(
   model: Model,
-  appModelPath: string,
-): Map<string, { sourcePath?: string; fields: LocalField[] }> {
+): Map<string, { sourcePath?: string; handles: VarHandle[] }> {
   const byModule = new Map<
     string,
-    { sourcePath?: string; fields: LocalField[] }
+    { sourcePath?: string; handles: VarHandle[] }
   >();
   for (const decl of model.vars) {
-    const parsed = componentAndField(decl.id);
-    if (!parsed) continue;
-    const sourcePath = sourcePathForLocalVar(decl);
-    const path = sourcePath
-      ? modulePathForSource(sourcePath)
-      : fallbackModulePath(appModelPath, parsed.componentId);
+    const origin = sourceAnchorForVarDecl(model, decl);
+    if (!origin) continue;
+    const naming = varHandleNaming(decl.id);
+    if (!naming) continue;
+    const sourcePath = origin.file;
+    const path = modulePathForSource(sourcePath);
     const entry = byModule.get(path) ?? {
-      ...(sourcePath ? { sourcePath } : {}),
-      fields: [],
+      sourcePath,
+      handles: [],
     };
-    entry.fields.push({
-      componentId: parsed.componentId,
-      field: parsed.field,
+    entry.handles.push({
+      varId: decl.id,
+      exportName: naming.exportName,
+      path: naming.path,
       domain: decl.domain,
     });
     byModule.set(path, entry);
@@ -80,8 +64,56 @@ function localFieldsByModule(
   return byModule;
 }
 
+function sourceAnchorForVarDecl(
+  model: Model,
+  decl: StateVarDecl,
+): SourceAnchor | undefined {
+  if (typeof decl.origin === "object") return decl.origin;
+  const anchored = model.metadata?.varAnchors?.[decl.id];
+  if (anchored) return anchored;
+  return sourceAnchorFromTemplateTransitions(model, decl.id);
+}
+
+function sourceAnchorFromTemplateTransitions(
+  model: Model,
+  varId: string,
+): SourceAnchor | undefined {
+  const prefix = transitionPrefixForTemplateVar(varId);
+  if (!prefix) return undefined;
+  for (const transition of model.transitions) {
+    if (!transition.id.startsWith(prefix)) continue;
+    const source = transition.source[0];
+    if (source) return source;
+  }
+  return undefined;
+}
+
+function transitionPrefixForTemplateVar(varId: string): string | undefined {
+  const colon = varId.indexOf(":");
+  if (colon < 0) return undefined;
+  const kind = varId.slice(0, colon);
+  const rest = varId.slice(colon + 1);
+  const segments = rest.split(":").filter((segment) => segment.length > 0);
+  if (segments.length < 2) return undefined;
+  const field = segments.at(-1);
+  if (!field || !templateCacheFields.has(field)) return undefined;
+  const key = segments.slice(0, -1).join(":");
+  if (!key) return undefined;
+  return `${kind}:${key}:`;
+}
+
+const templateCacheFields = new Set([
+  "data",
+  "isValidating",
+  "error",
+  "status",
+  "isLoading",
+  "isFetching",
+]);
+
 function transitionsByModule(
   model: Model,
+  stateExportNamesByModule: ReadonlyMap<string, ReadonlySet<string>>,
 ): Map<
   string,
   { sourcePath?: string; components: TransitionComponentGroup[] }
@@ -106,7 +138,10 @@ function transitionsByModule(
   for (const [path, entry] of grouped) {
     byModule.set(path, {
       ...(entry.sourcePath ? { sourcePath: entry.sourcePath } : {}),
-      components: buildTransitionTree(entry.transitions),
+      components: buildTransitionTree(
+        entry.transitions,
+        stateExportNamesByModule.get(path),
+      ),
     });
   }
   return byModule;
@@ -238,11 +273,48 @@ function emitTransitionPathTree(
   }
 }
 
+function isDirectTransitionLeaf(
+  eventGroup: TransitionComponentGroup["events"][number],
+): { transitionId: string } | undefined {
+  if (eventGroup.leaves.length !== 1) return undefined;
+  const leaf = eventGroup.leaves[0];
+  if (leaf?.path.length !== 0) return undefined;
+  return { transitionId: leaf.transitionId };
+}
+
+function emitVarPathTree(
+  tree: ReadonlyMap<string, TransitionPathNode>,
+  handles: readonly VarHandle[],
+  indent: string,
+  lines: string[],
+): void {
+  const handlesById = new Map(handles.map((handle) => [handle.varId, handle]));
+  for (const [key, node] of [...tree.entries()].sort((left, right) =>
+    left[0].localeCompare(right[0]),
+  )) {
+    if (node.children && node.children.size > 0) {
+      lines.push(`${indent}${quoteProperty(key)}: {`);
+      emitVarPathTree(node.children, handles, `${indent}  `, lines);
+      lines.push(`${indent}},`);
+      continue;
+    }
+    if (!node.transitionId) continue;
+    const handle = handlesById.get(node.transitionId);
+    if (!handle) continue;
+    lines.push(
+      `${indent}${quoteProperty(key)}: variable(${JSON.stringify(handle.varId)}) as ${handleType(
+        handle.domain,
+        handle.varId,
+      )},`,
+    );
+  }
+}
+
 function emitModuleSource(
-  fields: readonly LocalField[],
+  handles: readonly VarHandle[],
   components: readonly TransitionComponentGroup[],
 ): string {
-  const hasState = fields.length > 0;
+  const hasState = handles.length > 0;
   const hasTransitions = components.length > 0;
   const lines: string[] = [];
 
@@ -256,47 +328,72 @@ function emitModuleSource(
     lines.push("");
   }
 
-  const fieldsByComponent = new Map<string, LocalField[]>();
-  for (const field of fields) {
-    const entries = fieldsByComponent.get(field.componentId) ?? [];
-    entries.push(field);
-    fieldsByComponent.set(field.componentId, entries);
+  const handlesByExport = new Map<string, VarHandle[]>();
+  for (const handle of handles) {
+    const entries = handlesByExport.get(handle.exportName) ?? [];
+    entries.push(handle);
+    handlesByExport.set(handle.exportName, entries);
   }
-  const transitionsByComponent = new Map<string, TransitionComponentGroup>();
+  const transitionsByExport = new Map<string, TransitionComponentGroup>();
   for (const component of components) {
-    transitionsByComponent.set(component.component, component);
+    transitionsByExport.set(
+      componentExportName(component.component),
+      component,
+    );
   }
-  const componentIds = [
-    ...new Set([...fieldsByComponent.keys(), ...transitionsByComponent.keys()]),
+  const exportNames = [
+    ...new Set([...handlesByExport.keys(), ...transitionsByExport.keys()]),
   ].sort((left, right) => left.localeCompare(right));
 
-  for (const [index, componentId] of componentIds.entries()) {
+  for (const [index, exportName] of exportNames.entries()) {
     if (index > 0) lines.push("");
-    const componentFields = [
-      ...(fieldsByComponent.get(componentId) ?? []),
-    ].sort((left, right) => left.field.localeCompare(right.field));
-    const componentTransitions = transitionsByComponent.get(componentId);
+    const exportHandles = [...(handlesByExport.get(exportName) ?? [])].sort(
+      (left, right) =>
+        left.path.join(".").localeCompare(right.path.join(".")) ||
+        left.varId.localeCompare(right.varId),
+    );
+    const componentTransitions = transitionsByExport.get(exportName);
 
-    lines.push(`export const ${componentExportName(componentId)} = {`);
-    if (componentFields.length > 0) {
+    if (
+      exportHandles.length === 1 &&
+      exportHandles[0]!.path.length === 0 &&
+      !componentTransitions
+    ) {
+      const handle = exportHandles[0]!;
+      lines.push(
+        `export const ${exportName}: ${handleType(handle.domain, handle.varId)} = variable(${JSON.stringify(handle.varId)});`,
+      );
+      continue;
+    }
+
+    lines.push(`export const ${exportName} = {`);
+    if (exportHandles.length > 0) {
       lines.push("  // state");
-      for (const entry of componentFields) {
-        const varId = `local:${entry.componentId}.${entry.field}`;
-        lines.push(
-          `  ${quoteProperty(entry.field)}: variable(${JSON.stringify(varId)}) as ${handleType(
-            entry.domain,
-            varId,
-          )},`,
+      const tree = new Map<string, TransitionPathNode>();
+      for (const handle of exportHandles) {
+        insertTransitionPath(
+          tree,
+          handle.path.length > 0 ? handle.path : ["_"],
+          handle.varId,
         );
       }
+      emitVarPathTree(tree, exportHandles, "  ", lines);
     }
 
     if (componentTransitions) {
-      if (componentFields.length > 0) {
+      if (exportHandles.length > 0) {
         lines.push("");
       }
       lines.push("  // transitions");
       for (const eventGroup of componentTransitions.events) {
+        const directLeaf = isDirectTransitionLeaf(eventGroup);
+        if (directLeaf) {
+          const type = transitionHandleType(directLeaf.transitionId);
+          lines.push(
+            `  ${quoteProperty(eventGroup.event)}: ${JSON.stringify(directLeaf.transitionId)} as ${type},`,
+          );
+          continue;
+        }
         const tree = new Map<string, TransitionPathNode>();
         for (const leaf of eventGroup.leaves) {
           insertTransitionPath(tree, leaf.path, leaf.transitionId);
@@ -329,19 +426,30 @@ export function emitComponentModalModules(
   model: Model,
   appModelPath: string,
 ): ComponentModalModule[] {
-  const fieldsByModule = localFieldsByModule(model, appModelPath);
-  const transitionsByPath = transitionsByModule(model);
+  void appModelPath;
+  const handlesByModule = varHandlesByModule(model);
+  const stateExportNamesByModule = new Map<string, Set<string>>();
+  for (const [path, entry] of handlesByModule) {
+    stateExportNamesByModule.set(
+      path,
+      new Set(entry.handles.map((handle) => handle.exportName)),
+    );
+  }
+  const transitionsByPath = transitionsByModule(
+    model,
+    stateExportNamesByModule,
+  );
   const paths = [
-    ...new Set([...fieldsByModule.keys(), ...transitionsByPath.keys()]),
+    ...new Set([...handlesByModule.keys(), ...transitionsByPath.keys()]),
   ].sort((left, right) => left.localeCompare(right));
 
   const modules: ComponentModalModule[] = [];
   for (const path of paths) {
-    const fieldEntry = fieldsByModule.get(path);
+    const fieldEntry = handlesByModule.get(path);
     const transitionEntry = transitionsByPath.get(path);
-    const fields = fieldEntry?.fields ?? [];
+    const handles = fieldEntry?.handles ?? [];
     const components = transitionEntry?.components ?? [];
-    if (fields.length === 0 && components.length === 0) continue;
+    if (handles.length === 0 && components.length === 0) continue;
     modules.push({
       ...((fieldEntry?.sourcePath ?? transitionEntry?.sourcePath)
         ? {
@@ -350,7 +458,7 @@ export function emitComponentModalModules(
         : {}),
       fileName: parse(path).base,
       path,
-      source: emitModuleSource(fields, components),
+      source: emitModuleSource(handles, components),
     });
   }
 

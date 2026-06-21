@@ -5,16 +5,13 @@ import {
   group,
   not,
   stepChangedTo,
-  variable,
 } from "modality-ts/properties";
-
-const approvalStatus = variable("zustand:useApprovalStore.approvalStatus");
-const decisionStatus = variable("zustand:useApprovalStore.decisionStatus");
+import { useApprovalStore } from "../../features/subscription/state/approval-store.modals";
 
 group("approvals", () => {
   always(
     "approvals.rejectedApprovalCannotApply",
-    not(and(eq(approvalStatus, "rejected"), eq(decisionStatus, "success"))),
+    not(and(eq(useApprovalStore.approvalStatus, "rejected"), eq(useApprovalStore.decisionStatus, "success"))),
   );
 
   stepChangedTo("zustand:useApprovalStore.approvalStatus", "approved");

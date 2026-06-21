@@ -1,4 +1,5 @@
-import { always, eq, group, variable } from "modality-ts/properties";
+import { always, eq, group } from "modality-ts/properties";
+import { loginStatusAtom } from "../../features/auth/state/session-atoms.modals";
 group("auth", () => {
-  always("p", eq(variable("atom:loginStatusAtom"), "idle"));
+  always("p", eq(loginStatusAtom, "idle"));
 });

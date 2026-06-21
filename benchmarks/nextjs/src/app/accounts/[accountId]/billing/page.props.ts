@@ -12,16 +12,14 @@ import {
   stepEnqueued,
   stepResolved,
   sub,
-  variable,
 } from "modality-ts/properties";
 import { BillingWorkbench } from "./_components/BillingWorkbench.modals";
+import { useBillingStore } from "../../../../features/billing/state/billing-store.modals";
 
-const paymentIntentStatus = variable(
-  "zustand:useBillingStore.paymentIntentStatus",
-);
-const selectedInvoiceId = variable("zustand:useBillingStore.selectedInvoiceId");
-const retryCount = variable("zustand:useBillingStore.retryCount");
-const riskScore = variable("zustand:useBillingStore.riskScore");
+const paymentIntentStatus = useBillingStore.paymentIntentStatus;
+const selectedInvoiceId = useBillingStore.selectedInvoiceId;
+const retryCount = useBillingStore.retryCount;
+const riskScore = useBillingStore.riskScore;
 const enqueuedInvoiceId = BillingWorkbench.enqueuedInvoiceId;
 
 group("billing", () => {

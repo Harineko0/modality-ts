@@ -11,17 +11,14 @@ import {
   or,
   property,
   reachable,
-  type Variable,
-  variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
-import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.js";
+import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.modals";
+import { useDashboardSummary } from "../../features/dashboard/infra/dashboard-queries.modals";
 
-const selectedAccount = selectedAccountAtom as unknown as Variable;
-const dashboardSummary = variable("swr:dashboard_selectedAccount:data");
-const summaryValidating = variable(
-  "swr:dashboard_selectedAccount:isValidating",
-);
+const selectedAccount = selectedAccountAtom;
+const dashboardSummary = useDashboardSummary.data;
+const summaryValidating = useDashboardSummary.isValidating;
 
 group("dashboard", () => {
   always(

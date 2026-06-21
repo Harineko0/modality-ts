@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Model, SourceAnchor } from "modality-ts/core";
-import { emitComponentModalModules } from "../codegen/component-state.js";
+import {
+  emitComponentModalModules,
+  varHandleNaming,
+} from "../codegen/component-state.js";
 import { componentExportName } from "../codegen/transition-handles.js";
 import {
   createSemanticProject,
@@ -536,8 +539,13 @@ function generatedComponentExportNames(model: Model): Set<string> {
   for (const fields of localFieldNamesByComponent(model).keys()) {
     names.add(componentExportName(fields));
   }
+  for (const decl of model.vars) {
+    const naming = varHandleNaming(decl.id);
+    if (naming) names.add(componentExportName(naming.exportName));
+  }
   for (const transition of model.transitions) {
-    const componentId = transition.id.split(".")[0];
+    const naming = varHandleNaming(transition.id);
+    const componentId = naming?.exportName ?? transition.id.split(".")[0];
     if (componentId) names.add(componentExportName(componentId));
   }
   return names;
@@ -600,6 +608,13 @@ function generatedMemberDiagnostic(
   const chain = collectTransitionAccessChain(node);
   if (!chain || chain.segments.length === 0) return undefined;
   if (!isGeneratedModalImportRoot(chain.root, checker)) return undefined;
+  if (
+    chain.segments.length === 1 &&
+    chain.segments[0] === "at" &&
+    handleVarIdForIdentifier(chain.root, checker)
+  ) {
+    return undefined;
+  }
   return {
     symbol: node.getText(),
     file,
@@ -790,6 +805,17 @@ export async function rewriteImportedSymbols(
           ts.isElementAccessExpression(parent)) &&
         parent.expression === node
       ) {
+        const varId = handleVarIdForIdentifier(node, checker);
+        if (varId) {
+          replacements.push({
+            start: node.getStart(),
+            end: node.getEnd(),
+            text: `variable(${JSON.stringify(varId)})`,
+          });
+          rewrittenSymbolNames.add(node.text);
+          rewrittenNodes.add(node);
+          return;
+        }
         ts.forEachChild(node, visit);
         return;
       }

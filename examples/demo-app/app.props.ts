@@ -1,16 +1,8 @@
-import {
-  always,
-  and,
-  eq,
-  neq,
-  not,
-  or,
-  variable,
-} from "modality-ts/properties";
+import { always, and, eq, neq, not, or } from "modality-ts/properties";
 import { pending, route } from "modality-ts/vars";
-import { authAtom } from "./App";
+import { api_user, authAtom } from "./App.modals";
 
-const userCache = variable("swr:api_user:data");
+const userCache = api_user.data;
 
 function atMostOnePendingOp(opId: string) {
   return and(

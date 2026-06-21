@@ -157,6 +157,34 @@ always("ok", and(eq(App.phase, "confirm"), eq(App.count, 1)));
     expect(source).not.toContain("./App.modals");
   });
 
+  it("rewrites standalone generated handles used as Variable method receivers", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
+    const propsPath = join(dir, "app.props.ts");
+    const modelWithAtomOrigin: Model = {
+      ...model,
+      metadata: {},
+      vars: model.vars.map((decl) => ({
+        ...decl,
+        origin: { file: join(dir, "state.ts"), line: 1 },
+      })),
+    };
+    await writeFile(
+      propsPath,
+      `import { eq } from "modality-ts/properties";
+import { authAtom } from "./state.modals";
+eq(authAtom.at("role"), "admin");
+`,
+      "utf8",
+    );
+
+    const { source } = await rewriteImportedSymbols(
+      propsPath,
+      modelWithAtomOrigin,
+    );
+    expect(source).toContain('variable("atom:authAtom").at("role")');
+    expect(source).not.toContain("./state.modals");
+  });
+
   it("throws for stale generated object members", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-resolve-"));
     const propsPath = join(dir, "app.props.ts");

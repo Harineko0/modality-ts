@@ -3,6 +3,7 @@ import type { Model } from "modality-ts/core";
 import {
   componentModalsDir,
   emitComponentModalModules,
+  varHandleNaming,
 } from "../../src/cli/codegen/component-state.js";
 
 const model: Model = {
@@ -44,6 +45,26 @@ const model: Model = {
 };
 
 describe("emitComponentModalModules", () => {
+  it("derives natural export names and paths from variable ids", () => {
+    expect(varHandleNaming("local:App.draft")).toEqual({
+      exportName: "App",
+      path: ["draft"],
+    });
+    expect(varHandleNaming("atom:selectedAccountAtom")).toEqual({
+      exportName: "selectedAccountAtom",
+      path: [],
+    });
+    expect(varHandleNaming("swr:management_summary:data")).toEqual({
+      exportName: "management_summary",
+      path: ["data"],
+    });
+    expect(varHandleNaming("tanstack-query:keyId:field")).toEqual({
+      exportName: "keyId",
+      path: ["field"],
+    });
+    expect(varHandleNaming("tanstack:/dashboard")).toBeUndefined();
+  });
+
   it("emits one sibling module per source file with state and transition sections", () => {
     const modules = emitComponentModalModules(
       model,
@@ -59,6 +80,9 @@ describe("emitComponentModalModules", () => {
       'import type { TransitionRef } from "modality-ts/properties";',
     );
     expect(source).toContain("export const App = {");
+    expect(source).toContain(
+      'export const authAtom: Variable<{ readonly kind: "enum"; readonly values: readonly ["guest", "user"] }, "atom:authAtom"> = variable("atom:authAtom");',
+    );
     expect(source).toContain("// state");
     expect(source).toContain("phase: variable(");
     expect(source).toContain('variable("local:App.phase")');
@@ -69,7 +93,199 @@ describe("emitComponentModalModules", () => {
     expect(source).toContain('TransitionRef<"App.onClick.handleAdvance">');
     expect(source).not.toContain('"handleAdvance"');
     expect(source).not.toContain("export const phase");
-    expect(source).not.toContain("authAtom");
+  });
+
+  it("emits grouped handles for store and cache fields", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        transitions: [],
+        vars: [
+          {
+            id: "zustand:useManagementStore.summaryStatus",
+            domain: { kind: "enum", values: ["idle", "loading", "ready"] },
+            origin: { file: "management-store.ts", line: 4 },
+            scope: { kind: "global" },
+            initial: "idle",
+          },
+          {
+            id: "swr:management_summary:data",
+            domain: { kind: "option", inner: { kind: "bool" } },
+            origin: { file: "management-store.ts", line: 9 },
+            scope: { kind: "global" },
+            initial: null,
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+
+    expect(modules.map((entry) => entry.fileName)).toEqual([
+      "management-store.modals.ts",
+    ]);
+    const source = modules[0]!.source;
+    expect(source).toContain("export const management_summary = {");
+    expect(source).toContain(
+      'data: variable("swr:management_summary:data") as Variable',
+    );
+    expect(source).toContain("export const useManagementStore = {");
+    expect(source).toContain(
+      'summaryStatus: variable("zustand:useManagementStore.summaryStatus") as Variable',
+    );
+  });
+
+  it("anchors cache template vars through their sourced transitions", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [
+          {
+            id: "swr:management_summary:data",
+            domain: { kind: "option", inner: { kind: "bool" } },
+            origin: "library-template",
+            scope: { kind: "global" },
+            initial: null,
+          },
+          {
+            id: "swr:management_summary:isValidating",
+            domain: { kind: "bool" },
+            origin: "library-template",
+            scope: { kind: "global" },
+            initial: false,
+          },
+        ],
+        transitions: [
+          {
+            id: "swr:management_summary:fetch",
+            cls: "library",
+            label: { kind: "timer", key: "management_summary" },
+            source: [{ file: "management-queries.ts", line: 7 }],
+            guard: { kind: "lit", value: true },
+            effect: {
+              kind: "assign",
+              var: "swr:management_summary:isValidating",
+              expr: { kind: "lit", value: true },
+            },
+            reads: [],
+            writes: ["swr:management_summary:isValidating"],
+            confidence: "exact",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+
+    expect(modules.map((entry) => entry.fileName)).toEqual([
+      "management-queries.modals.ts",
+    ]);
+    const source = modules[0]!.source;
+    expect(source).toContain("export const management_summary = {");
+    expect(source).toContain(
+      'data: variable("swr:management_summary:data") as Variable',
+    );
+    expect(source).toContain(
+      'isValidating: variable("swr:management_summary:isValidating") as Variable',
+    );
+    expect(source).toContain(
+      'fetch: "swr:management_summary:fetch" as TransitionRef<"swr:management_summary:fetch">',
+    );
+  });
+
+  it("merges SWR state and transitions into one hook-named export", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        vars: [
+          {
+            id: "swr:useDashboardSummary:data",
+            domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
+            origin: "library-template",
+            scope: { kind: "global" },
+            initial: null,
+          },
+          {
+            id: "swr:useDashboardSummary:error",
+            domain: { kind: "bool" },
+            origin: "library-template",
+            scope: { kind: "global" },
+            initial: false,
+          },
+          {
+            id: "swr:useDashboardSummary:isValidating",
+            domain: { kind: "bool" },
+            origin: "library-template",
+            scope: { kind: "global" },
+            initial: false,
+          },
+        ],
+        transitions: [
+          {
+            id: "swr:useDashboardSummary:fetch",
+            cls: "library",
+            label: { kind: "timer", key: "dashboard:selectedAccount" },
+            source: [{ file: "dashboard-queries.ts", line: 4 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              var: "swr:useDashboardSummary:isValidating",
+              expr: { kind: "lit", value: true },
+            },
+            reads: [],
+            writes: ["swr:useDashboardSummary:isValidating"],
+            confidence: "exact",
+          },
+          {
+            id: "swr:useDashboardSummary:resolve:error",
+            cls: "library",
+            label: { kind: "timer", key: "dashboard:selectedAccount" },
+            source: [{ file: "dashboard-queries.ts", line: 4 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              var: "swr:useDashboardSummary:error",
+              expr: { kind: "lit", value: true },
+            },
+            reads: [],
+            writes: ["swr:useDashboardSummary:error"],
+            confidence: "exact",
+          },
+          {
+            id: "swr:useDashboardSummary:resolve:success:0",
+            cls: "library",
+            label: { kind: "timer", key: "dashboard:selectedAccount" },
+            source: [{ file: "dashboard-queries.ts", line: 4 }],
+            guard: { kind: "true" },
+            effect: {
+              kind: "assign",
+              var: "swr:useDashboardSummary:data",
+              expr: { kind: "lit", value: "one" },
+            },
+            reads: [],
+            writes: ["swr:useDashboardSummary:data"],
+            confidence: "exact",
+          },
+        ],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+
+    const source = modules[0]!.source;
+    expect(source).toContain("export const useDashboardSummary = {");
+    expect(source).toContain(
+      'data: variable("swr:useDashboardSummary:data") as Variable',
+    );
+    expect(source).toContain(
+      'fetch: "swr:useDashboardSummary:fetch" as TransitionRef<"swr:useDashboardSummary:fetch">',
+    );
+    expect(source).toContain(
+      'error: "swr:useDashboardSummary:resolve:error" as TransitionRef<"swr:useDashboardSummary:resolve:error">',
+    );
+    expect(source).toContain("success: {");
+    expect(source).toContain(
+      '"0": "swr:useDashboardSummary:resolve:success:0"',
+    );
+    expect(source).not.toContain("export const swr_useDashboardSummary_fetch");
+    expect(source).not.toContain('fetch: {\n    _: "swr:');
   });
 
   it("nests multi-segment transition remainders under each period", () => {
@@ -237,7 +453,7 @@ describe("emitComponentModalModules", () => {
     expect(source).toContain("phase: variable(");
   });
 
-  it("emits nothing for a model without local vars or sourced transitions", () => {
+  it("emits nothing for a model without source-anchored vars or sourced transitions", () => {
     expect(
       emitComponentModalModules(
         { ...model, vars: [], transitions: [] },
@@ -246,10 +462,13 @@ describe("emitComponentModalModules", () => {
     ).toEqual([]);
   });
 
-  it("falls back to a modals/ dir beside the app model for synthetic local vars", () => {
+  it("keeps the legacy synthetic modals directory helper available", () => {
     expect(componentModalsDir("/tmp/.modality/app.model.ts")).toBe(
       "/tmp/.modality/modals",
     );
+  });
+
+  it("skips vars without source anchors", () => {
     expect(
       emitComponentModalModules(
         {
@@ -259,7 +478,27 @@ describe("emitComponentModalModules", () => {
         },
         "/tmp/.modality/app.model.ts",
       ).map((entry) => entry.path),
-    ).toEqual(["/tmp/.modality/modals/App.modals.ts"]);
+    ).toEqual([]);
+  });
+
+  it("uses metadata var anchors as source anchors for legacy hand models", () => {
+    const modules = emitComponentModalModules(
+      {
+        ...model,
+        metadata: {
+          varAnchors: {
+            "atom:authAtom": { file: "App.tsx", line: 1 },
+          },
+        },
+        transitions: [],
+        vars: [{ ...model.vars[1]!, origin: "system" }],
+      },
+      "/tmp/.modality/app.model.ts",
+    );
+
+    expect(modules).toHaveLength(1);
+    expect(modules[0]?.source).toContain("export const authAtom: Variable");
+    expect(modules[0]?.source).toContain('variable("atom:authAtom")');
   });
 
   it("scopes colliding field names by component object", () => {

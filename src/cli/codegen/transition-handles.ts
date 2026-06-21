@@ -1,4 +1,5 @@
 import type { Transition } from "modality-ts/core";
+import { varHandleNaming } from "./handle-naming.js";
 
 function safeId(value: string): string {
   const sanitized = value.replace(/[^a-zA-Z0-9_-]+/g, "_") || "value";
@@ -40,15 +41,27 @@ function compareTransitionPaths(
 
 export function buildTransitionTree(
   transitions: readonly Transition[],
+  stateExportNames: ReadonlySet<string> = new Set(),
 ): TransitionComponentGroup[] {
   const byComponent = new Map<string, Map<string, TransitionLeaf[]>>();
 
   for (const transition of transitions) {
     const id = transition.id;
-    const segments = id.split(".");
-    const component = segments[0] ?? id;
-    const event = segments[1] ?? "_";
-    const path = segments.length > 2 ? segments.slice(2) : ["_"];
+    const varNaming = varHandleNaming(id);
+    const shouldMergeWithState =
+      varNaming && stateExportNames.has(varNaming.exportName);
+    const segments = shouldMergeWithState ? varNaming.path : id.split(".");
+    const component = shouldMergeWithState
+      ? varNaming.exportName
+      : (segments[0] ?? id);
+    const event = shouldMergeWithState
+      ? (segments[0] ?? "_")
+      : (segments[1] ?? "_");
+    const path = shouldMergeWithState
+      ? segments.slice(1)
+      : segments.length > 2
+        ? segments.slice(2)
+        : ["_"];
 
     let events = byComponent.get(component);
     if (!events) {

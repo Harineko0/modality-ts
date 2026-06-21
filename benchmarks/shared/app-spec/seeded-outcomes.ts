@@ -6,6 +6,7 @@ export type SeededCheckerResult =
   | "violated"
   | "verified"
   | "verified-within-bounds"
+  | "verified or verified-within-bounds"
   | "not checked"
   | "violated or non-reproduced accepted";
 
@@ -26,7 +27,7 @@ export type SeededOutcome = {
   metadataOnly?: boolean;
 };
 
-export const ledgerOpsSeededOutcomes = [
+export const ledgerOpsSeededOutcomes: readonly SeededOutcome[] = [
   {
     id: "auth.redirectReturnPathRoleConfusion",
     property: "auth.managerCannotLandOnAdminReturnTo",
@@ -190,4 +191,4 @@ export const ledgerOpsSeededOutcomes = [
     frameworks: "both",
     metadataOnly: true,
   },
-] as const satisfies readonly SeededOutcome[];
+];

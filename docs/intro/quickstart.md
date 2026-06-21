@@ -17,7 +17,7 @@ npx modality init
 Create empty `*.props.ts` files beside the components you want to model. They register
 which `*.tsx` files belong in the pipeline even before properties are written.
 
-Generate typed local transition handles from source analysis alone — no properties
+Generate typed state and transition handles from source analysis alone — no properties
 required:
 
 ```bash
@@ -77,14 +77,14 @@ always(
 
 Variable IDs come from the generated model / extraction report. Common prefixes:
 `local:<Component>.<state>` (a `useState`), `atom:<name>` (Jotai),
-`store:<name>.<field>` (Zustand), `swr:<key>` (SWR cache), and `sys:*`
+`zustand:<name>.<field>` (Zustand), `swr:<key>:<field>` (SWR cache), and `sys:*`
 (system variables such as `sys:route`, `sys:pending`). Run `modality generate` to write
-typed local handles beside source files as `<source>.modals.ts`; import stable system
-handles from
-`modality-ts/vars`, and use the `var` export for synthesized ids without a generated or
-built-in handle (usually via `import { variable } from "modality-ts/properties"`).
-Local state and transition handles from the same module are nested by component — for example
-`eq(App.step, "success")` and `enabled(App.onClick.save)` — instead of magic-string ids. See
+typed handles beside source files as `<source>.modals.ts`; import stable system handles from
+`modality-ts/vars`, and use `variable()` only for synthesized ids without a generated or
+built-in handle. Local state and transition handles from the same module are nested by
+component, atoms are standalone exports, and store/cache fields group under their source key
+— for example `eq(App.step, "success")`, `eq(sessionAtom.at("role"), "admin")`,
+`eq(useManagementStore.summaryStatus, "success")`, and `enabled(App.onClick.save)`. See
 [State & domains](../concepts/state-and-domains.md).
 
 ## 5. Check the model

@@ -188,11 +188,12 @@ automatically pulls in `t`'s guard read-set and the route variable. When extract
 disambiguates duplicate handler ids with stable hash suffixes, use
 `enabledTransitionPrefix(baseId)` instead of relying on the unsuffixed base id.
 
-## Component state handles
+## Generated state handles
 
-Extraction emits one sibling handle module for each source file with `useState` locals.
-Import `useState` locals from the generated `*.modals.ts` module through the component
-object:
+`modality generate` emits one sibling handle module for each source file with
+source-anchored state or transitions. Import source-anchored variables from the generated
+`*.modals.ts` module instead of casting application symbols or spelling raw ids.
+`useState` locals are grouped by component:
 
 ```ts
 import { App } from "./App.modals";
@@ -203,14 +204,23 @@ always(
 );
 ```
 
-For example, `app/home/home.tsx` produces `app/home/home.modals.ts`. The CLI loader
-rewrites and strips generated handle imports at check time.
+Atoms are standalone exports, while multi-segment sources group fields under their natural
+store or cache key:
 
-Imported atoms and stores resolve through symbol rewriting when their declaration anchors
-appear in `model.metadata.varAnchors`; otherwise use the `var` export directly, usually
-with an alias such as `import { variable } from "modality-ts/properties"`.
-Use `variable("swr:...")` or `variable("sys:timer:...")` for synthesized ids that do
-not have a stable importable handle.
+```ts
+import { sessionAtom } from "./state/session-atoms.modals";
+import { useManagementStore } from "./state/management-store.modals";
+import { management_summary } from "./infra/management-queries.modals";
+
+always("managerOnly", eq(sessionAtom.at("role"), "manager"));
+always("summarySettles", eq(useManagementStore.summaryStatus, "success"));
+always("cacheLoaded", neq(management_summary.data, null));
+```
+
+For example, `app/home/home.tsx` produces `app/home/home.modals.ts`. The CLI loader
+rewrites and strips generated handle imports at check time. Use `variable("sys:...")`,
+route-loader ids, or other raw ids only for synthesized variables that do not have a source
+declaration site.
 
 ## Naming and verdicts
 

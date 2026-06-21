@@ -136,6 +136,66 @@ describe("buildTransitionTree", () => {
     ]);
   });
 
+  it("groups colon-delimited transitions with matching state exports", () => {
+    const tree = buildTransitionTree(
+      [
+        transition({ id: "swr:useDashboardSummary:fetch" }),
+        transition({ id: "swr:useDashboardSummary:resolve:error" }),
+        transition({ id: "swr:useDashboardSummary:resolve:success:0" }),
+      ],
+      new Set(["useDashboardSummary"]),
+    );
+
+    expect(tree).toEqual([
+      {
+        component: "useDashboardSummary",
+        events: [
+          {
+            event: "fetch",
+            leaves: [
+              {
+                path: [],
+                transitionId: "swr:useDashboardSummary:fetch",
+              },
+            ],
+          },
+          {
+            event: "resolve",
+            leaves: [
+              {
+                path: ["error"],
+                transitionId: "swr:useDashboardSummary:resolve:error",
+              },
+              {
+                path: ["success", "0"],
+                transitionId: "swr:useDashboardSummary:resolve:success:0",
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps non-matching colon transitions in legacy dot-split groups", () => {
+    const tree = buildTransitionTree(
+      [transition({ id: "swr:api_user:fetch" })],
+      new Set(["other"]),
+    );
+
+    expect(tree).toEqual([
+      {
+        component: "swr:api_user:fetch",
+        events: [
+          {
+            event: "_",
+            leaves: [{ path: ["_"], transitionId: "swr:api_user:fetch" }],
+          },
+        ],
+      },
+    ]);
+  });
+
   it("sorts components, events, and leaves deterministically", () => {
     const tree = buildTransitionTree([
       transition({ id: "Zeta.onClick.b" }),

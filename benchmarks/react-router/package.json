@@ -1,6 +1,12 @@
 {
   "private": true,
   "type": "module",
+  "scripts": {
+    "generate": "../../node_modules/.bin/tsx ../../src/cli/cli.ts generate",
+    "typecheck": "../../node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "benchmark": "../../node_modules/.bin/tsx ../../tools/benchmark-ci.ts --id ledgerops-react-router",
+    "verify": "pnpm generate && pnpm typecheck && pnpm benchmark"
+  },
   "dependencies": {
     "arktype": "^2.1.0",
     "jotai": "^2.0.0",
@@ -12,6 +18,8 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
     "modality-ts": "file:../.."
   }
 }

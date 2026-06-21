@@ -1,17 +1,8 @@
-import {
-  and,
-  ctl,
-  eq,
-  group,
-  neq,
-  property,
-  variable,
-} from "modality-ts/properties";
+import { and, ctl, eq, group, neq, property } from "modality-ts/properties";
+import { useManagementStore } from "../../../features/management/state/management-store.modals";
 
-const assignmentStatus = variable(
-  "zustand:useManagementStore.assignmentStatus",
-);
-const opsQueue = variable("zustand:useManagementStore.opsQueue");
+const assignmentStatus = useManagementStore.assignmentStatus;
+const opsQueue = useManagementStore.opsQueue;
 
 group("management", () => {
   property(

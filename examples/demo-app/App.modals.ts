@@ -1,6 +1,23 @@
 import { variable, type Variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
+export const api_user = {
+  // state
+  data: variable("swr:api_user:data") as Variable<{ readonly kind: "option"; readonly inner: { readonly kind: "enum"; readonly values: readonly ["alice", "bob"] } }, "swr:api_user:data">,
+  error: variable("swr:api_user:error") as Variable<{ readonly kind: "bool" }, "swr:api_user:error">,
+  isValidating: variable("swr:api_user:isValidating") as Variable<{ readonly kind: "bool" }, "swr:api_user:isValidating">,
+
+  // transitions
+  fetch: "swr:api_user:fetch" as TransitionRef<"swr:api_user:fetch">,
+  resolve: {
+    error: "swr:api_user:resolve:error" as TransitionRef<"swr:api_user:resolve:error">,
+    success: {
+      "0": "swr:api_user:resolve:success:0" as TransitionRef<"swr:api_user:resolve:success:0">,
+      "1": "swr:api_user:resolve:success:1" as TransitionRef<"swr:api_user:resolve:success:1">,
+    },
+  },
+};
+
 export const App = {
   // state
   orderStatus: variable("local:App.orderStatus") as Variable<{ readonly kind: "enum"; readonly values: readonly ["done", "idle", "submitting"] }, "local:App.orderStatus">,
@@ -16,30 +33,4 @@ export const App = {
   },
 };
 
-export const swr_api_user_fetch = {
-  // transitions
-  _: {
-    _: "swr:api_user:fetch" as TransitionRef<"swr:api_user:fetch">,
-  },
-};
-
-export const swr_api_user_resolve_error = {
-  // transitions
-  _: {
-    _: "swr:api_user:resolve:error" as TransitionRef<"swr:api_user:resolve:error">,
-  },
-};
-
-export const swr_api_user_resolve_success_0 = {
-  // transitions
-  _: {
-    _: "swr:api_user:resolve:success:0" as TransitionRef<"swr:api_user:resolve:success:0">,
-  },
-};
-
-export const swr_api_user_resolve_success_1 = {
-  // transitions
-  _: {
-    _: "swr:api_user:resolve:success:1" as TransitionRef<"swr:api_user:resolve:success:1">,
-  },
-};
+export const authAtom: Variable<{ readonly kind: "enum"; readonly values: readonly ["guest", "user"] }, "atom:authAtom"> = variable("atom:authAtom");

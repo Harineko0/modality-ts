@@ -5,11 +5,11 @@ import {
   inevitably,
   property,
   reachableFrom,
-  variable,
 } from "modality-ts/properties";
+import { usePaymentMethodStore } from "../../../../features/billing/state/payment-method-store.modals";
 
-const methodStatus = variable("zustand:usePaymentMethodStore.methodStatus");
-const saveStatus = variable("zustand:usePaymentMethodStore.saveStatus");
+const methodStatus = usePaymentMethodStore.methodStatus;
+const saveStatus = usePaymentMethodStore.saveStatus;
 
 group("billing", () => {
   reachableFrom(

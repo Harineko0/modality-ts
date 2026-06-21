@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import type { AuditExportRequest } from "./audit.js";
 
 export const auditActionSchema = type(
   "'login' | 'subscription_change' | 'billing_capture' | 'support_escalation' | 'role_assignment' | 'bulk_suspend'",
@@ -14,8 +15,6 @@ export const auditExportRequestSchema = type({
   actorRoleFilter: auditActorRoleFilterSchema,
 });
 
-export function parseAuditExportRequest(
-  value: unknown,
-): ReturnType<typeof auditExportRequestSchema> {
-  return auditExportRequestSchema(value);
+export function parseAuditExportRequest(value: unknown): AuditExportRequest {
+  return auditExportRequestSchema.assert(value);
 }

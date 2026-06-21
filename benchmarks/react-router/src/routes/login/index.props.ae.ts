@@ -1,4 +1,5 @@
-import { always, eq, group, variable } from "modality-ts/properties";
+import { always, eq, group } from "modality-ts/properties";
+import { auditExportStatusAtom } from "../../features/audit/state/audit-atoms.modals";
 group("auth", () => {
-  always("p", eq(variable("atom:auditExportStatusAtom"), "idle"));
+  always("p", eq(auditExportStatusAtom, "idle"));
 });

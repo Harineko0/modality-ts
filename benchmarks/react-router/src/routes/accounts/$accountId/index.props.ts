@@ -1,14 +1,8 @@
-import {
-  eq,
-  group,
-  reachableFrom,
-  stepChanged,
-  type Variable,
-} from "modality-ts/properties";
+import { eq, group, reachableFrom, stepChanged } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
-import { accountDetailTabAtom } from "../../../features/accounts/state/selection-atoms.js";
+import { accountDetailTabAtom } from "../../../features/accounts/state/selection-atoms.modals";
 
-const accountTab = accountDetailTabAtom as unknown as Variable;
+const accountTab = accountDetailTabAtom;
 
 group("accounts", () => {
   reachableFrom(

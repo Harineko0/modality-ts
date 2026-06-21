@@ -10,14 +10,12 @@ import {
   stepChanged,
   stepResolved,
   stepTransitionId,
-  variable,
 } from "modality-ts/properties";
+import { useSubscriptionStore } from "../../../../features/subscription/state/subscription-store.modals";
 
-const seatDraft = variable("zustand:useSubscriptionStore.seatDraft");
-const approvalStatus = variable("zustand:useSubscriptionStore.approvalStatus");
-const requestSnapshot = variable(
-  "zustand:useSubscriptionStore.requestSnapshot",
-);
+const seatDraft = useSubscriptionStore.seatDraft;
+const approvalStatus = useSubscriptionStore.approvalStatus;
+const requestSnapshot = useSubscriptionStore.requestSnapshot;
 
 group("subscription", () => {
   alwaysStep("subscription.approvalAppliesRequestedSeats", {

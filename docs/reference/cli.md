@@ -39,8 +39,11 @@ npx modality extract [source.tsx ...]
 ## `modality generate`
 
 Write sibling `*.modals.ts` typed-handle modules from source analysis alone. No
-properties or prior `model.json` required. With no sources, targets are discovered via
-`*.props.ts` files (at least one empty props file must exist to register targets).
+properties or prior `model.json` required. Generated modules include handles for all
+source-anchored variables, including `useState` locals, Jotai atoms, Zustand/Redux store
+fields, and SWR/TanStack Query cache fields, plus transition refs from the same source.
+With no sources, targets are discovered via `*.props.ts` files (at least one empty props
+file must exist to register targets).
 
 ```bash
 npx modality generate [source.tsx ...]

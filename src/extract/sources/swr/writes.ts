@@ -6,7 +6,8 @@ import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import * as ts from "typescript";
 import {
   keyFromExpression,
-  swrIdFromKey,
+  swrInstanceNamingContext,
+  swrInstanceId,
   useSwrImportNames,
 } from "./discover.js";
 import { swrVarId } from "./template.js";
@@ -23,6 +24,7 @@ export function discoverSwrReadChannels(
     ts.ScriptKind.TSX,
   );
   const useSwrNames = useSwrImportNames(source, types);
+  const swrNamingContext = swrInstanceNamingContext(source, useSwrNames);
   const channels: WriteChannel[] = [];
   const visit = (node: ts.Node): void => {
     if (
@@ -35,7 +37,7 @@ export function discoverSwrReadChannels(
     ) {
       const key = keyFromExpression(node.initializer.arguments[0]);
       if (key) {
-        const id = swrIdFromKey(key.id);
+        const id = swrInstanceId(node.initializer, swrNamingContext, key.id);
         for (const element of node.name.elements) {
           if (!ts.isIdentifier(element.name)) continue;
           const property =

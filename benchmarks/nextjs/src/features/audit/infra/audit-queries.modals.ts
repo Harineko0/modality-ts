@@ -1,22 +1,18 @@
+import { variable, type Variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
-export const swr_audit_action_actorRole_fetch = {
-  // transitions
-  _: {
-    _: "swr:audit_action_actorRole:fetch" as TransitionRef<"swr:audit_action_actorRole:fetch">,
-  },
-};
+export const useAuditEvents = {
+  // state
+  data: variable("swr:useAuditEvents:data") as Variable<{ readonly kind: "option"; readonly inner: { readonly kind: "tokens"; readonly count: 1 } }, "swr:useAuditEvents:data">,
+  error: variable("swr:useAuditEvents:error") as Variable<{ readonly kind: "bool" }, "swr:useAuditEvents:error">,
+  isValidating: variable("swr:useAuditEvents:isValidating") as Variable<{ readonly kind: "bool" }, "swr:useAuditEvents:isValidating">,
 
-export const swr_audit_action_actorRole_resolve_error = {
   // transitions
-  _: {
-    _: "swr:audit_action_actorRole:resolve:error" as TransitionRef<"swr:audit_action_actorRole:resolve:error">,
-  },
-};
-
-export const swr_audit_action_actorRole_resolve_success_0 = {
-  // transitions
-  _: {
-    _: "swr:audit_action_actorRole:resolve:success:0" as TransitionRef<"swr:audit_action_actorRole:resolve:success:0">,
+  fetch: "swr:useAuditEvents:fetch" as TransitionRef<"swr:useAuditEvents:fetch">,
+  resolve: {
+    error: "swr:useAuditEvents:resolve:error" as TransitionRef<"swr:useAuditEvents:resolve:error">,
+    success: {
+      "0": "swr:useAuditEvents:resolve:success:0" as TransitionRef<"swr:useAuditEvents:resolve:success:0">,
+    },
   },
 };

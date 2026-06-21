@@ -4,12 +4,11 @@ import {
   group,
   reachable,
   stepChanged,
-  type Variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
-import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.js";
+import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.modals";
 
-const selectedAccount = selectedAccountAtom as unknown as Variable;
+const selectedAccount = selectedAccountAtom;
 
 group("accounts", () => {
   reachable("accounts.listReachable", eq(route, "/accounts"));

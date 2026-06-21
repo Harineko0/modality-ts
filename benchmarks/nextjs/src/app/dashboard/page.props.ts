@@ -11,40 +11,33 @@ import {
   or,
   property,
   reachable,
-  type Variable,
-  variable,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
-import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.js";
-
-const selectedAccount = selectedAccountAtom as unknown as Variable;
-const dashboardSummary = variable("swr:dashboard_selectedAccount:data");
-const summaryValidating = variable(
-  "swr:dashboard_selectedAccount:isValidating",
-);
+import { selectedAccountAtom } from "../../features/accounts/state/selection-atoms.modals";
+import { useDashboardSummary } from "../../features/dashboard/infra/dashboard-queries.modals";
 
 group("dashboard", () => {
   always(
     "dashboard.suspendedAccountCheckoutDisabled",
     not(
       and(
-        eq(selectedAccount, "acct-suspended"),
+        eq(selectedAccountAtom, "acct-suspended"),
         enabledTransitionPrefix("DashboardSummary.onClick"),
       ),
     ),
   );
 
-  reachable("dashboard.summaryDataReachable", neq(dashboardSummary, null));
+  reachable("dashboard.summaryDataReachable", neq(useDashboardSummary.data, null));
 
   inevitably(
     "dashboard.summaryFairProgress",
     ctl.eventually(
-      ctl.holds(or(eq(summaryValidating, false), neq(dashboardSummary, null))),
+      ctl.holds(or(eq(useDashboardSummary.isValidating, false), neq(useDashboardSummary.data, null))),
     ),
     {
       fairness: [
         ctl.fairlyOften(
-          ctl.holds(eq(summaryValidating, false)),
+          ctl.holds(eq(useDashboardSummary.isValidating, false)),
           "dashboardSummarySettles",
         ),
       ],

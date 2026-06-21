@@ -32,5 +32,6 @@ export function permissionsForRole(role: Role): readonly Permission[] {
 }
 
 export function roleHasPermission(role: Role, permission: Permission): boolean {
-  return permissionsByRole[role].includes(permission);
+  const permissions: readonly Permission[] = permissionsByRole[role];
+  return permissions.includes(permission);
 }

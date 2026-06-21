@@ -26,6 +26,21 @@ export function demoHandModel(): Model {
           line: 5,
           column: 14,
         },
+        "swr:api_user:data": {
+          file: resolve("examples/demo-app/App.tsx"),
+          line: 13,
+          column: 20,
+        },
+        "swr:api_user:isValidating": {
+          file: resolve("examples/demo-app/App.tsx"),
+          line: 13,
+          column: 20,
+        },
+        "swr:api_user:error": {
+          file: resolve("examples/demo-app/App.tsx"),
+          line: 13,
+          column: 20,
+        },
       },
     },
     vars: [

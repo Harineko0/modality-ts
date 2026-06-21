@@ -1,22 +1,18 @@
+import { variable, type Variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
-export const swr_support_accountId_fetch = {
-  // transitions
-  _: {
-    _: "swr:support_accountId:fetch" as TransitionRef<"swr:support_accountId:fetch">,
-  },
-};
+export const useSupportCase = {
+  // state
+  data: variable("swr:useSupportCase:data") as Variable<{ readonly kind: "option"; readonly inner: { readonly kind: "tokens"; readonly count: 1 } }, "swr:useSupportCase:data">,
+  error: variable("swr:useSupportCase:error") as Variable<{ readonly kind: "bool" }, "swr:useSupportCase:error">,
+  isValidating: variable("swr:useSupportCase:isValidating") as Variable<{ readonly kind: "bool" }, "swr:useSupportCase:isValidating">,
 
-export const swr_support_accountId_resolve_error = {
   // transitions
-  _: {
-    _: "swr:support_accountId:resolve:error" as TransitionRef<"swr:support_accountId:resolve:error">,
-  },
-};
-
-export const swr_support_accountId_resolve_success_0 = {
-  // transitions
-  _: {
-    _: "swr:support_accountId:resolve:success:0" as TransitionRef<"swr:support_accountId:resolve:success:0">,
+  fetch: "swr:useSupportCase:fetch" as TransitionRef<"swr:useSupportCase:fetch">,
+  resolve: {
+    error: "swr:useSupportCase:resolve:error" as TransitionRef<"swr:useSupportCase:resolve:error">,
+    success: {
+      "0": "swr:useSupportCase:resolve:success:0" as TransitionRef<"swr:useSupportCase:resolve:success:0">,
+    },
   },
 };
