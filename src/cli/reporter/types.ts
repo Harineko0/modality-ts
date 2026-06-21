@@ -3,6 +3,7 @@ export type { StatusKind } from "../output.js";
 export interface RunMeta {
   command: "check" | "extract" | "generate";
   startedAt: Date;
+  concurrency?: number;
 }
 
 export interface ReporterTask<T> {

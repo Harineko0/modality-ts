@@ -5,10 +5,7 @@ export class JsonReporter implements Reporter {
     meta: RunMeta,
     tasks: ReporterTask<T>[],
   ): Promise<TargetOutcome<T>[]> {
-    const outcomes: TargetOutcome<T>[] = [];
-    for (const t of tasks) {
-      outcomes.push(await t.run());
-    }
+    const outcomes = await Promise.all(tasks.map((t) => t.run()));
     process.stdout.write(
       `${JSON.stringify(
         {

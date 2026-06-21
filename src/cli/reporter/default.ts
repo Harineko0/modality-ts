@@ -20,7 +20,7 @@ export class DefaultReporter implements Reporter {
   private readonly region = createDynamicRegion();
 
   async runTasks<T>(
-    _meta: RunMeta,
+    meta: RunMeta,
     tasks: ReporterTask<T>[],
   ): Promise<TargetOutcome<T>[]> {
     const outcomes: Array<TargetOutcome<T> | undefined> = new Array(
@@ -39,7 +39,7 @@ export class DefaultReporter implements Reporter {
             }
           },
         })),
-        { concurrent: false, exitOnError: false },
+        { concurrent: meta.concurrency ?? 1, exitOnError: false },
       );
       await listr.run();
     } else {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
+import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { relative } from "node:path";
 import {
@@ -22,7 +23,6 @@ import {
 import {
   renderHumanCheckTarget,
   renderCheckSummary,
-  runCheckCommand,
 } from "./features/check/index.js";
 import type { HumanCheckTargetResult } from "./features/check/index.js";
 import { renderHumanCiResult, runCiCommand } from "./features/ci/index.js";
@@ -37,15 +37,19 @@ import {
 import {
   renderExtractSummary,
   renderHumanExtractTarget,
-  runExtractCommand,
 } from "./features/extract/index.js";
 import type { HumanExtractTargetResult } from "./features/extract/index.js";
 import {
   renderGenerateSummary,
   renderHumanGenerateTarget,
-  runGenerateCommand,
 } from "./features/generate/index.js";
 import type { HumanGenerateTargetResult } from "./features/generate/index.js";
+import { createCommandPool } from "./concurrency/pool.js";
+import type {
+  CheckJobOptions,
+  ExtractJobOptions,
+  GenerateJobOptions,
+} from "./concurrency/jobs.js";
 import {
   renderHumanInitResult,
   runInitCommand,
@@ -428,6 +432,7 @@ async function main(): Promise<void> {
         "--config",
         "--package-json",
         "--reporter",
+        "--concurrency",
       ],
       ["--effect-api", "--disable-plugin", "--props"],
     );
@@ -440,6 +445,7 @@ async function main(): Promise<void> {
     const expectModelPath = flagValue(args, "--expect-model");
     const configPath = flagValue(args, "--config");
     const packageJsonPath = flagValue(args, "--package-json");
+    const concurrencyRaw = flagValue(args, "--concurrency");
     if (args.includes("--out") && !outFlag)
       throw new Error("Missing --out path");
     if (args.includes("--app-model") && !appModelFlag)
@@ -458,6 +464,8 @@ async function main(): Promise<void> {
       throw new Error("Missing --disable-plugin id");
     if (args.includes("--props") && propsPaths.length === 0)
       throw new Error("Missing --props path");
+    if (args.includes("--concurrency") && !concurrencyRaw)
+      throw new Error("Missing --concurrency value");
     const wantsSingleMergedOutput =
       outFlag !== undefined ||
       appModelFlag !== undefined ||
@@ -476,7 +484,13 @@ async function main(): Promise<void> {
     };
     const extractOpts = outputOptions();
 
-    let extractTasks: ReporterTask<HumanExtractTargetResult>[];
+    interface ExtractTargetSpec {
+      title: string;
+      label: string;
+      options: ExtractJobOptions;
+    }
+
+    let extractTargetSpecs: ExtractTargetSpec[];
 
     if (sourcePaths.length > 0 || wantsSingleMergedOutput) {
       const effectiveSourcePaths =
@@ -484,54 +498,49 @@ async function main(): Promise<void> {
           ? sourcePaths
           : await inferSourceFilesFromProps();
       const title = effectiveSourcePaths.join(", ");
-      extractTasks = [
+      extractTargetSpecs = [
         {
           title,
-          run: async () => {
-            const targetStartedMs = performance.now();
-            const result = await runExtractCommand({
-              sourcePaths: effectiveSourcePaths,
-              modelPath,
-              appModelPath,
-              ...sharedOptions,
-            });
-            const entry: HumanExtractTargetResult = {
-              label: result.targetLabel,
-              durationMs: performance.now() - targetStartedMs,
-              varCount: result.varCount,
-              transitionCount: result.transitionCount,
-              report: result.report,
-              pluginLabels: result.pluginLabels,
-              stateSpaceLine: result.stateSpaceLine,
-              coarseDomainsLine: result.coarseDomainsLine,
-              sliceStatsLine: result.sliceStatsLine,
-              sliceEconomicsLine: result.sliceEconomicsLine,
-              artifacts: result.artifacts,
-              propsErrors: result.propsErrors,
-            };
-            return {
-              entry,
-              lines: renderHumanExtractTarget(entry, extractOpts),
-              status: "pass",
-            };
+          label: title,
+          options: {
+            sourcePaths: effectiveSourcePaths,
+            modelPath,
+            appModelPath,
+            ...sharedOptions,
           },
         },
       ];
     } else {
       const targets = await inferExtractTargetsFromProps();
-      extractTasks = targets.map((target) => ({
+      extractTargetSpecs = targets.map((target) => ({
         title: target.sourcePath,
+        label: target.sourcePath,
+        options: {
+          sourcePath: target.sourcePath,
+          modelPath: target.modelPath,
+          appModelPath: target.appModelPath,
+          propsPaths: [target.propsPath],
+          ...sharedOptions,
+        },
+      }));
+    }
+
+    const concurrency = concurrencyRaw
+      ? parsePositiveIntegerValue("--concurrency", concurrencyRaw)
+      : Math.min(extractTargetSpecs.length || 1, os.availableParallelism());
+    const pool = createCommandPool(concurrency);
+
+    const extractTasks: ReporterTask<HumanExtractTargetResult>[] =
+      extractTargetSpecs.map((spec) => ({
+        title: spec.title,
         run: async () => {
           const targetStartedMs = performance.now();
-          const result = await runExtractCommand({
-            sourcePath: target.sourcePath,
-            modelPath: target.modelPath,
-            appModelPath: target.appModelPath,
-            propsPaths: [target.propsPath],
-            ...sharedOptions,
+          const result = await pool.run({
+            command: "extract",
+            options: spec.options,
           });
           const entry: HumanExtractTargetResult = {
-            label: target.sourcePath,
+            label: result.targetLabel,
             durationMs: performance.now() - targetStartedMs,
             varCount: result.varCount,
             transitionCount: result.transitionCount,
@@ -551,11 +560,10 @@ async function main(): Promise<void> {
           };
         },
       }));
-    }
 
     await runReport<HumanExtractTargetResult>({
       reporter,
-      meta: { command: "extract", startedAt },
+      meta: { command: "extract", startedAt, concurrency },
       tasks: extractTasks,
       renderSummary: (entries, totalDurationMs) =>
         renderExtractSummary(entries, {
@@ -566,6 +574,7 @@ async function main(): Promise<void> {
         }),
       startedMs,
     });
+    await pool.dispose();
     process.exit(0);
   }
   if (command === "generate") {
@@ -586,13 +595,14 @@ async function main(): Promise<void> {
     });
     const sourcePaths = positionals(
       args.filter((arg) => arg !== "-A"),
-      ["--app-model", "--config", "--package-json", "--reporter"],
+      ["--app-model", "--config", "--package-json", "--reporter", "--concurrency"],
       ["--effect-api", "--disable-plugin"],
     );
     const appModelFlag = flagValue(args, "--app-model");
     const appModelPath = appModelFlag ?? defaultAppModelPath;
     const configPath = flagValue(args, "--config");
     const packageJsonPath = flagValue(args, "--package-json");
+    const concurrencyRaw = flagValue(args, "--concurrency");
     if (args.includes("--app-model") && !appModelFlag)
       throw new Error("Missing --app-model path");
     if (args.includes("--config") && !configPath)
@@ -601,7 +611,9 @@ async function main(): Promise<void> {
       throw new Error("Missing --package-json path");
     if (args.includes("--disable-plugin") && disabledPlugins.length === 0)
       throw new Error("Missing --disable-plugin id");
-    const sharedOptions = {
+    if (args.includes("--concurrency") && !concurrencyRaw)
+      throw new Error("Missing --concurrency value");
+    const sharedOptions: GenerateJobOptions = {
       appModelPath,
       configPath,
       packageJsonPath,
@@ -612,14 +624,19 @@ async function main(): Promise<void> {
     const effectiveSourcePaths =
       sourcePaths.length > 0 ? sourcePaths : await inferSourceFilesFromProps();
 
+    const concurrency = concurrencyRaw
+      ? parsePositiveIntegerValue("--concurrency", concurrencyRaw)
+      : Math.min(effectiveSourcePaths.length || 1, os.availableParallelism());
+    const pool = createCommandPool(concurrency);
+
     const generateTasks: ReporterTask<HumanGenerateTargetResult>[] =
       effectiveSourcePaths.map((sourcePath) => ({
         title: sourcePath,
         run: async () => {
           const targetStartedMs = performance.now();
-          const result = await runGenerateCommand({
-            sourcePath,
-            ...sharedOptions,
+          const result = await pool.run({
+            command: "generate",
+            options: { sourcePath, ...sharedOptions },
           });
           const entry: HumanGenerateTargetResult = {
             label: result.targetLabel,
@@ -640,7 +657,7 @@ async function main(): Promise<void> {
 
     await runReport<HumanGenerateTargetResult>({
       reporter,
-      meta: { command: "generate", startedAt },
+      meta: { command: "generate", startedAt, concurrency },
       tasks: generateTasks,
       renderSummary: (entries, totalDurationMs) =>
         renderGenerateSummary(entries, {
@@ -651,6 +668,7 @@ async function main(): Promise<void> {
         }),
       startedMs,
     });
+    await pool.dispose();
     process.exit(0);
   }
   if (command === "replay") {
@@ -709,6 +727,7 @@ async function main(): Promise<void> {
   const maxEdgesRaw = flagValue(args, "--max-edges");
   const maxFrontierRaw = flagValue(args, "--max-frontier");
   const memoryGuardMbRaw = flagValue(args, "--memory-guard-mb");
+  const concurrencyRaw = flagValue(args, "--concurrency");
   if (
     noSearchLimits &&
     (args.includes("--max-states") ||
@@ -728,6 +747,8 @@ async function main(): Promise<void> {
     throw new Error("Missing --max-frontier value");
   if (args.includes("--memory-guard-mb") && memoryGuardMbRaw === undefined)
     throw new Error("Missing --memory-guard-mb value");
+  if (args.includes("--concurrency") && !concurrencyRaw)
+    throw new Error("Missing --concurrency value");
   const maxStates =
     maxStatesRaw !== undefined
       ? parsePositiveIntegerValue("--max-states", maxStatesRaw)
@@ -759,6 +780,7 @@ async function main(): Promise<void> {
       "--max-frontier",
       "--memory-guard-mb",
       "--reporter",
+      "--concurrency",
     ],
   );
   const [modelPath, ...propsPaths] = positional;
@@ -775,15 +797,7 @@ async function main(): Promise<void> {
     throw new Error("Missing --action-replay-tests path");
   if (args.includes("--states") && !statesPath)
     throw new Error("Missing --states path");
-  let searchLimits:
-    | {
-        maxStates?: number;
-        maxEdges?: number;
-        maxFrontier?: number;
-        memoryGuardBytes?: number;
-      }
-    | false
-    | undefined;
+  let searchLimits: CheckJobOptions["searchLimits"];
   if (noSearchLimits) {
     searchLimits = false;
   } else if (
@@ -896,22 +910,30 @@ async function main(): Promise<void> {
     ];
   }
 
+  const concurrency = concurrencyRaw
+    ? parsePositiveIntegerValue("--concurrency", concurrencyRaw)
+    : Math.min(checkTargetSpecs.length || 1, os.availableParallelism());
+  const pool = createCommandPool(concurrency);
+
   const checkTasks: ReporterTask<HumanCheckTargetResult>[] =
     checkTargetSpecs.map((spec) => ({
       title: spec.propsLabel,
       run: async () => {
         const targetStartedMs = performance.now();
-        const result = await runCheckCommand({
-          modelPath: spec.modelPath,
-          propsPaths: spec.propsPaths,
-          reportPath: spec.reportPath,
-          overlayPath,
-          tracesDir: spec.tracesDir,
-          replayTestsDir: spec.replayTestsDir,
-          actionReplayTestsDir: spec.actionReplayTestsDir,
-          statesPath,
-          searchLimits,
-          partialOrderReduction,
+        const result = await pool.run({
+          command: "check",
+          options: {
+            modelPath: spec.modelPath,
+            propsPaths: spec.propsPaths,
+            reportPath: spec.reportPath,
+            overlayPath,
+            tracesDir: spec.tracesDir,
+            replayTestsDir: spec.replayTestsDir,
+            actionReplayTestsDir: spec.actionReplayTestsDir,
+            statesPath,
+            searchLimits,
+            partialOrderReduction,
+          },
         });
         if (result.exitCode === 2) exitCode = 2;
         const entry: HumanCheckTargetResult = {
@@ -941,7 +963,7 @@ async function main(): Promise<void> {
 
   await runReport<HumanCheckTargetResult>({
     reporter,
-    meta: { command: "check", startedAt },
+    meta: { command: "check", startedAt, concurrency },
     tasks: checkTasks,
     renderSummary: (entries, totalDurationMs) =>
       renderCheckSummary(entries, {
@@ -952,6 +974,7 @@ async function main(): Promise<void> {
       }),
     startedMs,
   });
+  await pool.dispose();
   process.exit(exitCode);
 }
 

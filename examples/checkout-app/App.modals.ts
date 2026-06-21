@@ -13,23 +13,14 @@ export const App = {
 
   // transitions
   onClick: {
-    api: {
-      fetchQuote: {
-        start: "App.onClick.api.fetchQuote.start" as TransitionRef<"App.onClick.api.fetchQuote.start">,
-        success: "App.onClick.api.fetchQuote.success" as TransitionRef<"App.onClick.api.fetchQuote.success">,
-      },
-      submitOrder: {
-        error: "App.onClick.api.submitOrder.error" as TransitionRef<"App.onClick.api.submitOrder.error">,
-        start: "App.onClick.api.submitOrder.start" as TransitionRef<"App.onClick.api.submitOrder.start">,
-        success: "App.onClick.api.submitOrder.success" as TransitionRef<"App.onClick.api.submitOrder.success">,
-      },
-    },
     "Back to plans": "App.onClick.Back to plans" as TransitionRef<"App.onClick.Back to plans">,
     Billing: "App.onClick.Billing" as TransitionRef<"App.onClick.Billing">,
     Login: "App.onClick.Login" as TransitionRef<"App.onClick.Login">,
     Logout: "App.onClick.Logout" as TransitionRef<"App.onClick.Logout">,
+    Pro: "App.onClick.Pro" as TransitionRef<"App.onClick.Pro">,
     "Review order": "App.onClick.Review order" as TransitionRef<"App.onClick.Review order">,
     Starter: "App.onClick.Starter" as TransitionRef<"App.onClick.Starter">,
+    "Submit order": "App.onClick.Submit order" as TransitionRef<"App.onClick.Submit order">,
     "Use card": "App.onClick.Use card" as TransitionRef<"App.onClick.Use card">,
   },
 };

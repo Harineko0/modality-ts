@@ -5,11 +5,7 @@ export class BasicReporter implements Reporter {
     _meta: RunMeta,
     tasks: ReporterTask<T>[],
   ): Promise<TargetOutcome<T>[]> {
-    const outcomes: TargetOutcome<T>[] = [];
-    for (const t of tasks) {
-      outcomes.push(await t.run());
-    }
-    return outcomes;
+    return Promise.all(tasks.map((t) => t.run()));
   }
 
   async task<T>(_title: string, fn: () => Promise<T>): Promise<T> {
