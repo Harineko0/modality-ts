@@ -29,11 +29,11 @@ Model-checking-based testing tool for React state-transition bugs.
 </a>
 <p>
 
+### [Read the docs »](https://modality-ts.yuni.cat)
+
 `modality-ts` extracts a finite transition model from React + TypeScript code, checks developer-defined properties against every reachable state within stated bounds, and turns counterexamples into replayable tests.
 
 It is for the bugs that hide between example-based tests: double submits, stale async completions, impossible checkout states, auth/router bypasses, and "this can never happen" state combinations that only appear after an awkward event interleaving.
-
-### [Read the docs »](https://modality-ts.yuni.cat)
 
 ## Installation
 
@@ -78,8 +78,11 @@ import {
   alwaysStep,
   and,
   eq,
+  leadsToWithin,
   not,
   or,
+  reachable,
+  reachableFrom,
   stepEnqueued,
 } from "modality-ts/properties";
 import { App } from "./App.modals";
@@ -98,10 +101,7 @@ alwaysStep("emptyDraftCannotSubmit", {
 });
 
 // reachable for sanity checks
-reachable(
-  "guestCannotReachSuccess",
-  not(and(eq(App.auth, "guest"), eq(App.step, "success"))),
-);
+reachable("successIsReachable", eq(App.step, "success"));
 
 // reachableFrom for conditional reachability
 reachableFrom(
