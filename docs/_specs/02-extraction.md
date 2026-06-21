@@ -32,7 +32,7 @@ P0 input from config: route table (`pattern → RootComponent`), include globs, 
 
 **React Router form actions.** Exported route `action()` functions are discovered as `ACTION <routePattern>` effect operations through registered `EffectApiProvider` surfaces (built-in: `reactRouterEffectApiProvider()`). Client `<Form method="post">` submits and `useSubmit(form)` calls enqueue that operation with static hidden-field args when extractable (`intent`, ids, counts, …). Success/error environment transitions dequeue `sys:pending` and may assign a synthetic `router:actionData:<route>:<component>` enum (`none` | `success` | `error`) so `useActionData()` plus existing `useEffect` dependency extraction can model post-submit continuations. Submit-button `disabled` / `aria-disabled` guards apply to synthesized form submits. Server helper fetches inside route actions are not promoted to client pending ops.
 
-Default extraction models **client UI transitions** only; server/full-route execution (loaders, actions, initial data loading) is future work. **Safety rule (E1):** ambiguous client-reachable imports are included with warnings; imports used only from server roots are excluded. Effect-operation provenance is recorded in the extraction report when operations are discovered from interaction-surface source.
+Default extraction models **client UI transitions** plus provider-described route execution templates for loaders, actions, and revalidation loops (Spec 08). **Safety rule (E1):** ambiguous client-reachable imports are included with warnings; imports used only from server roots are excluded. Effect-operation provenance is recorded in the extraction report when operations are discovered from interaction-surface source.
 
 ## 2. P1 — State inventory
 

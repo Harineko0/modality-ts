@@ -145,6 +145,12 @@ describe("modality plugin registry", () => {
           packageNames: ["react"],
         },
         {
+          id: "router-route-execution",
+          kind: "route-execution",
+          version: "0.1.0",
+          packageNames: ["react-router", "react-router-dom"],
+        },
+        {
           id: "swr",
           kind: "state-source",
           version: "0.1.0",

@@ -320,6 +320,9 @@ describe("builtin module-role and effect API registration", () => {
       ["next-effect-api"],
     );
     expect(
+      registry.adapters.routeExecution.map((provider) => provider.id),
+    ).toEqual(["next-route-execution"]);
+    expect(
       registry.adapters.cacheStorage.map((provider) => provider.id),
     ).toEqual(["next-cache-storage"]);
     expect(
@@ -356,8 +359,16 @@ describe("builtin module-role and effect API registration", () => {
     expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
       ["router-effect-api"],
     );
+    expect(
+      registry.adapters.routeExecution.map((provider) => provider.id),
+    ).toEqual(["router-route-execution"]);
     expect(registry.plugins.map((plugin) => plugin.kind).sort()).toEqual(
-      expect.arrayContaining(["navigation", "module-roles", "effect-api"]),
+      expect.arrayContaining([
+        "navigation",
+        "module-roles",
+        "effect-api",
+        "route-execution",
+      ]),
     );
     expect(
       registry.plugins.some(
@@ -393,6 +404,9 @@ describe("builtin module-role and effect API registration", () => {
     expect(registry.adapters.effectApis.map((provider) => provider.id)).toEqual(
       ["tanstack-effect-api"],
     );
+    expect(
+      registry.adapters.routeExecution.map((provider) => provider.id),
+    ).toEqual(["tanstack-route-execution"]);
     expect(
       registry.adapters.cacheStorage.map((provider) => provider.id),
     ).toEqual(["tanstack-cache-storage"]);

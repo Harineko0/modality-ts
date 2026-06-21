@@ -3,6 +3,7 @@ import type {
   ModuleRoleAdapter,
   NavigationAdapter,
   ResolvedOptions,
+  RouteExecutionProvider,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
@@ -20,6 +21,7 @@ import {
   routeTreeVars,
 } from "./routes.js";
 import { isServerOnlyModulePath } from "./route-options.js";
+import { tanstackRouterRouteExecutionProvider as createTanstackRouterRouteExecutionProvider } from "./route-execution.js";
 import { discoverTanstackRouteEffectApis } from "./server-effects.js";
 
 export interface TanstackRouterSourceOptions {
@@ -55,6 +57,12 @@ export function tanstackRouterEffectApiProvider(
     kind: "effect-api",
     discoverEffectApis: discoverTanstackRouteEffectApis,
   };
+}
+
+export function tanstackRouterRouteExecutionProvider(
+  options: Pick<TanstackRouterSourceOptions, "id" | "packageNames"> = {},
+): RouteExecutionProvider {
+  return createTanstackRouterRouteExecutionProvider(options);
 }
 
 export function tanstackRouterAdapter(

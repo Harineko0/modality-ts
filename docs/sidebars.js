@@ -29,6 +29,7 @@ const sidebars = {
         "concepts/transition-system",
         "concepts/state-and-domains",
         "concepts/transitions",
+        "concepts/route-execution",
         "concepts/stabilization",
         "concepts/properties",
         "concepts/state-space-control",

@@ -63,6 +63,7 @@ import {
   wideProductDomainReachabilityWarnings,
 } from "../features/extract/report.js";
 import { synthesizeSystemVars } from "../features/extract/system-vars.js";
+import { buildRouteExecutionTemplate } from "../../extract/sources/shared/route-execution.js";
 
 export interface ModalityConfig {
   navigation?: {
@@ -195,6 +196,7 @@ export async function buildExtractionModel(
         navigation: routerAdapter,
         moduleRoleAdapters: registry.adapters.moduleRoles,
         effectApiProviders: registry.adapters.effectApis,
+        routeExecutionProviders: registry.adapters.routeExecution,
         inventory: projectWithNextConfig.inventory,
       }),
   );
@@ -278,8 +280,12 @@ export async function buildExtractionModel(
       const configTransitions = nextConfig
         ? synthesizeConfigRedirectTransitions(nextConfig, project.inventory)
         : [];
+      const routeExecutionFragment = buildRouteExecutionTemplate(
+        project.routeExecution,
+      );
       const transitions = [
         ...pipeline.transitions,
+        ...routeExecutionFragment.transitions,
         ...cacheStorageFragments.transitions,
         ...configTransitions,
       ];
@@ -301,6 +307,7 @@ export async function buildExtractionModel(
       ];
       const templateVars = [
         ...pipeline.templateFragments.flatMap((fragment) => fragment.vars),
+        ...routeExecutionFragment.vars,
         ...cacheStorageFragments.vars,
       ];
       const stateVars = refineAssignedLiteralDomains(

@@ -3,6 +3,7 @@ import type {
   ModuleRoleAdapter,
   NavigationAdapter,
   ResolvedOptions,
+  RouteExecutionProvider,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
@@ -14,6 +15,7 @@ import {
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
 import { discoverNextServerEffectApis } from "./server-effects.js";
+import { nextRouteExecutionProvider as createNextRouteExecutionProvider } from "./route-execution.js";
 import {
   locationVars,
   lowerNextNavigation,
@@ -61,6 +63,12 @@ export function nextEffectApiProvider(
     kind: "effect-api",
     discoverEffectApis: discoverNextServerEffectApis,
   };
+}
+
+export function nextRouteExecutionProvider(
+  options: Pick<NextSourceOptions, "id" | "packageNames"> = {},
+): RouteExecutionProvider {
+  return createNextRouteExecutionProvider(options);
 }
 
 export function nextAdapter(

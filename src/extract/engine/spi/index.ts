@@ -297,6 +297,12 @@ export interface EffectApiDiscoveryCtx {
   inventory?: RouteInventory;
 }
 
+export interface RouteExecutionDiscoveryCtx {
+  inventory: RouteInventory;
+  effectApis: readonly DiscoveredEffectApi[];
+  files: readonly { path: string; text: string; route?: RouteNode }[];
+}
+
 export interface EffectApiSurfaceCtx {
   fileName: string;
   sourceText: string;
@@ -333,6 +339,42 @@ export interface EffectApiProvider extends ModalityAdapterBase {
   discoverEffectApis(
     ctx: EffectApiDiscoveryCtx,
   ): readonly DiscoveredEffectApi[];
+}
+
+export interface RouteExecutionResource {
+  id: string;
+  domain: AbstractDomain;
+}
+
+export interface RouteLoaderDescriptor {
+  id: string;
+  op: string;
+  routePattern: string;
+  producesDomain: AbstractDomain;
+  readsResources: readonly string[];
+  auto: "mount" | "navigate";
+  gated?: boolean;
+}
+
+export interface RouteActionDescriptor {
+  id: string;
+  op: string;
+  mutatesResources: readonly string[];
+  revalidates: readonly string[];
+  outcomes: "success-error";
+}
+
+export interface RouteExecutionDescriptor {
+  resources: readonly RouteExecutionResource[];
+  loaders: readonly RouteLoaderDescriptor[];
+  actions: readonly RouteActionDescriptor[];
+}
+
+export interface RouteExecutionProvider extends ModalityAdapterBase {
+  kind: "route-execution";
+  describeRouteExecution(
+    ctx: RouteExecutionDiscoveryCtx,
+  ): RouteExecutionDescriptor;
 }
 
 export interface CacheStorageDiscoveryCtx {

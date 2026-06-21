@@ -24,6 +24,9 @@ import type {
   RouteInventory,
   DomainRefinementProvider,
   CacheStorageFragment,
+  RouteExecutionDescriptor,
+  RouteExecutionProvider,
+  RouteNode,
 } from "modality-ts/extract/engine/spi";
 import { parseReactRouterRoutes } from "modality-ts/extract/sources/router";
 import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
@@ -55,6 +58,7 @@ export interface ExtractionProject {
   effectApis: string[];
   effectOpAliases: EffectOpAliases;
   effectApiProvenance: EffectApiProvenanceEntry[];
+  routeExecution?: RouteExecutionDescriptor;
   surfaceWarnings: string[];
   configStartDir: string;
   rawEntries: Array<{ path: string; text: string }>;
@@ -148,6 +152,7 @@ function emptySurfaceProject(input: {
     effectApis: [],
     effectOpAliases: new Map(),
     effectApiProvenance: [],
+    routeExecution: undefined,
     surfaceWarnings: [],
     configStartDir: input.configStartDir,
     rawEntries: input.rawEntries,
@@ -162,6 +167,7 @@ export async function buildClientProjectSurface(
     navigation: NavigationAdapter;
     moduleRoleAdapters: readonly ModuleRoleAdapter[];
     effectApiProviders: readonly EffectApiProvider[];
+    routeExecutionProviders?: readonly RouteExecutionProvider[];
     inventory: RouteInventory;
   },
 ): Promise<ExtractionProject> {
@@ -210,6 +216,12 @@ export async function buildClientProjectSurface(
     includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
     project.semanticConfig,
   );
+  const routeExecution = describeRouteExecution(
+    options.routeExecutionProviders ?? [],
+    options.inventory,
+    reachable.effectApiProvenance,
+    reachable.sources,
+  );
   return {
     ...project,
     semanticProject,
@@ -225,9 +237,76 @@ export async function buildClientProjectSurface(
     effectApis: reachable.effectApis,
     effectOpAliases: reachable.effectOpAliases,
     effectApiProvenance: reachable.effectApiProvenance,
+    routeExecution,
     surfaceWarnings: reachable.warnings,
     surfaceDiagnostics,
   };
+}
+
+function describeRouteExecution(
+  providers: readonly RouteExecutionProvider[],
+  inventory: RouteInventory,
+  effectApiProvenance: readonly EffectApiProvenanceEntry[],
+  files: readonly { path: string; text: string }[],
+): RouteExecutionDescriptor | undefined {
+  if (providers.length === 0) return undefined;
+  const filesWithRoutes = files.map((file) => ({
+    ...file,
+    route: routeForSourceFile(file.path, inventory),
+  }));
+  const descriptors = providers.map((provider) =>
+    provider.describeRouteExecution({
+      inventory,
+      effectApis: effectApiProvenance.map((entry) => ({
+        opId: entry.opId,
+        source: entry.source,
+      })),
+      files: filesWithRoutes,
+    }),
+  );
+  return mergeRouteExecutionDescriptors(descriptors);
+}
+
+function routeForSourceFile(
+  path: string,
+  inventory: RouteInventory,
+): RouteNode | undefined {
+  const normalized = path.split("\\").join("/");
+  const resolved = resolve(path).split("\\").join("/");
+  return inventory.routes.find((route) => {
+    if (!route.file) return false;
+    const routeFile = route.file.split("\\").join("/");
+    const resolvedRouteFile = resolve(route.file).split("\\").join("/");
+    return (
+      resolvedRouteFile === resolved ||
+      routeFile === normalized ||
+      normalized.endsWith(`/${routeFile}`)
+    );
+  });
+}
+
+function mergeRouteExecutionDescriptors(
+  descriptors: readonly RouteExecutionDescriptor[],
+): RouteExecutionDescriptor {
+  return {
+    resources: uniqueById(
+      descriptors.flatMap((descriptor) => descriptor.resources),
+    ),
+    loaders: uniqueById(
+      descriptors.flatMap((descriptor) => descriptor.loaders),
+    ),
+    actions: uniqueById(
+      descriptors.flatMap((descriptor) => descriptor.actions),
+    ),
+  };
+}
+
+function uniqueById<T extends { id: string }>(items: readonly T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const item of items) byId.set(item.id, item);
+  return [...byId.values()].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
 }
 
 export function runProjectExtractionPipeline(

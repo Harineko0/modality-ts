@@ -125,7 +125,10 @@ function routePatternForFile(
   if (!inventory) return undefined;
   const resolved = normalizedPath(fileName);
   return inventory.routes.find(
-    (node) => node.file && normalizedPath(node.file) === resolved,
+    (node) =>
+      node.file &&
+      (normalizedPath(node.file) === resolved ||
+        resolved.endsWith(`/${normalizedPath(node.file)}`)),
   )?.pattern;
 }
 

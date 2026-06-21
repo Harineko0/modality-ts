@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   discoverReactRouterActionEffectApis,
   reactRouterActionOpId,
+  reactRouterLoaderOpId,
   reactRouterActionOutcomeHints,
 } from "./server-effects.js";
 import { reactRouterEffectApiProvider } from "./index.js";
@@ -47,6 +48,12 @@ describe("reactRouterActionOpId", () => {
   });
 });
 
+describe("reactRouterLoaderOpId", () => {
+  it("uses DATA prefix with route pattern", () => {
+    expect(reactRouterLoaderOpId("/drip")).toBe("DATA /drip");
+  });
+});
+
 describe("discoverReactRouterActionEffectApis", () => {
   it("discovers exported function action", () => {
     const apis = discoverReactRouterActionEffectApis({
@@ -59,6 +66,27 @@ describe("discoverReactRouterActionEffectApis", () => {
       route: { pattern: "/drip", kind: "page", file: "routes/drip.tsx" },
     });
     expect(apis).toEqual([expect.objectContaining({ opId: "ACTION /drip" })]);
+  });
+
+  it("discovers exported loader and action together", () => {
+    const apis = discoverReactRouterActionEffectApis({
+      fileName: "/repo/app/routes/items.tsx",
+      sourceText: `
+        export async function loader() {
+          return { items: [] };
+        }
+        export async function action() {
+          return { ok: true };
+        }
+      `,
+      inventory: {
+        routes: [{ pattern: "/items", kind: "page", file: "routes/items.tsx" }],
+      },
+    });
+    expect(apis.map((entry) => entry.opId).sort()).toEqual([
+      "ACTION /items",
+      "DATA /items",
+    ]);
   });
 
   it("discovers export const action", () => {

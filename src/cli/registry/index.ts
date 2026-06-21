@@ -13,6 +13,7 @@ import type {
   NavigationAdapter,
   ObservationProvider,
   ObservedRead,
+  RouteExecutionProvider,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
@@ -23,17 +24,20 @@ import {
   nextCacheStorageProvider,
   nextEffectApiProvider,
   nextModuleRoleAdapter,
+  nextRouteExecutionProvider,
 } from "modality-ts/extract/sources/next";
 import {
   reactRouterAdapter,
   reactRouterEffectApiProvider,
   reactRouterModuleRoleAdapter,
+  reactRouterRouteExecutionProvider,
 } from "modality-ts/extract/sources/router";
 import {
   tanstackRouterAdapter,
   tanstackRouterCacheStorageProvider,
   tanstackRouterEffectApiProvider,
   tanstackRouterModuleRoleAdapter,
+  tanstackRouterRouteExecutionProvider,
 } from "modality-ts/extract/sources/tanstack-router";
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
@@ -45,6 +49,7 @@ export interface RegistryAdaptersBundle {
   navigation?: NavigationAdapter;
   moduleRoles: readonly ModuleRoleAdapter[];
   effectApis: readonly EffectApiProvider[];
+  routeExecution: readonly RouteExecutionProvider[];
   cacheStorage: readonly CacheStorageProvider[];
   stateSources: readonly StateSourcePlugin[];
   domainRefinements: readonly DomainRefinementProvider[];
@@ -57,6 +62,7 @@ export interface ModalityPluginRegistry {
   domainRefinementProviders: readonly DomainRefinementProvider[];
   moduleRoleAdapters?: readonly ModuleRoleAdapter[];
   effectApiProviders?: readonly EffectApiProvider[];
+  routeExecutionProviders?: readonly RouteExecutionProvider[];
   cacheStorageProviders?: readonly CacheStorageProvider[];
 }
 
@@ -122,6 +128,7 @@ export function createBuiltinModalityRegistry(
     domainRefinementProviders,
     moduleRoleAdapters: builtinNavigation.moduleRoles,
     effectApiProviders: builtinNavigation.effectApis,
+    routeExecutionProviders: builtinNavigation.routeExecution,
     cacheStorageProviders,
   });
 }
@@ -133,15 +140,17 @@ function resolveBuiltinNavigationBundle(
   navigation?: NavigationAdapter;
   moduleRoles: ModuleRoleAdapter[];
   effectApis: EffectApiProvider[];
+  routeExecution: RouteExecutionProvider[];
 } {
   if (options.routerPlugin === false) {
-    return { moduleRoles: [], effectApis: [] };
+    return { moduleRoles: [], effectApis: [], routeExecution: [] };
   }
   if (options.routerPlugin) {
     return {
       navigation: options.routerPlugin,
       moduleRoles: [],
       effectApis: [],
+      routeExecution: [],
     };
   }
 
@@ -151,6 +160,7 @@ function resolveBuiltinNavigationBundle(
       navigation: nextAdapter(),
       moduleRoles: [nextModuleRoleAdapter()],
       effectApis: [nextEffectApiProvider()],
+      routeExecution: [nextRouteExecutionProvider()],
     };
   }
   if (
@@ -161,6 +171,7 @@ function resolveBuiltinNavigationBundle(
       navigation: tanstackRouterAdapter(),
       moduleRoles: [tanstackRouterModuleRoleAdapter()],
       effectApis: [tanstackRouterEffectApiProvider()],
+      routeExecution: [tanstackRouterRouteExecutionProvider()],
     };
   }
   if (
@@ -172,6 +183,7 @@ function resolveBuiltinNavigationBundle(
       navigation: reactRouterAdapter(),
       moduleRoles: [reactRouterModuleRoleAdapter()],
       effectApis: [reactRouterEffectApiProvider()],
+      routeExecution: [reactRouterRouteExecutionProvider()],
     };
   }
   if (!dependencies && !disabled.has("router")) {
@@ -179,9 +191,10 @@ function resolveBuiltinNavigationBundle(
       navigation: reactRouterAdapter(),
       moduleRoles: [reactRouterModuleRoleAdapter()],
       effectApis: [reactRouterEffectApiProvider()],
+      routeExecution: [reactRouterRouteExecutionProvider()],
     };
   }
-  return { moduleRoles: [], effectApis: [] };
+  return { moduleRoles: [], effectApis: [], routeExecution: [] };
 }
 
 function resolveBuiltinCacheStorageProviders(
@@ -230,6 +243,7 @@ export function createModalityRegistry(
   const domainRefinementProviders = options.domainRefinementProviders ?? [];
   const moduleRoleAdapters = options.moduleRoleAdapters ?? [];
   const effectApiProviders = options.effectApiProviders ?? [];
+  const routeExecutionProviders = options.routeExecutionProviders ?? [];
   const cacheStorageProviders = options.cacheStorageProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   for (const provider of domainRefinementProviders)
@@ -237,6 +251,8 @@ export function createModalityRegistry(
   for (const adapter of moduleRoleAdapters) validateModuleRoleAdapter(adapter);
   for (const provider of effectApiProviders)
     validateEffectApiProvider(provider);
+  for (const provider of routeExecutionProviders)
+    validateRouteExecutionProvider(provider);
   for (const provider of cacheStorageProviders)
     validateCacheStorageProvider(provider);
   if (options.routerPlugin) validateNavigationAdapter(options.routerPlugin);
@@ -258,6 +274,10 @@ export function createModalityRegistry(
     "effect API provider",
   );
   sortedUnique(
+    routeExecutionProviders.map((provider) => provider.id),
+    "route-execution provider",
+  );
+  sortedUnique(
     cacheStorageProviders.map((provider) => provider.id),
     "cache/storage provider",
   );
@@ -274,6 +294,7 @@ export function createModalityRegistry(
       navigation: options.routerPlugin,
       moduleRoles: moduleRoleAdapters,
       effectApis: effectApiProviders,
+      routeExecution: routeExecutionProviders,
       cacheStorage: cacheStorageProviders,
       stateSources: options.sourcePlugins,
       domainRefinements: domainRefinementProviders,
@@ -306,6 +327,12 @@ export function createModalityRegistry(
         id: provider.id,
         version: provider.version ?? "unknown",
         kind: "effect-api" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
+      ...routeExecutionProviders.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "route-execution" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
       ...cacheStorageProviders.map((provider) => ({
@@ -410,6 +437,20 @@ function validateEffectApiProvider(provider: EffectApiProvider): void {
   if (typeof provider.discoverEffectApis !== "function")
     throw new Error(
       `Invalid effect API provider ${provider.id}: discoverEffectApis must be a function`,
+    );
+}
+
+function validateRouteExecutionProvider(
+  provider: RouteExecutionProvider,
+): void {
+  validateCommonPluginShape(provider, "route-execution provider");
+  if (provider.kind !== "route-execution")
+    throw new Error(
+      `Invalid route-execution provider ${provider.id}: kind must be "route-execution"`,
+    );
+  if (typeof provider.describeRouteExecution !== "function")
+    throw new Error(
+      `Invalid route-execution provider ${provider.id}: describeRouteExecution must be a function`,
     );
 }
 

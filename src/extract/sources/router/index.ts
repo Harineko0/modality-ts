@@ -3,6 +3,7 @@ import type {
   ModuleRoleAdapter,
   NavigationAdapter,
   ResolvedOptions,
+  RouteExecutionProvider,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
@@ -13,6 +14,7 @@ import {
   reactRouterModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
+import { reactRouterRouteExecutionProvider as createReactRouterRouteExecutionProvider } from "./route-execution.js";
 import { discoverReactRouterActionEffectApis } from "./server-effects.js";
 import { locationVars } from "./routes.js";
 
@@ -56,6 +58,12 @@ export function reactRouterEffectApiProvider(
     kind: "effect-api",
     discoverEffectApis: discoverReactRouterActionEffectApis,
   };
+}
+
+export function reactRouterRouteExecutionProvider(
+  options: Pick<RouterSourceOptions, "id" | "packageNames"> = {},
+): RouteExecutionProvider {
+  return createReactRouterRouteExecutionProvider(options);
 }
 
 export function reactRouterAdapter(

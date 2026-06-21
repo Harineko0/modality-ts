@@ -10,6 +10,10 @@ export function reactRouterActionOpId(routePattern: string): string {
   return `ACTION ${routePattern}`;
 }
 
+export function reactRouterLoaderOpId(routePattern: string): string {
+  return `DATA ${routePattern}`;
+}
+
 function parseSource(sourceText: string, fileName: string): ts.SourceFile {
   return ts.createSourceFile(
     fileName,
@@ -46,7 +50,10 @@ function routePatternForFile(
   if (!inventory) return undefined;
   const resolved = normalizedPath(fileName);
   return inventory.routes.find(
-    (node) => node.file && normalizedPath(node.file) === resolved,
+    (node) =>
+      node.file &&
+      (normalizedPath(node.file) === resolved ||
+        resolved.endsWith(`/${normalizedPath(node.file)}`)),
   )?.pattern;
 }
 
@@ -71,13 +78,24 @@ function declarationName(statement: ts.Statement): string | undefined {
 }
 
 function isActionExport(statement: ts.Statement): boolean {
+  return isNamedServerExport(statement, "action");
+}
+
+function isLoaderExport(statement: ts.Statement): boolean {
+  return isNamedServerExport(statement, "loader");
+}
+
+function isNamedServerExport(
+  statement: ts.Statement,
+  exportName: "action" | "loader",
+): boolean {
   if (!isExported(statement)) return false;
   const name = declarationName(statement);
-  if (name === "action") return true;
+  if (name === exportName) return true;
   if (ts.isExportDeclaration(statement) && statement.exportClause) {
     if (!ts.isNamedExports(statement.exportClause)) return false;
     return statement.exportClause.elements.some(
-      (element) => (element.name ?? element.propertyName)?.text === "action",
+      (element) => (element.name ?? element.propertyName)?.text === exportName,
     );
   }
   return false;
@@ -174,18 +192,25 @@ export function discoverReactRouterActionEffectApis(
   const sourceFile = parseSource(ctx.sourceText, ctx.fileName);
   const ops: DiscoveredEffectApi[] = [];
   for (const statement of sourceFile.statements) {
+    if (isLoaderExport(statement)) {
+      ops.push({
+        opId: reactRouterLoaderOpId(routePattern),
+        source: positionOf(sourceFile, ctx.fileName, statement),
+      });
+    }
     if (!isActionExport(statement)) continue;
     const body = actionBody(statement);
-    const node =
-      ts.isFunctionDeclaration(statement) || ts.isVariableStatement(statement)
-        ? statement
-        : statement;
     ops.push({
       opId: reactRouterActionOpId(routePattern),
-      source: positionOf(sourceFile, ctx.fileName, node),
+      source: positionOf(sourceFile, ctx.fileName, statement),
     });
     void body;
-    break;
   }
-  return ops;
+  const seen = new Set<string>();
+  return ops.filter((entry) => {
+    const key = `${entry.opId}:${entry.source.line}:${entry.source.column}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
