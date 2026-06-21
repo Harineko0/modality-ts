@@ -77,6 +77,7 @@ describe("runExtractCommand", () => {
       ["observation", "tanstack-query", "0.1.0"],
       ["observation", "use-state", "0.1.0"],
       ["observation", "zustand", "0.1.0"],
+      ["route-execution", "router-route-execution", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "redux", "0.1.0"],
       ["state-source", "swr", "0.1.0"],

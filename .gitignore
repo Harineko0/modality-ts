@@ -9,4 +9,5 @@ native/
 target/
 *.tsbuildinfo
 **/.modality/
+src/cli/.tmp-generated-*/
 .rtk

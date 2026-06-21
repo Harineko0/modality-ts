@@ -860,7 +860,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
-      "plugins=effect-api:router-effect-api@0.1.0,module-roles:router-module-roles@0.1.0,navigation:router@0.1.0,observation:router-observation@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect-api:router-effect-api@0.1.0,module-roles:router-module-roles@0.1.0,navigation:router@0.1.0,observation:router-observation@0.1.0,observation:use-state@0.1.0,route-execution:router-route-execution@0.1.0,state-source:use-state@0.1.0",
     );
   });
 

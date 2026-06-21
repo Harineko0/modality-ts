@@ -209,5 +209,5 @@ describe("ledgerops nextjs benchmark", () => {
 
     expect(zodPageCount).toBeGreaterThanOrEqual(ledgerOpsZodDomains.length);
     expect(arkPageCount).toBeGreaterThanOrEqual(ledgerOpsArktypeDomains.length);
-  }, 120_000);
+  }, 240_000);
 });

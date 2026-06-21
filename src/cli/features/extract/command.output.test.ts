@@ -126,9 +126,12 @@ export default [route('/ingest/:sessionId', 'routes/ingest.$sessionId.tsx')];`,
               .inner as { fields: { opId: { values: string[] } } }
           ).fields.opId.values
         : [];
-    expect(pendingOps).toContain("POST /api/ingest/client");
+    expect(pendingOps).toContain("DATA /ingest/:sessionId");
     expect(pendingOps).not.toContain("POST https://oauth.googleapis.com/token");
     expect(pendingOps).not.toContain("POST https://api.jina.ai/v1/embeddings");
+    expect(
+      result.report.effectOperations.map((operation) => operation.opId),
+    ).toContain("POST /api/ingest/client");
     expect(
       result.report.sourceFiles.some((file) =>
         file.includes("ingest.server.ts"),
