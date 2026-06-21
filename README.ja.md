@@ -53,6 +53,13 @@ pnpm add -D modality-ts
 yarn add -D modality-ts
 ```
 
+Agent Skills をインストール
+
+```bash
+npx skills add Harineko0/modality-ts
+# "modality-testing" を選択
+```
+
 ## 使い方
 
 ### 1. 空の props ファイルを作る
