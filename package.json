@@ -179,6 +179,14 @@
       "types": "./dist/extract/sources/zustand/harness.d.ts",
       "default": "./dist/extract/sources/zustand/harness.js"
     },
+    "./extract/sources/redux": {
+      "types": "./dist/extract/sources/redux/index.d.ts",
+      "default": "./dist/extract/sources/redux/index.js"
+    },
+    "./extract/sources/redux/harness": {
+      "types": "./dist/extract/sources/redux/harness.d.ts",
+      "default": "./dist/extract/sources/redux/harness.js"
+    },
     "./extract/type-libraries/zod": {
       "types": "./dist/extract/type-libraries/zod/index.d.ts",
       "default": "./dist/extract/type-libraries/zod/index.js"

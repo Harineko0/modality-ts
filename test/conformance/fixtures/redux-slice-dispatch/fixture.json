@@ -1,0 +1,36 @@
+{
+  "id": "redux-slice-dispatch",
+  "featureIds": ["state.external.store-snapshot"],
+  "targetIds": ["redux", "core"],
+  "root": "test/conformance/fixtures/redux-slice-dispatch",
+  "sourcePaths": ["app/App.tsx"],
+  "propsPaths": ["app/app.props.ts"],
+  "extract": {
+    "packageJsonPath": "app/package.json"
+  },
+  "check": {
+    "enabled": true
+  },
+  "conform": {
+    "enabled": false,
+    "walkCount": 1,
+    "depth": 2,
+    "seed": 1
+  },
+  "thresholds": {
+    "minCoverageExactOrOverlay": 0.5,
+    "minConformPassRate": 0
+  },
+  "budgets": {
+    "maxStates": 25
+  },
+  "expectations": {
+    "vars": [
+      {
+        "id": "redux:store.counter.value",
+        "domainKind": "boundedInt"
+      }
+    ],
+    "minStateContributorVars": 1
+  }
+}

@@ -17,7 +17,6 @@ import {
   stepResolved,
   stepTransitionId,
   type Variable,
-  variable,
 } from "modality-ts/properties";
 import { pending, route } from "modality-ts/vars";
 import {

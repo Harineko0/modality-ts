@@ -38,6 +38,7 @@ import {
 import { swrSource } from "modality-ts/extract/sources/swr";
 import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { reduxSource } from "modality-ts/extract/sources/redux";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
 
 export interface RegistryAdaptersBundle {
@@ -89,6 +90,7 @@ export function createBuiltinModalityRegistry(
     swrSource(),
     zustandSource(),
     tanstackQuerySource(),
+    reduxSource(),
   ];
   const sourcePlugins = [
     ...builtins.filter(

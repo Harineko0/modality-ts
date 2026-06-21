@@ -81,7 +81,7 @@ Read [Soundness & Validity](../soundness/index.md) before you trust a verdict in
 - Apps using supported sources — [`useState`](../sources/use-state.md),
   [Jotai](../sources/jotai.md), [SWR](../sources/swr.md),
   [Zustand](../sources/zustand.md), [TanStack Query](../sources/tanstack-query.md),
-  [router state](../sources/router.md).
+  [Redux](../sources/redux.md), [router state](../sources/router.md).
 - Finite domains, bounded collections, finite numeric ranges, and named side effects.
 - Business rules expressible as safety properties over reachable states.
 
@@ -110,7 +110,7 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 | Jotai | ✅ | [atoms, derived/utility atoms, store scoping](../sources/jotai.md) |
 | Zustand | ✅ | [stores, actions, middleware, immer drafts](../sources/zustand.md) |
 | `useReducer` | ❌ 🔜 | warned, not modeled (reducers are good extraction material) |
-| Redux | ❌ 🔜 | no built-in source yet |
+| Redux | ✅ | [stores, slices, dispatch, thunks, RTK Query](../sources/redux.md) |
 | XState | ❌ 🔜 | designed to [fit the plugin contract](../architecture/state-sources.md#capability-matrix) (machines *are* transition systems) |
 | React Context (as state) | ❌ | writes are unanalyzable — stays a documented [taint](../soundness/limitations.md), not a plugin |
 | MobX / Recoil | ❌ | no source plugin |

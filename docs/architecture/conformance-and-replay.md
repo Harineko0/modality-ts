@@ -71,6 +71,7 @@ Observability differs by source:
 | Source | Observation mechanism | Fidelity |
 | --- | --- | --- |
 | Jotai / Zustand | observation provider delegates to harness store reads | direct, full |
+| Redux | fresh store + `<Provider>`; `getState()` path reads; RTK Query cache under `reducerPath` | direct, full |
 | SWR cache | harness-provided cache `Map`, inspectable per key | direct, full |
 | TanStack Query | fresh `QueryClient` + `QueryClientProvider`; `getQueryState` / `getQueryData` / mutation cache | direct, full |
 | route | navigation observation provider / router test API | direct, full |

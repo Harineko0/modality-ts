@@ -359,6 +359,7 @@ describe("extraction architecture surface", () => {
       "swr",
       "zustand",
       "tanstack-query",
+      "redux",
       "router",
       "next",
     ]) {
