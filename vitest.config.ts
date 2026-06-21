@@ -94,6 +94,14 @@ export default defineConfig({
         "./src/extract/sources/zustand/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/redux/harness": new URL(
+        "./src/extract/sources/redux/harness.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/sources/redux": new URL(
+        "./src/extract/sources/redux/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/type-libraries/zod": new URL(
         "./src/extract/type-libraries/zod/index.ts",
         import.meta.url,

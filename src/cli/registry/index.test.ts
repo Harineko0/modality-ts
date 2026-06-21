@@ -257,6 +257,7 @@ describe("observation providers", () => {
         "swr",
         "zustand",
         "tanstack-query",
+        "redux",
       ]),
     );
     expect(

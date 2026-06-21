@@ -22,7 +22,7 @@ bail out loudly.
 ```mermaid
 flowchart TD
   P0["P0 — project load<br/>TS compiler API, client-reachable module surface"]
-  P1["P1 — state inventory<br/>atoms, useState, stores, SWR keys, TanStack Query keys, routes"]
+  P1["P1 — state inventory<br/>atoms, useState, stores, SWR keys, TanStack Query keys, Redux stores, routes"]
   P2["P2 — domain inference<br/>D(τ): TS types → AbstractDomain"]
   P3["P3 — handler discovery<br/>JSX events, effects, setters"]
   P4["P4 — effect summarization<br/>M0 abstract interpreter, async splitting"]
@@ -51,10 +51,11 @@ the client model. Ambiguous client-reachable imports are **included with warning
 ### P1 — state inventory
 
 Finds `useState` calls (binding the *setter symbol*, not its name), module-level Jotai
-`atom()` and utility-atom creators, Zustand `create`/`createStore` stores, `useSWR` call
-sites, TanStack Query `useQuery` / `useMutation` hooks and static `queryKey` declarations,
-sites (classifying key shapes), custom hooks (inlined transparently, depth-capped), and
-the route manifest (via the [navigation adapter](./navigation.md)). A stateful component
+`atom()` and utility-atom creators, Zustand `create`/`createStore` stores, Redux
+`configureStore` / slice reducers and RTK Query APIs, `useSWR` call sites, TanStack Query
+`useQuery` / `useMutation` hooks and static `queryKey` declarations (classifying key
+shapes), custom hooks (inlined transparently, depth-capped), and the route manifest (via
+the [navigation adapter](./navigation.md)). A stateful component
 that renders more than once per route (stateful list items) is detected and its vars
 downgraded to `unextractable`.
 
@@ -92,8 +93,8 @@ unidentifiable, a handler-level `unextractable`. Async `await` boundaries are
 ### P5 — escape analysis (the E1 enforcer)
 
 The soundness core. Modeled state is writable only through known channels (`useState`
-setters, atom setters, store setters, SWR `mutate`, TanStack Query `QueryClient` cache
-APIs and `mutate`). The analysis computes, per handler,
+setters, atom setters, Zustand store setters, Redux `dispatch`, SWR `mutate`, TanStack
+Query `QueryClient` cache APIs and `mutate`). The analysis computes, per handler,
 whether any write channel **escapes** summarization:
 
 - a setter passed to an unanalyzable function ⇒ the variable is **tainted** ⇒ `havoc` at

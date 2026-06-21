@@ -180,6 +180,7 @@
       "title": "TanStack Query",
       "adapterId": "tanstack-query"
     },
+    { "id": "redux", "title": "Redux", "adapterId": "redux" },
     {
       "id": "tanstack-router",
       "title": "TanStack Router",
@@ -246,6 +247,13 @@
       "targetIds": ["tanstack-query", "core"],
       "root": "test/conformance/fixtures/tanstack-query-cache",
       "notes": "TanStack Query source plugin conformance"
+    },
+    {
+      "id": "redux-slice-dispatch",
+      "featureIds": ["state.external.store-snapshot"],
+      "targetIds": ["redux", "core"],
+      "root": "test/conformance/fixtures/redux-slice-dispatch",
+      "notes": "Redux slice dispatch conformance"
     }
   ],
   "cells": [
@@ -404,6 +412,12 @@
       "targetId": "zustand",
       "status": "partial",
       "fixtures": []
+    },
+    {
+      "featureId": "state.external.store-snapshot",
+      "targetId": "redux",
+      "status": "partial",
+      "fixtures": ["redux-slice-dispatch"]
     },
     {
       "featureId": "state.external.remote-cache",

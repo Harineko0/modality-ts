@@ -68,6 +68,7 @@ const sidebars = {
         "sources/swr",
         "sources/zustand",
         "sources/tanstack-query",
+        "sources/redux",
         "sources/router",
         "sources/next",
         "sources/react-features",

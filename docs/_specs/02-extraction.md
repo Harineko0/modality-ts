@@ -12,7 +12,7 @@ The corollary that drives the whole algorithm: the dangerous direction is **miss
 
 ```
 modality.config.ts ──► P0 project load (ts-morph / TS compiler API, full type checker)
-                       P1 state inventory        (atoms, useState, useSWR, TanStack Query, routes)
+                       P1 state inventory        (atoms, useState, stores, SWR, TanStack Query, Redux, routes)
                        P2 domain inference       (TS types → AbstractDomain)
                        P3 handler discovery      (JSX events, effects, atom writers)
                        P4 effect summarization   (M0 abstract interpretation, async splitting)
@@ -61,6 +61,8 @@ Options objects are evaluated if literal; non-literal options force conservative
 
 **Zustand stores.** Find `create`/`createStore` (`zustand`, `zustand/react`, `zustand/vanilla`), both curried `create<T>()(creator)` and direct `create(creator)`. The state creator `(set, get, store) => ({ ...state, ...actions })` yields var ids `store:<name>.<field>` for non-function fields; function fields become actions whose `set(partial)` / `set(partial, true)` bodies lower to `EffectIR` writes (P4), with `get()` reads supported. Read surfaces: `useStore(s => s.field)` selectors, `useStore.getState()`/`store.getState()`, and direct `setState`. Middlewares are unwrapped to the inner creator (`combine`, `persist`, `devtools`, `subscribeWithSelector`, static-`switch` `redux`); `immer` switches `set` to draft-mutation semantics, lowered for statically analyzable scalar/object mutations and marked over-approx (never silently dropped) for non-determinable container mutations. Persisted storage backends/migrations/rehydration are not modeled (storage-provenance note + SSR warning).
 
+**Redux stores (`@reduxjs/toolkit`, `react-redux`, `redux`).** Discover `configureStore`, `createStore`, and `legacy_createStore` with object reducer maps, `combineReducers`, and slice reducers from `createSlice` / `createReducer`. Slice state fields yield var ids `redux:<storeName>.<slice>.<field>` (or `redux:<storeName>.<slice>` for scalar slices). Domains infer from `initialState`, reducer defaults, `preloadedState`, and semantic types. Read surfaces: `useSelector` and typed hook aliases (`useAppSelector`), exported selector functions, `store.getState()` / `useStore().getState()`, and simple `connect(mapStateToProps)` mappings. Write surfaces: `dispatch` of known actions (`slice.actions`, `createAction`, direct action objects), `store.dispatch`, bound action creators, static thunks, and `createAsyncThunk` lifecycle cases lowered through `extraReducers`. Immer-style draft mutations and immutable returns in case reducers lower to `EffectIR`; unknown reducer paths and dynamic dispatch caveate or havoc over affected slice vars (never silent no-ops). RTK Query `createApi` endpoints generate `redux-query:` / `redux-mutation:` template vars and lifecycle transitions. Custom middleware, sagas, listeners, persistence, and non-serializable state are caveated; multiple stores are modeled with store-qualified ids and warnings.
+
 **Custom hooks.** Inlined transparently: a custom hook is just a function whose body is analyzed in the calling component's context, recursively, with a depth cap (default 3). Hook state identity follows the *call site path*, matching React's rules-of-hooks semantics. Hooks that escape analysis (conditional hook calls are illegal in React anyway; dynamic hook selection) ⇒ `unextractable`.
 
 ## 3. P2 — Domain inference (TS types → AbstractDomain)
@@ -108,7 +110,7 @@ Locator extraction for `EventLabel` (Spec 01 §6): `data-testid` attr if present
 
 ## 5. P5 — Escape analysis (the E1 enforcer)
 
-Modeled state can be written only through known channels: `useState` setters (tracked as symbols), atom setters (`useSetAtom`/`useAtom`[1]/`store.set`), SWR `mutate`, TanStack Query `QueryClient` cache APIs and `mutate`. The analysis computes, per handler, whether any write channel **escapes** summarization:
+Modeled state can be written only through known channels: `useState` setters (tracked as symbols), atom setters (`useSetAtom`/`useAtom`[1]/`store.set`), Zustand store setters, Redux `dispatch` and store `dispatch`, SWR `mutate`, TanStack Query `QueryClient` cache APIs and `mutate`. The analysis computes, per handler, whether any write channel **escapes** summarization:
 
 - A setter symbol passed as an argument to a function whose body is not analyzable (external module, dynamic) ⇒ that var is **tainted** in this handler ⇒ havoc on it at handler end (over-approx) — unless the setter escapes *beyond the handler* (stored in a ref, registered as a global callback), in which case the var is tainted **globally**: an `env` transition `external-write(var) = havoc(var)` is added, always enabled. Globally tainted vars make most properties about them unverifiable and are loudly reported — this is correct behavior, not a bug: the code genuinely admits arbitrary writes.
 - A call to a function in the project whose body is available ⇒ inline and summarize (depth cap 3, cycle ⇒ bail).
