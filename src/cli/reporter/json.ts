@@ -1,10 +1,8 @@
-import type { Reporter, ReporterTask, RunMeta, TargetOutcome } from "./types.js";
+import type { Reporter, ReporterSession } from "./types.js";
 
 export class JsonReporter implements Reporter {
-  async runTasks<T>(
-    meta: RunMeta,
-    tasks: ReporterTask<T>[],
-  ): Promise<TargetOutcome<T>[]> {
+  async run<T>(session: ReporterSession<T>): Promise<T[]> {
+    const { meta, tasks } = session;
     const outcomes = await Promise.all(tasks.map((t) => t.run()));
     process.stdout.write(
       `${JSON.stringify(
@@ -20,14 +18,6 @@ export class JsonReporter implements Reporter {
         2,
       )}\n`,
     );
-    return outcomes;
+    return outcomes.map((o) => o.entry);
   }
-
-  async task<T>(_title: string, fn: () => Promise<T>): Promise<T> {
-    return fn();
-  }
-
-  log(): void {}
-  setFooter(): void {}
-  clearFooter(): void {}
 }

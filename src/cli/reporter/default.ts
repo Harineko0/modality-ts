@@ -1,8 +1,13 @@
+import { performance } from "node:perf_hooks";
 import cliTruncate from "cli-truncate";
-import { Listr } from "listr2";
-import ora from "ora";
 import { createDynamicRegion } from "./dynamic-region.js";
-import type { Reporter, ReporterTask, RunMeta, TargetOutcome } from "./types.js";
+import type {
+  FooterContext,
+  Reporter,
+  ReporterSession,
+} from "./types.js";
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function statusIcon(status: "pass" | "fail" | "warn"): string {
   switch (status) {
@@ -15,79 +20,143 @@ function statusIcon(status: "pass" | "fail" | "warn"): string {
   }
 }
 
+async function runPool<T>(
+  fns: Array<() => Promise<T>>,
+  limit: number,
+): Promise<T[]> {
+  const results: T[] = new Array(fns.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < fns.length) {
+      const i = next++;
+      results[i] = await fns[i]!();
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, fns.length || 1) }, () => worker()),
+  );
+  return results;
+}
+
 export class DefaultReporter implements Reporter {
   private readonly isTTY = process.stdout.isTTY === true;
-  private readonly region = createDynamicRegion();
 
-  async runTasks<T>(
-    meta: RunMeta,
-    tasks: ReporterTask<T>[],
-  ): Promise<TargetOutcome<T>[]> {
-    const outcomes: Array<TargetOutcome<T> | undefined> = new Array(
-      tasks.length,
+  async run<T>(session: ReporterSession<T>): Promise<T[]> {
+    const { meta, tasks, renderFooter, startedMs } = session;
+    const origin = startedMs ?? performance.now();
+    const concurrency = meta.concurrency ?? 1;
+
+    if (!this.isTTY) {
+      return this.runPlain(tasks, concurrency, origin, renderFooter);
+    }
+    return this.runLive(tasks, concurrency, origin, renderFooter);
+  }
+
+  private async runPlain<T>(
+    tasks: ReporterSession<T>["tasks"],
+    concurrency: number,
+    origin: number,
+    renderFooter: (ctx: FooterContext<T>) => readonly string[],
+  ): Promise<T[]> {
+    const entries: T[] = [];
+
+    await runPool(
+      tasks.map((task) => async () => {
+        const outcome = await task.run();
+        entries.push(outcome.entry);
+        for (const line of outcome.lines) process.stdout.write(`${line}\n`);
+      }),
+      concurrency,
     );
 
-    if (tasks.length > 1 && this.isTTY) {
-      const listr = new Listr(
-        tasks.map((task, i) => ({
-          title: task.title,
-          task: async (): Promise<void> => {
-            const outcome = await task.run();
-            outcomes[i] = outcome;
-            if (outcome.status === "fail") {
-              throw new Error(task.title);
-            }
-          },
-        })),
-        { concurrent: meta.concurrency ?? 1, exitOnError: false },
-      );
-      await listr.run();
-    } else {
+    const footerLines = renderFooter({
+      entries,
+      elapsedMs: performance.now() - origin,
+      total: tasks.length,
+      final: true,
+    });
+    for (const line of footerLines) process.stdout.write(`${line}\n`);
+
+    return entries;
+  }
+
+  private async runLive<T>(
+    tasks: ReporterSession<T>["tasks"],
+    concurrency: number,
+    origin: number,
+    renderFooter: (ctx: FooterContext<T>) => readonly string[],
+  ): Promise<T[]> {
+    const region = createDynamicRegion();
+    const cols = () => process.stdout.columns ?? 80;
+
+    type TaskStatus = "pending" | "running" | "done";
+    const taskStatus: TaskStatus[] = tasks.map(() => "pending");
+    const pendingCommits: Array<readonly string[]> = [];
+    const doneEntries: T[] = [];
+    let spinnerFrame = 0;
+
+    function buildLiveLines(): string[] {
+      const lines: string[] = [];
       for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i]!;
-        const spinner = ora({ text: task.title, stream: process.stderr }).start();
-        try {
-          const outcome = await task.run();
-          outcomes[i] = outcome;
-          spinner.stopAndPersist({
-            symbol: statusIcon(outcome.status),
-            text: task.title,
-          });
-        } catch (e) {
-          spinner.fail(task.title);
-          throw e;
+        if (taskStatus[i] === "running") {
+          const frame = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
+          lines.push(cliTruncate(` ${frame} ${tasks[i]!.title}`, cols()));
         }
       }
+      if (lines.length > 0) lines.push("");
+      const footerLines = renderFooter({
+        entries: doneEntries,
+        elapsedMs: performance.now() - origin,
+        total: tasks.length,
+        final: false,
+      });
+      for (const fl of footerLines) {
+        lines.push(cliTruncate(fl, cols()));
+      }
+      return lines;
     }
 
-    return outcomes as TargetOutcome<T>[];
-  }
-
-  async task<T>(title: string, fn: () => Promise<T>): Promise<T> {
-    const spinner = ora({ text: title, stream: process.stderr }).start();
-    try {
-      const result = await fn();
-      spinner.succeed(title);
-      return result;
-    } catch (e) {
-      spinner.fail(title);
-      throw e;
+    function tick() {
+      spinnerFrame++;
+      const toFlush = pendingCommits.splice(0);
+      if (toFlush.length > 0) {
+        region.clear();
+        for (const block of toFlush) {
+          for (const line of block) process.stdout.write(`${line}\n`);
+        }
+      }
+      region.update(buildLiveLines());
     }
-  }
 
-  log(lines: readonly string[], opts?: { truncate?: boolean }): void {
-    const cols = process.stdout.columns ?? 80;
-    const shouldTruncate = this.isTTY && opts?.truncate !== false;
-    for (const line of lines) {
-      console.log(shouldTruncate ? cliTruncate(line, cols) : line);
+    region.update(buildLiveLines());
+    const timer = setInterval(tick, 80);
+
+    await runPool(
+      tasks.map((task, i) => async () => {
+        taskStatus[i] = "running";
+        const outcome = await task.run();
+        taskStatus[i] = "done";
+        doneEntries.push(outcome.entry);
+        pendingCommits.push(outcome.lines);
+      }),
+      concurrency,
+    );
+
+    clearInterval(timer);
+
+    region.clear();
+    for (const block of pendingCommits) {
+      for (const line of block) process.stdout.write(`${line}\n`);
     }
-  }
 
-  setFooter(lines: readonly string[]): void {
-    this.region.update(lines);
-  }
+    const finalFooter = renderFooter({
+      entries: doneEntries,
+      elapsedMs: performance.now() - origin,
+      total: tasks.length,
+      final: true,
+    });
+    for (const line of finalFooter) process.stdout.write(`${line}\n`);
 
-  clearFooter(): void {
-    this.region.clear();
+    return doneEntries;
   }
 }

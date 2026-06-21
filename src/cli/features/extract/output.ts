@@ -47,6 +47,7 @@ export interface HumanExtractRenderOptions extends OutputOptions {
   startedAt?: Date;
   totalDurationMs: number;
   showArtifacts?: boolean;
+  totalTargets?: number;
 }
 
 function formatRouteStats(report: ExtractionReport): string | undefined {
@@ -74,9 +75,8 @@ export function renderHumanExtractTarget(
   const duration =
     target.durationMs !== undefined ? ` ${formatMs(target.durationMs)}` : "";
   lines.push(
-    ` ${formatStatusSymbol("pass", options)} ${target.label}${duration}`,
+    ` ${formatStatusSymbol("pass", options)} ${target.label}${duration} ${renderTargetStats(target)}`,
   );
-  lines.push(`  ${renderTargetStats(target)}`);
   for (const plugin of target.pluginLabels) {
     lines.push(`  - plugin ${plugin}`);
   }
@@ -111,7 +111,7 @@ export function renderExtractSummary(
   const lines: string[] = [];
   lines.push("");
 
-  const totalTargets = results.length;
+  const totalTargets = options.totalTargets ?? results.length;
   const propsErroredCount = results.filter(
     (target) => (target.propsErrors?.length ?? 0) > 0,
   ).length;

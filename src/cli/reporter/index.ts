@@ -4,7 +4,9 @@ import { JsonReporter } from "./json.js";
 import type { Reporter } from "./types.js";
 
 export type {
+  FooterContext,
   Reporter,
+  ReporterSession,
   ReporterTask,
   RunMeta,
   StatusKind,

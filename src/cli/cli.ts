@@ -497,7 +497,9 @@ async function main(): Promise<void> {
         sourcePaths.length > 0
           ? sourcePaths
           : await inferSourceFilesFromProps();
-      const title = effectiveSourcePaths.join(", ");
+      const title = effectiveSourcePaths
+        .map((p) => relative(process.cwd(), p))
+        .join(", ");
       extractTargetSpecs = [
         {
           title,
@@ -513,8 +515,8 @@ async function main(): Promise<void> {
     } else {
       const targets = await inferExtractTargetsFromProps();
       extractTargetSpecs = targets.map((target) => ({
-        title: target.sourcePath,
-        label: target.sourcePath,
+        title: relative(process.cwd(), target.sourcePath),
+        label: relative(process.cwd(), target.sourcePath),
         options: {
           sourcePath: target.sourcePath,
           modelPath: target.modelPath,
@@ -540,7 +542,7 @@ async function main(): Promise<void> {
             options: spec.options,
           });
           const entry: HumanExtractTargetResult = {
-            label: result.targetLabel,
+            label: relative(process.cwd(), result.targetLabel),
             durationMs: performance.now() - targetStartedMs,
             varCount: result.varCount,
             transitionCount: result.transitionCount,
@@ -565,12 +567,13 @@ async function main(): Promise<void> {
       reporter,
       meta: { command: "extract", startedAt, concurrency },
       tasks: extractTasks,
-      renderSummary: (entries, totalDurationMs) =>
+      renderFooter: ({ entries, elapsedMs, total, final: isFinal }) =>
         renderExtractSummary(entries, {
           ...extractOpts,
           startedAt,
-          totalDurationMs,
-          showArtifacts,
+          totalDurationMs: elapsedMs,
+          showArtifacts: showArtifacts && isFinal,
+          totalTargets: total,
         }),
       startedMs,
     });
@@ -631,7 +634,7 @@ async function main(): Promise<void> {
 
     const generateTasks: ReporterTask<HumanGenerateTargetResult>[] =
       effectiveSourcePaths.map((sourcePath) => ({
-        title: sourcePath,
+        title: relative(process.cwd(), sourcePath),
         run: async () => {
           const targetStartedMs = performance.now();
           const result = await pool.run({
@@ -639,7 +642,7 @@ async function main(): Promise<void> {
             options: { sourcePath, ...sharedOptions },
           });
           const entry: HumanGenerateTargetResult = {
-            label: result.targetLabel,
+            label: relative(process.cwd(), result.targetLabel),
             durationMs: performance.now() - targetStartedMs,
             moduleCount: result.moduleCount,
             varCount: result.varCount,
@@ -659,12 +662,13 @@ async function main(): Promise<void> {
       reporter,
       meta: { command: "generate", startedAt, concurrency },
       tasks: generateTasks,
-      renderSummary: (entries, totalDurationMs) =>
+      renderFooter: ({ entries, elapsedMs, total, final: isFinal }) =>
         renderGenerateSummary(entries, {
           ...generateOpts,
           startedAt,
-          totalDurationMs,
-          showArtifacts,
+          totalDurationMs: elapsedMs,
+          showArtifacts: showArtifacts && isFinal,
+          totalTargets: total,
         }),
       startedMs,
     });
@@ -965,12 +969,13 @@ async function main(): Promise<void> {
     reporter,
     meta: { command: "check", startedAt, concurrency },
     tasks: checkTasks,
-    renderSummary: (entries, totalDurationMs) =>
+    renderFooter: ({ entries, elapsedMs, total, final: isFinal }) =>
       renderCheckSummary(entries, {
         ...checkOpts,
         startedAt,
-        totalDurationMs,
-        showArtifacts,
+        totalDurationMs: elapsedMs,
+        showArtifacts: showArtifacts && isFinal,
+        totalTargets: total,
       }),
     startedMs,
   });

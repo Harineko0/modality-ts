@@ -22,7 +22,7 @@ describe("createReporter", () => {
 });
 
 describe("BasicReporter", () => {
-  it("runTasks executes tasks sequentially and returns outcomes", async () => {
+  it("run executes tasks sequentially and returns entries", async () => {
     const reporter = new BasicReporter();
     const order: number[] = [];
     const tasks: ReporterTask<number>[] = [
@@ -41,37 +41,26 @@ describe("BasicReporter", () => {
         },
       },
     ];
-    const outcomes = await reporter.runTasks(
-      { command: "check", startedAt: new Date() },
-      tasks,
-    );
-    expect(order).toEqual([1, 2]);
-    expect(outcomes).toHaveLength(2);
-    expect(outcomes[0]!.entry).toBe(1);
-    expect(outcomes[1]!.status).toBe("fail");
-  });
-
-  it("log writes lines to console without ANSI", () => {
-    const reporter = new BasicReporter();
     const logged: string[] = [];
     vi.spyOn(console, "log").mockImplementation((line: string) =>
       logged.push(line),
     );
-    reporter.log(["\x1b[32mgreen\x1b[39m", "plain"]);
+    const entries = await reporter.run({
+      meta: { command: "check", startedAt: new Date() },
+      tasks,
+      renderFooter: () => ["footer-line"],
+    });
     vi.restoreAllMocks();
-    expect(logged[0]).toBe("\x1b[32mgreen\x1b[39m");
-    expect(logged[1]).toBe("plain");
-  });
-
-  it("setFooter and clearFooter are no-ops", () => {
-    const reporter = new BasicReporter();
-    expect(() => reporter.setFooter(["line"])).not.toThrow();
-    expect(() => reporter.clearFooter()).not.toThrow();
+    expect(order).toEqual([1, 2]);
+    expect(entries).toEqual([1, 2]);
+    expect(logged).toContain("line1");
+    expect(logged).toContain("line2");
+    expect(logged).toContain("footer-line");
   });
 });
 
 describe("JsonReporter", () => {
-  it("runTasks emits parseable JSON to stdout with command, startedAt, and targets", async () => {
+  it("run emits parseable JSON to stdout with command, startedAt, and targets", async () => {
     const reporter = new JsonReporter();
     const written: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((data) => {
@@ -99,9 +88,14 @@ describe("JsonReporter", () => {
     ];
 
     const startedAt = new Date("2026-06-21T00:00:00.000Z");
-    await reporter.runTasks({ command: "check", startedAt }, tasks);
+    const entries = await reporter.run({
+      meta: { command: "check", startedAt },
+      tasks,
+      renderFooter: () => [],
+    });
     vi.restoreAllMocks();
 
+    expect(entries).toEqual([{ name: "a" }, { name: "b" }]);
     expect(written).toHaveLength(1);
     const parsed = JSON.parse(written[0]!);
     expect(parsed.command).toBe("check");
@@ -111,19 +105,10 @@ describe("JsonReporter", () => {
     expect(parsed.targets[1].status).toBe("fail");
     expect(parsed.targets[0].entry).toEqual({ name: "a" });
   });
-
-  it("log is a no-op", () => {
-    const reporter = new JsonReporter();
-    const logged: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((l: string) => logged.push(l));
-    reporter.log(["should not appear"]);
-    vi.restoreAllMocks();
-    expect(logged).toHaveLength(0);
-  });
 });
 
 describe("runReport orchestrator", () => {
-  it("executes tasks, logs per-outcome lines, logs summary, returns entries", async () => {
+  it("delegates to reporter.run and returns entries", async () => {
     const reporter = new BasicReporter();
     const logged: string[] = [];
     vi.spyOn(console, "log").mockImplementation((l: string) => logged.push(l));
@@ -141,7 +126,7 @@ describe("runReport orchestrator", () => {
       reporter,
       meta: { command: "extract", startedAt: new Date() },
       tasks: [task1, task2],
-      renderSummary: (es, _ms) => [`summary: ${es.join(",")}`],
+      renderFooter: (ctx) => [`summary: ${ctx.entries.join(",")}`],
       startedMs: performance.now(),
     });
 
@@ -151,5 +136,6 @@ describe("runReport orchestrator", () => {
     expect(logged).toContain("detail1");
     expect(logged).toContain("detail2");
     expect(logged.some((l) => l.startsWith("summary:"))).toBe(true);
+    expect(logged.find((l) => l.startsWith("summary:"))!).toContain("entry1");
   });
 });

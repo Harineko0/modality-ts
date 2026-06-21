@@ -17,13 +17,20 @@ export interface TargetOutcome<T> {
   status: "pass" | "fail" | "warn";
 }
 
+export interface FooterContext<T> {
+  entries: readonly T[];
+  elapsedMs: number;
+  total: number;
+  final: boolean;
+}
+
+export interface ReporterSession<T> {
+  meta: RunMeta;
+  tasks: ReporterTask<T>[];
+  renderFooter: (ctx: FooterContext<T>) => readonly string[];
+  startedMs?: number;
+}
+
 export interface Reporter {
-  runTasks<T>(
-    meta: RunMeta,
-    tasks: ReporterTask<T>[],
-  ): Promise<TargetOutcome<T>[]>;
-  task<T>(title: string, fn: () => Promise<T>): Promise<T>;
-  log(lines: readonly string[], opts?: { truncate?: boolean }): void;
-  setFooter(lines: readonly string[]): void;
-  clearFooter(): void;
+  run<T>(session: ReporterSession<T>): Promise<T[]>;
 }

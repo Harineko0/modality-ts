@@ -30,6 +30,7 @@ export interface HumanGenerateRenderOptions extends OutputOptions {
   startedAt?: Date;
   totalDurationMs: number;
   showArtifacts?: boolean;
+  totalTargets?: number;
 }
 
 export function renderHumanGenerateTarget(
@@ -51,11 +52,11 @@ export function renderGenerateSummary(
   const lines: string[] = [];
   lines.push("");
 
-  const targetCount = results.length;
+  const targetCount = options.totalTargets ?? results.length;
   lines.push(
     formatSummaryRow(
       "Generate Files",
-      formatCountValue({ passed: targetCount }, targetCount, options),
+      formatCountValue({ passed: results.length }, targetCount, options),
       options,
     ),
   );

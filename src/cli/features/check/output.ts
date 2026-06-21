@@ -40,6 +40,7 @@ export interface HumanCheckRenderOptions extends OutputOptions {
   startedAt: Date;
   totalDurationMs: number;
   showArtifacts?: boolean;
+  totalTargets?: number;
 }
 
 export function symbolForStatus(status: PropertyVerdict["status"]): string {
@@ -180,8 +181,7 @@ export function renderHumanCheckTarget(
       verdict.confidence,
     ]),
   );
-  lines.push(` ${symbol} ${target.propsPath}${duration}`);
-  lines.push(`  ${formatTargetStats(target.check)}`);
+  lines.push(` ${symbol} ${target.propsPath}${duration} ${formatTargetStats(target.check)}`);
   const por = target.check.diagnostics?.partialOrderReduction;
   if (por?.requested || por?.enabled) {
     if (por.enabled) {
@@ -218,7 +218,7 @@ export function renderCheckSummary(
   const lines: string[] = [];
   lines.push("");
 
-  const totalTargets = results.length;
+  const totalTargets = options.totalTargets ?? results.length;
   const passedTargets = results.filter(
     (target) => targetStatusKind(target.check) === "pass",
   ).length;
