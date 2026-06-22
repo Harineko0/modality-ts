@@ -27,10 +27,19 @@ export function decodeSetterBinding(
     const binding = plugin.decodeBinding?.(decl);
     if (binding) return binding;
   }
+  const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
+  const atomMatch = /^atom:(.+)$/.exec(decl.id);
+  const familyMatch = /^atom-family:([^:]+):/.exec(decl.id);
+  const swrMatch = /^swr:(.+):data$/.exec(decl.id);
   return {
     varId: decl.id,
-    component: "Anonymous",
-    stateName: decl.id,
+    component: localMatch?.[1] ?? "Anonymous",
+    stateName:
+      localMatch?.[2] ??
+      familyMatch?.[1] ??
+      atomMatch?.[1]?.replace(/@store:.+$/, "") ??
+      swrMatch?.[1] ??
+      decl.id,
     domain: decl.domain,
     initial: decl.initial as Value,
   };

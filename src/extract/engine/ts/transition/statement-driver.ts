@@ -181,7 +181,10 @@ function compileStatementList(
     );
     if (!guardedResult) return { summaries: [], terminated: false };
     return {
-      summaries: guardedResult.summaries,
+      summaries: guardedResult.summaries.map((summary) => ({
+        ...summary,
+        reads: [...new Set([...condition.reads, ...summary.reads])],
+      })),
       terminated: rest.terminated,
     };
   }
@@ -393,13 +396,27 @@ export function summarizeStatements(
   return result.summaries;
 }
 
+function sourceFileForStatements(
+  statements: readonly ts.Statement[],
+): ts.SourceFile | undefined {
+  for (const stmt of statements) {
+    const sf = stmt.getSourceFile();
+    if (sf?.kind === ts.SyntaxKind.SourceFile) return sf;
+    if (ts.isExpressionStatement(stmt)) {
+      const exprSf = stmt.expression.getSourceFile();
+      if (exprSf?.kind === ts.SyntaxKind.SourceFile) return exprSf;
+    }
+  }
+  return undefined;
+}
+
 export function summarizeAsyncSegment(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
   snapshottedReads?: ReadonlySet<string>,
   initialLocals?: Map<string, BoundExpr>,
 ): EffectSummary[] {
-  const source = statements[0]?.getSourceFile();
+  const source = sourceFileForStatements(statements);
   return uniqueSummariesByEffect(
     summarizeStatements(statements, setters, {
       snapshottedReads,

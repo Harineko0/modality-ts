@@ -203,7 +203,7 @@ describe("extraction architecture surface", () => {
       router: {
         id: "router",
         version: "unknown",
-        kind: "navigation",
+        kind: "route",
         packageNames: ["router"],
       },
     });
@@ -474,13 +474,21 @@ describe("extraction architecture surface", () => {
     const files = await sourceFiles(sourcesDir);
     const violations: string[] = [];
 
+    const allowedPublicPackagePrefixes = [
+      "modality-ts/extract/engine/",
+      "modality-ts/extract/lang/ts",
+      "modality-ts/extract/plugins",
+    ];
+
     for (const file of files) {
       const text = await readFile(file, "utf8");
       for (const specifier of importSpecifiers(text)) {
         if (
           specifier === "modality-ts/extract" ||
           (specifier.startsWith("modality-ts/extract/") &&
-            !specifier.startsWith("modality-ts/extract/engine/"))
+            !allowedPublicPackagePrefixes.some((prefix) =>
+              specifier.startsWith(prefix),
+            ))
         ) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
         }

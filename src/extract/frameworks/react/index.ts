@@ -9,6 +9,8 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { registerFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import { createFrameworkPlugin } from "modality-ts/extract/plugins";
+import { extendFrameworkWithTsUnwrap } from "../../engine/ts/framework-ts-bridge.js";
+import { unwrapReactHookFormHandler } from "./react-hook-form-unwrap.js";
 import {
   isReactEffectHookName,
   isReactHookNamed,
@@ -42,7 +44,7 @@ export {
 };
 
 export function reactFramework(): FrameworkPlugin {
-  return createFrameworkPlugin({
+  const base = createFrameworkPlugin({
     id: "react",
     version: "0.1.0",
     packageNames: ["react"],
@@ -59,6 +61,7 @@ export function reactFramework(): FrameworkPlugin {
       return classifySurfaceComponent(decl);
     },
   });
+  return extendFrameworkWithTsUnwrap(base, unwrapReactHookFormHandler);
 }
 
 registerFrameworkPlugin(reactFramework());
