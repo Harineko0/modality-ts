@@ -72,6 +72,8 @@ export interface ModalityPluginRegistry {
 export interface BuiltinRegistryOptions {
   dependencies?: Readonly<Record<string, string>>;
   disabledPlugins?: readonly string[];
+  /** Explicit config plugin list; suppresses built-in auto-detection when non-empty. */
+  sourcePluginsOverride?: readonly StateSourcePlugin[];
   extraSourcePlugins?: readonly StateSourcePlugin[];
   extraDomainRefinementProviders?: readonly DomainRefinementProvider[];
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
@@ -103,13 +105,16 @@ export function createBuiltinModalityRegistry(
     tanstackQuerySource(),
     reduxSource(),
   ];
-  const sourcePlugins = [
-    ...builtins.filter(
-      (plugin) =>
-        !disabled.has(plugin.id) && shouldEnableBuiltin(plugin, dependencies),
-    ),
-    ...(options.extraSourcePlugins ?? []),
-  ];
+  const sourcePlugins = options.sourcePluginsOverride?.length
+    ? [...options.sourcePluginsOverride, ...(options.extraSourcePlugins ?? [])]
+    : [
+        ...builtins.filter(
+          (plugin) =>
+            !disabled.has(plugin.id) &&
+            shouldEnableBuiltin(plugin, dependencies),
+        ),
+        ...(options.extraSourcePlugins ?? []),
+      ];
   const domainRefinementBuiltins = [
     zodDomainRefinementProvider(),
     arktypeDomainRefinementProvider(),

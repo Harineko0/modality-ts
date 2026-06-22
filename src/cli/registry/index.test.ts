@@ -14,6 +14,8 @@ import {
   createBuiltinModalityRegistry,
   createModalityRegistry,
 } from "./index.js";
+import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { useStateSource } from "modality-ts/extract/sources/use-state";
 
 function fakeNavigationAdapter(
   overrides: Partial<NavigationAdapter> = {},
@@ -496,3 +498,82 @@ const _navigationAdapterFixture: NavigationAdapter = {
 };
 
 void _navigationAdapterFixture;
+
+describe("sourcePluginsOverride", () => {
+  it("suppresses auto-detected built-ins when non-empty", () => {
+    const override = [useStateSource(), jotaiSource()];
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { react: "^19.0.0", jotai: "^2.0.0", swr: "^2.0.0" },
+      sourcePluginsOverride: override,
+    });
+    expect(registry.sourcePluginIds).toEqual(["jotai", "use-state"]);
+    expect(registry.sourcePlugins.map((plugin) => plugin.id)).toEqual([
+      "use-state",
+      "jotai",
+    ]);
+  });
+
+  it("merges CLI extras with override ids", () => {
+    const extra = {
+      id: "custom-extra",
+      packageNames: ["custom-extra"],
+      discover: () => [],
+      writeChannels: () => [],
+      harness: {
+        setup: () => ({}),
+        observe: () => "unobservable",
+      },
+    };
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { react: "^19.0.0", swr: "^2.0.0" },
+      sourcePluginsOverride: [useStateSource()],
+      extraSourcePlugins: [extra],
+    });
+    expect(registry.sourcePluginIds.sort()).toEqual([
+      "custom-extra",
+      "use-state",
+    ]);
+  });
+
+  it("preserves auto-detection when override is omitted or empty", () => {
+    const withDeps = createBuiltinModalityRegistry({
+      dependencies: { react: "^19.0.0", jotai: "^2.0.0" },
+    });
+    expect(withDeps.sourcePluginIds).toEqual(
+      expect.arrayContaining(["use-state", "jotai"]),
+    );
+
+    const emptyOverride = createBuiltinModalityRegistry({
+      dependencies: { react: "^19.0.0", jotai: "^2.0.0" },
+      sourcePluginsOverride: [],
+    });
+    expect(emptyOverride.sourcePluginIds).toEqual(
+      expect.arrayContaining(["use-state", "jotai"]),
+    );
+  });
+
+  it("rejects duplicate ids between override and CLI extras", () => {
+    expect(() =>
+      createBuiltinModalityRegistry({
+        sourcePluginsOverride: [useStateSource()],
+        extraSourcePlugins: [useStateSource()],
+      }),
+    ).toThrow("Duplicate source plugin use-state");
+  });
+
+  it("matches auto-detection source ids for equivalent deps", () => {
+    const dependencies = { react: "^19.0.0", jotai: "^2.0.0" };
+    const autoDetected = createBuiltinModalityRegistry({ dependencies });
+    const overridden = createBuiltinModalityRegistry({
+      dependencies,
+      sourcePluginsOverride: [useStateSource(), jotaiSource()],
+    });
+    expect(new Set(overridden.sourcePluginIds)).toEqual(
+      new Set(
+        autoDetected.sourcePluginIds.filter((id) =>
+          ["use-state", "jotai"].includes(id),
+        ),
+      ),
+    );
+  });
+});
