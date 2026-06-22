@@ -1,13 +1,12 @@
-import type { EffectOpAliases } from "./effect-op-aliases.js";
 import * as ts from "typescript";
 import {
   componentNameFor,
   isExtractableHandler,
+  isSuspenseElement,
+  isUseCall,
   isUseDeferredValueCall,
   isUseReducerCall,
   isUseStateCall,
-  isUseCall,
-  isSuspenseElement,
   lineAndColumn,
   providerComponentNames,
   reactEffectHookName,
@@ -18,6 +17,7 @@ import {
   unextractableEffectCaveat,
   unextractableHandlerCaveat,
 } from "./caveats.js";
+import type { EffectOpAliases } from "./effect-op-aliases.js";
 
 function unextractableHandlerAlreadyReported(
   warnings: readonly ExtractionWarning[],
@@ -29,6 +29,23 @@ function unextractableHandlerAlreadyReported(
       warning.caveat.id === handlerId,
   );
 }
+
+import { resolve } from "node:path";
+import type {
+  EffectIR,
+  StateVarDecl,
+  Transition,
+  Value,
+} from "modality-ts/core";
+import type {
+  DomainRefinementProvider,
+  HandlerWrapperProvider,
+  NavigationAdapter,
+  RouteInventory,
+  SemanticTypeContext,
+  StateSourcePlugin,
+  WriteChannel,
+} from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -39,8 +56,11 @@ import {
   isCustomHookDeclaration,
   isForwardablePropName,
   isIntrinsicJsxAttribute,
-  literalListRenderedHandlerInfo,
+  jsxTagIdentifier,
+  jsxTagName,
   listRenderedHandlerInfo,
+  literalListRenderedHandlerInfo,
+  resolveComponentEntry,
 } from "./components.js";
 import {
   bindContextHookObjectDeclaration,
@@ -49,50 +69,27 @@ import {
   setterBindingFromDecl,
   settersForComponent,
 } from "./context.js";
-import { safeId, tagStableIdKey, withStableTransitionIds } from "./ids.js";
-import { routeMountScope } from "./routes.js";
-import { staticNavigationTransitions } from "./static-navigation.js";
 import {
-  firstValue,
   domainInferenceWarnings,
+  firstValue,
   inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
   useStateCallForSemanticInference,
 } from "./domains.js";
-import type {
-  StateVarDecl,
-  Transition,
-  Value,
-  EffectIR,
-} from "modality-ts/core";
-import type {
-  ContextBindings,
-  ExtractableHandler,
-  ExtractionWarning,
-  SetterBinding,
-} from "./types.js";
-import type {
-  NavigationAdapter,
-  RouteInventory,
-  StateSourcePlugin,
-  WriteChannel,
-  SemanticTypeContext,
-  DomainRefinementProvider,
-  HandlerWrapperProvider,
-} from "../spi/index.js";
-import { resolve } from "node:path";
+import { safeId, tagStableIdKey, withStableTransitionIds } from "./ids.js";
 import {
-  timerSetterTaints,
-  refSetterTaint,
-  handlerSchedulesModeledTimer,
-  timerStateVarDecl,
-  type TimerRegistration,
-} from "./transition/timers.js";
+  componentRegistryForPrimary,
+  customHookRegistryForPrimary,
+  type ReactExtractionProjectSummary,
+} from "./react-extraction-project-summary.js";
+import { routeMountScope } from "./routes.js";
+import { staticNavigationTransitions } from "./static-navigation.js";
+import { collectMutationAliases } from "./transition/callback-effects.js";
 import {
-  environmentStateVarDecl,
-  type WebSocketRegistration,
-} from "./transition/environment-callbacks.js";
+  componentPropDeferredToChildTrigger,
+  forwardsComponentProp,
+} from "./transition/component-props.js";
 import {
   deferredSyncTransition,
   extractUseDeferredValueBinding,
@@ -100,51 +97,58 @@ import {
   type TransitionBinding,
 } from "./transition/concurrent.js";
 import {
-  boundaryIdForComponent,
-  discoverComponentRenderBoundaries,
-  suspenseStateVarDecl,
-  suspenseInitialForBoundary,
-  transitionsFromSuspendingUse,
-} from "./transition/suspense.js";
+  reactEffectWritesModeledState,
+  transitionsFromUseEffect,
+} from "./transition/effects.js";
 import {
-  transitionsFromJsxAttribute,
-  transitionsFromComponentPropAttribute,
-  transitionsFromBoundedListAttribute,
-  transitionsFromBoundedListComponentPropAttribute,
-  transitionsFromLiteralListAttribute,
-} from "./transition/handlers.js";
+  environmentStateVarDecl,
+  type WebSocketRegistration,
+} from "./transition/environment-callbacks.js";
+import { stateVarForName } from "./transition/expressions.js";
 import {
   combineParsedGuards,
   disabledGuardFor,
   renderGuardFor,
 } from "./transition/guards.js";
+import {
+  transitionsFromBoundedListAttribute,
+  transitionsFromBoundedListComponentPropAttribute,
+  transitionsFromComponentPropAttribute,
+  transitionsFromJsxAttribute,
+  transitionsFromLiteralListAttribute,
+} from "./transition/handlers.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
-import { stateVarForName } from "./transition/expressions.js";
-import {
-  forwardsComponentProp,
-  componentPropDeferredToChildTrigger,
-} from "./transition/component-props.js";
-import { isEventAttribute } from "./transition/ui.js";
 import { navigationJsxTransition } from "./transition/navigation.js";
-import {
-  transitionsFromUseEffect,
-  reactEffectWritesModeledState,
-} from "./transition/effects.js";
-import {
-  componentRegistryForPrimary,
-  customHookRegistryForPrimary,
-  type ReactExtractionProjectSummary,
-} from "./react-extraction-project-summary.js";
 import {
   bindReactRouterActionDataRead,
   discoverUseSubmitBindings,
   isReactRouterFormElement,
   isUseActionDataCall,
+  type ReactRouterSubmitContext,
   reactRouterActionDataVarDecl,
   transitionsFromReactRouterForm,
-  type ReactRouterSubmitContext,
 } from "./transition/router-submit.js";
-import { collectMutationAliases } from "./transition/callback-effects.js";
+import {
+  boundaryIdForComponent,
+  discoverComponentRenderBoundaries,
+  suspenseInitialForBoundary,
+  suspenseStateVarDecl,
+  transitionsFromSuspendingUse,
+} from "./transition/suspense.js";
+import {
+  handlerSchedulesModeledTimer,
+  refSetterTaint,
+  type TimerRegistration,
+  timerSetterTaints,
+  timerStateVarDecl,
+} from "./transition/timers.js";
+import { isEventAttribute } from "./transition/ui.js";
+import type {
+  ContextBindings,
+  ExtractableHandler,
+  ExtractionWarning,
+  SetterBinding,
+} from "./types.js";
 
 export interface ReactSourceTransitionOptions {
   route?: string;
@@ -211,20 +215,22 @@ export function extractReactSourceTransitions(
     effectApis,
     baseEffectOpAliases,
   );
-  const effectOpAliases: ReadonlyMap<string, ReadonlyMap<string, string>> =
-    localMutationAliases.size > 0
-      ? (() => {
-          const merged = new Map(baseEffectOpAliases);
-          const existing = merged.get(fileName);
-          merged.set(
-            fileName,
-            existing
-              ? new Map([...existing, ...localMutationAliases])
-              : localMutationAliases,
-          );
-          return merged;
-        })()
-      : baseEffectOpAliases;
+  const effectOpAliases: ReadonlyMap<
+    string,
+    ReadonlyMap<string, string>
+  > = localMutationAliases.size > 0
+    ? (() => {
+        const merged = new Map(baseEffectOpAliases);
+        const existing = merged.get(fileName);
+        merged.set(
+          fileName,
+          existing
+            ? new Map([...existing, ...localMutationAliases])
+            : localMutationAliases,
+        );
+        return merged;
+      })()
+    : baseEffectOpAliases;
   const sourcePlugins = options.sourcePlugins ?? [];
   const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
   const routerPlugin = options.routerPlugin;
@@ -369,11 +375,15 @@ export function extractReactSourceTransitions(
       ts.isIdentifier(node.name) &&
       node.initializer
     ) {
-      const handler = unwrapHandlerInitializer(node.initializer, handlerWrapperProviders, {
-        sourceFile: source,
-        fileName,
-        ...(options.types ? { types: options.types } : {}),
-      });
+      const handler = unwrapHandlerInitializer(
+        node.initializer,
+        handlerWrapperProviders,
+        {
+          sourceFile: source,
+          fileName,
+          ...(options.types ? { types: options.types } : {}),
+        },
+      );
       if (handler) handlers.set(node.name.text, handler);
     }
     if (
@@ -742,6 +752,10 @@ export function extractReactSourceTransitions(
         ...finalizeHandlerTimerContext(componentPropHandlerContext),
       );
       const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
+      const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
+      const localComponent = tag
+        ? resolveComponentEntry(components, tag, options.types)?.decl
+        : undefined;
       if (
         extracted.length === 0 &&
         !componentPropDeferredToChildTrigger(
@@ -758,28 +772,29 @@ export function extractReactSourceTransitions(
         // extract transitions directly from the handler body using the prop name
         // as the event attribute. This handles handlers passed to external (non-local)
         // child components, where the trigger chain cannot be resolved.
-        const fallbackCtx = {
-          ...componentPropHandlerContext,
-          effectOpAliases,
-        };
-        const fallbackExtracted = transitionsFromJsxAttribute(
-          source,
-          fileName,
-          node,
-          scopedSetters,
-          handlers,
-          nextComponent ?? "Anonymous",
-          effectApis,
-          options.asyncOutcomes ?? {},
-          sourcePlugins,
-          routerPlugin,
-          undefined,
-          routePatterns,
-          contextBindings,
-          warnings,
-          resetSymbols,
-          fallbackCtx,
-        );
+        const fallbackExtracted = localComponent
+          ? []
+          : transitionsFromJsxAttribute(
+              source,
+              fileName,
+              node,
+              scopedSetters,
+              handlers,
+              nextComponent ?? "Anonymous",
+              effectApis,
+              options.asyncOutcomes ?? {},
+              sourcePlugins,
+              routerPlugin,
+              undefined,
+              routePatterns,
+              contextBindings,
+              warnings,
+              resetSymbols,
+              {
+                ...componentPropHandlerContext,
+                effectOpAliases,
+              },
+            );
         if (fallbackExtracted.length > 0) {
           transitions.push(
             ...fallbackExtracted,

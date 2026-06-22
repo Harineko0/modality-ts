@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { mkdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type { Trace } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import {
   generateAbstractReplayTest,
   generateActionReplayTest,
@@ -118,7 +118,7 @@ describe("generateAbstractReplayTest", () => {
           },
         ],
       };
-      const dir = resolve(repoRoot, "src/cli/.tmp-generated-replay");
+      const dir = resolve(repoRoot, ".tmp/generated-replay");
       await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
       const harness = generateReplayHarness();
@@ -129,11 +129,22 @@ describe("generateAbstractReplayTest", () => {
         "utf8",
       );
       await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+      await writeFile(
+        resolve(dir, "vitest.config.ts"),
+        generatedVitestConfig(".tmp/generated-replay/**/*.test.ts"),
+        "utf8",
+      );
 
       try {
         const result = await execFileAsync(
           "pnpm",
-          ["vitest", "run", resolve(dir, replay.fileName)],
+          [
+            "vitest",
+            "run",
+            "--config",
+            resolve(dir, "vitest.config.ts"),
+            resolve(dir, replay.fileName),
+          ],
           {
             cwd: repoRoot,
             env: { ...process.env, FORCE_COLOR: "0" },
@@ -176,7 +187,7 @@ describe("generateAbstractReplayTest", () => {
           },
         ],
       };
-      const dir = resolve(repoRoot, "src/cli/.tmp-generated-async-replay");
+      const dir = resolve(repoRoot, ".tmp/generated-async-replay");
       await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
       const harness = generateReplayHarness();
@@ -187,11 +198,22 @@ describe("generateAbstractReplayTest", () => {
         "utf8",
       );
       await writeFile(resolve(dir, replay.fileName), replay.source, "utf8");
+      await writeFile(
+        resolve(dir, "vitest.config.ts"),
+        generatedVitestConfig(".tmp/generated-async-replay/**/*.test.ts"),
+        "utf8",
+      );
 
       try {
         const result = await execFileAsync(
           "pnpm",
-          ["vitest", "run", resolve(dir, replay.fileName)],
+          [
+            "vitest",
+            "run",
+            "--config",
+            resolve(dir, "vitest.config.ts"),
+            resolve(dir, replay.fileName),
+          ],
           {
             cwd: repoRoot,
             env: { ...process.env, FORCE_COLOR: "0" },
@@ -206,6 +228,19 @@ describe("generateAbstractReplayTest", () => {
     GENERATED_REPLAY_E2E_TIMEOUT_MS,
   );
 });
+
+function generatedVitestConfig(include: string): string {
+  return [
+    `import { defineConfig, mergeConfig } from "vitest/config";`,
+    `import baseConfig from "../../vitest.config.ts";`,
+    ``,
+    `export default mergeConfig(`,
+    `  baseConfig,`,
+    `  defineConfig({ test: { include: [${JSON.stringify(include)}] } }),`,
+    `);`,
+    ``,
+  ].join("\n");
+}
 
 function generatedAppHook(): string {
   return [
