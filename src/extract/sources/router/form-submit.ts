@@ -1,47 +1,46 @@
 import * as ts from "typescript";
-import { callName, lineAndColumn } from "../ast.js";
-import { safeId, uniqueStrings } from "../ids.js";
-import { routeMountScope } from "../routes.js";
+import type {
+  FormSubmit,
+  FormSubmitRecognition,
+  NavFormSubmitCtx,
+  NavUseSubmitHandlerCtx,
+  UseSubmitHandlerRecognition,
+} from "modality-ts/extract/engine/spi";
+import { callName, lineAndColumn } from "../../engine/ts/ast.js";
+import { unextractableHandlerCaveat } from "../../engine/ts/caveats.js";
+import { safeId, uniqueStrings } from "../../engine/ts/ids.js";
+import { routeMountScope } from "../../engine/ts/routes.js";
 import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
 import type {
   BoundExpr,
   ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
-} from "../types.js";
-import { unextractableHandlerCaveat } from "../caveats.js";
+} from "../../engine/ts/types.js";
 import {
   confidenceForEffects,
   containsAwaitedEffect,
   pendingIs,
-} from "./async.js";
+} from "../../engine/ts/transition/async.js";
 import {
   effectWriteVars,
   PENDING_QUEUE_VAR,
   summarizeAsyncSegment,
-} from "./effects.js";
-import { valueExpr } from "./expressions.js";
+} from "../../engine/ts/transition/effects.js";
+import { valueExpr } from "../../engine/ts/transition/expressions.js";
 import {
   applyParsedGuard,
   jsxAttributeBoolean,
   jsxElementForAttribute,
   submitButtonDisabledAttribute,
   type ParsedGuard,
-} from "./guards.js";
+} from "../../engine/ts/transition/guards.js";
 import {
   labelForEvent,
   locatorForEventAttribute,
   locatorForJsxElement,
   stringAttribute,
-} from "./ui.js";
-
-export interface ReactRouterSubmitContext {
-  route: string;
-  component: string;
-  actionDataVarId?: string;
-  submitBindings: Map<string, boolean>;
-  modeledSubmitHandlers: Set<string>;
-}
+} from "../../engine/ts/transition/ui.js";
 
 export function isReactRouterFormElement(
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
@@ -470,12 +469,12 @@ export function transitionsFromUseSubmitHandler(
   warnings: ExtractionWarning[],
   ctx: ReactRouterSubmitContext,
   disabledGuard: ParsedGuard | undefined,
-  effectApis: Set<string>,
+  effectApis: ReadonlySet<string>,
 ): Transition[] {
   const submitCall = findSubmitCall(handler, ctx.submitBindings);
   if (!submitCall) return [];
   const preStatements = statementsBeforeSubmit(handler, submitCall);
-  if (containsAwaitedEffect(preStatements, effectApis, fileName)) {
+  if (containsAwaitedEffect(preStatements, new Set(effectApis), fileName)) {
     const anchor = lineAndColumn(source, submitCall);
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [awaited-effect-before-submit] (${fileName}:${anchor.line}:${anchor.column})`,
@@ -573,4 +572,107 @@ export function transitionsFromUseSubmitHandler(
   };
   ctx.modeledSubmitHandlers.add(`${component}.${attr}`);
   return applyParsedGuard([enqueue, success, error], disabledGuard);
+}
+
+export type ReactRouterSubmitContext = NavFormSubmitCtx;
+
+function submitContextFromNav(ctx: NavFormSubmitCtx): ReactRouterSubmitContext {
+  return ctx;
+}
+
+export function recognizeFormSubmit(
+  node: ts.Node,
+  ctx: NavFormSubmitCtx,
+): FormSubmitRecognition | undefined {
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    const submitName = discoverUseSubmitBindings(node);
+    if (submitName) return { kind: "use-submit-binding", name: submitName };
+    if (
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      isUseActionDataCall(node.initializer)
+    ) {
+      const decl = reactRouterActionDataVarDecl(ctx.component, ctx.route, {
+        file: ctx.fileName,
+        ...lineAndColumn(ctx.source, node),
+      });
+      const setterBinding: SetterBinding = {
+        varId: decl.id,
+        component: ctx.component,
+        stateName: node.name.text,
+        domain: { kind: "enum", values: ["none", "success", "error"] },
+        initial: "none",
+      };
+      return {
+        kind: "action-data",
+        localName: node.name.text,
+        varDecl: decl,
+        setterBinding,
+      };
+    }
+    return undefined;
+  }
+  if (
+    (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+    isReactRouterFormElement(node, ctx.source)
+  ) {
+    const transitions = transitionsFromReactRouterForm(
+      ctx.source,
+      ctx.fileName,
+      node,
+      ctx.component,
+      ctx.route,
+      ctx.setters,
+      ctx.warnings,
+      submitContextFromNav(ctx),
+    );
+    if (transitions.length === 0) return undefined;
+    const start = transitions.find((transition) => transition.id.endsWith(".start"));
+    if (!start || start.effect.kind !== "seq") return undefined;
+    const enqueueEffect = start.effect.effects.find(
+      (effect) => effect.kind === "enqueue",
+    );
+    if (!enqueueEffect || enqueueEffect.kind !== "enqueue") return undefined;
+    return {
+      kind: "submit",
+      form: {
+        action: ctx.route,
+        effect: start.effect,
+      },
+      transitions,
+      sourceAnchor: [...(start.source ?? [])],
+    };
+  }
+  return undefined;
+}
+
+export function recognizeUseSubmitHandler(
+  node: ts.JsxAttribute,
+  attr: string,
+  handler: ExtractableHandler,
+  ctx: NavUseSubmitHandlerCtx,
+): UseSubmitHandlerRecognition | undefined {
+  const transitions = transitionsFromUseSubmitHandler(
+    ctx.source,
+    ctx.fileName,
+    node,
+    attr,
+    handler,
+    ctx.setters,
+    ctx.component,
+    ctx.warnings,
+    submitContextFromNav(ctx),
+    ctx.disabledGuard,
+    ctx.effectApis,
+  );
+  if (transitions.length === 0) return undefined;
+  const start = transitions.find((transition) => transition.id.endsWith(".start"));
+  if (!start || start.effect.kind !== "seq") return undefined;
+  return {
+    form: {
+      action: ctx.route,
+      effect: start.effect,
+    },
+    transitions,
+  };
 }

@@ -40,10 +40,7 @@ import {
   statementHasCallbackEffect,
   transitionsFromCallbackEffectHandler,
 } from "./callback-effects.js";
-import {
-  transitionsFromUseSubmitHandler,
-  type ReactRouterSubmitContext,
-} from "./router-submit.js";
+import type { NavFormSubmitCtx } from "../../spi/index.js";
 import {
   resolveComponentPropTriggers,
   type ComponentPropTrigger,
@@ -173,8 +170,9 @@ export interface HandlerExtractionContext {
   timerRegistrations?: TimerRegistration[];
   envTransitions?: Transition[];
   timerIndex?: { value: number };
-  routerSubmitContext?: ReactRouterSubmitContext;
+  routerSubmitContext?: NavFormSubmitCtx;
   effectOpAliases?: EffectOpAliases;
+  effectModelProviders?: readonly import("../../spi/index.js").EffectModelProvider[];
   types?: SemanticTypeContext;
   semanticName?: string;
 }
@@ -724,21 +722,21 @@ export function transitionsFromResolvedHandler(
     return [];
   }
   const routerCtx = handlerContext.routerSubmitContext;
-  if (routerCtx && routerCtx.submitBindings.size > 0) {
-    const submitTransitions = transitionsFromUseSubmitHandler(
-      source,
-      fileName,
+  if (routerCtx && routerCtx.submitBindings.size > 0 && routerPlugin) {
+    const recognized = routerPlugin.recognizeUseSubmitHandler?.(
       node,
       attr,
       handler,
-      setters,
-      component,
-      warnings,
-      routerCtx,
-      disabledGuard,
-      effectApis,
+      {
+        ...routerCtx,
+        attr,
+        effectApis,
+        disabledGuard,
+        types: handlerContext.types,
+      },
     );
-    if (submitTransitions.length > 0) return submitTransitions;
+    if (recognized && recognized.transitions.length > 0)
+      return recognized.transitions;
   }
   const asyncTransitions = transitionsFromAsyncHandler(
     source,
@@ -1358,6 +1356,7 @@ function handlerSummaryOptions(
     fileName,
     source,
     types: handlerContext.types,
+    effectModelProviders: handlerContext.effectModelProviders,
   };
 }
 

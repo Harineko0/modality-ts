@@ -16,7 +16,7 @@ module.exports = {
       name: "extract-engine-is-node-only-and-independent",
       severity: "error",
       from: { path: "^src/extract/engine", pathNot: "^src/.*/test/" },
-      to: { path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks" },
+      to: { path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks|^src/extract/effect-models" },
     },
     {
       name: "harness-does-not-import-product-or-analysis",
@@ -93,6 +93,40 @@ module.exports = {
       to: {
         path: "^src/extract/frameworks/([^/]+)",
         pathNot: "^src/extract/frameworks/$1",
+      },
+    },
+    {
+      name: "effect-model-slices-do-not-import-product-or-peers",
+      severity: "error",
+      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      to: { path: "^src/check|^src/cli/(features|registry|codegen|runtime)" },
+    },
+    {
+      name: "effect-model-slices-use-extraction-spi-only",
+      severity: "error",
+      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/extract/engine/(?!spi/|ts/)",
+      },
+    },
+    {
+      name: "effect-model-slices-do-not-import-sources-or-frameworks",
+      severity: "error",
+      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/extract/(sources|frameworks)/",
+      },
+    },
+    {
+      name: "effect-model-slices-are-independent",
+      severity: "error",
+      from: {
+        path: "^src/extract/effect-models/([^/]+)",
+        pathNot: ["^src/.*/test/", "^src/extract/effect-models/index.ts$"],
+      },
+      to: {
+        path: "^src/extract/effect-models/([^/]+)",
+        pathNot: "^src/extract/effect-models/$1",
       },
     },
     {

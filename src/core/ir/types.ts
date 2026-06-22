@@ -153,7 +153,8 @@ export interface PluginProvenance {
     | "observation"
     | "state-source"
     | "domain-refinement"
-    | "framework";
+    | "framework"
+    | "effect-model";
   packageNames: readonly string[];
 }
 

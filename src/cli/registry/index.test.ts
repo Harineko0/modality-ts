@@ -18,6 +18,8 @@ import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { reactFramework } from "modality-ts/extract/frameworks/react";
 import type { FrameworkPlugin } from "modality-ts/extract/engine/spi";
+import type { EffectModelProvider } from "modality-ts/extract/engine/spi";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 
 function fakeNavigationAdapter(
   overrides: Partial<NavigationAdapter> = {},
@@ -584,6 +586,65 @@ describe("framework plugin registration", () => {
     expect(registry.framework).not.toBe(reactFramework());
     expect(registry.framework?.packageNames).toEqual(
       reactFramework().packageNames,
+    );
+  });
+});
+
+describe("effect-model provider registration", () => {
+  function fakeEffectModel(
+    overrides: Partial<EffectModelProvider> = {},
+  ): EffectModelProvider {
+    return {
+      id: "fake-effect-model",
+      version: "0.0.1",
+      packageNames: [],
+      kind: "effect-model",
+      recognizeEffect: () => undefined,
+      ...overrides,
+    };
+  }
+
+  it("registers built-in timer and websocket providers by default", () => {
+    const registry = createBuiltinModalityRegistry();
+    expect(registry.effectModelProviderIds).toEqual(["timers", "websocket"]);
+    expect(
+      registry.plugins.some(
+        (plugin) => plugin.kind === "effect-model" && plugin.id === "timers",
+      ),
+    ).toBe(true);
+    expect(
+      registry.plugins.some(
+        (plugin) => plugin.kind === "effect-model" && plugin.id === "websocket",
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts explicit config.effectModels override", () => {
+    const custom = fakeEffectModel({ id: "custom-timers" });
+    const registry = createBuiltinModalityRegistry({ effectModels: [custom] });
+    expect(registry.effectModelProviderIds).toEqual(["custom-timers"]);
+    expect(registry.effectModelProviders).toEqual([custom]);
+  });
+
+  it("exercises router recognizeFormSubmit on explicit routerPlugin", () => {
+    const router = reactRouterAdapter();
+    expect(router.recognizeFormSubmit).toBeTypeOf("function");
+    expect(router.recognizeUseSubmitHandler).toBeTypeOf("function");
+    const registry = createBuiltinModalityRegistry({ routerPlugin: router });
+    expect(registry.routerPlugin?.recognizeFormSubmit).toBe(
+      router.recognizeFormSubmit,
+    );
+  });
+
+  it("rejects invalid effect-model providers missing recognizeEffect", () => {
+    const { recognizeEffect: _, ...incomplete } = fakeEffectModel();
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        effectModelProviders: [incomplete as EffectModelProvider],
+      }),
+    ).toThrow(
+      "Invalid effect-model provider fake-effect-model: recognizeEffect must be a function",
     );
   });
 });

@@ -6,6 +6,10 @@ import type {
   RouteExecutionProvider,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
+import {
+  recognizeFormSubmit,
+  recognizeUseSubmitHandler,
+} from "./form-submit.js";
 import * as harness from "./harness.js";
 import {
   classifyReactRouterImportEdge,
@@ -90,6 +94,8 @@ export function reactRouterAdapter(
     routeForComponent,
     locationVars: (inventory, resolvedOptions, lowering) =>
       locationVars(inventory, withHistoryBounds(resolvedOptions), lowering),
+    recognizeFormSubmit,
+    recognizeUseSubmitHandler,
     harness,
   };
 }

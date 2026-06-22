@@ -34,6 +34,10 @@ export default defineConfig({
         "./src/cli/harness/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/cli/registry": new URL(
+        "./src/cli/registry/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/cli/runtime": new URL(
         "./src/cli/runtime/index.ts",
         import.meta.url,
@@ -132,6 +136,18 @@ export default defineConfig({
       ).pathname,
       "modality-ts/extract/frameworks/react": new URL(
         "./src/extract/frameworks/react/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/effect-models/timers": new URL(
+        "./src/extract/effect-models/timers/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/effect-models/websocket": new URL(
+        "./src/extract/effect-models/websocket/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/effect-models": new URL(
+        "./src/extract/effect-models/index.ts",
         import.meta.url,
       ).pathname,
       "modality-ts/extract/engine": new URL(

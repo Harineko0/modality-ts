@@ -1,6 +1,6 @@
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../../spi/index.js";
+import type { EffectModelProvider, SemanticTypeContext } from "../../spi/index.js";
 import { lineAndColumn } from "../ast.js";
 import type { EnvironmentEventConfig } from "../environment-config.js";
 import { uniqueStrings } from "../ids.js";
@@ -11,17 +11,15 @@ import type {
 } from "../types.js";
 import type { TransitionBinding } from "./concurrent.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
-import {
-  finalizeImplicitWebSocketOpens,
-  webSocketCleanupSummaryFromCall,
-} from "./environment-callbacks.js";
+import { finalizeImplicitWebSocketOpens } from "./environment-callbacks.js";
+import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { dependencyNameSegment } from "./semantic-ids.js";
 import type { StatementSummaryOptions } from "./statement-summary.js";
+import type { StatementSummaryState } from "./statement-summary-state.js";
 import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
 import type { TimerRegistration } from "./timers.js";
-import { timerClearSummaryFromCall } from "./timers.js";
 import { labelForEvent } from "./ui.js";
 
 export {
@@ -75,6 +73,7 @@ export interface EffectExtractionContext {
   environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
   types?: SemanticTypeContext;
+  effectModelProviders?: readonly EffectModelProvider[];
 }
 
 export function transitionsFromUseEffect(
@@ -242,15 +241,25 @@ export function cleanupSummaries(
     );
   }
   if (ts.isCallExpression(expression.body)) {
-    const summary =
-      webSocketCleanupSummaryFromCall(
-        expression.body,
-        options.webSocketBindings ?? new Map(),
-      ) ??
-      timerClearSummaryFromCall(
-        expression.body,
-        options.timerBindings ?? new Map(),
-      );
+    const state: StatementSummaryState = {
+      locals: new Map(),
+      snapshotReads: true,
+      component: options.component,
+      timerBindings: options.timerBindings,
+      webSocketBindings: options.webSocketBindings,
+      timerRegistrations: options.timerRegistrations,
+      webSocketRegistrations: options.webSocketRegistrations,
+      environment: options.environment,
+      fileName: options.fileName,
+      source: options.source,
+      effectModelProviders: options.effectModelProviders,
+    };
+    const summary = dispatchEffectRecognition(
+      expression.body,
+      setters,
+      state,
+      options.effectModelProviders,
+    );
     return summary ? [summary] : undefined;
   }
   return undefined;
@@ -279,6 +288,7 @@ function effectSummaryOptions(
     fileName,
     source,
     types: effectContext.types,
+    effectModelProviders: effectContext.effectModelProviders,
   };
 }
 

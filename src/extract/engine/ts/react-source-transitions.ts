@@ -38,6 +38,7 @@ import type {
 } from "modality-ts/core";
 import type {
   DomainRefinementProvider,
+  EffectModelProvider,
   FrameworkPlugin,
   HandlerWrapperProvider,
   NavigationAdapter,
@@ -121,15 +122,7 @@ import {
 } from "./transition/handlers.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
 import { navigationJsxTransition } from "./transition/navigation.js";
-import {
-  bindReactRouterActionDataRead,
-  discoverUseSubmitBindings,
-  isReactRouterFormElement,
-  isUseActionDataCall,
-  type ReactRouterSubmitContext,
-  reactRouterActionDataVarDecl,
-  transitionsFromReactRouterForm,
-} from "./transition/router-submit.js";
+import type { NavFormSubmitCtx } from "../spi/index.js";
 import {
   boundaryIdForComponent,
   discoverComponentRenderBoundaries,
@@ -174,6 +167,7 @@ export interface ReactSourceTransitionOptions {
   domainRefinements?: readonly DomainRefinementProvider[];
   projectSummary?: ReactExtractionProjectSummary;
   framework?: FrameworkPlugin;
+  effectModelProviders?: readonly EffectModelProvider[];
 }
 
 export interface ReactSourceTransitionResult {
@@ -294,15 +288,17 @@ function extractReactSourceTransitionsImpl(
   const submitBindings = new Map<string, boolean>();
   const modeledSubmitHandlers = new Set<string>();
   const actionDataVarByComponent = new Map<string, string>();
-  const routerSubmitContext = (
-    component: string,
-  ): ReactRouterSubmitContext => ({
+  const routerSubmitContext = (component: string): NavFormSubmitCtx => ({
+    source,
+    fileName,
+    component,
     route:
       resolveComponentRoutePattern(routerPlugin, inventory, component) ?? route,
-    component,
+    setters: settersForComponent(setters, component),
     actionDataVarId: actionDataVarByComponent.get(component),
     submitBindings,
     modeledSubmitHandlers,
+    warnings,
   });
   const relatedSourceFiles = options.projectSummary
     ? options.projectSummary.relatedSourceFiles
@@ -630,23 +626,14 @@ function extractReactSourceTransitionsImpl(
     );
     if (link) transitions.push(link);
     const scopedSetters = settersForComponent(setters, nextComponent);
-    if (
-      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
-      isReactRouterFormElement(node, source)
-    ) {
-      const formRoute = routePattern ?? route;
-      const extracted = transitionsFromReactRouterForm(
-        source,
-        fileName,
-        node,
-        activeComponent,
-        formRoute,
-        scopedSetters,
-        warnings,
-        routerSubmitContext(activeComponent),
+    const formRecognition = routerPlugin?.recognizeFormSubmit?.(
+      node,
+      routerSubmitContext(activeComponent),
+    );
+    if (formRecognition?.kind === "submit") {
+      transitions.push(
+        ...tagStableIdKey(formRecognition.transitions, node),
       );
-      if (extracted.length > 0)
-        transitions.push(...tagStableIdKey(extracted, node));
     }
     const refTaint = refSetterTaint(node, scopedSetters);
     if (refTaint) {
@@ -686,6 +673,7 @@ function extractReactSourceTransitionsImpl(
         timerIndex: { value: timerCounter },
         routerSubmitContext: routerSubmitContext(nextComponent ?? "Anonymous"),
         effectOpAliases,
+        effectModelProviders: options.effectModelProviders,
       };
       const literalListInfo = literalListRenderedHandlerInfo(node);
       if (literalListInfo) {
@@ -1021,6 +1009,7 @@ function extractReactSourceTransitionsImpl(
           ),
           effectOpAliases,
           types: options.types,
+          effectModelProviders: options.effectModelProviders,
         },
       );
       registerTimerVars(timerRegistrations);
@@ -1109,33 +1098,25 @@ function extractReactSourceTransitionsImpl(
       }
     }
     if (ts.isVariableDeclaration(node) && nextComponent) {
-      const submitName = discoverUseSubmitBindings(node);
-      if (submitName) submitBindings.set(submitName, true);
-      if (
-        node.initializer &&
-        ts.isCallExpression(node.initializer) &&
-        isUseActionDataCall(node.initializer) &&
-        ts.isIdentifier(node.name)
-      ) {
-        const component = nextComponent;
-        const formRoute = resolveComponentRoutePattern(
-          routerPlugin,
-          inventory,
-          component,
-        );
-        const actionRoute = formRoute ?? route;
-        const decl = reactRouterActionDataVarDecl(component, actionRoute, {
-          file: fileName,
-          ...lineAndColumn(source, node),
-        });
-        if (!vars.some((candidate) => candidate.id === decl.id))
-          vars.push(decl);
-        actionDataVarByComponent.set(component, decl.id);
-        bindReactRouterActionDataRead(
-          setters,
-          node.name.text,
-          decl.id,
-          component,
+      const hookRecognition = routerPlugin?.recognizeFormSubmit?.(
+        node,
+        {
+          ...routerSubmitContext(nextComponent),
+          route:
+            resolveComponentRoutePattern(routerPlugin, inventory, nextComponent) ??
+            route,
+        },
+      );
+      if (hookRecognition?.kind === "use-submit-binding") {
+        submitBindings.set(hookRecognition.name, true);
+      }
+      if (hookRecognition?.kind === "action-data") {
+        if (!vars.some((candidate) => candidate.id === hookRecognition.varDecl.id))
+          vars.push(hookRecognition.varDecl);
+        actionDataVarByComponent.set(nextComponent, hookRecognition.varDecl.id);
+        setters.set(
+          hookRecognition.localName,
+          hookRecognition.setterBinding,
         );
       }
     }
@@ -1214,6 +1195,7 @@ function extractReactSourceTransitionsImpl(
           environment: options.environment,
           transitionBindings,
           types: options.types,
+          effectModelProviders: options.effectModelProviders,
         },
       );
       registerTimerVars(timerRegistrations);

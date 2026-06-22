@@ -1,6 +1,6 @@
 import type { EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../../spi/index.js";
+import type { EffectModelProvider, SemanticTypeContext } from "../../spi/index.js";
 import {
   callName,
   currentEngineFramework,
@@ -21,25 +21,19 @@ import type {
 import type { TransitionBinding } from "./concurrent.js";
 import { startTransitionScheduleFromCall } from "./concurrent.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
+import { bindWebSocketHandle } from "./environment-callbacks.js";
 import {
-  bindWebSocketHandle,
-  isWebSocketCallbackAssignment,
-  isWebSocketConstructor,
-  registerWebSocketCallbackAssignment,
-  registerWebSocketConstructor,
-  webSocketCleanupSummaryFromCall,
-} from "./environment-callbacks.js";
+  dispatchEffectAssignment,
+  dispatchEffectRecognition,
+} from "./effect-model-dispatch.js";
 import { setterArgumentExpr, valueExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
 import { bindConstStatement } from "./locals.js";
+import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
-import {
-  bindTimerHandle,
-  isTimerClearCall,
-  isTimerScheduleCall,
-  registerTimerFromScheduleCall,
-  timerClearSummaryFromCall,
-} from "./timers.js";
+import { bindTimerHandle } from "./timers.js";
+
+export type { StatementSummaryState } from "./statement-summary-state.js";
 
 export interface StatementSummaryOptions {
   handlers?: Map<string, ExtractableHandler>;
@@ -62,29 +56,7 @@ export interface StatementSummaryOptions {
   fileName?: string;
   source?: ts.SourceFile;
   types?: SemanticTypeContext;
-}
-
-interface StatementSummaryState {
-  locals: Map<string, BoundExpr>;
-  handlers?: Map<string, ExtractableHandler>;
-  resetSymbols?: ReadonlySet<string>;
-  snapshotReads: boolean;
-  snapshottedReads?: ReadonlySet<string>;
-  component?: string;
-  timerContext?: string;
-  timerIndex?: { value: number };
-  timerBindings?: Map<string, string>;
-  timerRegistrations?: TimerRegistration[];
-  webSocketRegistrations?: WebSocketRegistration[];
-  webSocketBindings?: Map<string, string>;
-  webSocketIndex?: { value: number };
-  environment?: EnvironmentEventConfig;
-  transitionBindings?: Map<string, TransitionBinding>;
-  envTransitions?: Transition[];
-  warnings?: ExtractionWarning[];
-  fileName?: string;
-  source?: ts.SourceFile;
-  types?: SemanticTypeContext;
+  effectModelProviders?: readonly EffectModelProvider[];
 }
 
 interface StatementSummaryResult {
@@ -121,14 +93,13 @@ export function summarizeHandlerStatements(
       );
       if (scheduled) return [scheduled];
     }
-    if (isTimerScheduleCall(handler.body)) {
-      const timerSummary = summarizeTimerScheduleCall(
-        handler.body,
-        setters,
-        state,
-      );
-      if (timerSummary) return [timerSummary.scheduleSummary];
-    }
+    const effectSummary = dispatchEffectRecognition(
+      handler.body,
+      setters,
+      state,
+      state.effectModelProviders,
+    );
+    if (effectSummary) return [effectSummary];
     const helper = helperSummariesFromCall(handler.body, state, setters);
     if (helper) return helper;
     const summary = summarizeSetterCall(handler.body, setters, state.locals, {
@@ -167,6 +138,7 @@ export function summarizeStatements(
     fileName: options.fileName,
     source: options.source,
     types: options.types,
+    effectModelProviders: options.effectModelProviders,
   });
   return result?.summaries;
 }
@@ -570,42 +542,26 @@ function summarizeStatement(
   }
   if (ts.isVariableStatement(statement)) {
     for (const decl of statement.declarationList.declarations) {
-      if (decl.initializer && isWebSocketConstructor(decl.initializer)) {
-        const webSocketSummary = summarizeWebSocketConstructor(
-          decl.initializer,
-          decl,
-          setters,
-          state,
-        );
-        if (webSocketSummary) {
-          return {
-            summaries: [webSocketSummary.connectSummary],
-            terminated: false,
-          };
-        }
-      }
-      if (
-        decl.initializer &&
-        ts.isCallExpression(decl.initializer) &&
-        isTimerScheduleCall(decl.initializer)
-      ) {
-        const timerSummary = summarizeTimerScheduleCall(
-          decl.initializer,
-          setters,
-          state,
-        );
-        if (timerSummary) {
-          if (ts.isIdentifier(decl.name) && state.timerBindings) {
-            bindTimerHandle(
+      if (decl.initializer) {
+        const callNode = effectSurfaceCall(decl.initializer);
+        if (callNode) {
+          const prevWebSockets = state.webSocketRegistrations?.length ?? 0;
+          const prevTimers = state.timerRegistrations?.length ?? 0;
+          const summary = dispatchEffectRecognition(
+            callNode,
+            setters,
+            state,
+            state.effectModelProviders,
+          );
+          if (summary) {
+            bindLatestEffectHandle(
               decl,
-              timerSummary.registration.varId,
-              state.timerBindings,
+              state,
+              prevTimers,
+              prevWebSockets,
             );
+            return { summaries: [summary], terminated: false };
           }
-          return {
-            summaries: [timerSummary.scheduleSummary],
-            terminated: false,
-          };
         }
       }
     }
@@ -614,48 +570,14 @@ function summarizeStatement(
     return fallbackResult(statement, setters);
   }
   if (ts.isExpressionStatement(statement)) {
-    const webSocketAssignment = isWebSocketCallbackAssignment(
-      statement,
-      state.webSocketBindings ?? new Map(),
-      state.webSocketRegistrations ?? [],
-    );
     if (
-      webSocketAssignment &&
-      state.component &&
-      state.source &&
-      state.fileName
-    ) {
-      const registered = registerWebSocketCallbackAssignment(
-        state.source,
-        state.fileName,
-        webSocketAssignment,
+      dispatchEffectAssignment(
+        statement,
         setters,
-        state.component,
-        {
-          handlers: state.handlers,
-          resetSymbols: state.resetSymbols,
-          snapshotReads: state.snapshotReads,
-          snapshottedReads: state.snapshottedReads,
-          component: state.component,
-          timerContext: state.timerContext,
-          timerIndex: state.timerIndex,
-          timerBindings: state.timerBindings,
-          timerRegistrations: state.timerRegistrations,
-          webSocketRegistrations: state.webSocketRegistrations,
-          webSocketBindings: state.webSocketBindings,
-          webSocketIndex: state.webSocketIndex,
-          environment: state.environment,
-          transitionBindings: state.transitionBindings,
-          envTransitions: state.envTransitions,
-          fileName: state.fileName,
-          source: state.source,
-        },
-        state.environment,
-      );
-      for (const transition of registered.transitions) {
-        state.envTransitions?.push(transition);
-      }
-      state.warnings?.push(...registered.warnings);
+        state,
+        state.effectModelProviders,
+      )
+    ) {
       return { summaries: [], terminated: false };
     }
     const call = expressionCall(statement.expression);
@@ -684,30 +606,14 @@ function summarizeStatement(
           return { summaries: [scheduled], terminated: false };
         }
       }
-      if (isTimerScheduleCall(call)) {
-        const timerSummary = summarizeTimerScheduleCall(call, setters, state);
-        if (timerSummary) {
-          return {
-            summaries: [timerSummary.scheduleSummary],
-            terminated: false,
-          };
-        }
-      }
-      if (isTimerClearCall(call)) {
-        const clearSummary = timerClearSummaryFromCall(
-          call,
-          state.timerBindings ?? new Map(),
-        );
-        if (clearSummary) {
-          return { summaries: [clearSummary], terminated: false };
-        }
-      }
-      const webSocketCloseSummary = webSocketCleanupSummaryFromCall(
+      const effectSummary = dispatchEffectRecognition(
         call,
-        state.webSocketBindings ?? new Map(),
+        setters,
+        state,
+        state.effectModelProviders,
       );
-      if (webSocketCloseSummary) {
-        return { summaries: [webSocketCloseSummary], terminated: false };
+      if (effectSummary) {
+        return { summaries: [effectSummary], terminated: false };
       }
       const helper = helperSummariesFromCall(call, state, setters);
       if (helper) return { summaries: helper, terminated: false };
@@ -1061,62 +967,49 @@ function handlerSummaryState(
     fileName: options.fileName,
     source: options.source,
     types: options.types,
+    effectModelProviders: options.effectModelProviders,
   };
 }
 
-function summarizeWebSocketConstructor(
-  node: ts.NewExpression,
+function effectSurfaceCall(
+  expression: ts.Expression,
+): ts.CallExpression | ts.NewExpression | undefined {
+  if (ts.isCallExpression(expression) || ts.isNewExpression(expression)) {
+    return expression;
+  }
+  return undefined;
+}
+
+function bindLatestEffectHandle(
   declaration: ts.VariableDeclaration,
-  _setters: Map<string, SetterBinding>,
   state: StatementSummaryState,
-): ReturnType<typeof registerWebSocketConstructor> | undefined {
-  if (!state.component || !state.source || !state.fileName) return undefined;
-  const webSocketIndex = state.webSocketIndex?.value ?? 0;
-  const registered = registerWebSocketConstructor(
-    state.source,
-    state.fileName,
-    node,
-    state.component,
-    state.timerContext ?? "handler",
-    webSocketIndex,
-    state.webSocketBindings ?? new Map(),
-    state.environment,
-  );
-  if (!registered) return undefined;
-  state.webSocketRegistrations?.push(registered.registration);
-  if (state.webSocketIndex) state.webSocketIndex.value += 1;
-  if (ts.isIdentifier(declaration.name) && state.webSocketBindings) {
+  prevTimers: number,
+  prevWebSockets: number,
+): void {
+  if (!ts.isIdentifier(declaration.name)) return;
+  const timerCount = state.timerRegistrations?.length ?? 0;
+  if (
+    timerCount > prevTimers &&
+    state.timerBindings &&
+    state.timerRegistrations
+  ) {
+    const registration = state.timerRegistrations[timerCount - 1]!;
+    bindTimerHandle(declaration, registration.varId, state.timerBindings);
+    return;
+  }
+  const webSocketCount = state.webSocketRegistrations?.length ?? 0;
+  if (
+    webSocketCount > prevWebSockets &&
+    state.webSocketBindings &&
+    state.webSocketRegistrations
+  ) {
+    const registration = state.webSocketRegistrations[webSocketCount - 1]!;
     bindWebSocketHandle(
       declaration,
-      registered.registration.varId,
+      registration.varId,
       state.webSocketBindings,
     );
   }
-  return registered;
-}
-
-function summarizeTimerScheduleCall(
-  call: ts.CallExpression,
-  setters: Map<string, SetterBinding>,
-  state: StatementSummaryState,
-): ReturnType<typeof registerTimerFromScheduleCall> | undefined {
-  if (!state.component || !state.source || !state.fileName) return undefined;
-  const timerIndex = state.timerIndex?.value ?? 0;
-  const registered = registerTimerFromScheduleCall(
-    state.source,
-    state.fileName,
-    call,
-    setters,
-    state.component,
-    state.timerContext ?? "handler",
-    timerIndex,
-    state.timerBindings ?? new Map(),
-  );
-  if (!registered) return undefined;
-  state.timerRegistrations?.push(registered.registration);
-  if (state.timerIndex) state.timerIndex.value += 1;
-  state.envTransitions?.push(registered.fireTransition);
-  return registered;
 }
 
 function summarizeStartTransitionCall(

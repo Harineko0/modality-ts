@@ -20,6 +20,7 @@ import type {
   CacheStorageFragment,
   DomainRefinementProvider,
   EffectApiProvider,
+  EffectModelProvider,
   FrameworkPlugin,
   HandlerWrapperProvider,
   ModuleRoleAdapter,
@@ -329,6 +330,7 @@ export function runProjectExtractionPipeline(
     handlerWrapperProviders?: readonly HandlerWrapperProvider[];
     routerPlugin?: NavigationAdapter;
     framework?: FrameworkPlugin;
+    effectModelProviders?: readonly EffectModelProvider[];
     domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;

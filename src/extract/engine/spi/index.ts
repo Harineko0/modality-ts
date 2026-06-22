@@ -455,6 +455,16 @@ export interface NavigationAdapter extends ModalityAdapterBase {
     componentName: string,
     inventory: RouteInventory,
   ): StateVarDecl["scope"] | undefined;
+  recognizeFormSubmit?(
+    node: import("./form-submit.js").SurfaceNode,
+    ctx: import("./form-submit.js").NavFormSubmitCtx,
+  ): import("./form-submit.js").FormSubmitRecognition | undefined;
+  recognizeUseSubmitHandler?(
+    node: ts.JsxAttribute,
+    attr: string,
+    handler: import("../ts/types.js").ExtractableHandler,
+    ctx: import("./form-submit.js").NavUseSubmitHandlerCtx,
+  ): import("./form-submit.js").UseSubmitHandlerRecognition | undefined;
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
     observe(handles: HarnessHooks): ObservedRead | "unobservable";
@@ -516,3 +526,23 @@ export {
   registerFrameworkPlugin,
   resolveFrameworkPlugin,
 } from "./framework-runtime.js";
+export type {
+  EffectCtx,
+  EffectModel,
+  EffectModelAssignmentRecognition,
+  EffectModelProvider,
+  EffectModelRecognition,
+  EffectSurfaceCall,
+} from "./effect-model.js";
+export {
+  registerEffectModelProviders,
+  resolveEffectModelProviders,
+} from "./effect-model-runtime.js";
+export type {
+  FormSubmit,
+  FormSubmitRecognition,
+  NavFormSubmitCtx,
+  NavUseSubmitHandlerCtx,
+  SurfaceNode as FormSubmitSurfaceNode,
+  UseSubmitHandlerRecognition,
+} from "./form-submit.js";

@@ -13,6 +13,7 @@ import type {
 import type { Bounds } from "modality-ts/core";
 import type {
   DomainRefinementProvider,
+  EffectModelProvider,
   FrameworkPlugin,
   NavigationAdapter,
   StateSourcePlugin,
@@ -78,7 +79,7 @@ export interface ModalityConfig {
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
   framework?: FrameworkPlugin;
-  // effectModels?: readonly EffectModelProvider[]; // Part 5
+  effectModels?: readonly EffectModelProvider[];
   domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: NavigationAdapter | false;
 }
@@ -98,6 +99,7 @@ export interface BuildExtractionModelOptions {
   domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: NavigationAdapter | false;
   framework?: FrameworkPlugin | false;
+  effectModels?: readonly EffectModelProvider[];
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
   now?: Date;
@@ -162,6 +164,7 @@ export async function buildExtractionModel(
           ],
           routerPlugin: options.routerPlugin ?? config.routerPlugin,
           framework: options.framework ?? config.framework,
+          effectModels: options.effectModels ?? config.effectModels,
         });
         return {
           config,
@@ -267,6 +270,7 @@ export async function buildExtractionModel(
         handlerWrapperProviders: registry.handlerWrapperProviders,
         routerPlugin: routerAdapter,
         framework: registry.framework,
+        effectModelProviders: registry.effectModelProviders,
         domainRefinements: registry.domainRefinementProviders,
         inventory: project.inventory,
         bounds: { maxDepth: bounds.maxDepth },

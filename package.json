@@ -119,6 +119,18 @@
       "types": "./dist/extract/frameworks/react/index.d.ts",
       "default": "./dist/extract/frameworks/react/index.js"
     },
+    "./extract/effect-models": {
+      "types": "./dist/extract/effect-models/index.d.ts",
+      "default": "./dist/extract/effect-models/index.js"
+    },
+    "./extract/effect-models/timers": {
+      "types": "./dist/extract/effect-models/timers/index.d.ts",
+      "default": "./dist/extract/effect-models/timers/index.js"
+    },
+    "./extract/effect-models/websocket": {
+      "types": "./dist/extract/effect-models/websocket/index.d.ts",
+      "default": "./dist/extract/effect-models/websocket/index.js"
+    },
     "./extract/sources/jotai": {
       "types": "./dist/extract/sources/jotai/index.d.ts",
       "default": "./dist/extract/sources/jotai/index.js"

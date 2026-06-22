@@ -7,6 +7,7 @@ import type {
   CacheStorageProvider,
   DomainRefinementProvider,
   EffectApiProvider,
+  EffectModelProvider,
   FrameworkPlugin,
   HandlerWrapperProvider,
   HarnessCtx,
@@ -48,6 +49,9 @@ import { reduxSource } from "modality-ts/extract/sources/redux";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
 import { reactHookFormSource } from "modality-ts/extract/sources/react-hook-form";
 import { reactFramework } from "modality-ts/extract/frameworks/react";
+import { timerEffectModelProvider } from "modality-ts/extract/effect-models/timers";
+import { websocketEffectModelProvider } from "modality-ts/extract/effect-models/websocket";
+import { registerEffectModelProviders } from "modality-ts/extract/engine/spi";
 
 export interface RegistryAdaptersBundle {
   navigation?: NavigationAdapter;
@@ -64,6 +68,7 @@ export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
   framework?: FrameworkPlugin;
+  effectModelProviders?: readonly EffectModelProvider[];
   domainRefinementProviders: readonly DomainRefinementProvider[];
   moduleRoleAdapters?: readonly ModuleRoleAdapter[];
   effectApiProviders?: readonly EffectApiProvider[];
@@ -83,15 +88,18 @@ export interface BuiltinRegistryOptions {
   extraHandlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter | false;
   framework?: FrameworkPlugin | false;
+  effectModels?: readonly EffectModelProvider[];
 }
 
 export interface RegistrySummary {
   sourcePluginIds: readonly string[];
   routerPluginId?: string;
   frameworkPluginId?: string;
+  effectModelProviderIds: readonly string[];
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
   framework?: FrameworkPlugin;
+  effectModelProviders: readonly EffectModelProvider[];
   domainRefinementProviders: readonly DomainRefinementProvider[];
   handlerWrapperProviders: readonly HandlerWrapperProvider[];
   plugins: readonly PluginProvenance[];
@@ -145,10 +153,13 @@ export function createBuiltinModalityRegistry(
     ),
     ...(options.extraHandlerWrapperProviders ?? []),
   ];
+  const effectModelProviders = resolveBuiltinEffectModels(options);
+  registerEffectModelProviders(effectModelProviders);
   return createModalityRegistry({
     sourcePlugins,
     routerPlugin: builtinNavigation.navigation,
     framework: resolveBuiltinFramework(options),
+    effectModelProviders,
     domainRefinementProviders,
     moduleRoleAdapters: builtinNavigation.moduleRoles,
     effectApiProviders: builtinNavigation.effectApis,
@@ -261,6 +272,15 @@ function resolveBuiltinFramework(
   return reactFramework();
 }
 
+function resolveBuiltinEffectModels(
+  options: BuiltinRegistryOptions,
+): readonly EffectModelProvider[] {
+  if (options.effectModels !== undefined) {
+    return options.effectModels;
+  }
+  return [timerEffectModelProvider(), websocketEffectModelProvider()];
+}
+
 function hasDependency(
   dependencies: Readonly<Record<string, string>> | undefined,
   packageName: string,
@@ -280,6 +300,7 @@ export function createModalityRegistry(
   const routeExecutionProviders = options.routeExecutionProviders ?? [];
   const cacheStorageProviders = options.cacheStorageProviders ?? [];
   const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
+  const effectModelProviders = options.effectModelProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   for (const provider of domainRefinementProviders)
     validateDomainRefinementProvider(provider);
@@ -292,6 +313,8 @@ export function createModalityRegistry(
     validateCacheStorageProvider(provider);
   if (options.routerPlugin) validateNavigationAdapter(options.routerPlugin);
   if (options.framework) validateFrameworkPlugin(options.framework);
+  for (const provider of effectModelProviders)
+    validateEffectModelProvider(provider);
   const observations = buildObservationProviders(
     options.sourcePlugins,
     options.routerPlugin,
@@ -321,9 +344,15 @@ export function createModalityRegistry(
     observations.map((provider) => provider.id),
     "observation provider",
   );
+  const effectModelProviderIds = sortedUnique(
+    effectModelProviders.map((provider) => provider.id),
+    "effect-model provider",
+  );
   return {
     sourcePluginIds,
+    effectModelProviderIds,
     sourcePlugins: options.sourcePlugins,
+    effectModelProviders,
     domainRefinementProviders,
     handlerWrapperProviders,
     ...(options.framework ? { framework: options.framework } : {}),
@@ -365,6 +394,12 @@ export function createModalityRegistry(
             },
           ]
         : []),
+      ...effectModelProviders.map((provider) => ({
+        id: provider.id,
+        version: provider.version ?? "unknown",
+        kind: "effect-model" as const,
+        packageNames: [...provider.packageNames].sort(),
+      })),
       ...moduleRoleAdapters.map((adapter) => ({
         id: adapter.id,
         version: adapter.version ?? "unknown",
@@ -552,6 +587,18 @@ function validateFrameworkPlugin(plugin: FrameworkPlugin): void {
   if (typeof plugin.recognizeRenderBoundary !== "function")
     throw new Error(
       `Invalid framework plugin ${plugin.id}: recognizeRenderBoundary must be a function`,
+    );
+}
+
+function validateEffectModelProvider(provider: EffectModelProvider): void {
+  validateCommonPluginShape(provider, "effect-model provider");
+  if (provider.kind !== "effect-model")
+    throw new Error(
+      `Invalid effect-model provider ${provider.id}: kind must be "effect-model"`,
+    );
+  if (typeof provider.recognizeEffect !== "function")
+    throw new Error(
+      `Invalid effect-model provider ${provider.id}: recognizeEffect must be a function`,
     );
 }
 

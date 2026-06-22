@@ -15,6 +15,7 @@ import type {
   LocationLowering,
   SemanticTypeContext,
   DomainRefinementProvider,
+  EffectModelProvider,
   HandlerWrapperProvider,
   FrameworkPlugin,
 } from "../spi/index.js";
@@ -65,6 +66,7 @@ export interface ExtractionPipelineOptions {
   handlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter;
   framework?: FrameworkPlugin;
+  effectModelProviders?: readonly EffectModelProvider[];
   domainRefinements?: readonly DomainRefinementProvider[];
   inventory?: RouteInventory;
   lowering?: LocationLowering;
@@ -281,6 +283,9 @@ export function runExtractionPipeline(
     writeChannels,
     sourcePlugins,
     framework: resolveFrameworkPlugin(options.framework),
+    ...(options.effectModelProviders
+      ? { effectModelProviders: options.effectModelProviders }
+      : {}),
     ...(options.handlerWrapperProviders?.length
       ? { handlerWrapperProviders: options.handlerWrapperProviders }
       : {}),
