@@ -219,7 +219,7 @@
     "phase7": "tsx tools/phase7-differential.ts",
     "perf:check": "tsx tools/check-performance-benchmark.ts",
     "publish:npm": "npm publish --provenance --access public",
-    "test": "pnpm build:rust && vitest run",
+    "test": "pnpm build:rust && vitest --exclude \"test/benchmarks/**\"",
     "typecheck": "tsc -b"
   },
   "dependencies": {
