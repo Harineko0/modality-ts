@@ -558,6 +558,7 @@ function rewriteMissingOutcomeReads(
         else: rewriteMissingOutcomeReads(effect.else, op, enqueueArgKeys),
       };
       // biome-ignore lint/suspicious/noThenProperty: EffectIR intentionally names if-branch effects `then`.
+      // biome-ignore lint/complexity/useLiteralKeys: bracket notation prevents noThenProperty from triggering on the same line.
       rewritten["then"] = rewriteMissingOutcomeReads(
         effect.then,
         op,

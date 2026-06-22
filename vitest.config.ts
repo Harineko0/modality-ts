@@ -6,6 +6,13 @@ export default defineConfig({
     globals: false,
     testTimeout: 60_000,
     setupFiles: ["./test/setup/framework-default.ts"],
+    pool: "threads",
+    poolOptions: {
+      threads: {
+        minWorkers: 1,
+        maxWorkers: 4,
+      },
+    },
   },
   resolve: {
     alias: {

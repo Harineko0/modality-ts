@@ -298,15 +298,6 @@ export function createSemanticProject(
       : resolvedName;
   };
 
-  const defaultLibDir = resolve(
-    defaultHost.getDefaultLibLocation?.() ??
-      dirname(defaultHost.getDefaultLibFileName(compilerOptions)),
-  );
-
-  const isDefaultLibFile = (canonical: string): boolean =>
-    canonical.startsWith(defaultLibDir) &&
-    /[\\/]lib\.[^/\\]*\.d\.ts$/.test(canonical);
-
   const host: ts.CompilerHost = {
     ...defaultHost,
     directoryExists: (directoryName) => {
@@ -333,7 +324,10 @@ export function createSemanticProject(
       const cached = sourceFilesByPath.get(canonical);
       if (cached && !shouldCreateNewSourceFile) return cached;
 
-      if (!shouldCreateNewSourceFile && isDefaultLibFile(canonical)) {
+      // Cache any .d.ts file that isn't user-provided (lib files, node_modules
+      // types, @types/*). These are read-only and identical across all programs.
+      const isUserFile = lookupInMemoryText(fileName) !== undefined;
+      if (!shouldCreateNewSourceFile && !isUserFile && canonical.endsWith(".d.ts")) {
         const versionKey =
           typeof languageVersion === "number"
             ? languageVersion
