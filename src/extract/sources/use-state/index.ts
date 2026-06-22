@@ -15,6 +15,7 @@ import {
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import { routeMountScope } from "../../engine/ts/routes.js";
 import * as harness from "./harness.js";
+import { decodeUseStateBinding } from "./decode-binding.js";
 
 export function useStateSource(): StateSourcePlugin {
   return {
@@ -31,6 +32,7 @@ export function useStateSource(): StateSourcePlugin {
       ),
     writeChannels: (ctx) =>
       discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
+    decodeBinding: decodeUseStateBinding,
     harness,
     conformance: {
       testedVersions: "react>=18",

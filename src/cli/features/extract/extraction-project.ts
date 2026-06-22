@@ -381,6 +381,7 @@ export function runProjectExtractionPipeline(
       relatedFragments,
       ...(fragmentTypes ? { types: fragmentTypes } : {}),
       route: options.route,
+      sourcePlugins: options.sourcePlugins,
     }),
   );
   const sharedDiscovery = runPluginDiscoveryPhase(pipelineOptions);

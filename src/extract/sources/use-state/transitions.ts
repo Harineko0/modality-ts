@@ -4,6 +4,7 @@ import {
   collectNumericSeedVarIds,
   widenNumericDomainsFromTransitions,
 } from "../../engine/ts/numeric/use-state-updaters.js";
+import useStateSource from "./index.js";
 import type {
   ExtractedModelSkeleton,
   UseStateExtractionOptions,
@@ -33,7 +34,10 @@ export function extractUseStateSkeleton(
     ...(isEffectOpAliasesPopulated(options.effectOpAliases)
       ? { effectOpAliases: options.effectOpAliases }
       : {}),
-    sourcePlugins: options.sourcePlugins ?? [],
+    sourcePlugins:
+      options.sourcePlugins && options.sourcePlugins.length > 0
+        ? options.sourcePlugins
+        : [useStateSource()],
     ...(options.stateVars ? { stateVars: options.stateVars } : {}),
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),

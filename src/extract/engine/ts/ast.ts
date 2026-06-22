@@ -66,6 +66,17 @@ export function isUseStateCall(
   return hookNamed(node, "useState", engineFw);
 }
 
+export function isRecognizedUseStateCall(
+  node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  const fw = engineFramework(engineFw);
+  if (!ts.isCallExpression(node)) return false;
+  const hook = fw.framework.recognizeHook(node, fw.ctx);
+  if (hook?.hook.kind !== "state") return false;
+  return calleeName(node, fw.ctx) === "useState";
+}
+
 export function isUseReducerCall(
   node: ts.Expression,
   engineFw?: EngineFrameworkContext,

@@ -3,7 +3,6 @@ import * as ts from "typescript";
 import {
   componentNameFor,
   isExtractableHandler,
-  isUseStateCall,
   propertyName,
 } from "./ast.js";
 import {
@@ -11,8 +10,11 @@ import {
   resolveCustomHookEntry,
   type CustomHookRegistry,
 } from "./components.js";
-import { inferUseStateDomain } from "./domains.js";
-import type { SemanticTypeContext } from "../spi/index.js";
+import type {
+  SemanticTypeContext,
+  StateSourcePlugin,
+  WriteChannel,
+} from "../spi/index.js";
 import type {
   ContextBindings,
   CustomHookDecl,
@@ -24,23 +26,29 @@ export function emptyContextBindings(): ContextBindings {
   return { vars: [], setters: new Map(), hookReturns: new Map() };
 }
 
-export function setterBindingFromDecl(decl: StateVarDecl): SetterBinding {
-  const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
-  const atomMatch = /^atom:(.+)$/.exec(decl.id);
-  const familyMatch = /^atom-family:([^:]+):/.exec(decl.id);
-  const swrMatch = /^swr:(.+):data$/.exec(decl.id);
+export function decodeSetterBinding(
+  decl: StateVarDecl,
+  sourcePlugins: readonly StateSourcePlugin[] = [],
+): SetterBinding {
+  for (const plugin of sourcePlugins) {
+    const binding = plugin.decodeBinding?.(decl);
+    if (binding) return binding;
+  }
   return {
     varId: decl.id,
-    component: localMatch?.[1] ?? "Anonymous",
-    stateName:
-      localMatch?.[2] ??
-      familyMatch?.[1] ??
-      atomMatch?.[1]?.replace(/@store:.+$/, "") ??
-      swrMatch?.[1] ??
-      decl.id,
+    component: "Anonymous",
+    stateName: decl.id,
     domain: decl.domain,
     initial: decl.initial as Value,
   };
+}
+
+export interface DiscoverContextBindingsOptions {
+  stateVars?: readonly StateVarDecl[];
+  writeChannels?: readonly WriteChannel[];
+  sourcePlugins?: readonly StateSourcePlugin[];
+  route?: string;
+  types?: SemanticTypeContext;
 }
 
 export function resolveSetterBinding(
@@ -107,12 +115,14 @@ export function settersForComponent(
 
 export function discoverContextBindings(
   source: ts.SourceFile,
-  _fileName: string,
+  fileName: string,
   _route: string,
-  typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  _typeAliases: ReadonlyMap<string, ts.TypeNode>,
+  options: DiscoverContextBindingsOptions = {},
 ): ContextBindings {
   const bindings = emptyContextBindings();
   const providerValues = new Map<string, Map<string, SetterBinding>>();
+  const discovery = resolveUseStateDiscoveryForFile(source, fileName, options);
   const visitProvider = (
     node: ts.Node,
     componentName: string | undefined,
@@ -127,38 +137,13 @@ export function discoverContextBindings(
       node.body &&
       ts.isBlock(node.body)
     ) {
-      for (const statement of node.body.statements) {
-        if (!ts.isVariableStatement(statement)) continue;
-        for (const declaration of statement.declarationList.declarations) {
-          if (
-            !ts.isArrayBindingPattern(declaration.name) ||
-            !declaration.initializer ||
-            !isUseStateCall(declaration.initializer)
-          )
-            continue;
-          const stateName = declaration.name.elements[0];
-          const setterName = declaration.name.elements[1];
-          if (
-            !setterName ||
-            !ts.isBindingElement(stateName) ||
-            !ts.isIdentifier(stateName.name) ||
-            !ts.isBindingElement(setterName) ||
-            !ts.isIdentifier(setterName.name)
-          )
-            continue;
-          const domain = inferUseStateDomain(
-            declaration.initializer,
-            typeAliases,
-          );
-          const varId = `local:${component}.${stateName.name.text}`;
-          const setter = {
-            varId,
-            component,
-            stateName: stateName.name.text,
-            domain,
-          };
-          localSetters.set(setterName.name.text, setter);
-        }
+      for (const [symbolName, setter] of localSettersForComponent(
+        component,
+        fileName,
+        discovery,
+        options.sourcePlugins ?? [],
+      )) {
+        localSetters.set(symbolName, setter);
       }
       for (const statement of node.body.statements) {
         if (!ts.isVariableStatement(statement)) continue;
@@ -250,6 +235,68 @@ export function bindContextHookObjectDeclaration(
 
 function scopedSetterKey(component: string, symbolName: string): string {
   return `${component}:${symbolName}`;
+}
+
+function resolveUseStateDiscoveryForFile(
+  source: ts.SourceFile,
+  fileName: string,
+  options: DiscoverContextBindingsOptions,
+): {
+  stateVars: readonly StateVarDecl[];
+  writeChannels: readonly WriteChannel[];
+} {
+  if (options.stateVars && options.writeChannels) {
+    return {
+      stateVars: options.stateVars,
+      writeChannels: options.writeChannels,
+    };
+  }
+  const useStatePlugin = options.sourcePlugins?.find(
+    (plugin) => plugin.id === "use-state",
+  );
+  if (!useStatePlugin) {
+    return { stateVars: [], writeChannels: [] };
+  }
+  const sourceText = source.getFullText();
+  const route = options.route ?? "/";
+  const decls = useStatePlugin.discover({
+    sourceText,
+    fileName,
+    route,
+    ...(options.types ? { types: options.types } : {}),
+  });
+  const writeChannels = useStatePlugin.writeChannels({
+    sourceText,
+    fileName,
+    ...(options.types ? { types: options.types } : {}),
+  });
+  const stateVars = decls.flatMap((decl) => (decl.var ? [decl.var] : []));
+  return { stateVars, writeChannels };
+}
+
+function localSettersForComponent(
+  component: string,
+  fileName: string,
+  discovery: {
+    stateVars: readonly StateVarDecl[];
+    writeChannels: readonly WriteChannel[];
+  },
+  sourcePlugins: readonly StateSourcePlugin[],
+): Map<string, SetterBinding> {
+  const localSetters = new Map<string, SetterBinding>();
+  const prefix = `local:${component}.`;
+  for (const channel of discovery.writeChannels) {
+    if (!channel.varId.startsWith(prefix)) continue;
+    if (channel.source.file !== fileName) continue;
+    const decl = discovery.stateVars.find(
+      (candidate) => candidate.id === channel.varId,
+    );
+    if (!decl) continue;
+    const binding = decodeSetterBinding(decl, sourcePlugins);
+    if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
+    localSetters.set(channel.symbolName, binding);
+  }
+  return localSetters;
 }
 
 function providerValueFields(

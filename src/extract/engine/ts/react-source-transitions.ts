@@ -2,11 +2,11 @@ import * as ts from "typescript";
 import {
   componentNameFor,
   isExtractableHandler,
+  isRecognizedUseStateCall,
   isSuspenseElement,
   isUseCall,
   isUseDeferredValueCall,
   isUseReducerCall,
-  isUseStateCall,
   lineAndColumn,
   providerComponentNames,
   reactEffectHookName,
@@ -69,9 +69,10 @@ import {
 import {
   bindContextHookObjectDeclaration,
   bindSetter,
+  decodeSetterBinding,
   discoverContextBindings,
-  setterBindingFromDecl,
   settersForComponent,
+  type DiscoverContextBindingsOptions,
 } from "./context.js";
 import {
   domainInferenceWarnings,
@@ -257,9 +258,22 @@ function extractReactSourceTransitionsImpl(
   const routerPlugin = options.routerPlugin;
   const inventory = options.inventory;
   const setters = new Map<string, SetterBinding>();
+  const contextBindingOptions: DiscoverContextBindingsOptions = {
+    ...(options.stateVars ? { stateVars: options.stateVars } : {}),
+    ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
+    sourcePlugins,
+    route,
+    ...(options.types ? { types: options.types } : {}),
+  };
   const contextBindings = options.projectSummary
     ? cloneContextBindings(options.projectSummary.contextBindings)
-    : discoverContextBindings(source, fileName, route, typeAliases);
+    : discoverContextBindings(
+        source,
+        fileName,
+        route,
+        typeAliases,
+        contextBindingOptions,
+      );
   if (!options.projectSummary) {
     for (const relatedSource of relatedDiscoverySourceFiles(source, options)) {
       mergeContextBindings(
@@ -269,6 +283,7 @@ function extractReactSourceTransitionsImpl(
           relatedSource.fileName,
           route,
           typeAliases,
+          contextBindingOptions,
         ),
       );
     }
@@ -336,7 +351,7 @@ function extractReactSourceTransitionsImpl(
   for (const channel of options.writeChannels ?? []) {
     const decl = vars.find((candidate) => candidate.id === channel.varId);
     if (!decl) continue;
-    const binding = setterBindingFromDecl(decl);
+    const binding = decodeSetterBinding(decl, sourcePlugins);
     if (
       channel.id.endsWith(".reset") ||
       options.resettableVarIds?.has(channel.varId)
@@ -476,7 +491,7 @@ function extractReactSourceTransitionsImpl(
       ts.isVariableDeclaration(node) &&
       ts.isArrayBindingPattern(node.name) &&
       node.initializer &&
-      isUseStateCall(node.initializer)
+      isRecognizedUseStateCall(node.initializer)
     ) {
       if (nextComponent && statefulListComponents.has(nextComponent)) {
         if (!reportedStatefulListComponents.has(nextComponent)) {
@@ -496,6 +511,9 @@ function extractReactSourceTransitionsImpl(
       if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
         const component = nextComponent ?? "Anonymous";
         const varId = `local:${component}.${stateName.name.text}`;
+        const discovered = options.stateVars?.find(
+          (candidate) => candidate.id === varId,
+        );
         const anchor = lineAndColumn(source, node);
         const callForInference = useStateCallForSemanticInference(
           node.initializer,
@@ -511,7 +529,7 @@ function extractReactSourceTransitionsImpl(
           options.types,
           options.domainRefinements ?? [],
         );
-        const domain = inferred.domain;
+        const domain = discovered?.domain ?? inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));
         const initialResult = initialValueForUseStateDetailed(
           callForInference,
@@ -540,18 +558,28 @@ function extractReactSourceTransitionsImpl(
           ts.isBindingElement(setterName) &&
           ts.isIdentifier(setterName.name)
         ) {
-          if (!options.writeChannels)
-            bindSetter(setters, setterName.name.text, {
-              varId,
-              component,
-              stateName: stateName.name.text,
-              domain,
-              ...(options.types?.localSymbolKey?.(setterName.name)
-                ? {
-                    symbolKey: options.types.localSymbolKey(setterName.name),
-                  }
-                : {}),
-            });
+          if (!options.writeChannels) {
+            const decl: StateVarDecl =
+              discovered ??
+              ({
+                id: varId,
+                domain,
+                origin: { file: fileName, ...anchor },
+                scope: scopeForLocalState(
+                  component,
+                  route,
+                  routerPlugin,
+                  inventory,
+                  providerComponents.has(component),
+                ),
+                initial: initialResult.value,
+              } satisfies StateVarDecl);
+            const binding = decodeSetterBinding(decl, sourcePlugins);
+            if (options.types?.localSymbolKey?.(setterName.name)) {
+              binding.symbolKey = options.types.localSymbolKey(setterName.name);
+            }
+            bindSetter(setters, setterName.name.text, binding);
+          }
         }
       } else {
         warnings.push({

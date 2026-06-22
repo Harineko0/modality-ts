@@ -3,6 +3,7 @@ import * as harness from "./harness.js";
 import { discoverSwrHooks } from "./discover.js";
 import { templateForSwrDecl } from "./template.js";
 import { discoverSwrReadChannels } from "./writes.js";
+import { decodeSwrBinding } from "./decode-binding.js";
 
 export function swrSource(): StateSourcePlugin {
   return {
@@ -18,6 +19,7 @@ export function swrSource(): StateSourcePlugin {
       ),
     writeChannels: (ctx) =>
       discoverSwrReadChannels(ctx.sourceText, ctx.fileName, ctx.types),
+    decodeBinding: decodeSwrBinding,
     template: (decl) => templateForSwrDecl(decl),
     harness,
     conformance: {
