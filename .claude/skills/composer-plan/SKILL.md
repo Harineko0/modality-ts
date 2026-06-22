@@ -14,21 +14,18 @@ The plan must include:
 1. Goal
 2. Non-goals
 3. Current-state findings
-4. Exact file paths and relevant symbols
-5. Existing patterns to follow
-6. Atomic implementation steps
-7. Per-step files to edit
-8. Acceptance criteria
-9. Tests to add or update
-10. Verification commands
-11. Risks, ambiguities, and stop conditions
+4. Atomic implementation steps
+5. Tests to add or update
+6. Verification
+7. Acceptance criteria
+8. Risks, ambiguities, and stop conditions
 
 Optimize for an implementation agent:
 
 - Be explicit.
-- Avoid broad refactors.
-- Prefer minimal diffs.
-- State what must not be changed.
-- Include “stop and ask/report” conditions if the repo differs from assumptions.
+- Avoid stopgap fixes and aim for fundamental solutions and future-proof improvements.
+- Rather than overfitting to a specific library or framework, abstract it so that it can accommodate different ones.
+- Never consider backward compatibility.
+- Split the plan into multiple plans if it is large e.g. greater than 7 steps.
 
 Output only the plan.
