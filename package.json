@@ -203,7 +203,7 @@
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "architecture": "depcruise --config tools/depcruise.config.cjs src",
-    "build:rust": "napi build --platform --release --cargo-cwd crates/checker native",
+    "build:rust": "node tools/build-rust-native.mjs",
     "build": "pnpm build:rust && tsc -b",
     "clean": "rm -rf dist native tsconfig.tsbuildinfo && cargo clean --manifest-path crates/checker/Cargo.toml",
     "ci:canaries": "tsx tools/canary-ci.ts",
