@@ -15,6 +15,7 @@ import type {
   LocationLowering,
   SemanticTypeContext,
   DomainRefinementProvider,
+  HandlerWrapperProvider,
 } from "../spi/index.js";
 import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
 import type { ReactExtractionProjectSummary } from "../ts/react-extraction-project-summary.js";
@@ -59,6 +60,7 @@ export interface ExtractionPipelineOptions {
   effectApis?: readonly string[];
   environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
   sourcePlugins?: readonly StateSourcePlugin[];
+  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter;
   domainRefinements?: readonly DomainRefinementProvider[];
   inventory?: RouteInventory;
@@ -275,6 +277,9 @@ export function runExtractionPipeline(
     stateVars: extractionCtx.stateVars,
     writeChannels,
     sourcePlugins,
+    ...(options.handlerWrapperProviders?.length
+      ? { handlerWrapperProviders: options.handlerWrapperProviders }
+      : {}),
     relatedFragments,
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),

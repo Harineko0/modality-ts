@@ -75,6 +75,33 @@ risk are flagged as `stale-read` caveats; properties touching them report
 `over-approx`, and [conformance replay](../architecture/conformance-and-replay.md) is the
 arbiter. See [React features](../sources/react-features.md#stale-closures).
 
+## Callback-style mutations
+
+Some libraries (TanStack Query's `mutate`, plain mutation helpers, React Hook Form
+handlers) call effect APIs **without `await`**, passing outcome handlers in a callbacks
+object:
+
+```ts
+approveRequest(
+  { id, slug },
+  { onError: () => setApprovalState("indeterminate") },
+);
+```
+
+The extractor recognizes this pattern when the callee matches a configured effect API and
+the second argument is an object literal with `onSuccess` / `onError` properties. It
+produces the same three-transition lifecycle as `await`-based async:
+
+| Transition | Class | Content |
+| --- | --- | --- |
+| `<comp>.<attr>.<op>.start` | `user` | state writes before the call + `enqueue(op)` |
+| `<comp>.<attr>.<op>.success` | `env` | runs `onSuccess` body (if present), dequeues |
+| `<comp>.<attr>.<op>.error` | `env` | runs `onError` body (if present), dequeues |
+
+Both `onSuccess` and `onError` may be concise arrow bodies (`() => setState(v)`) or
+full blocks. If only one callback is present, only the corresponding resolve transition
+is emitted.
+
 ## Timers and revalidation as environment events
 
 `setTimeout`/`setInterval` become a [`sys:timer:*` state machine](../sources/react-features.md#timers)

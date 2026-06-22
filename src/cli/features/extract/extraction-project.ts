@@ -18,6 +18,7 @@ import type {
 } from "modality-ts/core";
 import type {
   EffectApiProvider,
+  HandlerWrapperProvider,
   ModuleRoleAdapter,
   NavigationAdapter,
   StateSourcePlugin,
@@ -318,6 +319,7 @@ export function runProjectExtractionPipeline(
     effectOpAliases?: EffectOpAliases;
     environment?: EnvironmentEventConfig;
     sourcePlugins: readonly StateSourcePlugin[];
+    handlerWrapperProviders?: readonly HandlerWrapperProvider[];
     routerPlugin?: NavigationAdapter;
     domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;

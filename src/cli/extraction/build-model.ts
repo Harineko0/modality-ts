@@ -259,6 +259,7 @@ export async function buildExtractionModel(
         effectOpAliases,
         environment: config.environment,
         sourcePlugins: registry.sourcePlugins,
+        handlerWrapperProviders: registry.handlerWrapperProviders,
         routerPlugin: routerAdapter,
         domainRefinements: registry.domainRefinementProviders,
         inventory: project.inventory,

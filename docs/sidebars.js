@@ -74,6 +74,7 @@ const sidebars = {
         "sources/next",
         "sources/react-features",
         "sources/tanstack-router",
+        "sources/react-hook-form",
       ],
     },
     {

@@ -179,6 +179,10 @@
       "types": "./dist/extract/sources/zustand/harness.d.ts",
       "default": "./dist/extract/sources/zustand/harness.js"
     },
+    "./extract/sources/react-hook-form": {
+      "types": "./dist/extract/sources/react-hook-form/index.d.ts",
+      "default": "./dist/extract/sources/react-hook-form/index.js"
+    },
     "./extract/sources/redux": {
       "types": "./dist/extract/sources/redux/index.d.ts",
       "default": "./dist/extract/sources/redux/index.js"

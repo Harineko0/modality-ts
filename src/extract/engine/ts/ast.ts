@@ -1,5 +1,9 @@
 import * as ts from "typescript";
 import type { Value } from "modality-ts/core";
+import type {
+  HandlerWrapperCtx,
+  HandlerWrapperProvider,
+} from "../spi/index.js";
 
 export type ExtractableHandler =
   | ts.ArrowFunction
@@ -148,6 +152,20 @@ export function extractableHandlerInitializer(
   ) {
     const callback = node.arguments[0];
     return callback && isExtractableHandler(callback) ? callback : undefined;
+  }
+  return undefined;
+}
+
+export function unwrapHandlerInitializer(
+  node: ts.Expression,
+  providers: readonly HandlerWrapperProvider[],
+  ctx: HandlerWrapperCtx,
+): ExtractableHandler | undefined {
+  const direct = extractableHandlerInitializer(node);
+  if (direct) return direct;
+  for (const provider of providers) {
+    const result = provider.unwrapHandler(node, ctx);
+    if (result && isExtractableHandler(result)) return result;
   }
   return undefined;
 }

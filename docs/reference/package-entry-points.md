@@ -56,6 +56,16 @@ Each source has a Node entry (`"."`) and a jsdom harness entry (`"./harness"`) �
 | `modality-ts/extract/sources/router` (+ `/harness`) | [Router](../sources/router.md) — `reactRouterAdapter()`, `reactRouterModuleRoleAdapter()`, `reactRouterEffectApiProvider()` (peer dep: `react-router`) |
 | `modality-ts/extract/sources/next` (+ `/harness`) | [Next.js](../sources/next.md) — `nextAdapter()`, `nextModuleRoleAdapter()`, `nextEffectApiProvider()`, `nextCacheStorageProvider()` (peer dep: `next`) |
 
+## Handler-wrapper adapters
+
+Handler-wrapper adapters implement `HandlerWrapperProvider` (from `modality-ts/extract/engine/spi`)
+rather than `StateSourcePlugin`. They have no harness entry because they contribute no
+state variables and require no replay observation.
+
+| Entry point | Adapter |
+| --- | --- |
+| `modality-ts/extract/sources/react-hook-form` | [React Hook Form](../sources/react-hook-form.md) — `reactHookFormSource()` (peer dep: `react-hook-form`) |
+
 ## Why the split
 
 The boundaries follow **runtime contexts**, enforced by dependency-cruiser:

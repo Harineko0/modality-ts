@@ -2,7 +2,6 @@ import type { EffectOpAliases } from "./effect-op-aliases.js";
 import * as ts from "typescript";
 import {
   componentNameFor,
-  extractableHandlerInitializer,
   isExtractableHandler,
   isUseDeferredValueCall,
   isUseReducerCall,
@@ -12,6 +11,7 @@ import {
   lineAndColumn,
   providerComponentNames,
   reactEffectHookName,
+  unwrapHandlerInitializer,
 } from "./ast.js";
 import {
   globalTaintCaveat,
@@ -79,6 +79,7 @@ import type {
   WriteChannel,
   SemanticTypeContext,
   DomainRefinementProvider,
+  HandlerWrapperProvider,
 } from "../spi/index.js";
 import { resolve } from "node:path";
 import {
@@ -143,6 +144,7 @@ import {
   transitionsFromReactRouterForm,
   type ReactRouterSubmitContext,
 } from "./transition/router-submit.js";
+import { collectMutationAliases } from "./transition/callback-effects.js";
 
 export interface ReactSourceTransitionOptions {
   route?: string;
@@ -155,6 +157,7 @@ export interface ReactSourceTransitionOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   sourcePlugins?: readonly StateSourcePlugin[];
+  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter;
   inventory?: RouteInventory;
   resetSymbols?: ReadonlySet<string>;
@@ -197,9 +200,33 @@ export function extractReactSourceTransitions(
   const warnings: ExtractionWarning[] = [];
   const route = options.route ?? "/";
   const routePatterns = options.routePatterns ?? [];
-  const effectOpAliases = options.effectOpAliases ?? new Map();
+  const baseEffectOpAliases = options.effectOpAliases ?? new Map();
   const effectApis = new Set(options.effectApis ?? []);
+  // Collect local mutation aliases (const { mutate: x } = useXMutation()) and
+  // merge them into a per-file alias map so callback-effect extraction can
+  // canonicalize callee names to configured effect-api op IDs.
+  const localMutationAliases = collectMutationAliases(
+    source,
+    fileName,
+    effectApis,
+    baseEffectOpAliases,
+  );
+  const effectOpAliases: ReadonlyMap<string, ReadonlyMap<string, string>> =
+    localMutationAliases.size > 0
+      ? (() => {
+          const merged = new Map(baseEffectOpAliases);
+          const existing = merged.get(fileName);
+          merged.set(
+            fileName,
+            existing
+              ? new Map([...existing, ...localMutationAliases])
+              : localMutationAliases,
+          );
+          return merged;
+        })()
+      : baseEffectOpAliases;
   const sourcePlugins = options.sourcePlugins ?? [];
+  const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
   const routerPlugin = options.routerPlugin;
   const inventory = options.inventory;
   const setters = new Map<string, SetterBinding>();
@@ -342,7 +369,11 @@ export function extractReactSourceTransitions(
       ts.isIdentifier(node.name) &&
       node.initializer
     ) {
-      const handler = extractableHandlerInitializer(node.initializer);
+      const handler = unwrapHandlerInitializer(node.initializer, handlerWrapperProviders, {
+        sourceFile: source,
+        fileName,
+        ...(options.types ? { types: options.types } : {}),
+      });
       if (handler) handlers.set(node.name.text, handler);
     }
     if (
@@ -723,16 +754,49 @@ export function extractReactSourceTransitions(
         ) &&
         !unextractableHandlerAlreadyReported(warnings, handlerId)
       ) {
-        const anchor = lineAndColumn(source, node);
-        warnings.push({
-          message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
-          ...anchor,
-          caveat: unextractableHandlerCaveat(
-            handlerId,
-            "no-extractable-effect",
-            { file: fileName, ...anchor },
-          ),
-        });
+        // Fallback: if the handler is registered (e.g. via handleSubmit unwrap),
+        // extract transitions directly from the handler body using the prop name
+        // as the event attribute. This handles handlers passed to external (non-local)
+        // child components, where the trigger chain cannot be resolved.
+        const fallbackCtx = {
+          ...componentPropHandlerContext,
+          effectOpAliases,
+        };
+        const fallbackExtracted = transitionsFromJsxAttribute(
+          source,
+          fileName,
+          node,
+          scopedSetters,
+          handlers,
+          nextComponent ?? "Anonymous",
+          effectApis,
+          options.asyncOutcomes ?? {},
+          sourcePlugins,
+          routerPlugin,
+          undefined,
+          routePatterns,
+          contextBindings,
+          warnings,
+          resetSymbols,
+          fallbackCtx,
+        );
+        if (fallbackExtracted.length > 0) {
+          transitions.push(
+            ...fallbackExtracted,
+            ...finalizeHandlerTimerContext(componentPropHandlerContext),
+          );
+        } else {
+          const anchor = lineAndColumn(source, node);
+          warnings.push({
+            message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
+            ...anchor,
+            caveat: unextractableHandlerCaveat(
+              handlerId,
+              "no-extractable-effect",
+              { file: fileName, ...anchor },
+            ),
+          });
+        }
       }
     }
     if (

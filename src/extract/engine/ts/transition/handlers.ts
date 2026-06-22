@@ -37,6 +37,10 @@ import {
   transitionsFromAsyncHandler,
 } from "./async.js";
 import {
+  statementHasCallbackEffect,
+  transitionsFromCallbackEffectHandler,
+} from "./callback-effects.js";
+import {
   transitionsFromUseSubmitHandler,
   type ReactRouterSubmitContext,
 } from "./router-submit.js";
@@ -753,6 +757,33 @@ export function transitionsFromResolvedHandler(
   );
   if (asyncTransitions.length > 0)
     return applyParsedGuard(asyncTransitions, disabledGuard);
+  // Callback-style (non-awaited) effect API calls, e.g. mutate(args, {onError})
+  if (
+    ts.isBlock(handler.body) &&
+    handler.body.statements.some((stmt) =>
+      statementHasCallbackEffect(
+        stmt,
+        effectApis,
+        fileName,
+        handlerContext.effectOpAliases ?? new Map(),
+      ),
+    )
+  ) {
+    const cbTransitions = transitionsFromCallbackEffectHandler(
+      source,
+      fileName,
+      attr,
+      handler,
+      setters,
+      component,
+      effectApis,
+      locator,
+      warnings,
+      handlerContext.effectOpAliases ?? new Map(),
+    );
+    if (cbTransitions.length > 0)
+      return applyParsedGuard(cbTransitions, disabledGuard);
+  }
   if (
     ts.isBlock(handler.body) &&
     containsAwaitedEffect(

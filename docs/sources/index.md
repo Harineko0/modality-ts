@@ -11,6 +11,10 @@ features. Each is a [vertical slice](../architecture/state-sources.md) implement
 public plugin contract, activated when its package appears in your dependencies (and
 disable-able with `--disable-plugin <id>`).
 
+In addition to state sources, `modality-ts` ships **handler-wrapper adapters** for form
+libraries that wrap user callbacks. These do not contribute state variables but unwrap
+custom submit/action wrappers so that the inner callback body is extractable.
+
 ## Capability matrix
 
 | Source | What is modeled | Observation in replay | Template |
@@ -24,6 +28,12 @@ disable-able with `--disable-plugin <id>`).
 | [TanStack Router](./tanstack-router.md) | file/code route trees, loaders, bounded loader cache | router harness + branch vars | location + tree semantics |
 | [Next.js](./next.md) | App/Pages routes, route-tree slots, server effect APIs | router harness + slot vars | location + tree semantics |
 | [React features](./react-features.md) | timers, effects, batching, stale closures, concurrent, Suspense | — | — |
+
+## Handler-wrapper adapters
+
+| Adapter | What is unwrapped | Entry point |
+| --- | --- | --- |
+| [React Hook Form](./react-hook-form.md) | `form.handleSubmit(cb)`, destructured `handleSubmit(cb)` | `modality-ts/extract/sources/react-hook-form` |
 
 ## How a source becomes active
 

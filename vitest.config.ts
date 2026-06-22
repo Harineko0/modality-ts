@@ -94,6 +94,10 @@ export default defineConfig({
         "./src/extract/sources/zustand/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/react-hook-form": new URL(
+        "./src/extract/sources/react-hook-form/index.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/sources/redux/harness": new URL(
         "./src/extract/sources/redux/harness.ts",
         import.meta.url,

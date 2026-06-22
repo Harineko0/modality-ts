@@ -7,6 +7,7 @@ import type {
   CacheStorageProvider,
   DomainRefinementProvider,
   EffectApiProvider,
+  HandlerWrapperProvider,
   HarnessCtx,
   HarnessHooks,
   ModuleRoleAdapter,
@@ -44,6 +45,7 @@ import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query"
 import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { reduxSource } from "modality-ts/extract/sources/redux";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
+import { reactHookFormSource } from "modality-ts/extract/sources/react-hook-form";
 
 export interface RegistryAdaptersBundle {
   navigation?: NavigationAdapter;
@@ -64,6 +66,7 @@ export interface ModalityPluginRegistry {
   effectApiProviders?: readonly EffectApiProvider[];
   routeExecutionProviders?: readonly RouteExecutionProvider[];
   cacheStorageProviders?: readonly CacheStorageProvider[];
+  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
 }
 
 export interface BuiltinRegistryOptions {
@@ -72,6 +75,7 @@ export interface BuiltinRegistryOptions {
   extraSourcePlugins?: readonly StateSourcePlugin[];
   extraDomainRefinementProviders?: readonly DomainRefinementProvider[];
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
+  extraHandlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter | false;
 }
 
@@ -81,6 +85,7 @@ export interface RegistrySummary {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
   domainRefinementProviders: readonly DomainRefinementProvider[];
+  handlerWrapperProviders: readonly HandlerWrapperProvider[];
   plugins: readonly PluginProvenance[];
   adapters: RegistryAdaptersBundle;
 }
@@ -122,6 +127,13 @@ export function createBuiltinModalityRegistry(
     options,
     disabled,
   );
+  const handlerWrapperBuiltins = [reactHookFormSource()];
+  const handlerWrapperProviders = [
+    ...handlerWrapperBuiltins.filter(
+      (p) => !disabled.has(p.id) && shouldEnableBuiltin(p, dependencies),
+    ),
+    ...(options.extraHandlerWrapperProviders ?? []),
+  ];
   return createModalityRegistry({
     sourcePlugins,
     routerPlugin: builtinNavigation.navigation,
@@ -130,6 +142,7 @@ export function createBuiltinModalityRegistry(
     effectApiProviders: builtinNavigation.effectApis,
     routeExecutionProviders: builtinNavigation.routeExecution,
     cacheStorageProviders,
+    handlerWrapperProviders,
   });
 }
 
@@ -245,6 +258,7 @@ export function createModalityRegistry(
   const effectApiProviders = options.effectApiProviders ?? [];
   const routeExecutionProviders = options.routeExecutionProviders ?? [];
   const cacheStorageProviders = options.cacheStorageProviders ?? [];
+  const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
   for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
   for (const provider of domainRefinementProviders)
     validateDomainRefinementProvider(provider);
@@ -289,6 +303,7 @@ export function createModalityRegistry(
     sourcePluginIds,
     sourcePlugins: options.sourcePlugins,
     domainRefinementProviders,
+    handlerWrapperProviders,
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     adapters: {
       navigation: options.routerPlugin,

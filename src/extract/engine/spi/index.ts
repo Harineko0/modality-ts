@@ -457,3 +457,27 @@ export interface ObservationProvider extends ModalityAdapterBase {
   observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable";
   witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
 }
+
+export interface HandlerWrapperCtx {
+  sourceFile: ts.SourceFile;
+  fileName: string;
+  types?: SemanticTypeContext;
+}
+
+export type HandlerWrapperProviderExtractableHandler =
+  | ts.ArrowFunction
+  | ts.FunctionExpression
+  | (ts.FunctionDeclaration & { body: ts.Block });
+
+export interface HandlerWrapperProvider extends ModalityAdapterBase {
+  kind: "handler-wrapper";
+  /**
+   * Given a variable initializer or inline JSX expression, if it is a recognized
+   * handler-wrapper call (e.g. form.handleSubmit(cb)), returns the inner callback
+   * to be extracted as the handler; otherwise returns undefined.
+   */
+  unwrapHandler(
+    node: ts.Expression,
+    ctx: HandlerWrapperCtx,
+  ): HandlerWrapperProviderExtractableHandler | undefined;
+}

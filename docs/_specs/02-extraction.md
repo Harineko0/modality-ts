@@ -100,7 +100,9 @@ Transition entry points, in decreasing order of extraction confidence:
 1. **JSX event props** on intrinsic elements (`onClick`, `onSubmit`, `onChange`, …) within modeled components. Resolve the handler expression: inline arrow ⇒ direct; identifier ⇒ its declaration; `props.onX` ⇒ resolve through the *call sites of the component* (one level: find JSX usages, take the passed expression; multiple distinct passes ⇒ one transition per pass site). Deeper prop-drilling through additional component boundaries uses bounded static component-trigger resolution (see item 4).
 2. **`useEffect` bodies** whose statements write modeled state ⇒ `internal` transitions with `triggeredBy` = the effect's dependency array vars (missing dep array ⇒ `triggeredBy: all reads`, over-approximate). Cleanup functions that write modeled state ⇒ folded into unmount.
 3. **Atom write functions** (writable derived atoms) and **`useSetAtom`/`useAtom` setter usages** inside handlers — these are not separate transitions; they are writes encountered during P4 of some handler.
-4. **Event props on non-intrinsic (component) elements** (`<Button onPress={...}>`): followed through a bounded static component-trigger resolver (depth cap, cycle detection) to find which intrinsic event ultimately triggers the prop. Supported patterns include direct intrinsic handlers, local handler wrappers, child component forwarding (`<Child onClick={onAdd}>`), and transparent wrapper components whose prop spread reaches a statically visible host interactive element (e.g. `const Comp = asChild ? Unknown : "button"; return <Comp {...props} />`). Unknown dynamic component spreads that do not reach a statically visible host interactive element (e.g. `<Slot.Root {...props} />`), unresolved imports, ambiguous component variables, and cycles beyond the cap remain `unextractable` and should emit warnings/caveats rather than silent drops. Multiple statically distinct trigger paths for the same prop yield one transition per path.
+4. **Event props on non-intrinsic (component) elements** (`<Button onPress={...}>`): followed through a bounded static component-trigger resolver (depth cap, cycle detection) to find which intrinsic event ultimately triggers the prop. Supported patterns include direct intrinsic handlers, local handler wrappers, child component forwarding (`<Child onClick={onAdd}>`), and transparent wrapper components whose prop spread reaches a statically visible host interactive element (e.g. `const Comp = asChild ? Unknown : "button"; return <Comp {...props} />`). Unknown dynamic component spreads that do not reach a statically visible host interactive element (e.g. `<Slot.Root {...props} />`), unresolved imports, ambiguous component variables, and cycles beyond the cap remain `unextractable` and should emit warnings/caveats rather than silent drops. Multiple statically distinct trigger paths for the same prop yield one transition per path. **Fallback for external child components:** when the child component is externally imported (not locally defined) and the trigger chain cannot be resolved, the handler body is extracted directly using the prop name as the event attribute — enabling extractable handlers passed to third-party component libraries to produce transitions without requiring the child to be locally defined.
+
+**Handler-wrapper unwrapping.** Before registration, handler initializers are tested against registered `HandlerWrapperProvider` adapters. These adapters recognize library-specific wrappers (e.g. `form.handleSubmit(cb)` from `react-hook-form`) and return the inner callback, which is then treated as the handler body for all subsequent extraction phases. The `HandlerWrapperProvider` SPI is defined in `modality-ts/extract/engine/spi`; built-in adapters auto-register when their `packageNames` match app dependencies.
 
 **Enabledness attributes.** `disabled` / `aria-disabled` on the interactive element (or on the resolved component one level up) is the dominant guard idiom in React and is treated as part of the transition guard: an M0-expressible attribute expression contributes a `¬disabled` guard conjunct; a non-M0 expression leaves the guard unrestricted (over-approximation — the transition may fire in states the UI forbids; such spurious traces fail replay at the click step and are classified as model slack, Spec 04 §3). The rendering condition of the JSX subtree containing the element contributes a guard conjunct the same way (§11, conditional rendering).
 
@@ -153,6 +155,28 @@ async function onSubmit() {            Transition T_submit (user):
 Algorithm: walk the body splitting at each `await` of an effect API into segments `seg₀ … segₙ`. `seg₀` becomes the user transition's effect plus `enqueue(op, cont₁)`. Each `segᵢ` becomes continuation `contᵢ`: an effect family indexed by the op's outcome domain — the success branch is the code path where `await` returned (awaited value bound as an abstract token/typed abstraction of the API's return type), the error branch is the enclosing `catch` segment (no enclosing try ⇒ error outcome runs no continuation — unhandled rejection — and is *reported*, since it is usually itself a bug). Sequential awaits chain (`contᵢ` ends with `enqueue(opᵢ₊₁, contᵢ₊₁)`); `Promise.all` of effect APIs ⇒ enqueue all, continuation guarded on all resolved (join modeled as a counter in the cont args); racing patterns beyond that ⇒ `unextractable`.
 
 The checker's interleaving of `resolve` transitions then explores all orderings of outstanding continuations against user events and each other — double-submit and reordering races emerge without any further extraction cleverness. Outcome domains for ops: the success payload is `D(return type)` of the effect API; the **error outcome defaults to a single `error` value, because TypeScript does not type thrown values** — refinable via `overlay.outcomes('POST /todos', {...})` when continuations or properties need to distinguish failure classes (e.g., unauthorized vs server). Both sides are further constrainable by `assume()`.
+
+## 7b. Callback-style mutations
+
+A subset of handlers calls effect APIs **without `await`**, passing outcome handlers in a callbacks object:
+
+```ts
+mutate(args, { onSuccess: () => setX('done'), onError: () => setX('error') });
+```
+
+This pattern is detected when:
+1. the statement is a non-awaited `ExpressionStatement` with a call to a configured effect API, AND
+2. the second argument is an object literal with `onSuccess` / `onError` properties whose values are extractable handlers (arrow functions or function expressions).
+
+The extraction produces the same three-transition lifecycle as async-split:
+
+| Transition | Class | Effect |
+| --- | --- | --- |
+| `<comp>.<attr>.<op>.start` | `user` | M0 statements before the call + `enqueue(op)` |
+| `<comp>.<attr>.<op>.success` | `env resolve success` | `onSuccess` body (if present), dequeue |
+| `<comp>.<attr>.<op>.error` | `env resolve error` | `onError` body (if present), dequeue |
+
+Guard peeling (leading `if (state !== v) return` guards) applies to the start transition. Callback body handlers may be concise arrows (`() => setX(v)`) or block arrows; the statement list is derived uniformly in both cases. If only one callback is present, only the corresponding resolve transition is emitted; omitted callbacks produce no transition (not an `unhandled rejection` — the operation simply has no modeled continuation for that outcome).
 
 ## 8. P6 — Overlay merge
 

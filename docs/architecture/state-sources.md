@@ -104,12 +104,16 @@ the CLI registry bundle (`RegistryAdaptersBundle`):
 | Cache/storage | `CacheStorageProvider` | framework cache vars and invalidation transitions (Next.js, TanStack Router loader cache) |
 | Observation | `ObservationProvider` | replay `setup` / `observe` / optional `witness` for state sources and navigation |
 | Domain refinement | `DomainRefinementProvider` | schema-driven finite domains (Zod, ArkType) |
+| Handler wrapper | `HandlerWrapperProvider` | unwrap form-library submit wrappers (e.g. `handleSubmit(cb)`) so that the inner callback body is extractable; contributes no state variables |
 
 Exactly one `NavigationAdapter` is active per app. Module-role, effect-API, and
 cache/storage providers may register in parallel when their `packageNames`
 match app dependencies. Observation providers are synthesized from active state
 sources and navigation. See [Navigation](./navigation.md) and
 [Conformance & replay](./conformance-and-replay.md).
+
+Handler-wrapper providers are also parallel-registerable and have no interaction with
+state-source or navigation capabilities. Built-in: [React Hook Form](../sources/react-hook-form.md).
 
 ## Capability matrix
 
