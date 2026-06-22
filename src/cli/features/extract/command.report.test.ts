@@ -68,6 +68,7 @@ describe("runExtractCommand", () => {
       ["domain-refinement", "arktype", "0.1.0"],
       ["domain-refinement", "zod", "0.1.0"],
       ["effect-api", "router-effect-api", "0.1.0"],
+      ["framework", "react", "0.1.0"],
       ["module-roles", "router-module-roles", "0.1.0"],
       ["navigation", "router", "0.1.0"],
       ["observation", "jotai", "0.1.0"],

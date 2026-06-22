@@ -402,6 +402,24 @@ describe("extraction architecture surface", () => {
     expect(violations).toEqual([]);
   });
 
+  it("extraction engine does not import framework slices", async () => {
+    const engineDir = resolve(srcDir, "extract/engine");
+    const files = await sourceFiles(engineDir);
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (
+          specifier.includes("extract/frameworks") ||
+          specifier.includes("/frameworks/")
+        ) {
+          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("extraction engine does not import type-library adapters", async () => {
     const engineDir = resolve(srcDir, "extract/engine");
     const files = await sourceFiles(engineDir);

@@ -115,6 +115,10 @@
       "types": "./dist/extract/engine/spi/index.d.ts",
       "default": "./dist/extract/engine/spi/index.js"
     },
+    "./extract/frameworks/react": {
+      "types": "./dist/extract/frameworks/react/index.d.ts",
+      "default": "./dist/extract/frameworks/react/index.js"
+    },
     "./extract/sources/jotai": {
       "types": "./dist/extract/sources/jotai/index.d.ts",
       "default": "./dist/extract/sources/jotai/index.js"

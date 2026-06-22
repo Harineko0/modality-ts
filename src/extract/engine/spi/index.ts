@@ -481,3 +481,23 @@ export interface HandlerWrapperProvider extends ModalityAdapterBase {
     ctx: HandlerWrapperCtx,
   ): HandlerWrapperProviderExtractableHandler | undefined;
 }
+
+export type {
+  ComponentRole,
+  EngineFrameworkContext,
+  FrameworkCtx,
+  FrameworkPlugin,
+  HookCall,
+  RenderBoundary,
+  SurfaceCall,
+  SurfaceDecl,
+  SurfaceNode,
+} from "./framework.js";
+export {
+  createEngineFrameworkContext,
+  resolveImportedName,
+} from "./framework.js";
+export {
+  registerFrameworkPlugin,
+  resolveFrameworkPlugin,
+} from "./framework-runtime.js";

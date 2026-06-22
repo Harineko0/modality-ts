@@ -20,6 +20,9 @@
         "src/extract/engine/pipeline/index.ts"
       ],
       "modality-ts/extract/engine/spi": ["src/extract/engine/spi/index.ts"],
+      "modality-ts/extract/frameworks/react": [
+        "src/extract/frameworks/react/index.ts"
+      ],
       "modality-ts/cli/harness": ["src/cli/harness/index.ts"],
       "modality-ts/cli/runtime": ["src/cli/runtime/index.ts"],
       "modality-ts/extract/sources/jotai": [

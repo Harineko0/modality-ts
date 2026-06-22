@@ -152,7 +152,8 @@ export interface PluginProvenance {
     | "cache-storage"
     | "observation"
     | "state-source"
-    | "domain-refinement";
+    | "domain-refinement"
+    | "framework";
   packageNames: readonly string[];
 }
 

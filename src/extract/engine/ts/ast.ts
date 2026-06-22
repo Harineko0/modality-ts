@@ -1,8 +1,16 @@
 import * as ts from "typescript";
 import type { Value } from "modality-ts/core";
 import type {
+  EngineFrameworkContext,
+  FrameworkCtx,
+  FrameworkPlugin,
   HandlerWrapperCtx,
   HandlerWrapperProvider,
+} from "../spi/index.js";
+import {
+  createEngineFrameworkContext,
+  resolveFrameworkPlugin,
+  resolveImportedName,
 } from "../spi/index.js";
 
 export type ExtractableHandler =
@@ -10,34 +18,73 @@ export type ExtractableHandler =
   | ts.FunctionExpression
   | (ts.FunctionDeclaration & { body: ts.Block });
 
-export function isUseStateCall(node: ts.Expression): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useState"
-  );
+let activeEngineFramework: EngineFrameworkContext | undefined;
+
+export function withEngineFramework<T>(
+  engineFramework: EngineFrameworkContext,
+  fn: () => T,
+): T {
+  const previous = activeEngineFramework;
+  activeEngineFramework = engineFramework;
+  try {
+    return fn();
+  } finally {
+    activeEngineFramework = previous;
+  }
+}
+
+function engineFramework(
+  explicit?: EngineFrameworkContext,
+): EngineFrameworkContext {
+  if (explicit) return explicit;
+  if (activeEngineFramework) return activeEngineFramework;
+  return createEngineFrameworkContext(resolveFrameworkPlugin());
+}
+
+function calleeName(
+  node: ts.CallExpression,
+  ctx: FrameworkCtx,
+): string | undefined {
+  if (!ts.isIdentifier(node.expression)) return undefined;
+  return resolveImportedName(node.expression, ctx);
+}
+
+function hookNamed(
+  node: ts.Expression,
+  name: string,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  const fw = engineFramework(engineFw);
+  if (!ts.isCallExpression(node)) return false;
+  return calleeName(node, fw.ctx) === name;
+}
+
+export function isUseStateCall(
+  node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  return hookNamed(node, "useState", engineFw);
 }
 
 export function isUseReducerCall(
   node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useReducer"
-  );
+  return hookNamed(node, "useReducer", engineFw);
 }
 
-export function isUseRefCall(node: ts.Expression): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useRef"
-  );
+export function isUseRefCall(
+  node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  return hookNamed(node, "useRef", engineFw);
 }
 
-export function isUseEffectCall(node: ts.CallExpression): boolean {
-  return reactEffectHookName(node) === "useEffect";
+export function isUseEffectCall(
+  node: ts.CallExpression,
+  engineFw?: EngineFrameworkContext,
+): boolean {
+  return reactEffectHookName(node, engineFw) === "useEffect";
 }
 
 export type ReactEffectHookName =
@@ -47,9 +94,12 @@ export type ReactEffectHookName =
 
 export function reactEffectHookName(
   node: ts.CallExpression,
+  engineFw?: EngineFrameworkContext,
 ): ReactEffectHookName | undefined {
-  if (!ts.isIdentifier(node.expression)) return undefined;
-  const name = node.expression.text;
+  const fw = engineFramework(engineFw);
+  const hook = fw.framework.recognizeHook(node, fw.ctx);
+  if (hook?.hook.kind !== "effect") return undefined;
+  const name = calleeName(node, fw.ctx);
   if (
     name === "useEffect" ||
     name === "useLayoutEffect" ||
@@ -62,73 +112,54 @@ export function reactEffectHookName(
 
 export function isUseTransitionCall(
   node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useTransition"
-  );
+  return hookNamed(node, "useTransition", engineFw);
 }
 
 export function isUseDeferredValueCall(
   node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useDeferredValue"
-  );
+  return hookNamed(node, "useDeferredValue", engineFw);
 }
 
 export function isStartTransitionCall(
   node: ts.Node,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "startTransition"
-  );
+  return hookNamed(node as ts.Expression, "startTransition", engineFw);
 }
 
-export function isFlushSyncCall(node: ts.Node): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "flushSync"
-  );
+export function isFlushSyncCall(
+  node: ts.Node,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  return hookNamed(node as ts.Expression, "flushSync", engineFw);
 }
 
 export function isSuspenseElement(
   node: ts.Node,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.JsxElement | ts.JsxOpeningElement | ts.JsxSelfClosingElement {
-  if (ts.isJsxElement(node)) {
-    const tag = node.openingElement.tagName;
-    return ts.isIdentifier(tag) && tag.text === "Suspense";
-  }
-  if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node))
-    return false;
-  const tag = node.tagName;
-  return ts.isIdentifier(tag) && tag.text === "Suspense";
+  const fw = engineFramework(engineFw);
+  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "suspense";
 }
 
 export function isReactLazyCall(
   node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    node.expression.expression.text === "React" &&
-    node.expression.name.text === "lazy"
-  );
+  const fw = engineFramework(engineFw);
+  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "lazy";
 }
 
-export function isUseCall(node: ts.Expression): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "use"
-  );
+export function isUseCall(
+  node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
+): node is ts.CallExpression {
+  const fw = engineFramework(engineFw);
+  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "use";
 }
 
 export function isExtractableHandler(
@@ -143,15 +174,15 @@ export function isExtractableHandler(
 
 export function extractableHandlerInitializer(
   node: ts.Expression,
+  engineFw?: EngineFrameworkContext,
 ): ExtractableHandler | undefined {
   if (isExtractableHandler(node)) return node;
-  if (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "useCallback"
-  ) {
-    const callback = node.arguments[0];
-    return callback && isExtractableHandler(callback) ? callback : undefined;
+  const fw = engineFramework(engineFw);
+  if (!ts.isCallExpression(node)) return undefined;
+  const hook = fw.framework.recognizeHook(node, fw.ctx);
+  if (hook?.hook.kind === "callback") {
+    const callback = hook.hook.handler;
+    return isExtractableHandler(callback) ? callback : undefined;
   }
   return undefined;
 }
@@ -160,8 +191,9 @@ export function unwrapHandlerInitializer(
   node: ts.Expression,
   providers: readonly HandlerWrapperProvider[],
   ctx: HandlerWrapperCtx,
+  engineFw?: EngineFrameworkContext,
 ): ExtractableHandler | undefined {
-  const direct = extractableHandlerInitializer(node);
+  const direct = extractableHandlerInitializer(node, engineFw);
   if (direct) return direct;
   for (const provider of providers) {
     const result = provider.unwrapHandler(node, ctx);
@@ -246,4 +278,11 @@ export function lineAndColumn(
 ): { line: number; column: number } {
   const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
   return { line: pos.line + 1, column: pos.character + 1 };
+}
+
+export function bindEngineFrameworkFromPlugin(
+  framework: FrameworkPlugin,
+  ctx: FrameworkCtx = {},
+): EngineFrameworkContext {
+  return createEngineFrameworkContext(framework, ctx);
 }

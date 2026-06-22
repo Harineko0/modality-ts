@@ -18,6 +18,7 @@ import type {
 } from "modality-ts/core";
 import type {
   EffectApiProvider,
+  FrameworkPlugin,
   HandlerWrapperProvider,
   ModuleRoleAdapter,
   NavigationAdapter,
@@ -41,6 +42,11 @@ import {
   type SemanticProjectConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
 import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
+import {
+  bindEngineFrameworkFromPlugin,
+  withEngineFramework,
+} from "../../../extract/engine/ts/ast.js";
+import { resolveFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import type { RegistrySummary } from "../../registry/index.js";
 import {
   type EffectApiProvenanceEntry,
@@ -321,6 +327,7 @@ export function runProjectExtractionPipeline(
     sourcePlugins: readonly StateSourcePlugin[];
     handlerWrapperProviders?: readonly HandlerWrapperProvider[];
     routerPlugin?: NavigationAdapter;
+    framework?: FrameworkPlugin;
     domainRefinements?: readonly DomainRefinementProvider[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;
@@ -361,12 +368,21 @@ export function runProjectExtractionPipeline(
     project.semanticProject,
     discoverFragments[0]!.fileName,
   );
-  const projectSummary = buildReactExtractionProjectSummary({
-    discoverFragments,
-    relatedFragments,
-    ...(fragmentTypes ? { types: fragmentTypes } : {}),
-    route: options.route,
-  });
+  const engineFramework = bindEngineFrameworkFromPlugin(
+    resolveFrameworkPlugin(options.framework),
+    {
+      ...(fragmentTypes ? { types: fragmentTypes } : {}),
+      fileName: discoverFragments[0]!.fileName,
+    },
+  );
+  const projectSummary = withEngineFramework(engineFramework, () =>
+    buildReactExtractionProjectSummary({
+      discoverFragments,
+      relatedFragments,
+      ...(fragmentTypes ? { types: fragmentTypes } : {}),
+      route: options.route,
+    }),
+  );
   const sharedDiscovery = runPluginDiscoveryPhase(pipelineOptions);
   const pipelineDiagnostics: ExtractionPipelineDiagnostics = {
     discoveryFragments: discoverFragments.length,

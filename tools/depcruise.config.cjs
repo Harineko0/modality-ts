@@ -16,7 +16,7 @@ module.exports = {
       name: "extract-engine-is-node-only-and-independent",
       severity: "error",
       from: { path: "^src/extract/engine", pathNot: "^src/.*/test/" },
-      to: { path: "^src/(check|cli)|^src/extract/sources" },
+      to: { path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks" },
     },
     {
       name: "harness-does-not-import-product-or-analysis",
@@ -61,6 +61,38 @@ module.exports = {
       to: {
         path: "^src/extract/sources/([^/]+)",
         pathNot: "^src/extract/sources/(?:$1|shared)",
+      },
+    },
+    {
+      name: "framework-slices-do-not-import-product-or-peers",
+      severity: "error",
+      from: { path: "^src/extract/frameworks/[^/]+", pathNot: "^src/.*/test/" },
+      to: { path: "^src/check|^src/cli/(features|registry|codegen|runtime)" },
+    },
+    {
+      name: "framework-slices-use-extraction-spi-only",
+      severity: "error",
+      from: { path: "^src/extract/frameworks/[^/]+", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/extract/engine/(?!spi/|ts/)",
+      },
+    },
+    {
+      name: "framework-slices-do-not-import-sources",
+      severity: "error",
+      from: { path: "^src/extract/frameworks/[^/]+", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/extract/sources/([^/]+)",
+        pathNot: "^src/extract/sources/shared",
+      },
+    },
+    {
+      name: "framework-slices-are-independent",
+      severity: "error",
+      from: { path: "^src/extract/frameworks/([^/]+)", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/extract/frameworks/([^/]+)",
+        pathNot: "^src/extract/frameworks/$1",
       },
     },
     {

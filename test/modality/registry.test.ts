@@ -115,6 +115,12 @@ describe("modality plugin registry", () => {
           packageNames: ["react-router", "react-router-dom"],
         },
         {
+          id: "react",
+          kind: "framework",
+          version: "0.1.0",
+          packageNames: ["react"],
+        },
+        {
           id: "router-module-roles",
           kind: "module-roles",
           version: "0.1.0",
@@ -216,6 +222,7 @@ describe("modality plugin registry", () => {
       domainRefinementProviders: [expect.objectContaining({ id: "arktype" })],
       plugins: [
         { id: "arktype", kind: "domain-refinement" },
+        { id: "react", kind: "framework" },
         { id: "jotai", kind: "observation" },
         { id: "use-state", kind: "observation" },
         { id: "jotai", kind: "state-source" },

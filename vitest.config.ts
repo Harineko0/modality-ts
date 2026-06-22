@@ -5,6 +5,7 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "src/**/*.test.ts"],
     globals: false,
     testTimeout: 60_000,
+    setupFiles: ["./test/setup/framework-default.ts"],
   },
   resolve: {
     alias: {
@@ -120,6 +121,10 @@ export default defineConfig({
       ).pathname,
       "modality-ts/extract/engine/spi": new URL(
         "./src/extract/engine/spi/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/frameworks/react": new URL(
+        "./src/extract/frameworks/react/index.ts",
         import.meta.url,
       ).pathname,
       "modality-ts/extract/engine": new URL(

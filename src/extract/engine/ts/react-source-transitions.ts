@@ -11,6 +11,8 @@ import {
   providerComponentNames,
   reactEffectHookName,
   unwrapHandlerInitializer,
+  withEngineFramework,
+  bindEngineFrameworkFromPlugin,
 } from "./ast.js";
 import {
   globalTaintCaveat,
@@ -39,6 +41,7 @@ import type {
 } from "modality-ts/core";
 import type {
   DomainRefinementProvider,
+  FrameworkPlugin,
   HandlerWrapperProvider,
   NavigationAdapter,
   RouteInventory,
@@ -46,6 +49,7 @@ import type {
   StateSourcePlugin,
   WriteChannel,
 } from "../spi/index.js";
+import { resolveFrameworkPlugin } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -171,6 +175,7 @@ export interface ReactSourceTransitionOptions {
   types?: SemanticTypeContext;
   domainRefinements?: readonly DomainRefinementProvider[];
   projectSummary?: ReactExtractionProjectSummary;
+  framework?: FrameworkPlugin;
 }
 
 export interface ReactSourceTransitionResult {
@@ -184,6 +189,7 @@ export function extractReactSourceTransitions(
   options: ReactSourceTransitionOptions = {},
 ): ReactSourceTransitionResult {
   const fileName = options.fileName ?? "App.tsx";
+  const framework = resolveFrameworkPlugin(options.framework);
   const source =
     options.types?.sourceFile &&
     options.types.sourceFile.fileName === fileName &&
@@ -196,6 +202,21 @@ export function extractReactSourceTransitions(
           true,
           ts.ScriptKind.TSX,
         );
+  const engineFramework = bindEngineFrameworkFromPlugin(framework, {
+    ...(options.types ? { types: options.types } : {}),
+    sourceFile: source,
+    fileName,
+  });
+  return withEngineFramework(engineFramework, () =>
+    extractReactSourceTransitionsImpl(options, source, fileName),
+  );
+}
+
+function extractReactSourceTransitionsImpl(
+  options: ReactSourceTransitionOptions,
+  source: ts.SourceFile,
+  fileName: string,
+): ReactSourceTransitionResult {
   const typeAliases = options.projectSummary
     ? new Map(options.projectSummary.typeAliases)
     : collectProjectTypeAliases(source, options);

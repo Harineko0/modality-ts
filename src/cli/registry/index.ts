@@ -7,6 +7,7 @@ import type {
   CacheStorageProvider,
   DomainRefinementProvider,
   EffectApiProvider,
+  FrameworkPlugin,
   HandlerWrapperProvider,
   HarnessCtx,
   HarnessHooks,
@@ -46,6 +47,7 @@ import { useStateSource } from "modality-ts/extract/sources/use-state";
 import { reduxSource } from "modality-ts/extract/sources/redux";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
 import { reactHookFormSource } from "modality-ts/extract/sources/react-hook-form";
+import { reactFramework } from "modality-ts/extract/frameworks/react";
 
 export interface RegistryAdaptersBundle {
   navigation?: NavigationAdapter;
@@ -61,6 +63,7 @@ export interface RegistryAdaptersBundle {
 export interface ModalityPluginRegistry {
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
+  framework?: FrameworkPlugin;
   domainRefinementProviders: readonly DomainRefinementProvider[];
   moduleRoleAdapters?: readonly ModuleRoleAdapter[];
   effectApiProviders?: readonly EffectApiProvider[];
@@ -79,13 +82,16 @@ export interface BuiltinRegistryOptions {
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
   extraHandlerWrapperProviders?: readonly HandlerWrapperProvider[];
   routerPlugin?: NavigationAdapter | false;
+  framework?: FrameworkPlugin | false;
 }
 
 export interface RegistrySummary {
   sourcePluginIds: readonly string[];
   routerPluginId?: string;
+  frameworkPluginId?: string;
   sourcePlugins: readonly StateSourcePlugin[];
   routerPlugin?: NavigationAdapter;
+  framework?: FrameworkPlugin;
   domainRefinementProviders: readonly DomainRefinementProvider[];
   handlerWrapperProviders: readonly HandlerWrapperProvider[];
   plugins: readonly PluginProvenance[];
@@ -142,6 +148,7 @@ export function createBuiltinModalityRegistry(
   return createModalityRegistry({
     sourcePlugins,
     routerPlugin: builtinNavigation.navigation,
+    framework: resolveBuiltinFramework(options),
     domainRefinementProviders,
     moduleRoleAdapters: builtinNavigation.moduleRoles,
     effectApiProviders: builtinNavigation.effectApis,
@@ -245,6 +252,15 @@ function resolveBuiltinCacheStorageProviders(
   return [...(options.extraCacheStorageProviders ?? [])];
 }
 
+function resolveBuiltinFramework(
+  options: BuiltinRegistryOptions,
+): FrameworkPlugin {
+  if (options.framework !== undefined && options.framework !== false) {
+    return options.framework;
+  }
+  return reactFramework();
+}
+
 function hasDependency(
   dependencies: Readonly<Record<string, string>> | undefined,
   packageName: string,
@@ -275,6 +291,7 @@ export function createModalityRegistry(
   for (const provider of cacheStorageProviders)
     validateCacheStorageProvider(provider);
   if (options.routerPlugin) validateNavigationAdapter(options.routerPlugin);
+  if (options.framework) validateFrameworkPlugin(options.framework);
   const observations = buildObservationProviders(
     options.sourcePlugins,
     options.routerPlugin,
@@ -309,6 +326,7 @@ export function createModalityRegistry(
     sourcePlugins: options.sourcePlugins,
     domainRefinementProviders,
     handlerWrapperProviders,
+    ...(options.framework ? { framework: options.framework } : {}),
     ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
     adapters: {
       navigation: options.routerPlugin,
@@ -334,6 +352,16 @@ export function createModalityRegistry(
               version: options.routerPlugin.version ?? "unknown",
               kind: "navigation" as const,
               packageNames: [...options.routerPlugin.packageNames].sort(),
+            },
+          ]
+        : []),
+      ...(options.framework
+        ? [
+            {
+              id: options.framework.id,
+              version: options.framework.version ?? "unknown",
+              kind: "framework" as const,
+              packageNames: [...options.framework.packageNames].sort(),
             },
           ]
         : []),
@@ -379,6 +407,9 @@ export function createModalityRegistry(
     ),
     ...(options.routerPlugin
       ? { routerPluginId: options.routerPlugin.id }
+      : {}),
+    ...(options.framework
+      ? { frameworkPluginId: options.framework.id }
       : {}),
   };
 }
@@ -510,6 +541,18 @@ function validateNavigationAdapter(adapter: NavigationAdapter): void {
       `Invalid navigation adapter ${adapter.id}: harness.setup, harness.observe, and harness.navigate are required`,
     );
   }
+}
+
+function validateFrameworkPlugin(plugin: FrameworkPlugin): void {
+  validateCommonPluginShape(plugin, "framework plugin");
+  if (typeof plugin.recognizeHook !== "function")
+    throw new Error(
+      `Invalid framework plugin ${plugin.id}: recognizeHook must be a function`,
+    );
+  if (typeof plugin.recognizeRenderBoundary !== "function")
+    throw new Error(
+      `Invalid framework plugin ${plugin.id}: recognizeRenderBoundary must be a function`,
+    );
 }
 
 function validateCommonPluginShape(

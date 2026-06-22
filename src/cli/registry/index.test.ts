@@ -16,6 +16,8 @@ import {
 } from "./index.js";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { reactFramework } from "modality-ts/extract/frameworks/react";
+import type { FrameworkPlugin } from "modality-ts/extract/engine/spi";
 
 function fakeNavigationAdapter(
   overrides: Partial<NavigationAdapter> = {},
@@ -498,6 +500,93 @@ const _navigationAdapterFixture: NavigationAdapter = {
 };
 
 void _navigationAdapterFixture;
+
+describe("framework plugin registration", () => {
+  function fakeFramework(
+    overrides: Partial<FrameworkPlugin> = {},
+  ): FrameworkPlugin {
+    return {
+      id: "fake-framework",
+      version: "0.0.1",
+      packageNames: ["fake-framework"],
+      recognizeHook: () => undefined,
+      recognizeRenderBoundary: () => undefined,
+      ...overrides,
+    };
+  }
+
+  it("registers and validates the default react framework", () => {
+    const registry = createBuiltinModalityRegistry();
+    expect(registry.frameworkPluginId).toBe("react");
+    expect(registry.framework?.id).toBe("react");
+    expect(
+      registry.plugins.some(
+        (plugin) => plugin.kind === "framework" && plugin.id === "react",
+      ),
+    ).toBe(true);
+  });
+
+  it("stamps framework provenance in stable kind/id order", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: { "react-router-dom": "^6.0.0" },
+    });
+    const kinds = registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}`);
+    expect(kinds).toEqual([...kinds].sort());
+    const frameworkIndex = kinds.indexOf("framework:react");
+    const navigationIndex = kinds.indexOf("navigation:router");
+    expect(frameworkIndex).toBeGreaterThanOrEqual(0);
+    expect(navigationIndex).toBeGreaterThanOrEqual(0);
+    expect(frameworkIndex).toBeLessThan(navigationIndex);
+  });
+
+  it("accepts explicit config.framework override", () => {
+    const custom = fakeFramework({ id: "custom-react" });
+    const registry = createBuiltinModalityRegistry({ framework: custom });
+    expect(registry.frameworkPluginId).toBe("custom-react");
+    expect(registry.framework).toBe(custom);
+    expect(
+      registry.plugins.some(
+        (plugin) =>
+          plugin.kind === "framework" && plugin.id === "custom-react",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects invalid framework plugins missing recognizeHook", () => {
+    const { recognizeHook: _, ...incomplete } = fakeFramework();
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        framework: incomplete as FrameworkPlugin,
+      }),
+    ).toThrow(
+      "Invalid framework plugin fake-framework: recognizeHook must be a function",
+    );
+  });
+
+  it("rejects invalid framework plugins missing recognizeRenderBoundary", () => {
+    const { recognizeRenderBoundary: _, ...incomplete } = fakeFramework();
+    expect(() =>
+      createModalityRegistry({
+        sourcePlugins: [],
+        framework: incomplete as FrameworkPlugin,
+      }),
+    ).toThrow(
+      "Invalid framework plugin fake-framework: recognizeRenderBoundary must be a function",
+    );
+  });
+
+  it("defaults to reactFramework when config omits framework", () => {
+    const registry = createBuiltinModalityRegistry({
+      dependencies: {},
+    });
+    expect(registry.framework?.id).toBe("react");
+    expect(registry.framework).not.toBe(reactFramework());
+    expect(registry.framework?.packageNames).toEqual(
+      reactFramework().packageNames,
+    );
+  });
+});
 
 describe("sourcePluginsOverride", () => {
   it("suppresses auto-detected built-ins when non-empty", () => {
