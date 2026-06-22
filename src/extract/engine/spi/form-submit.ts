@@ -8,7 +8,6 @@ import type {
 import type * as ts from "typescript";
 import type { SemanticTypeContext } from "./index.js";
 import type {
-  ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
 } from "../ts/types.js";

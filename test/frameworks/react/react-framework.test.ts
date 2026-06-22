@@ -1,5 +1,8 @@
 import { resolveImportedName } from "modality-ts/extract/engine/spi";
 import {
+  createTsSymbolPort,
+} from "modality-ts/extract/lang/ts";
+import {
   reactFramework,
   SUSPENSE_DOMAIN,
 } from "modality-ts/extract/frameworks/react";
@@ -146,15 +149,29 @@ describe("reactFramework", () => {
     expect(hookCall?.hook.kind).toBe(kind);
   });
 
-  it.todo("recognizes import-aliased hooks once Part 6 importBinding lands", () => {
+  it("recognizes import-aliased hooks via SymbolPort importBinding", () => {
+    const source = `import { useState as useLocalState } from "react";
+useLocalState(0);`;
     const file = ts.createSourceFile(
       "App.tsx",
-      `import { useState as useLocalState } from "react";
-      useLocalState(0);`,
+      source,
       ts.ScriptTarget.Latest,
       true,
       ts.ScriptKind.TSX,
     );
+    const host = ts.createCompilerHost({});
+    const originalRead = host.readFile.bind(host);
+    host.readFile = (path) => (path.endsWith("App.tsx") ? source : originalRead(path));
+    const program = ts.createProgram([file.fileName], {
+      target: ts.ScriptTarget.Latest,
+      jsx: ts.JsxEmit.ReactJSX,
+    }, host);
+    const symbols = createTsSymbolPort({
+      program,
+      checker: program.getTypeChecker(),
+      sourceFile: file,
+      getSourceFile: (fileName) => (fileName === file.fileName ? file : undefined),
+    });
     let call: ts.CallExpression | undefined;
     const visit = (node: ts.Node): void => {
       if (call) return;
@@ -163,12 +180,47 @@ describe("reactFramework", () => {
     };
     visit(file);
     expect(
-      framework.recognizeHook(call!, { fileName: "App.tsx", sourceFile: file }),
+      framework.recognizeHook(call!, {
+        fileName: "App.tsx",
+        sourceFile: file,
+        symbols,
+      }),
     ).toBeDefined();
   });
 
-  it("resolveImportedName returns bare identifier for identity", () => {
-    const identifier = ts.factory.createIdentifier("useState");
-    expect(resolveImportedName(identifier, ctx)).toBe("useState");
+  it("resolveImportedName uses importBinding when SymbolPort is provided", () => {
+    const source = `import { useState as useLocalState } from "react";`;
+    const file = ts.createSourceFile(
+      "App.tsx",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const importStmt = file.statements.find(ts.isImportDeclaration);
+    const named = importStmt?.importClause?.namedBindings;
+    expect(named && ts.isNamedImports(named)).toBe(true);
+    if (!named || !ts.isNamedImports(named)) return;
+    const specifier = named.elements[0]!;
+    const host = ts.createCompilerHost({});
+    const originalRead = host.readFile.bind(host);
+    host.readFile = (path) => (path.endsWith("App.tsx") ? source : originalRead(path));
+    const program = ts.createProgram([file.fileName], {
+      target: ts.ScriptTarget.Latest,
+      jsx: ts.JsxEmit.ReactJSX,
+    }, host);
+    const symbols = createTsSymbolPort({
+      program,
+      checker: program.getTypeChecker(),
+      sourceFile: file,
+      getSourceFile: (fileName) => (fileName === file.fileName ? file : undefined),
+    });
+    expect(
+      resolveImportedName(specifier.name, {
+        fileName: file.fileName,
+        sourceFile: file,
+        symbols,
+      }),
+    ).toBe("useState");
   });
 });

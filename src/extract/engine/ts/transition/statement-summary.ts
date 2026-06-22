@@ -2,12 +2,10 @@ import type { EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import type { EffectModelProvider, SemanticTypeContext } from "../../spi/index.js";
 import {
-  callName,
   currentEngineFramework,
   isExtractableHandler,
   literalValue,
 } from "../ast.js";
-import { resolveSetterBinding } from "../context.js";
 import type { EnvironmentEventConfig } from "../environment-config.js";
 import { uniqueStrings } from "../ids.js";
 import type {
@@ -16,7 +14,6 @@ import type {
   ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
-  SetterCall,
 } from "../types.js";
 import type { TransitionBinding } from "./concurrent.js";
 import { startTransitionScheduleFromCall } from "./concurrent.js";
@@ -26,12 +23,22 @@ import {
   dispatchEffectAssignment,
   dispatchEffectRecognition,
 } from "./effect-model-dispatch.js";
-import { setterArgumentExpr, valueExpr } from "./expressions.js";
+import {
+  summarizeSetterCall,
+  setterCallFrom,
+} from "./setter-write.js";
 import { parseGuardExpression } from "./guards.js";
 import { bindConstStatement } from "./locals.js";
+import { valueExpr } from "./expressions.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
 import { bindTimerHandle } from "./timers.js";
+import {
+  createSymbolPort,
+  lowerTsStatement,
+} from "../surface-bridge-slot.js";
+import { dispatchTsStatements } from "./dispatch-node.js";
+import { createEngineLeafDispatch } from "./engine-leaf-dispatch.js";
 
 export type { StatementSummaryState } from "./statement-summary-state.js";
 
@@ -57,6 +64,8 @@ export interface StatementSummaryOptions {
   source?: ts.SourceFile;
   types?: SemanticTypeContext;
   effectModelProviders?: readonly EffectModelProvider[];
+  /** When true, attempt L1→L2 compilation before legacy summarization. */
+  useSurfaceCompiler?: boolean;
 }
 
 interface StatementSummaryResult {
@@ -139,6 +148,7 @@ export function summarizeStatements(
     source: options.source,
     types: options.types,
     effectModelProviders: options.effectModelProviders,
+    useSurfaceCompiler: options.useSurfaceCompiler,
   });
   return result?.summaries;
 }
@@ -170,112 +180,8 @@ export function summarizeSetterStatement(
   return summarizeSetterCall(statement.expression, setters, locals);
 }
 
-export function summarizeSetterCall(
-  call: ts.CallExpression,
-  setters: Map<string, SetterBinding>,
-  locals: Map<string, BoundExpr> = new Map(),
-  resetOptions: StatementSummaryResetOptions = {},
-): EffectSummary | undefined {
-  const setterCall = setterCallFrom(call, setters, resetOptions.types);
-  if (!setterCall) return undefined;
-  return summarizeSetterWrite(setterCall, setters, locals, resetOptions);
-}
-
-export interface StatementSummaryResetOptions {
-  resetSymbols?: ReadonlySet<string>;
-  snapshotReads?: boolean;
-  snapshottedReads?: ReadonlySet<string>;
-  types?: SemanticTypeContext;
-}
-
-export function summarizeSetterWrite(
-  setterCall: SetterCall,
-  setters: Map<string, SetterBinding>,
-  locals: Map<string, BoundExpr> = new Map(),
-  resetOptions: StatementSummaryResetOptions = {},
-): EffectSummary {
-  if (
-    setterCall.setter.fixedEffect &&
-    setterCall.argument.kind === ts.SyntaxKind.NullKeyword
-  ) {
-    return {
-      effect: setterCall.setter.fixedEffect,
-      reads: [],
-    };
-  }
-  if (
-    setterCall.setter.resettable &&
-    setterCall.setter.initial !== undefined &&
-    setterCall.argument.kind === ts.SyntaxKind.NullKeyword
-  ) {
-    return {
-      effect: {
-        kind: "assign",
-        var: setterCall.setter.varId,
-        expr: { kind: "lit", value: setterCall.setter.initial },
-      },
-      reads: [],
-    };
-  }
-  const assignment = setterArgumentExpr(
-    setterCall.argument,
-    setterCall.setter,
-    setters,
-    locals,
-    resetOptions.resetSymbols,
-    resetOptions.snapshotReads ?? true,
-    resetOptions.snapshottedReads,
-  );
-  if (!assignment) {
-    return {
-      effect: { kind: "havoc", var: setterCall.setter.varId },
-      reads: [],
-    };
-  }
-  return {
-    effect: {
-      kind: "assign",
-      var: setterCall.setter.varId,
-      expr: assignment.expr,
-    },
-    reads: assignment.reads,
-  };
-}
-
-export function setterCallFrom(
-  call: ts.CallExpression,
-  setters: Map<string, SetterBinding>,
-  types?: SemanticTypeContext,
-): SetterCall | undefined {
-  if (ts.isIdentifier(call.expression) && call.arguments.length === 0) {
-    const setter = resolveSetterBinding(setters, call.expression, types);
-    if (setter?.resettable || setter?.fixedEffect) {
-      return {
-        setter,
-        argument: ts.factory.createNull(),
-      };
-    }
-    return undefined;
-  }
-  if (ts.isIdentifier(call.expression) && call.arguments.length === 1) {
-    const setter = resolveSetterBinding(setters, call.expression, types);
-    const argument = call.arguments[0];
-    return setter && argument ? { setter, argument } : undefined;
-  }
-  const name = callName(call.expression);
-  const atomArg = call.arguments[0];
-  if (
-    name &&
-    call.arguments.length === 2 &&
-    atomArg &&
-    ts.isIdentifier(atomArg)
-  ) {
-    const setter = setters.get(`${name}:${atomArg.text}`);
-    const argument = call.arguments[1];
-    return setter && argument ? { setter, argument } : undefined;
-  }
-  return undefined;
-}
+export { summarizeSetterCall, summarizeSetterWrite, setterCallFrom } from "./setter-write.js";
+export type { StatementSummaryResetOptions } from "./setter-write.js";
 
 export function settersWrittenIn(
   node: ts.Node,
@@ -441,11 +347,111 @@ export function setterAssignEffect(
   return { kind: "assign", var: setter.varId, expr: { kind: "lit", value } };
 }
 
-function summarizeStatementList(
+function isCompilerCompatibleStatement(statement: ts.Statement): boolean {
+  if (ts.isIfStatement(statement)) {
+    return (
+      isCompilerCompatibleStatement(statement.thenStatement) &&
+      (!statement.elseStatement ||
+        isCompilerCompatibleStatement(statement.elseStatement))
+    );
+  }
+  if (ts.isBlock(statement)) {
+    return statement.statements.every(isCompilerCompatibleStatement);
+  }
+  if (ts.isExpressionStatement(statement)) return true;
+  if (ts.isVariableStatement(statement)) return true;
+  if (ts.isReturnStatement(statement)) return true;
+  if (isLoopStatement(statement)) return true;
+  if (ts.isEmptyStatement(statement)) return true;
+  if (ts.isBreakStatement(statement) || ts.isContinueStatement(statement)) {
+    return true;
+  }
+  return false;
+}
+
+function loopVarsForStatements(
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+): string[] {
+  const vars: string[] = [];
+  for (const statement of statements) {
+    if (isLoopStatement(statement)) {
+      vars.push(
+        ...uniqueSetters(settersWrittenIn(statement, setters)).map(
+          (setter) => setter.varId,
+        ),
+      );
+    }
+    if (ts.isBlock(statement)) {
+      vars.push(...loopVarsForStatements(statement.statements, setters));
+    }
+    if (ts.isIfStatement(statement)) {
+      vars.push(
+        ...loopVarsForStatements([statement.thenStatement], setters),
+        ...(statement.elseStatement
+          ? loopVarsForStatements([statement.elseStatement], setters)
+          : []),
+      );
+    }
+  }
+  return vars;
+}
+
+function tryCompileStatementList(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
   state: StatementSummaryState,
 ): StatementSummaryResult | undefined {
+  if (!state.source || !state.types || !state.fileName) return undefined;
+  if (!statements.every(isCompilerCompatibleStatement)) return undefined;
+  try {
+    const symbols = createSymbolPort({
+      program: state.types.program,
+      checker: state.types.checker,
+      sourceFile: state.source,
+      getSourceFile: state.types.getSourceFile,
+      localSymbolKey: state.types.localSymbolKey,
+      symbolAt: state.types.symbolAt,
+      aliasedSymbolAt: state.types.aliasedSymbolAt,
+    });
+    const originNode = (ref: import("../../spi/surface-ir.js").NodeRef) =>
+      symbols.nodeAt?.(ref);
+    if (!originNode) return undefined;
+    const leaf = createEngineLeafDispatch({ setters, state, originNode });
+    const locals = new Map(
+      [...state.locals.entries()].map(([name, binding]) => [
+        name,
+        { expr: binding.expr, reads: binding.reads },
+      ]),
+    );
+    const dispatched = dispatchTsStatements(statements, {
+      symbols,
+      leaf,
+      locals,
+      snapshotReads: state.snapshotReads,
+      loopVars: loopVarsForStatements(statements, setters),
+      lowerStatement: lowerTsStatement,
+      fileName: state.fileName,
+    });
+    if (!dispatched) return undefined;
+    return {
+      summaries: dispatched.summaries,
+      terminated: dispatched.terminated,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function summarizeStatementList(
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  state: StatementSummaryState & { useSurfaceCompiler?: boolean },
+): StatementSummaryResult | undefined {
+  if (state.useSurfaceCompiler === true && state.source && state.types) {
+    const compiled = tryCompileStatementList(statements, setters, state);
+    if (compiled) return compiled;
+  }
   const summaries: EffectSummary[] = [];
   for (const statement of statements) {
     if (ts.isIfStatement(statement)) {

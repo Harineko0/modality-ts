@@ -5,7 +5,7 @@ import type {
 import { resolveEffectModelProviders } from "../../spi/effect-model-runtime.js";
 import type { EffectSummary, SetterBinding } from "../types.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
-import * as ts from "typescript";
+import type * as ts from "typescript";
 
 export function effectCtxFromStatementState(
   setters: Map<string, SetterBinding>,

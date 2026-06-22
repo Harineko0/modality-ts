@@ -134,6 +134,22 @@ export default defineConfig({
         "./src/extract/engine/spi/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/lang/ts": new URL(
+        "./src/extract/lang/ts/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/compile": new URL(
+        "./src/extract/compile/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/wiring/install": new URL(
+        "./src/extract/wiring/install.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/wiring/install.js": new URL(
+        "./src/extract/wiring/install.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/frameworks/react": new URL(
         "./src/extract/frameworks/react/index.ts",
         import.meta.url,

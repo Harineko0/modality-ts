@@ -1,6 +1,5 @@
 import * as ts from "typescript";
 import type {
-  FormSubmit,
   FormSubmitRecognition,
   NavFormSubmitCtx,
   NavUseSubmitHandlerCtx,

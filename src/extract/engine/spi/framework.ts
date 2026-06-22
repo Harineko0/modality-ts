@@ -10,6 +10,7 @@ export interface FrameworkCtx {
   types?: SemanticTypeContext;
   sourceFile?: ts.SourceFile;
   fileName?: string;
+  symbols?: import("./symbol-port.js").SymbolPort;
 }
 
 export type ComponentRole = "component" | "custom-hook";
@@ -58,13 +59,24 @@ export function createEngineFrameworkContext(
 }
 
 /**
- * Resolves a callee identifier to its bare name. Until L1 `importBinding` lands
- * (Part 6), this returns the identifier text unchanged for identity stability.
+ * Resolves a callee identifier to its exported name, including import aliases
+ * when an L1 SymbolPort is available on the framework context.
  */
 export function resolveImportedName(
   node: ts.Identifier,
-  _ctx: FrameworkCtx,
+  ctx: FrameworkCtx,
 ): string {
-  // TODO(Part 6): consume L1 SymbolPort.importBinding when available.
+  if (ctx.symbols) {
+    const fileName = ctx.sourceFile?.fileName ?? ctx.fileName ?? "";
+    const binding = ctx.symbols.importBinding({
+      name: node.text,
+      origin: {
+        file: fileName,
+        start: node.getStart(),
+        end: node.getEnd(),
+      },
+    });
+    if (binding) return binding.exportedName;
+  }
   return node.text;
 }

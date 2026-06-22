@@ -16,7 +16,37 @@ module.exports = {
       name: "extract-engine-is-node-only-and-independent",
       severity: "error",
       from: { path: "^src/extract/engine", pathNot: "^src/.*/test/" },
-      to: { path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks|^src/extract/effect-models" },
+      to: {
+        path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks|^src/extract/effect-models|^src/extract/lang",
+      },
+    },
+    {
+      name: "extract-lang-imports-core-only",
+      severity: "error",
+      from: { path: "^src/extract/lang", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/",
+        pathNot: ["^src/core", "^src/extract/lang"],
+      },
+    },
+    {
+      name: "extract-compile-imports-core-and-spi-only",
+      severity: "error",
+      from: { path: "^src/extract/compile", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/",
+        pathNot: [
+          "^src/core",
+          "^src/extract/engine/spi",
+          "^src/extract/compile",
+        ],
+      },
+    },
+    {
+      name: "extract-wiring-is-outside-engine",
+      severity: "error",
+      from: { path: "^src/extract/wiring", pathNot: "^src/.*/test/" },
+      to: { path: "^src/(check|cli)" },
     },
     {
       name: "harness-does-not-import-product-or-analysis",

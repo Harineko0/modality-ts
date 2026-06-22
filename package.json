@@ -115,6 +115,18 @@
       "types": "./dist/extract/engine/spi/index.d.ts",
       "default": "./dist/extract/engine/spi/index.js"
     },
+    "./extract/lang/ts": {
+      "types": "./dist/extract/lang/ts/index.d.ts",
+      "default": "./dist/extract/lang/ts/index.js"
+    },
+    "./extract/compile": {
+      "types": "./dist/extract/compile/index.d.ts",
+      "default": "./dist/extract/compile/index.js"
+    },
+    "./extract/wiring/install": {
+      "types": "./dist/extract/wiring/install.d.ts",
+      "default": "./dist/extract/wiring/install.js"
+    },
     "./extract/frameworks/react": {
       "types": "./dist/extract/frameworks/react/index.d.ts",
       "default": "./dist/extract/frameworks/react/index.js"

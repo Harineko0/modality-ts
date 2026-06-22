@@ -546,3 +546,35 @@ export type {
   SurfaceNode as FormSubmitSurfaceNode,
   UseSubmitHandlerRecognition,
 } from "./form-submit.js";
+export type {
+  CompileCtx,
+  DataflowBinding,
+  LeafBoundary,
+  LeafDispatch,
+  LeafEffect,
+  LeafPrecedence,
+  LeafValue,
+  RankedLeafEffect,
+} from "./leaf-dispatch.js";
+export { LEAF_PRECEDENCE, mergeLeafEffects } from "./leaf-dispatch.js";
+export type {
+  AssignOp,
+  NodeRef,
+  SurfaceBinding,
+  SurfaceCall as SurfaceIrCall,
+  SurfaceDecl as SurfaceIrDecl,
+  SurfaceExpr,
+  SurfaceFunction,
+  SurfaceLValue,
+  SurfaceModule,
+  SurfaceNode as SurfaceIrNode,
+  SurfaceParam,
+  SurfaceStmt,
+  SymbolRef,
+} from "./surface-ir.js";
+export type {
+  ImportBinding,
+  ResolvedSymbol,
+  SymbolPort,
+  TypeView,
+} from "./symbol-port.js";

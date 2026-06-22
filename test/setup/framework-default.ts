@@ -1,3 +1,4 @@
+import "modality-ts/extract/wiring/install.js";
 import "modality-ts/extract/frameworks/react";
 import { registerEffectModelProviders } from "modality-ts/extract/engine/spi";
 import { timerEffectModelProvider } from "modality-ts/extract/effect-models/timers";
