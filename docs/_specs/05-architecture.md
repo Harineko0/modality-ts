@@ -131,6 +131,15 @@ Design notes on why this shape:
 - **Routers are a sibling contract** (`NavigationAdapter`): they discover routes, classify navigation calls, lower navigation into role-bearing location vars and ordinary effects, and supply replay harness navigation. Module roles (`ModuleRoleAdapter`), effect APIs (`EffectApiProvider`), cache/storage (`CacheStorageProvider`), and replay observation (`ObservationProvider`) are separate registry capabilities — not methods on `NavigationAdapter`. Kept separate from `StateSourcePlugin` because exactly one router is active per app, while state sources compose. Trusted checker/core code discovers location and pending vars by `StateVarDecl.role`, not by `sys:*` id prefixes.
 - **Registration**: `modality.config.ts` lists plugins (`plugins: [jotai(), swr(), zustand()]`); built-ins are auto-registered when `packageNames` match the app's dependencies, with config able to disable. Third-party plugins are ordinary npm packages exporting a `StateSourcePlugin`; the registry validates the contract shape at load and stamps plugin id + version into the trust ledger (a plugin is trusted code — the report must say which ones produced the model).
 
+> **Deepening this contract.** The `StateSourcePlugin` SPI covers discovery, domain hints, and write
+> channels, but library *semantics* (React hooks, Suspense, router forms, timers) are still hardcoded
+> in the extraction engine. The **`docs/_specs/plugin-layering/` series** specifies the L0–L5 layering
+> that pushes those semantics out behind SPIs — a universal semantic compiler (L2) owns control flow,
+> plugins (L4) supply only leaf meaning. It adds sibling L4 categories (`FrameworkPlugin`,
+> `EffectModelProvider`), deepens the SPI into the statement compiler, and makes the generated config
+> explicitly *receive* the layered plugins. The IR-instances-never-node-kinds rule below (§3) is the
+> series' load-bearing invariant, not an exception to it.
+
 ## 5. Source packages as vertical slices (axis 1)
 
 Each source package owns its concern end-to-end — discovery to replay to conformance — so adding a library never fans out across the repo:
@@ -245,3 +254,4 @@ The demo app doubles as the living acceptance test for the *architecture* itself
 | Artifact-mediated feature coupling | in-process pipeline objects | reproducibility, independent re-runs, scriptability; matches the CLI's user model |
 | Plugins contribute IR instances, never IR semantics | extensible IR node kinds | preserves the meaning of "verified" across the plugin ecosystem (§3) |
 | Built-ins on the public SPI | privileged built-ins | the contract rots the day the first private hook lands |
+| Library semantics behind L3 SPIs; L2 compiler universal | hardcoded hook/JSX tables in the engine | adding a library = a plugin, not an engine edit (`docs/_specs/plugin-layering/`) |
