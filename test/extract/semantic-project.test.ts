@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -14,6 +14,20 @@ import * as components from "../../src/extract/engine/ts/components.js";
 import { buildReactExtractionProjectSummary } from "../../src/extract/engine/ts/react-extraction-project-summary.js";
 import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+
+const defaultSourcePlugins = [useStateSource()];
+
+function extractReactSourceTransitions(
+  source: string,
+  options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
+) {
+  return extractReactSourceTransitionsBase(source, {
+    sourcePlugins: defaultSourcePlugins,
+    ...options,
+    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+  });
+}
+
 import {
   createSemanticProject,
   createSemanticProjectForTest,
@@ -1088,6 +1102,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
+      sourcePlugins: defaultSourcePlugins,
     });
     const uncached = extractReactSourceTransitions(appText, {
       fileName: appPath,
@@ -1146,6 +1161,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
+      sourcePlugins: defaultSourcePlugins,
     });
     expect(buildComponentSpy).toHaveBeenCalledTimes(1);
     expect(buildHookSpy).toHaveBeenCalledTimes(1);
@@ -1196,6 +1212,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
+      sourcePlugins: defaultSourcePlugins,
     });
     expect(buildComponentSpy).toHaveBeenCalledTimes(1);
     const options = buildComponentSpy.mock.calls[0]?.[1];
@@ -1229,6 +1246,7 @@ export function App() {
       discoverFragments: relatedFragments,
       relatedFragments,
       route: "/",
+      sourcePlugins: defaultSourcePlugins,
     });
     const uncached = extractReactSourceTransitions(appText, {
       fileName: appPath,

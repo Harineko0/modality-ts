@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../spi/index.js";
+import type { SemanticTypeContext, StateSourcePlugin } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -27,12 +27,14 @@ export interface BuildReactExtractionProjectSummaryOptions {
   relatedFragments: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
   route: string;
+  sourcePlugins?: readonly StateSourcePlugin[];
 }
 
 export function buildReactExtractionProjectSummary(
   options: BuildReactExtractionProjectSummaryOptions,
 ): ReactExtractionProjectSummary {
-  const { discoverFragments, relatedFragments, types, route } = options;
+  const { discoverFragments, relatedFragments, types, route, sourcePlugins } =
+    options;
   const canonicalFileNames = [
     ...new Set(
       discoverFragments.map(
@@ -50,6 +52,7 @@ export function buildReactExtractionProjectSummary(
     route,
     typeAliases,
     types,
+    sourcePlugins,
   );
   const primaryFragment = discoverFragments[0]!;
   const primarySource = sourceFileForFragment(primaryFragment, types);
@@ -174,12 +177,19 @@ function collectMergedContextBindings(
   route: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
+  sourcePlugins?: readonly StateSourcePlugin[],
 ): ContextBindings {
+  const contextBindingOptions = {
+    sourcePlugins,
+    route,
+    ...(types ? { types } : {}),
+  };
   const bindings = discoverContextBindings(
     sourceFileForFragment(discoverFragments[0]!, types),
     discoverFragments[0]!.fileName,
     route,
     typeAliases,
+    contextBindingOptions,
   );
   for (const fragment of discoverFragments.slice(1)) {
     mergeContextBindings(
@@ -189,6 +199,7 @@ function collectMergedContextBindings(
         fragment.fileName,
         route,
         typeAliases,
+        contextBindingOptions,
       ),
     );
   }
@@ -211,6 +222,7 @@ function collectMergedContextBindings(
         relatedSource.fileName,
         route,
         typeAliases,
+        contextBindingOptions,
       ),
     );
   }

@@ -7,9 +7,22 @@ import {
   resolveSetterBinding,
   settersForComponent,
 } from "../../src/extract/engine/ts/context.js";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+
+const defaultSourcePlugins = [useStateSource()];
+
+function extractReactSourceTransitions(
+  source: string,
+  options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
+) {
+  return extractReactSourceTransitionsBase(source, {
+    sourcePlugins: defaultSourcePlugins,
+    ...options,
+    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+  });
+}
 
 const projectRoot = resolve("/project");
 

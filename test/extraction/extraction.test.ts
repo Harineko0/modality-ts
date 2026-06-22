@@ -16,13 +16,30 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
   extractUseStateSkeleton,
   extractUseStateVars,
 } from "../../src/extract/sources/use-state/transitions.js";
 
-const routerExtraction = { routerPlugin: reactRouterAdapter() };
+const defaultSourcePlugins = [useStateSource()];
+
+function extractReactSourceTransitions(
+  source: string,
+  options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
+) {
+  return extractReactSourceTransitionsBase(source, {
+    sourcePlugins: defaultSourcePlugins,
+    ...options,
+    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+  });
+}
+
+const routerExtraction = {
+  routerPlugin: reactRouterAdapter(),
+  sourcePlugins: defaultSourcePlugins,
+};
 
 function collectReadOpArgKeys(effect: EffectIR): string[] {
   const keys: string[] = [];

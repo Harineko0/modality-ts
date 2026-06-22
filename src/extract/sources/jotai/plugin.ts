@@ -10,6 +10,7 @@ import {
   discoverJotaiSafetyWarnings,
   discoverJotaiWriteChannels,
 } from "./writes.js";
+import { decodeJotaiBinding } from "./decode-binding.js";
 
 export function jotaiSource(): StateSourcePlugin {
   return {
@@ -28,6 +29,7 @@ export function jotaiSource(): StateSourcePlugin {
       discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
     safetyWarnings: (ctx) =>
       discoverJotaiSafetyWarnings(ctx.sourceText, ctx.fileName, ctx.types),
+    decodeBinding: decodeJotaiBinding,
     summarizeWrite: summarizeJotaiWrite,
     harness,
     conformance: {

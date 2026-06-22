@@ -226,9 +226,24 @@ export interface ProbeWalk {
   steps: readonly string[];
 }
 
+/** Setter binding fields produced when decoding a discovered state var id. */
+export interface DecodedSetterBinding {
+  varId: string;
+  component: string;
+  stateName: string;
+  domain: AbstractDomain;
+  /** Stable checker symbol identity when semantic extraction is available. */
+  symbolKey?: string;
+  initial?: Value;
+  resettable?: boolean;
+  fixedEffect?: EffectIR;
+}
+
 export interface StateSourcePlugin extends ModalityAdapterBase {
   discover(ctx: DiscoverCtx): readonly SourceDecl[];
   domainHints?(decl: SourceDecl, ctx: TypeCtx): AbstractDomain | undefined;
+  /** Owns this source's var-id shape; returns the same fields the engine regex produced. */
+  decodeBinding?(decl: StateVarDecl): DecodedSetterBinding | undefined;
   writeChannels(ctx: ChannelCtx): readonly WriteChannel[];
   safetyWarnings?(ctx: ChannelCtx): readonly ExtractionWarning[];
   extract?(ctx: ExtractCtx): SourceExtractionResult;
