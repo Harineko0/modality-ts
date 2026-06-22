@@ -1,19 +1,28 @@
+import type {
+  AbstractDomain,
+  ExprIR,
+  StateVarDecl,
+  Transition,
+} from "modality-ts/core";
 import * as ts from "typescript";
+import type { RenderBoundary } from "../../spi/index.js";
 import {
   componentNameFor,
-  isReactLazyCall,
-  isSuspenseElement,
-  isUseCall,
+  currentEngineFramework,
   lineAndColumn,
 } from "../ast.js";
-import type { ExprIR, StateVarDecl, Transition } from "modality-ts/core";
 import { pendingIs } from "./async.js";
 import { andGuard } from "./guards.js";
 
-const SUSPENSE_DOMAIN = {
+const DEFAULT_SUSPENSE_DOMAIN = {
   kind: "enum" as const,
   values: ["ready", "suspended"],
 };
+
+function recognizeRenderBoundary(node: ts.Node): RenderBoundary | undefined {
+  const fw = currentEngineFramework();
+  return fw.framework.recognizeRenderBoundary(node, fw.ctx);
+}
 
 export function suspenseVarId(boundaryId: string): string {
   return `sys:suspense:${boundaryId}`;
@@ -22,10 +31,11 @@ export function suspenseVarId(boundaryId: string): string {
 export function suspenseStateVarDecl(
   boundaryId: string,
   initial: "ready" | "suspended" = "suspended",
+  domain: AbstractDomain = DEFAULT_SUSPENSE_DOMAIN,
 ): StateVarDecl {
   return {
     id: suspenseVarId(boundaryId),
-    domain: SUSPENSE_DOMAIN,
+    domain,
     origin: "system",
     scope: { kind: "global" },
     initial,
@@ -81,7 +91,7 @@ export function transitionsFromSuspendingUse(
   component: string,
   boundaryId: string,
 ): Transition[] {
-  if (!isUseCall(node)) return [];
+  if (recognizeRenderBoundary(node)?.kind !== "use") return [];
   const op = `suspense:${boundaryId}`;
   const baseId = `${component}.use.${boundaryId}`;
   const varId = suspenseVarId(boundaryId);
@@ -145,7 +155,7 @@ export function discoverComponentRenderBoundaries(
     activeBoundary: string | undefined,
   ): void => {
     const nextComponent = componentNameFor(node) ?? componentName;
-    if (isSuspenseElement(node)) {
+    if (recognizeRenderBoundary(node)?.kind === "suspense") {
       const boundaryId = boundaryIdForComponent(
         nextComponent ?? "Anonymous",
         boundaryCounter,
@@ -179,11 +189,8 @@ export function suspenseInitialForBoundary(
   let suspended = false;
   const visit = (child: ts.Node): void => {
     if (suspended) return;
-    if (ts.isCallExpression(child) && isUseCall(child)) {
-      suspended = true;
-      return;
-    }
-    if (isReactLazyCall(child as ts.Expression)) {
+    const boundary = recognizeRenderBoundary(child);
+    if (boundary?.kind === "use" || boundary?.kind === "lazy") {
       suspended = true;
       return;
     }
@@ -209,7 +216,7 @@ export function isInsideSuspenseBoundary(
 ): string | undefined {
   let current: ts.Node | undefined = node;
   while (current) {
-    if (isSuspenseElement(current)) {
+    if (recognizeRenderBoundary(current)?.kind === "suspense") {
       const index = boundaries.length;
       return boundaryIdForComponent("Suspense", index);
     }

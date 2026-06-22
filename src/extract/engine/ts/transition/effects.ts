@@ -1,30 +1,36 @@
-import * as ts from "typescript";
-import { lineAndColumn, type ReactEffectHookName } from "../ast.js";
-import { uniqueStrings } from "../ids.js";
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
-import type { EffectSummary, SetterBinding } from "../types.js";
-import type { TransitionBinding } from "./concurrent.js";
-import type { TimerRegistration } from "./timers.js";
-import type { WebSocketRegistration } from "./environment-callbacks.js";
-import { webSocketCleanupSummaryFromCall } from "./environment-callbacks.js";
-import { finalizeImplicitWebSocketOpens } from "./environment-callbacks.js";
-import type { EnvironmentEventConfig } from "../environment-config.js";
-import type { ExtractionWarning } from "../types.js";
-import type { StatementSummaryOptions } from "./statement-summary.js";
+import * as ts from "typescript";
 import type { SemanticTypeContext } from "../../spi/index.js";
-import { timerClearSummaryFromCall } from "./timers.js";
+import { lineAndColumn } from "../ast.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
+import { uniqueStrings } from "../ids.js";
+import type {
+  EffectSummary,
+  ExtractionWarning,
+  SetterBinding,
+} from "../types.js";
+import type { TransitionBinding } from "./concurrent.js";
+import type { WebSocketRegistration } from "./environment-callbacks.js";
+import {
+  finalizeImplicitWebSocketOpens,
+  webSocketCleanupSummaryFromCall,
+} from "./environment-callbacks.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
-import { labelForEvent } from "./ui.js";
-import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
 import { dependencyNameSegment } from "./semantic-ids.js";
+import type { StatementSummaryOptions } from "./statement-summary.js";
+import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
+import type { TimerRegistration } from "./timers.js";
+import { timerClearSummaryFromCall } from "./timers.js";
+import { labelForEvent } from "./ui.js";
+
 export {
   effectWriteVars,
-  PENDING_QUEUE_VAR,
   escapedSetters,
   escapedSettersInStatement,
   identityEffect,
   isLoopStatement,
+  PENDING_QUEUE_VAR,
   setterAssignEffect,
   setterCallFrom,
   settersWrittenIn,
@@ -77,14 +83,15 @@ export function transitionsFromUseEffect(
   node: ts.CallExpression,
   setters: Map<string, SetterBinding>,
   component: string,
-  hookName: ReactEffectHookName = "useEffect",
+  hookLabel: string,
+  phase: number,
   effectContext: EffectExtractionContext = {},
 ): Transition[] {
   const summaryOptions = effectSummaryOptions(
     source,
     fileName,
     component,
-    hookName,
+    hookLabel,
     effectContext,
   );
   const callback = node.arguments[0];
@@ -149,7 +156,7 @@ export function transitionsFromUseEffect(
           )
         : { kind: "lit" as const, value: true };
     transitions.push({
-      id: `${component}.${hookName}.${
+      id: `${component}.${hookLabel}.${
         dependencySegment ??
         effects
           .flatMap(effectWriteVars)
@@ -157,7 +164,7 @@ export function transitionsFromUseEffect(
           .join("_")
       }`,
       cls: "internal",
-      label: { kind: "internal", text: `${component}.${hookName}` },
+      label: { kind: "internal", text: `${component}.${hookLabel}` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard,
       effect: effects.length === 1 ? effects[0] : { kind: "seq", effects },
@@ -171,7 +178,7 @@ export function transitionsFromUseEffect(
         ? "over-approx"
         : "exact",
       triggeredBy: deps,
-      phase: reactEffectPhase(hookName),
+      phase,
     });
   }
   if (cleanup.length > 0) {
@@ -180,7 +187,7 @@ export function transitionsFromUseEffect(
       cleanup.flatMap((summary) => summary.reads),
     );
     transitions.push({
-      id: `${component}.${hookName}.cleanup.${
+      id: `${component}.${hookLabel}.cleanup.${
         dependencySegment ??
         cleanupEffects
           .flatMap(effectWriteVars)
@@ -188,7 +195,7 @@ export function transitionsFromUseEffect(
           .join("_")
       }`,
       cls: "internal",
-      label: { kind: "internal", text: `${component}.${hookName}.cleanup` },
+      label: { kind: "internal", text: `${component}.${hookLabel}.cleanup` },
       source: [{ file: fileName, ...lineAndColumn(source, node) }],
       guard: { kind: "lit", value: true },
       effect:
@@ -199,7 +206,7 @@ export function transitionsFromUseEffect(
       writes: uniqueStrings(cleanupEffects.flatMap(effectWriteVars)),
       confidence: "over-approx",
       triggeredBy: deps,
-      phase: reactEffectPhase(hookName),
+      phase,
     });
   }
   return transitions;
@@ -253,12 +260,12 @@ function effectSummaryOptions(
   source: ts.SourceFile,
   fileName: string,
   component: string,
-  hookName: ReactEffectHookName,
+  hookLabel: string,
   effectContext: EffectExtractionContext,
 ): StatementSummaryOptions {
   return {
     component,
-    timerContext: `${component}.${hookName}`,
+    timerContext: `${component}.${hookLabel}`,
     timerIndex: effectContext.timerIndex,
     timerBindings: new Map<string, string>(),
     timerRegistrations: effectContext.timerRegistrations,
@@ -304,10 +311,6 @@ export function dependencyReads(
       ),
     ),
   ];
-}
-
-export function reactEffectPhase(hookName: ReactEffectHookName): number {
-  return hookName === "useEffect" ? 1 : 0;
 }
 
 export function useEffectWritesModeledState(

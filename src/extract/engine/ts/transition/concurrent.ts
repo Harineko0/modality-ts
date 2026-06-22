@@ -1,19 +1,15 @@
-import * as ts from "typescript";
-import {
-  isUseDeferredValueCall,
-  isUseTransitionCall,
-  lineAndColumn,
-} from "../ast.js";
-import { uniqueStrings } from "../ids.js";
 import type {
   EffectIR,
   ExprIR,
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
-import type { SetterBinding, EffectSummary } from "../types.js";
-import { summarizeHandlerStatements } from "./statement-summary.js";
+import * as ts from "typescript";
+import { currentEngineFramework, lineAndColumn } from "../ast.js";
+import { uniqueStrings } from "../ids.js";
+import type { EffectSummary, SetterBinding } from "../types.js";
 import { pendingIs } from "./async.js";
+import { summarizeHandlerStatements } from "./statement-summary.js";
 
 export interface TransitionBinding {
   varId: string;
@@ -40,8 +36,15 @@ export function extractUseTransitionBinding(
   source: ts.SourceFile,
   scope: StateVarDecl["scope"],
 ): { varDecl: StateVarDecl; binding: TransitionBinding } | undefined {
-  if (!node.initializer || !isUseTransitionCall(node.initializer))
+  if (!node.initializer || !ts.isCallExpression(node.initializer))
     return undefined;
+  const fw = currentEngineFramework();
+  if (
+    fw.framework.recognizeHook(node.initializer, fw.ctx)?.hook.kind !==
+    "transition"
+  ) {
+    return undefined;
+  }
   if (!ts.isArrayBindingPattern(node.name)) return undefined;
   const pending = node.name.elements[0];
   const starter = node.name.elements[1];
@@ -84,8 +87,15 @@ export function extractUseDeferredValueBinding(
   source: ts.SourceFile,
   scope: StateVarDecl["scope"],
 ): StateVarDecl | undefined {
-  if (!node.initializer || !isUseDeferredValueCall(node.initializer))
+  if (!node.initializer || !ts.isCallExpression(node.initializer))
     return undefined;
+  const fw = currentEngineFramework();
+  if (
+    fw.framework.recognizeHook(node.initializer, fw.ctx)?.hook.kind !==
+    "deferred"
+  ) {
+    return undefined;
+  }
   if (!ts.isIdentifier(node.name)) return undefined;
   return {
     id: deferredVarId(component, srcVarId),

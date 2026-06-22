@@ -19,6 +19,8 @@ export interface HookCall {
     | { kind: "state" }
     | { kind: "effect"; phase: number }
     | { kind: "transition" }
+    | { kind: "start-transition" }
+    | { kind: "flush-sync" }
     | { kind: "deferred" }
     | { kind: "callback"; handler: ts.Expression }
     | { kind: "context" };

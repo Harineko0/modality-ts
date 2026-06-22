@@ -1,18 +1,15 @@
 import * as ts from "typescript";
 import {
+  bindEngineFrameworkFromPlugin,
   componentNameFor,
+  currentEngineFramework,
   isExtractableHandler,
   isRecognizedUseStateCall,
-  isSuspenseElement,
-  isUseCall,
-  isUseDeferredValueCall,
   isUseReducerCall,
   lineAndColumn,
   providerComponentNames,
-  reactEffectHookName,
   unwrapHandlerInitializer,
   withEngineFramework,
-  bindEngineFrameworkFromPlugin,
 } from "./ast.js";
 import {
   globalTaintCaveat,
@@ -49,7 +46,7 @@ import type {
   StateSourcePlugin,
   WriteChannel,
 } from "../spi/index.js";
-import { resolveFrameworkPlugin } from "../spi/index.js";
+import { resolveFrameworkPlugin, resolveImportedName } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -69,10 +66,10 @@ import {
 import {
   bindContextHookObjectDeclaration,
   bindSetter,
+  type DiscoverContextBindingsOptions,
   decodeSetterBinding,
   discoverContextBindings,
   settersForComponent,
-  type DiscoverContextBindingsOptions,
 } from "./context.js";
 import {
   domainInferenceWarnings,
@@ -589,7 +586,12 @@ function extractReactSourceTransitionsImpl(
       }
     }
     const activeComponent = nextComponent ?? "Anonymous";
-    if (isSuspenseElement(node)) {
+    const engineFw = currentEngineFramework();
+    const renderBoundary = engineFw.framework.recognizeRenderBoundary(
+      node,
+      engineFw.ctx,
+    );
+    if (renderBoundary?.kind === "suspense") {
       const boundaryId = boundaryIdForComponent(
         nextComponent ?? "Anonymous",
         suspenseBoundaryCounter,
@@ -604,7 +606,9 @@ function extractReactSourceTransitionsImpl(
         ? suspenseInitialForBoundary(suspenseBody)
         : "suspended";
       if (!vars.some((decl) => decl.id === `sys:suspense:${boundaryId}`)) {
-        vars.push(suspenseStateVarDecl(boundaryId, initial));
+        vars.push(
+          suspenseStateVarDecl(boundaryId, initial, renderBoundary.domain),
+        );
       }
       ts.forEachChild(node, (child) => visit(child, nextComponent, boundaryId));
       return;
@@ -1054,47 +1058,53 @@ function extractReactSourceTransitionsImpl(
     if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
-      isUseDeferredValueCall(node.initializer) &&
+      ts.isCallExpression(node.initializer) &&
       nextComponent &&
       ts.isIdentifier(node.name)
     ) {
-      const arg = node.initializer.arguments[0];
-      const srcVarId =
-        arg && ts.isIdentifier(arg)
-          ? stateVarForName(arg.text, scopedSetters)
-          : undefined;
-      if (srcVarId) {
-        const srcDecl = vars.find((decl) => decl.id === srcVarId);
-        const srcDomain = srcDecl?.domain ?? { kind: "tokens", count: 1 };
-        const deferred = extractUseDeferredValueBinding(
-          node,
-          nextComponent,
-          srcVarId,
-          srcDomain,
-          srcDecl?.initial ?? firstValue(srcDomain),
-          route,
-          fileName,
-          source,
-          scopeForLocalState(
+      const deferredHook = engineFw.framework.recognizeHook(
+        node.initializer,
+        engineFw.ctx,
+      );
+      if (deferredHook?.hook.kind === "deferred") {
+        const arg = node.initializer.arguments[0];
+        const srcVarId =
+          arg && ts.isIdentifier(arg)
+            ? stateVarForName(arg.text, scopedSetters)
+            : undefined;
+        if (srcVarId) {
+          const srcDecl = vars.find((decl) => decl.id === srcVarId);
+          const srcDomain = srcDecl?.domain ?? { kind: "tokens", count: 1 };
+          const deferred = extractUseDeferredValueBinding(
+            node,
             nextComponent,
+            srcVarId,
+            srcDomain,
+            srcDecl?.initial ?? firstValue(srcDomain),
             route,
-            routerPlugin,
-            inventory,
-            providerComponents.has(nextComponent),
-          ),
-        );
-        if (deferred && !vars.some((decl) => decl.id === deferred.id)) {
-          vars.push(deferred);
-          transitions.push(
-            deferredSyncTransition(
+            fileName,
+            source,
+            scopeForLocalState(
               nextComponent,
-              deferred.id,
-              srcVarId,
-              fileName,
-              source,
-              node,
+              route,
+              routerPlugin,
+              inventory,
+              providerComponents.has(nextComponent),
             ),
           );
+          if (deferred && !vars.some((decl) => decl.id === deferred.id)) {
+            vars.push(deferred);
+            transitions.push(
+              deferredSyncTransition(
+                nextComponent,
+                deferred.id,
+                srcVarId,
+                fileName,
+                source,
+                node,
+              ),
+            );
+          }
         }
       }
     }
@@ -1156,7 +1166,11 @@ function extractReactSourceTransitionsImpl(
         );
       }
     }
-    if (ts.isCallExpression(node) && isUseCall(node) && effectiveBoundary) {
+    if (
+      ts.isCallExpression(node) &&
+      renderBoundary?.kind === "use" &&
+      effectiveBoundary
+    ) {
       transitions.push(
         ...transitionsFromSuspendingUse(
           source,
@@ -1167,10 +1181,17 @@ function extractReactSourceTransitionsImpl(
         ),
       );
     }
-    const effectHook = ts.isCallExpression(node)
-      ? reactEffectHookName(node)
-      : undefined;
-    if (effectHook && ts.isCallExpression(node)) {
+    const effectHook =
+      ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+        ? engineFw.framework.recognizeHook(node, engineFw.ctx)
+        : undefined;
+    if (
+      effectHook?.hook.kind === "effect" &&
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression)
+    ) {
+      const hookLabel = resolveImportedName(node.expression, engineFw.ctx);
+      const effectPhase = effectHook.hook.phase;
       const timerRegistrations: TimerRegistration[] = [];
       const webSocketRegistrations: WebSocketRegistration[] = [];
       const envTransitions: Transition[] = [];
@@ -1181,7 +1202,8 @@ function extractReactSourceTransitionsImpl(
         node,
         scopedSetters,
         activeComponent,
-        effectHook,
+        hookLabel,
+        effectPhase,
         {
           timerRegistrations,
           webSocketRegistrations,
@@ -1206,11 +1228,11 @@ function extractReactSourceTransitionsImpl(
         !providerComponents.has(activeComponent)
       ) {
         const anchor = lineAndColumn(source, node);
-        const id = `${activeComponent}.${effectHook}`;
+        const id = `${activeComponent}.${hookLabel}`;
         warnings.push({
           message: `Unextractable effect ${id}`,
           ...anchor,
-          caveat: unextractableEffectCaveat(activeComponent, effectHook, {
+          caveat: unextractableEffectCaveat(activeComponent, hookLabel, {
             file: fileName,
             ...anchor,
           }),

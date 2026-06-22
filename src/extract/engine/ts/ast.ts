@@ -1,5 +1,5 @@
-import * as ts from "typescript";
 import type { Value } from "modality-ts/core";
+import * as ts from "typescript";
 import type {
   EngineFrameworkContext,
   FrameworkCtx,
@@ -33,12 +33,18 @@ export function withEngineFramework<T>(
   }
 }
 
-function engineFramework(
+export function currentEngineFramework(
   explicit?: EngineFrameworkContext,
 ): EngineFrameworkContext {
   if (explicit) return explicit;
   if (activeEngineFramework) return activeEngineFramework;
   return createEngineFrameworkContext(resolveFrameworkPlugin());
+}
+
+function engineFramework(
+  explicit?: EngineFrameworkContext,
+): EngineFrameworkContext {
+  return currentEngineFramework(explicit);
 }
 
 function calleeName(
@@ -89,88 +95,6 @@ export function isUseRefCall(
   engineFw?: EngineFrameworkContext,
 ): node is ts.CallExpression {
   return hookNamed(node, "useRef", engineFw);
-}
-
-export function isUseEffectCall(
-  node: ts.CallExpression,
-  engineFw?: EngineFrameworkContext,
-): boolean {
-  return reactEffectHookName(node, engineFw) === "useEffect";
-}
-
-export type ReactEffectHookName =
-  | "useEffect"
-  | "useLayoutEffect"
-  | "useInsertionEffect";
-
-export function reactEffectHookName(
-  node: ts.CallExpression,
-  engineFw?: EngineFrameworkContext,
-): ReactEffectHookName | undefined {
-  const fw = engineFramework(engineFw);
-  const hook = fw.framework.recognizeHook(node, fw.ctx);
-  if (hook?.hook.kind !== "effect") return undefined;
-  const name = calleeName(node, fw.ctx);
-  if (
-    name === "useEffect" ||
-    name === "useLayoutEffect" ||
-    name === "useInsertionEffect"
-  ) {
-    return name;
-  }
-  return undefined;
-}
-
-export function isUseTransitionCall(
-  node: ts.Expression,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  return hookNamed(node, "useTransition", engineFw);
-}
-
-export function isUseDeferredValueCall(
-  node: ts.Expression,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  return hookNamed(node, "useDeferredValue", engineFw);
-}
-
-export function isStartTransitionCall(
-  node: ts.Node,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  return hookNamed(node as ts.Expression, "startTransition", engineFw);
-}
-
-export function isFlushSyncCall(
-  node: ts.Node,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  return hookNamed(node as ts.Expression, "flushSync", engineFw);
-}
-
-export function isSuspenseElement(
-  node: ts.Node,
-  engineFw?: EngineFrameworkContext,
-): node is ts.JsxElement | ts.JsxOpeningElement | ts.JsxSelfClosingElement {
-  const fw = engineFramework(engineFw);
-  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "suspense";
-}
-
-export function isReactLazyCall(
-  node: ts.Expression,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  const fw = engineFramework(engineFw);
-  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "lazy";
-}
-
-export function isUseCall(
-  node: ts.Expression,
-  engineFw?: EngineFrameworkContext,
-): node is ts.CallExpression {
-  const fw = engineFramework(engineFw);
-  return fw.framework.recognizeRenderBoundary(node, fw.ctx)?.kind === "use";
 }
 
 export function isExtractableHandler(
