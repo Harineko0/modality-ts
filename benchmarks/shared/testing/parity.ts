@@ -1,7 +1,7 @@
-import { ledgerOpsEffectApis } from "../app-spec/property-catalog.js";
-import { ledgerOpsSeededOutcomes } from "../app-spec/seeded-outcomes.js";
-import { ledgerOpsRoutes } from "../app-spec/routes.js";
 import { ledgerOpsPages } from "../app-spec/pages.js";
+import { ledgerOpsEffectApis } from "../app-spec/property-catalog.js";
+import { ledgerOpsRoutes } from "../app-spec/routes.js";
+import { ledgerOpsSeededOutcomes } from "../app-spec/seeded-outcomes.js";
 import { assertRouteParity } from "./route-fixtures.js";
 
 export type FrameworkId = "ledgerops-react-router" | "ledgerops-nextjs";

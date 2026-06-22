@@ -1,13 +1,9 @@
-import type {
-  EffectIR,
-  ExtractionCaveat,
-  ExprIR,
-} from "modality-ts/core";
+import type { EffectIR, ExprIR, ExtractionCaveat } from "modality-ts/core";
 import type {
   SurfaceCall,
   SurfaceExpr,
   SurfaceNode,
-} from "./surface-ir.js";
+} from "../../lang/ts/surface-ir.js";
 import type { SymbolPort } from "./symbol-port.js";
 
 export interface LeafEffect {
@@ -19,6 +15,7 @@ export interface LeafValue {
   expr: ExprIR;
   reads: string[];
   caveats?: ExtractionCaveat[];
+  setter?: unknown;
 }
 
 export interface LeafBoundary {
@@ -29,6 +26,7 @@ export interface LeafBoundary {
 export interface DataflowBinding {
   expr: ExprIR;
   reads: string[];
+  setter?: unknown;
 }
 
 export interface CompileCtx {
@@ -43,14 +41,15 @@ export interface CompileCtx {
 }
 
 export interface LeafDispatch {
-  interpretCall(
-    call: SurfaceCall,
+  interpretCall(call: SurfaceCall, ctx: CompileCtx): LeafEffect | undefined;
+  interpretAssignment?(
+    stmt: Extract<
+      import("../../lang/ts/surface-ir.js").SurfaceStmt,
+      { kind: "assign" }
+    >,
     ctx: CompileCtx,
   ): LeafEffect | undefined;
-  interpretExpr(
-    expr: SurfaceExpr,
-    ctx: CompileCtx,
-  ): LeafValue | undefined;
+  interpretExpr(expr: SurfaceExpr, ctx: CompileCtx): LeafValue | undefined;
   interpretBoundary(
     node: SurfaceNode,
     ctx: CompileCtx,
@@ -60,8 +59,8 @@ export interface LeafDispatch {
 export const LEAF_PRECEDENCE = [
   "framework-hook",
   "state-write",
-  "navigation",
-  "effect-model",
+  "route",
+  "effect",
   "default",
 ] as const;
 

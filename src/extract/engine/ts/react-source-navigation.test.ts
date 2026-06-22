@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
+import type { RouteInventory, RoutePlugin } from "../spi/index.js";
 import { extractReactSourceTransitions } from "./react-source-transitions.js";
 
 const analyticsInventory: RouteInventory = {
@@ -9,7 +9,7 @@ const analyticsInventory: RouteInventory = {
   ],
 };
 
-const routerTestAdapter: NavigationAdapter = {
+const routerTestAdapter: RoutePlugin = {
   id: "router-test",
   packageNames: ["react-router"],
   discoverRoutes: async () => ({ routes: [] }),
@@ -86,7 +86,7 @@ describe("framework-blind navigation extraction", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/", "/analytics"],
-        routerPlugin: routerTestAdapter,
+        routePlugin: routerTestAdapter,
         inventory: analyticsInventory,
       },
     );
@@ -122,7 +122,7 @@ describe("framework-blind navigation extraction", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/checkout"],
-        routerPlugin: routerTestAdapter,
+        routePlugin: routerTestAdapter,
       },
     );
     expect(result.transitions).toHaveLength(1);

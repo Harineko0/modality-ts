@@ -1,1 +1,1 @@
-export { arktypeDomainRefinementProvider } from "./domains.js";
+export { arktypeTypePlugin } from "./domains.js";

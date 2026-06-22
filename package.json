@@ -115,6 +115,10 @@
       "types": "./dist/extract/engine/spi/index.d.ts",
       "default": "./dist/extract/engine/spi/index.js"
     },
+    "./extract/plugins": {
+      "types": "./dist/extract/plugins/index.d.ts",
+      "default": "./dist/extract/plugins/index.js"
+    },
     "./extract/lang/ts": {
       "types": "./dist/extract/lang/ts/index.d.ts",
       "default": "./dist/extract/lang/ts/index.js"
@@ -206,6 +210,10 @@
     "./extract/sources/react-hook-form": {
       "types": "./dist/extract/sources/react-hook-form/index.d.ts",
       "default": "./dist/extract/sources/react-hook-form/index.js"
+    },
+    "./extract/sources/react-hook-form/unwrap": {
+      "types": "./dist/extract/sources/react-hook-form/unwrap.d.ts",
+      "default": "./dist/extract/sources/react-hook-form/unwrap.js"
     },
     "./extract/sources/redux": {
       "types": "./dist/extract/sources/redux/index.d.ts",

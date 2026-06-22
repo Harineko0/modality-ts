@@ -82,7 +82,7 @@ describe("generateAbstractReplayTest", () => {
     expect(artifact.source).toContain("ModalityReplayHarness");
     expect(artifact.source).toContain("data-modality-var");
     expect(artifact.source).toContain("createBuiltinModalityRegistry");
-    expect(artifact.source).toContain("setupObservationProviders");
+    expect(artifact.source).toContain("setupObservationPlugins");
     expect(artifact.source).toContain("observationSourcesFromProviders");
     expect(artifact.source).toContain("dom-projection");
     expect(artifact.source).toContain("__modalityRenderReplayApp");
@@ -96,7 +96,7 @@ describe("generateAbstractReplayTest", () => {
   it("routes TanStack navigation observation through the generic registry harness path", () => {
     const artifact = generateReplayHarness();
     expect(artifact.source).toContain("createBuiltinModalityRegistry");
-    expect(artifact.source).toContain("setupObservationProviders");
+    expect(artifact.source).toContain("setupObservationPlugins");
     expect(artifact.source).toContain("observationSourcesFromProviders");
     expect(artifact.source).toContain("navigation.harness.navigate");
   });

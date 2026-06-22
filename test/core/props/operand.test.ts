@@ -1,8 +1,7 @@
-import { describe, expect, it } from "vitest";
 import {
+  type AbstractDomain,
   add,
   and,
-  type AbstractDomain,
   eq,
   lessThan,
   lit,
@@ -11,6 +10,7 @@ import {
   type Variable,
   variable,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { isExprIR, isVariable, lift } from "../../../src/core/props/operand.js";
 
 type Equal<Left, Right> =

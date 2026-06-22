@@ -1,93 +1,109 @@
-import * as ts from "typescript";
 import type { AbstractDomain, SourceAnchor } from "modality-ts/core";
 import type {
   FrameworkCtx,
   RenderBoundary,
+  SurfaceCall,
+  SurfaceExpr,
+  SurfaceNode,
 } from "modality-ts/extract/engine/spi";
-import { resolveImportedName } from "modality-ts/extract/engine/spi";
-
-function lineAndColumn(
-  source: ts.SourceFile,
-  node: ts.Node,
-): { line: number; column: number } {
-  const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
-  return { line: pos.line + 1, column: pos.character + 1 };
-}
+import {
+  resolveImportedName,
+  sourceAnchorFromNodeRef,
+} from "modality-ts/extract/engine/spi";
 
 export const SUSPENSE_DOMAIN: AbstractDomain = {
   kind: "enum",
   values: ["ready", "suspended"],
 };
 
-function sourceAnchorFor(node: ts.Node, ctx: FrameworkCtx): SourceAnchor {
-  const source = ctx.sourceFile;
-  const fileName = ctx.fileName ?? source?.fileName ?? "unknown";
-  if (source) {
-    return { file: fileName, ...lineAndColumn(source, node) };
-  }
-  return { file: fileName };
+function surfaceOrigin(
+  node: { origin: { file: string; start: number; end: number } },
+  ctx: FrameworkCtx,
+): SourceAnchor {
+  return sourceAnchorFromNodeRef(node.origin, ctx.fileName);
 }
 
 export function isReactSuspenseElement(
-  node: ts.Node,
+  node: SurfaceNode,
   _ctx: FrameworkCtx,
-): node is ts.JsxElement | ts.JsxOpeningElement | ts.JsxSelfClosingElement {
-  if (ts.isJsxElement(node)) {
-    const tag = node.openingElement.tagName;
-    return ts.isIdentifier(tag) && tag.text === "Suspense";
-  }
-  if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node))
-    return false;
-  const tag = node.tagName;
-  return ts.isIdentifier(tag) && tag.text === "Suspense";
+): boolean {
+  return node.kind === "jsx" && node.tag === "Suspense";
 }
 
 export function isReactLazyCall(
-  node: ts.Expression,
+  node: SurfaceExpr,
   _ctx: FrameworkCtx,
-): node is ts.CallExpression {
+): node is SurfaceCall {
+  if (node.kind !== "call") return false;
+  if (node.callee.kind !== "member") return false;
   return (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    node.expression.expression.text === "React" &&
-    node.expression.name.text === "lazy"
+    node.callee.name === "lazy" &&
+    node.callee.object.kind === "ref" &&
+    node.callee.object.symbol.name === "React"
   );
 }
 
 export function isReactUseCall(
-  node: ts.Expression,
+  node: SurfaceExpr,
   ctx: FrameworkCtx,
-): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    resolveImportedName(node.expression, ctx) === "use"
-  );
+): node is SurfaceCall {
+  if (node.kind !== "call") return false;
+  if (node.callee.kind !== "ref") return false;
+  return resolveImportedName(node.callee.symbol, ctx) === "use";
 }
 
 export function recognizeReactRenderBoundary(
-  node: ts.Node,
+  node: SurfaceNode,
   ctx: FrameworkCtx,
 ): RenderBoundary | undefined {
-  if (isReactSuspenseElement(node, ctx)) {
+  if (node.kind === "jsx" && node.tag === "Suspense") {
     return {
       kind: "suspense",
       domain: SUSPENSE_DOMAIN,
-      origin: sourceAnchorFor(node, ctx),
+      origin: surfaceOrigin(node, ctx),
     };
   }
-  if (ts.isCallExpression(node) && isReactLazyCall(node, ctx)) {
+  if (node.kind !== "call") return undefined;
+  if (isReactLazyCall(node, ctx)) {
     return {
       kind: "lazy",
-      origin: sourceAnchorFor(node, ctx),
+      origin: surfaceOrigin(node, ctx),
     };
   }
-  if (ts.isCallExpression(node) && isReactUseCall(node, ctx)) {
+  if (isReactUseCall(node, ctx)) {
     return {
       kind: "use",
-      origin: sourceAnchorFor(node, ctx),
+      origin: surfaceOrigin(node, ctx),
     };
   }
   return undefined;
+}
+
+export function isReactStartTransitionCall(
+  call: SurfaceCall,
+  ctx: FrameworkCtx,
+): boolean {
+  return calleeNameFromCall(call, ctx) === "startTransition";
+}
+
+export function isReactFlushSyncCall(
+  call: SurfaceCall,
+  ctx: FrameworkCtx,
+): boolean {
+  return calleeNameFromCall(call, ctx) === "flushSync";
+}
+
+export function isReactUseTransitionCall(
+  call: SurfaceCall,
+  ctx: FrameworkCtx,
+): boolean {
+  return calleeNameFromCall(call, ctx) === "useTransition";
+}
+
+function calleeNameFromCall(
+  call: SurfaceCall,
+  ctx: FrameworkCtx,
+): string | undefined {
+  if (call.callee.kind !== "ref") return undefined;
+  return resolveImportedName(call.callee.symbol, ctx);
 }

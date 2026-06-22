@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import {
   bindSetter,
   resolveSetterBinding,
@@ -18,9 +18,8 @@ function extractReactSourceTransitions(
   options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
 ) {
   return extractReactSourceTransitionsBase(source, {
-    sourcePlugins: defaultSourcePlugins,
     ...options,
-    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+    statePlugins: options.statePlugins ?? defaultSourcePlugins,
   });
 }
 

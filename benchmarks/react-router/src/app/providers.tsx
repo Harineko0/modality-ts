@@ -1,6 +1,6 @@
 import { Provider as JotaiProvider } from "jotai";
-import { SWRConfig } from "swr";
 import { RouterProvider } from "react-router-dom";
+import { SWRConfig } from "swr";
 import { router } from "./router.js";
 
 const fetcher = async (key: string | readonly unknown[]) => {

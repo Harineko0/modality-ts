@@ -1,16 +1,21 @@
 import type { AbstractDomain, SourceAnchor } from "modality-ts/core";
-import type * as ts from "typescript";
-import type { ModalityAdapterBase, SemanticTypeContext } from "./index.js";
+import type { NodeRef } from "../../lang/ts/node-ref.js";
+import type {
+  SurfaceCall,
+  SurfaceDecl,
+  SurfaceExpr,
+  SurfaceFunction,
+  SurfaceNode,
+  SymbolRef,
+} from "../../lang/ts/surface-ir.js";
+import type { ModalityAdapterBase } from "./index.js";
+import type { SymbolPort } from "./symbol-port.js";
 
-export type SurfaceCall = ts.CallExpression;
-export type SurfaceNode = ts.Node;
-export type SurfaceDecl = ts.Node;
+export type { SurfaceCall, SurfaceDecl, SurfaceExpr, SurfaceNode };
 
 export interface FrameworkCtx {
-  types?: SemanticTypeContext;
-  sourceFile?: ts.SourceFile;
   fileName?: string;
-  symbols?: import("./symbol-port.js").SymbolPort;
+  symbols?: SymbolPort;
 }
 
 export type ComponentRole = "component" | "custom-hook";
@@ -23,7 +28,7 @@ export interface HookCall {
     | { kind: "start-transition" }
     | { kind: "flush-sync" }
     | { kind: "deferred" }
-    | { kind: "callback"; handler: ts.Expression }
+    | { kind: "callback"; handler: NodeRef }
     | { kind: "context" };
   origin: SourceAnchor;
 }
@@ -34,7 +39,13 @@ export interface RenderBoundary {
   origin: SourceAnchor;
 }
 
+export interface UnwrapHandlerCtx {
+  fileName: string;
+  symbols?: SymbolPort;
+}
+
 export interface FrameworkPlugin extends ModalityAdapterBase {
+  kind: "framework";
   recognizeHook(call: SurfaceCall, ctx: FrameworkCtx): HookCall | undefined;
   recognizeRenderBoundary(
     node: SurfaceNode,
@@ -44,6 +55,10 @@ export interface FrameworkPlugin extends ModalityAdapterBase {
     decl: SurfaceDecl,
     ctx: FrameworkCtx,
   ): ComponentRole | undefined;
+  unwrapHandler?(
+    expr: SurfaceExpr,
+    ctx: UnwrapHandlerCtx,
+  ): SurfaceFunction | undefined;
 }
 
 export interface EngineFrameworkContext {
@@ -59,24 +74,31 @@ export function createEngineFrameworkContext(
 }
 
 /**
- * Resolves a callee identifier to its exported name, including import aliases
+ * Resolves a callee symbol to its exported name, including import aliases
  * when an L1 SymbolPort is available on the framework context.
  */
 export function resolveImportedName(
-  node: ts.Identifier,
+  symbol: SymbolRef,
   ctx: FrameworkCtx,
 ): string {
   if (ctx.symbols) {
-    const fileName = ctx.sourceFile?.fileName ?? ctx.fileName ?? "";
-    const binding = ctx.symbols.importBinding({
-      name: node.text,
-      origin: {
-        file: fileName,
-        start: node.getStart(),
-        end: node.getEnd(),
-      },
-    });
+    const binding = ctx.symbols.importBinding(symbol);
     if (binding) return binding.exportedName;
   }
-  return node.text;
+  return symbol.name;
+}
+
+export function calleeNameFromCall(
+  call: SurfaceCall,
+  ctx: FrameworkCtx,
+): string | undefined {
+  if (call.callee.kind !== "ref") return undefined;
+  return resolveImportedName(call.callee.symbol, ctx);
+}
+
+export function sourceAnchorFromNodeRef(
+  ref: NodeRef,
+  fileName?: string,
+): SourceAnchor {
+  return { file: fileName ?? ref.file };
 }

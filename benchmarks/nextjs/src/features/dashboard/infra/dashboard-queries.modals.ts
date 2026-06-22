@@ -1,4 +1,4 @@
-import { variable, type Variable } from "modality-ts/core";
+import { type Variable, variable } from "modality-ts/core";
 import type { TransitionRef } from "modality-ts/properties";
 
 export const useDashboardSummary = {

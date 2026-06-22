@@ -1,18 +1,18 @@
-import { describe, expect, it } from "vitest";
 import {
   extractZustandSkeleton,
   zustandSource,
 } from "modality-ts/extract/sources/zustand";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
+import { discoverZustandStoresDetailed } from "../../../src/extract/sources/zustand/discover.js";
+import { lowerActionBody } from "../../../src/extract/sources/zustand/effects.js";
 import {
   observe,
   setup,
 } from "../../../src/extract/sources/zustand/harness.js";
 import { discoverZustandWritesDetailed } from "../../../src/extract/sources/zustand/writes.js";
-import { discoverZustandStoresDetailed } from "../../../src/extract/sources/zustand/discover.js";
-import { lowerActionBody } from "../../../src/extract/sources/zustand/effects.js";
-import * as ts from "typescript";
 
 describe("Zustand source plugin", () => {
   it("exposes a StateSourcePlugin-compatible source slice", () => {
@@ -35,14 +35,14 @@ describe("Zustand source plugin", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { zustand: "^4.0.0", react: "^18.0.0" },
     });
-    expect(registry.sourcePluginIds).toContain("zustand");
+    expect(registry.statePluginIds).toContain("zustand");
   });
 
   it("is absent when zustand is not a dependency", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { react: "^18.0.0" },
     });
-    expect(registry.sourcePluginIds).not.toContain("zustand");
+    expect(registry.statePluginIds).not.toContain("zustand");
   });
 
   it("observes store values through harness handles", () => {

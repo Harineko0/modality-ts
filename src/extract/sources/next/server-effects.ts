@@ -1,10 +1,10 @@
-import * as ts from "typescript";
 import type {
-  EffectApiDiscoveryCtx,
   DiscoveredEffectApi,
+  EffectApiDiscoveryCtx,
   RouteInventory,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 import { discoverNextCacheUsage, type NextCacheDiscovery } from "./cache.js";
 import { parseModuleDirectives } from "./module-roles.js";
 

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
 import type { RouteInventory } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import { sourceWithReachableImports } from "../../src/cli/features/extract/project.js";
 import {
   nextEffectApiProvider,
-  nextModuleRoleAdapter,
+  nextModuleRolePlugin,
 } from "../../src/extract/sources/next/index.js";
 
 describe("sourceWithReachableImports next boundaries", () => {
@@ -17,7 +17,7 @@ describe("sourceWithReachableImports next boundaries", () => {
     ],
   };
   const nextProviders = {
-    moduleRoleAdapters: [nextModuleRoleAdapter()],
+    moduleRoleAdapters: [nextModuleRolePlugin()],
     effectApiProviders: [nextEffectApiProvider()],
   };
 

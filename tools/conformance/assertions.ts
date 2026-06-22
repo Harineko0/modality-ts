@@ -2,8 +2,8 @@ import type {
   CheckReport,
   ConformReport,
   EffectIR,
-  ExtractionReport,
   ExprIR,
+  ExtractionReport,
   Model,
 } from "modality-ts/core";
 import { evaluateStateSpaceBudgets } from "../shared-gates/budgets.js";

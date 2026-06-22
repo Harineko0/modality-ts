@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
 import {
   extractJotaiSkeleton,
   jotaiSource,
 } from "modality-ts/extract/sources/jotai";
+import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
 import { observe, setup } from "../../../src/extract/sources/jotai/harness.js";
 

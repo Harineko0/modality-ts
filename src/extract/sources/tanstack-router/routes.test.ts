@@ -1,19 +1,19 @@
-import { describe, expect, it } from "vitest";
 import type {
   LocationLowering,
   RouteInventory,
 } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import {
   locationVars,
   lowerNavigation,
   mountScopeForComponent,
   routeTreeVars,
-  tanstackBranchVarId,
   TANSTACK_BRANCH_NONE,
+  tanstackBranchVarId,
 } from "./routes.js";
 import {
-  tanstackRouteTreeToMetadata,
   type TanstackRouteTreeNode,
+  tanstackRouteTreeToMetadata,
 } from "./types.js";
 
 function treeRoute(

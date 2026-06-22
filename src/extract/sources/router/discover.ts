@@ -1,11 +1,11 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
-import * as ts from "typescript";
 import type {
   RouteDiscoveryCtx,
   RouteInventory,
   RouteKind,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 
 export function parseReactRouterRoutes(
   source: string,

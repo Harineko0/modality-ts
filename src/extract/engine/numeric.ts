@@ -1,3 +1,4 @@
+export type { NumericReduction } from "modality-ts/core";
 export {
   applyInputClassAbstraction,
   applyInputClassToWideInputVars,
@@ -10,13 +11,12 @@ export {
   collectNumericObservations,
   downgradeVerdictForReductions,
   exactFirstReduction,
-  mergeNumericReductions,
-  numericCoiDroppedReductions,
-  reductionsAffectingProperty,
-  worstNumericClaim,
   type InputClassConfig,
   type IntervalAbstractionConfig,
+  mergeNumericReductions,
+  numericCoiDroppedReductions,
   type PredicateAbstractionConfig,
+  reductionsAffectingProperty,
   type SaturationCounterConfig,
+  worstNumericClaim,
 } from "./ts/numeric/abstraction.js";
-export type { NumericReduction } from "modality-ts/core";

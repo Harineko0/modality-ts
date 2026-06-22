@@ -1,6 +1,6 @@
 import * as ts from "typescript";
-import type { BoundExpr, SetterBinding } from "../../engine/ts/types.js";
-import { setterCallFrom } from "../../engine/ts/transition/setter-write.js";
+import { setterCallFrom } from "./transition/setter-write.js";
+import type { BoundExpr, SetterBinding } from "./types.js";
 
 export function uniqueSetters(
   setters: readonly SetterBinding[],

@@ -1,8 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runExtractCommand } from "../../src/cli/extract.js";
-import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
 import { ledgerOpsPages } from "../../benchmarks/shared/app-spec/pages.js";
 import {
   ledgerOpsArktypeDomains,
@@ -11,6 +9,8 @@ import {
   ledgerOpsSwrHooks,
   ledgerOpsZodDomains,
 } from "../../benchmarks/shared/app-spec/property-catalog.js";
+import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
+import { runExtractCommand } from "../../src/cli/extract.js";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const benchmarkRoot = join(repoRoot, "benchmarks", "react-router");

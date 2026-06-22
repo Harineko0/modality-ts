@@ -1,9 +1,3 @@
-export {
-  generateTlaModule,
-  generateTlaStructuredModel,
-  runExportTlaCommand,
-} from "./command.js";
-export { renderHumanExportResult } from "./output.js";
 export type {
   ExportTlaCommandOptions,
   ExportTlaCommandResult,
@@ -12,3 +6,9 @@ export type {
   TlaStructuredModel,
   TlaStructuredTransition,
 } from "./command.js";
+export {
+  generateTlaModule,
+  generateTlaStructuredModel,
+  runExportTlaCommand,
+} from "./command.js";
+export { renderHumanExportResult } from "./output.js";

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { AbstractDomain } from "./types.js";
 import {
   collectRecordDomainFieldPaths,
   collectTokenDomainPaths,
@@ -10,6 +9,7 @@ import {
   validateValue,
   WIDE_NUMERIC_DOMAIN_THRESHOLD,
 } from "./domains.js";
+import type { AbstractDomain } from "./types.js";
 
 describe("domainCardinality", () => {
   const cases: Array<{ label: string; domain: AbstractDomain }> = [

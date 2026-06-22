@@ -1,6 +1,6 @@
 import type { EffectIR, ExtractionCaveat } from "modality-ts/core";
 import type { CompileCtx, LeafDispatch } from "../engine/spi/leaf-dispatch.js";
-import type { SurfaceCall, SurfaceStmt } from "../engine/spi/surface-ir.js";
+import type { SurfaceCall, SurfaceStmt } from "../lang/ts/surface-ir.js";
 import { compileExpr, compileGuard } from "./compile-expr.js";
 import { effectFromSummaries, identityEffect } from "./effects.js";
 
@@ -101,6 +101,8 @@ function compileStmt(
 ): CompileSummary | undefined {
   switch (stmt.kind) {
     case "block": {
+      const guarded = compileGuardedRestBlock(stmt.stmts, options);
+      if (guarded) return guarded;
       const summaries: { effect: EffectIR; reads: string[] }[] = [];
       const caveats: ExtractionCaveat[] = [];
       let terminated = false;
@@ -142,6 +144,16 @@ function compileStmt(
             terminated: false,
           };
       if (!thenResult || !elseResult) return undefined;
+      if (
+        thenResult.caveats.some((caveat) => caveat.id === "loop-over-approx")
+      ) {
+        return thenResult;
+      }
+      if (
+        elseResult.caveats.some((caveat) => caveat.id === "loop-over-approx")
+      ) {
+        return elseResult;
+      }
       return {
         effect: {
           kind: "if",
@@ -244,9 +256,14 @@ function compileStmt(
         }
         const value = compileExpr(binding.init, options.ctx);
         if (value) {
+          const leafValue = options.leaf.interpretExpr(
+            binding.init,
+            options.ctx,
+          );
           options.ctx.locals.set(binding.name, {
             expr: value.expr,
             reads: value.reads,
+            ...(leafValue?.setter ? { setter: leafValue.setter } : {}),
           });
         }
       }
@@ -291,15 +308,87 @@ function compileStmt(
         `unsupported-surface-${stmt.kind}`,
         `Unsupported surface statement kind: ${stmt.kind}`,
       );
-    case "assign":
+    case "assign": {
+      const leaf = options.leaf.interpretAssignment?.(stmt, options.ctx);
+      if (leaf) {
+        return {
+          effect: leaf.effect,
+          reads: readsFromEffect(leaf.effect),
+          caveats: leaf.caveats ?? [],
+          terminated: false,
+        };
+      }
       return taintSummary(
         options.taintVars ?? [],
         "unsupported-surface-assign",
         "Direct assignment not lowered to setter write",
       );
+    }
     default:
       return undefined;
   }
+}
+
+function compileGuardedRestBlock(
+  stmts: readonly SurfaceStmt[],
+  options: CompileStmtOptions,
+): CompileSummary | undefined {
+  const guardedIndex = stmts.findIndex(
+    (stmt) =>
+      stmt.kind === "if" &&
+      branchTerminates(stmt.then) &&
+      stmt.else === undefined,
+  );
+  if (guardedIndex < 0) return undefined;
+  const guarded = stmts[guardedIndex] as Extract<SurfaceStmt, { kind: "if" }>;
+  const prefixSummaries: { effect: EffectIR; reads: string[] }[] = [];
+  const prefixCaveats: ExtractionCaveat[] = [];
+  for (const prefix of stmts.slice(0, guardedIndex)) {
+    const result = compileStmt(prefix, options);
+    if (!result) return undefined;
+    if (
+      result.effect.kind === "seq" &&
+      result.effect.effects.length === 0 &&
+      result.reads.length === 0 &&
+      result.caveats.length === 0
+    ) {
+      continue;
+    }
+    prefixSummaries.push({ effect: result.effect, reads: result.reads });
+    prefixCaveats.push(...result.caveats);
+  }
+  const condition = compileGuard(guarded.cond, options.ctx);
+  if (!condition) return undefined;
+  const rest = compileStmt(
+    { kind: "block", stmts: stmts.slice(guardedIndex + 1) },
+    options,
+  );
+  if (!rest) return undefined;
+  const guardedEffect: EffectIR = {
+    kind: "if",
+    cond: condition.expr,
+    // biome-ignore lint/suspicious/noThenProperty: Effect IR serializes if branches with a "then" field.
+    then: identityEffect(),
+    else: rest.effect,
+  };
+  return {
+    effect: effectFromSummaries([
+      ...prefixSummaries,
+      { effect: guardedEffect, reads: [...condition.reads, ...rest.reads] },
+    ]),
+    reads: uniqueStrings([
+      ...prefixSummaries.flatMap((summary) => summary.reads),
+      ...condition.reads,
+      ...rest.reads,
+    ]),
+    caveats: [...prefixCaveats, ...rest.caveats],
+    terminated: false,
+  };
+}
+
+function branchTerminates(stmt: SurfaceStmt): boolean {
+  if (stmt.kind === "return" || stmt.kind === "throw") return true;
+  return stmt.kind === "block" && stmt.stmts.some(branchTerminates);
 }
 
 export function compileStatements(

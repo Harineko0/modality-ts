@@ -1,6 +1,6 @@
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
-import { collectSemanticNamedImports } from "modality-ts/extract/engine/spi";
+import { collectSemanticNamedImports } from "../../engine/ts/semantic-imports.js";
 
 export const REACT_REDUX_MODULES = new Set(["react-redux"]);
 
@@ -44,10 +44,7 @@ export const REDUX_CORE_SYMBOLS = new Set([
   "compose",
 ]);
 
-export const RTK_QUERY_SYMBOLS = new Set([
-  "createApi",
-  "fetchBaseQuery",
-]);
+export const RTK_QUERY_SYMBOLS = new Set(["createApi", "fetchBaseQuery"]);
 
 export const ALL_REDUX_MODULES = new Set([
   ...REACT_REDUX_MODULES,
@@ -121,7 +118,9 @@ function resolveReduxImportsSemantic(
   return result;
 }
 
-function resolveReduxImportsSyntax(source: ts.SourceFile): ReduxResolvedImports {
+function resolveReduxImportsSyntax(
+  source: ts.SourceFile,
+): ReduxResolvedImports {
   const result = emptyImports();
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement)) continue;

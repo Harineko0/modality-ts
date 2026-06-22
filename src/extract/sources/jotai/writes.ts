@@ -1,36 +1,37 @@
-import * as ts from "typescript";
+import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
 import type {
   ExtractionWarning,
   WriteChannel,
-  SemanticTypeContext,
 } from "modality-ts/extract/engine/spi";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
-import type { EffectIR, SourceAnchor, Value } from "modality-ts/core";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
+import { componentNameFor, propertyName } from "../../engine/ts/ast.js";
 import {
   caveatMessage,
   globalTaintCaveat,
   modelSlackCaveat,
 } from "../../engine/ts/caveats.js";
-import { propertyName, componentNameFor } from "../../engine/ts/ast.js";
-import { discoverComponentStoreScopes } from "./stores.js";
-import { providerScopeFromJsx } from "./jsx.js";
+import { typeAliasDeclarations } from "../../engine/ts/domains.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
 import {
   discoverJotaiAtomsDetailed,
   duplicateAtomsForStore,
 } from "./discover.js";
+import { classifyAtomCall, staticFamilyParam } from "./domains.js";
+import { discoverHydrationOverrides } from "./hydration.js";
+import { atomVarId, familyVarId } from "./ids.js";
 import {
+  atomCreatorName,
   hookImportedName,
+  isAtomCreatorCall,
   isHookCall,
   isJotaiModuleSpecifier,
   resolveJotaiImports,
 } from "./imports.js";
-import { atomVarId, familyVarId } from "./ids.js";
-import { discoverHydrationOverrides } from "./hydration.js";
-import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
-import { classifyAtomCall, staticFamilyParam } from "./domains.js";
-import { typeAliasDeclarations } from "modality-ts/extract/engine/spi";
+import { providerScopeFromJsx } from "./jsx.js";
+import { discoverComponentStoreScopes } from "./stores.js";
 import { isResettableKind, metadataFromRecord } from "./types.js";
-import { atomCreatorName, isAtomCreatorCall } from "./imports.js";
 
 export interface JotaiWriteDiscovery {
   channels: WriteChannel[];
@@ -502,7 +503,7 @@ function resolveAtomVarId(
   atomArg: ts.Expression | undefined,
   storeScope: string | undefined,
   source: ts.SourceFile,
-  imports: ReturnType<typeof resolveJotaiImports>,
+  _imports: ReturnType<typeof resolveJotaiImports>,
   warnings: ExtractionWarning[],
   fileName: string,
   defaultStoreNames: ReadonlySet<string> = new Set(),
@@ -539,7 +540,7 @@ function resolveAtomVarId(
 function resolveStoreScope(
   call: ts.CallExpression,
   inheritedScope: string | undefined,
-  imports: ReturnType<typeof resolveJotaiImports>,
+  _imports: ReturnType<typeof resolveJotaiImports>,
 ): string | undefined {
   const options = call.arguments[1];
   if (options && ts.isObjectLiteralExpression(options)) {

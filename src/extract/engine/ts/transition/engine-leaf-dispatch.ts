@@ -1,18 +1,23 @@
 import * as ts from "typescript";
+import type { NodeRef } from "../../../lang/ts/node-ref.js";
+import type { SurfaceCall } from "../../../lang/ts/surface-ir.js";
 import type { LeafEffect } from "../../spi/leaf-dispatch.js";
-import type { SurfaceCall } from "../../spi/surface-ir.js";
-import type { NodeRef } from "../../spi/surface-ir.js";
+import { currentEngineFramework, recognizeHookFromTs } from "../ast.js";
+import type { SetterBinding } from "../types.js";
+import {
+  dispatchEffectAssignment,
+  dispatchEffectRecognition,
+} from "./effect-model-dispatch.js";
 import {
   calleeNameFromSurfaceCall,
   createLeafDispatchAdapter,
 } from "./leaf-dispatch-adapter.js";
 import {
-  currentEngineFramework,
-} from "../ast.js";
-import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
+  setterCallFrom,
+  summarizeSetterCall,
+  summarizeSetterWrite,
+} from "./setter-write.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
-import type { SetterBinding } from "../types.js";
-import { summarizeSetterCall, setterCallFrom, summarizeSetterWrite } from "./setter-write.js";
 
 export interface EngineLeafDispatchOptions {
   setters: Map<string, SetterBinding>;
@@ -26,19 +31,23 @@ export function createEngineLeafDispatch(
   const { setters, state, originNode } = options;
   return createLeafDispatchAdapter({
     framework: currentEngineFramework().framework,
-    sourcePlugins: [],
-    effectModels: state.effectModelProviders,
+    statePlugins: [],
+    effectModels: state.effectPlugins,
     setters,
     resolveCallName: calleeNameFromSurfaceCall,
     resolveFrameworkHook(call, _ctx) {
       const node = originNode(call.origin);
       if (!node || !ts.isCallExpression(node)) return undefined;
-      const hook = currentEngineFramework().framework.recognizeHook(
+      const hook = recognizeHookFromTs(
         node,
-        currentEngineFramework().ctx,
+        currentEngineFramework(),
+        state.fileName ?? node.getSourceFile().fileName,
       );
       if (!hook) return undefined;
-      if (hook.hook.kind === "flush-sync" || hook.hook.kind === "start-transition") {
+      if (
+        hook.hook.kind === "flush-sync" ||
+        hook.hook.kind === "start-transition"
+      ) {
         return { effect: { kind: "seq", effects: [] } };
       }
       return undefined;
@@ -49,7 +58,13 @@ export function createEngineLeafDispatch(
       const locals = new Map(
         [...ctx.locals.entries()].map(([name, binding]) => [
           name,
-          { expr: binding.expr, reads: binding.reads },
+          {
+            expr: binding.expr,
+            reads: binding.reads,
+            ...(binding.setter
+              ? { setter: binding.setter as SetterBinding }
+              : {}),
+          },
         ]),
       );
       const summary = summarizeSetterCall(node, setters, locals, {
@@ -67,11 +82,19 @@ export function createEngineLeafDispatch(
     resolveEffectModel(call) {
       const node = originNode(call.origin);
       if (!node) return undefined;
-      const callNode = ts.isCallExpression(node) || ts.isNewExpression(node) ? node : undefined;
+      const callNode =
+        ts.isCallExpression(node) || ts.isNewExpression(node)
+          ? node
+          : undefined;
       if (!callNode) return undefined;
       const summary = dispatchEffectRecognition(callNode, setters, state);
       if (!summary) return undefined;
       return { effect: summary.effect };
+    },
+    interpretAssignment(assign, _ctx) {
+      const handled = dispatchEffectAssignment(assign, setters, state);
+      if (!handled) return undefined;
+      return { effect: { kind: "seq", effects: [] } };
     },
   });
 }
@@ -80,7 +103,7 @@ export function setterLeafFromCall(
   call: SurfaceCall,
   setters: Map<string, SetterBinding>,
   originNode: (ref: NodeRef) => ts.Node | undefined,
-  types?: import("../../spi/index.js").SemanticTypeContext,
+  types?: import("../../../lang/ts/semantic-type-context.js").SemanticTypeContext,
 ): LeafEffect | undefined {
   const node = originNode(call.origin);
   if (!node || !ts.isCallExpression(node)) return undefined;

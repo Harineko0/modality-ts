@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Model, SourceAnchor } from "modality-ts/core";
-import {
-  emitComponentModalModules,
-  varHandleNaming,
-} from "../codegen/component-state.js";
-import { componentExportName } from "../codegen/transition-handles.js";
+import ts from "typescript";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
   type SemanticSourceEntry,
 } from "../../extract/engine/ts/semantic-project.js";
-import ts from "typescript";
+import {
+  emitComponentModalModules,
+  varHandleNaming,
+} from "../codegen/component-state.js";
+import { componentExportName } from "../codegen/transition-handles.js";
 
 export interface SymbolRewriteDiagnostic {
   symbol: string;

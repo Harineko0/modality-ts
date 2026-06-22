@@ -5,7 +5,11 @@ import type {
   Transition,
 } from "modality-ts/core";
 import * as ts from "typescript";
-import { currentEngineFramework, lineAndColumn } from "../ast.js";
+import {
+  currentEngineFramework,
+  lineAndColumn,
+  recognizeHookFromTs,
+} from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import type { EffectSummary, SetterBinding } from "../types.js";
 import { pendingIs } from "./async.js";
@@ -31,7 +35,7 @@ export function extractUseTransitionBinding(
   node: ts.VariableDeclaration,
   component: string,
   index: number,
-  route: string,
+  _route: string,
   fileName: string,
   source: ts.SourceFile,
   scope: StateVarDecl["scope"],
@@ -40,7 +44,7 @@ export function extractUseTransitionBinding(
     return undefined;
   const fw = currentEngineFramework();
   if (
-    fw.framework.recognizeHook(node.initializer, fw.ctx)?.hook.kind !==
+    recognizeHookFromTs(node.initializer, fw, fileName)?.hook.kind !==
     "transition"
   ) {
     return undefined;
@@ -82,7 +86,7 @@ export function extractUseDeferredValueBinding(
   srcVarId: string,
   srcDomain: StateVarDecl["domain"],
   srcInitial: StateVarDecl["initial"],
-  route: string,
+  _route: string,
   fileName: string,
   source: ts.SourceFile,
   scope: StateVarDecl["scope"],
@@ -91,7 +95,7 @@ export function extractUseDeferredValueBinding(
     return undefined;
   const fw = currentEngineFramework();
   if (
-    fw.framework.recognizeHook(node.initializer, fw.ctx)?.hook.kind !==
+    recognizeHookFromTs(node.initializer, fw, fileName)?.hook.kind !==
     "deferred"
   ) {
     return undefined;

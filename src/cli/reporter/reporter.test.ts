@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { BasicReporter } from "./basic.js";
 import { DefaultReporter } from "./default.js";
-import { JsonReporter } from "./json.js";
 import { createReporter } from "./index.js";
+import { JsonReporter } from "./json.js";
 import { runReport } from "./run-session.js";
 import type { ReporterTask } from "./types.js";
 
@@ -115,11 +115,19 @@ describe("runReport orchestrator", () => {
 
     const task1: ReporterTask<string> = {
       title: "t1",
-      run: async () => ({ entry: "entry1", lines: ["detail1"], status: "pass" }),
+      run: async () => ({
+        entry: "entry1",
+        lines: ["detail1"],
+        status: "pass",
+      }),
     };
     const task2: ReporterTask<string> = {
       title: "t2",
-      run: async () => ({ entry: "entry2", lines: ["detail2"], status: "warn" }),
+      run: async () => ({
+        entry: "entry2",
+        lines: ["detail2"],
+        status: "warn",
+      }),
     };
 
     const entries = await runReport({

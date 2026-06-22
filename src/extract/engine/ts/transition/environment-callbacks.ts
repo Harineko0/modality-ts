@@ -1,7 +1,3 @@
-import * as ts from "typescript";
-import { isExtractableHandler, lineAndColumn, literalValue } from "../ast.js";
-import { modelSlackCaveat } from "../caveats.js";
-import { safeId, uniqueStrings } from "../ids.js";
 import type {
   EffectIR,
   ExprIR,
@@ -10,6 +6,15 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import * as ts from "typescript";
+import { isExtractableHandler, lineAndColumn, literalValue } from "../ast.js";
+import { modelSlackCaveat } from "../caveats.js";
+import type {
+  EnvironmentEventConfig,
+  WebSocketEnvironmentConfig,
+  WebSocketMessageVariant,
+} from "../environment-config.js";
+import { safeId, uniqueStrings } from "../ids.js";
 import type {
   BoundExpr,
   EffectSummary,
@@ -17,19 +22,14 @@ import type {
   ExtractionWarning,
   SetterBinding,
 } from "../types.js";
-import type {
-  EnvironmentEventConfig,
-  WebSocketEnvironmentConfig,
-  WebSocketMessageVariant,
-} from "../environment-config.js";
 import { stateNameForVar } from "./handlers.js";
+import type { StatementSummaryOptions } from "./statement-driver.js";
 import {
   effectWriteVars,
   simplifyEffect,
   summarizeHandlerStatements,
   summarizeStatements,
 } from "./statement-driver.js";
-import type { StatementSummaryOptions } from "./statement-driver.js";
 
 const WEBSOCKET_DOMAIN = {
   kind: "enum" as const,
@@ -185,8 +185,8 @@ export function matchWebSocketConfig(
 }
 
 export function registerWebSocketConstructor(
-  source: ts.SourceFile,
-  fileName: string,
+  _source: ts.SourceFile,
+  _fileName: string,
   node: ts.NewExpression,
   component: string,
   context: string,

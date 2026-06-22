@@ -1,9 +1,9 @@
-import { extractSharedReactTransitionInventory } from "../shared/react-transition-extract.js";
 import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
 import {
   collectNumericSeedVarIds,
   widenNumericDomainsFromTransitions,
 } from "../../engine/ts/numeric/use-state-updaters.js";
+import { extractSharedReactTransitionInventory } from "../shared/react-transition-extract.js";
 import useStateSource from "./index.js";
 import type {
   ExtractedModelSkeleton,
@@ -34,13 +34,13 @@ export function extractUseStateSkeleton(
     ...(isEffectOpAliasesPopulated(options.effectOpAliases)
       ? { effectOpAliases: options.effectOpAliases }
       : {}),
-    sourcePlugins:
-      options.sourcePlugins && options.sourcePlugins.length > 0
-        ? options.sourcePlugins
+    statePlugins:
+      options.statePlugins && options.statePlugins.length > 0
+        ? options.statePlugins
         : [useStateSource()],
     ...(options.stateVars ? { stateVars: options.stateVars } : {}),
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(options.environment ? { environment: options.environment } : {}),
   };

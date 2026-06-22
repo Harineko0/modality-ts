@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { RouteInventory, RouteNode } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import { discoverRoutes } from "./discover.js";
 import {
   classifyNavigationCall,

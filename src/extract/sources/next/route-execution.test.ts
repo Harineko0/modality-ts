@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { nextRouteExecutionPlugin } from "./route-execution.js";
 import { discoverNextServerEffectApis } from "./server-effects.js";
-import { nextRouteExecutionProvider } from "./route-execution.js";
 
-describe("nextRouteExecutionProvider", () => {
+describe("nextRouteExecutionPlugin", () => {
   it("maps data functions, server actions, auth guards, and revalidation", () => {
     const page = {
       path: "/repo/app/dashboard/page.tsx",
@@ -39,7 +39,7 @@ describe("nextRouteExecutionProvider", () => {
       }),
     );
 
-    const descriptor = nextRouteExecutionProvider().describeRouteExecution({
+    const descriptor = nextRouteExecutionPlugin().describeRouteExecution({
       inventory,
       effectApis,
       files: [page, actions],

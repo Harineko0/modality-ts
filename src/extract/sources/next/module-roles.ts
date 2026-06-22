@@ -1,4 +1,3 @@
-import * as ts from "typescript";
 import type {
   ImportEdgeContext,
   ImportEdgeCtx,
@@ -7,6 +6,7 @@ import type {
   ModuleEntryExport,
   ModuleRoleCtx,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 
 const SERVER_DATA_EXPORTS = new Set([
   "getStaticProps",

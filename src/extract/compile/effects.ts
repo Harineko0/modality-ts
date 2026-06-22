@@ -1,15 +1,10 @@
 import type { EffectIR, ExprIR, Value } from "modality-ts/core";
+import { type EffectSummaryLike, identityEffect } from "../lang/effect-ir.js";
 
-export interface EffectSummaryLike {
-  effect: EffectIR;
-  reads: string[];
-}
+export type { EffectSummaryLike } from "../lang/effect-ir.js";
+export { effectFromSummaries, identityEffect } from "../lang/effect-ir.js";
 
 export const PENDING_QUEUE_VAR = "sys:pending";
-
-export function identityEffect(): Extract<EffectIR, { kind: "seq" }> {
-  return { kind: "seq", effects: [] };
-}
 
 function literalValueFromExpr(expr: ExprIR): Value | undefined {
   return expr.kind === "lit" ? expr.value : undefined;
@@ -51,15 +46,6 @@ export function simplifyEffect(effect: EffectIR): EffectIR {
     return { kind: "seq", effects };
   }
   return effect;
-}
-
-export function effectFromSummaries(
-  summaries: readonly EffectSummaryLike[],
-): EffectIR {
-  const effects = summaries.map((summary) => summary.effect);
-  if (effects.length === 0) return identityEffect();
-  const effect = effects[0];
-  return effects.length === 1 && effect ? effect : { kind: "seq", effects };
 }
 
 export function uniqueSummariesByEffect<T extends EffectSummaryLike>(

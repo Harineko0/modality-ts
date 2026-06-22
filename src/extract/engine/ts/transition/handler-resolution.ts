@@ -1,6 +1,11 @@
 import type { Locator, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
-import type { NavigationAdapter, StateSourcePlugin } from "../../spi/index.js";
+import { nodeRefFor } from "../../../lang/ts/node-ref.js";
+import type {
+  RoutePlugin,
+  RouteUseSubmitHandlerCtx,
+  StateSourcePlugin,
+} from "../../spi/index.js";
 import { lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
 import { inputTransitions } from "../input-transitions.js";
@@ -75,8 +80,8 @@ export function transitionsFromResolvedHandler(
   component: string,
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
-  sourcePlugins: readonly StateSourcePlugin[],
-  routerPlugin: NavigationAdapter | undefined,
+  statePlugins: readonly StateSourcePlugin[],
+  routePlugin: RoutePlugin | undefined,
   disabledGuard: ParsedGuard | undefined,
   locator: Locator | undefined,
   routePatterns: readonly string[],
@@ -107,17 +112,16 @@ export function transitionsFromResolvedHandler(
     return [];
   }
   const routerCtx = handlerContext.routerSubmitContext;
-  if (routerCtx && routerCtx.submitBindings.size > 0 && routerPlugin) {
-    const recognized = routerPlugin.recognizeUseSubmitHandler?.(
-      node,
-      attr,
-      handler,
+  if (routerCtx && routerCtx.submitBindings.size > 0 && routePlugin) {
+    const recognized = routePlugin.recognizeUseSubmitHandler?.(
+      nodeRefFor(node, fileName),
+      { origin: nodeRefFor(handler, fileName) },
       {
         ...routerCtx,
         attr,
         effectApis,
-        disabledGuard,
-        types: handlerContext.types,
+        disabledGuard:
+          disabledGuard as RouteUseSubmitHandlerCtx["disabledGuard"],
       },
     );
     if (recognized && recognized.transitions.length > 0)
@@ -133,7 +137,7 @@ export function transitionsFromResolvedHandler(
     effectApis,
     asyncOutcomes,
     locator,
-    routerPlugin,
+    routePlugin,
     routePatterns,
     warnings,
     handlerContext.effectOpAliases ?? new Map(),
@@ -314,7 +318,7 @@ export function transitionsFromResolvedHandler(
     component,
     inlinedCall,
     locator,
-    routerPlugin,
+    routePlugin,
     routePatterns,
   );
   if (navigation) return applyParsedGuard([navigation], disabledGuard);
@@ -327,7 +331,7 @@ export function transitionsFromResolvedHandler(
     inlinedCall,
     setters,
     locals,
-    sourcePlugins,
+    statePlugins,
     locator,
   );
   if (pluginWrite) return applyParsedGuard([pluginWrite], disabledGuard);
@@ -462,6 +466,6 @@ function handlerSummaryOptions(
     fileName,
     source,
     types: handlerContext.types,
-    effectModelProviders: handlerContext.effectModelProviders,
+    effectPlugins: handlerContext.effectPlugins,
   };
 }

@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads";
-import { runGenerateCommand } from "../features/generate/command.js";
-import { runExtractCommand } from "../features/extract/command.js";
 import { runCheckCommand } from "../features/check/command.js";
+import { runExtractCommand } from "../features/extract/command.js";
+import { runGenerateCommand } from "../features/generate/command.js";
 import type { CommandJob, JobResultMap, WorkerResponse } from "./jobs.js";
 
 interface PooledWorker {

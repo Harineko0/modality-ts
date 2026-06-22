@@ -1,20 +1,20 @@
 import type {
-  GenerateCommandOptions,
-  GenerateTargetResult,
-} from "../features/generate/command.js";
+  CheckCommandOptions,
+  CheckCommandResult,
+} from "../features/check/command.js";
 import type {
   ExtractCommandOptions,
   ExtractCommandResult,
 } from "../features/extract/command.js";
 import type {
-  CheckCommandOptions,
-  CheckCommandResult,
-} from "../features/check/command.js";
+  GenerateCommandOptions,
+  GenerateTargetResult,
+} from "../features/generate/command.js";
 
 export type GenerateJobOptions = Omit<GenerateCommandOptions, "now">;
 export type ExtractJobOptions = Omit<
   ExtractCommandOptions,
-  "sourcePlugins" | "domainRefinements" | "routerPlugin" | "now"
+  "statePlugins" | "typePlugins" | "routePlugin" | "now"
 >;
 export type CheckJobOptions = Omit<CheckCommandOptions, "output" | "now">;
 

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { Transition } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { buildTransitionTree } from "./transition-handles.js";
 
 function transition(

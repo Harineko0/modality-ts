@@ -1,21 +1,21 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import * as ts from "typescript";
 import type {
   EffectApiProvider,
   EffectApiSurfaceCtx,
   ImportEdgeContext,
   ImportEdgeCtx,
   ModuleClassification,
+  ModuleDirective,
   ModuleEntryExport,
   ModuleExtractionSurface,
-  ModuleDirective,
-  ModuleRoleAdapter,
+  ModuleRolePlugin,
   ModuleRuntimeContext,
-  NavigationAdapter,
   RouteInventory,
   RouteNode,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 import {
   allEffectOpAliasCanonicalIds,
   type EffectOpAliases,
@@ -121,8 +121,8 @@ function createSourceFile(fileName: string, sourceText: string): ts.SourceFile {
 }
 
 export interface SourceWithReachableImportsOptions {
-  navigation?: NavigationAdapter;
-  moduleRoleAdapters?: readonly ModuleRoleAdapter[];
+  navigation?: RoutePlugin;
+  moduleRoleAdapters?: readonly ModuleRolePlugin[];
   effectApiProviders?: readonly EffectApiProvider[];
   inventory?: RouteInventory;
   /** Test-only counter for fallback SourceFile parses (not resolver/cache hits). */
@@ -188,7 +188,7 @@ function mergeModuleClassifications(
 }
 
 function classifyModuleFromProviders(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   path: string,
   text: string,
   route: RouteNode | undefined,
@@ -208,7 +208,7 @@ function classifyModuleFromProviders(
 }
 
 function moduleEntryExportsFromProviders(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   path: string,
   text: string,
   route: RouteNode | undefined,
@@ -233,7 +233,7 @@ function moduleEntryExportsFromProviders(
 }
 
 function classifyImportEdgeFromProviders(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   ctx: ImportEdgeCtx,
   warnings: string[],
 ): ImportEdgeContext {
@@ -256,7 +256,7 @@ function classifyImportEdgeFromProviders(
 }
 
 function isServerOnlyTarget(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   path: string,
   classification: ModuleClassification,
 ): boolean {
@@ -267,7 +267,7 @@ function isServerOnlyTarget(
 }
 
 function shouldDiscoverEffectApis(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   ctx: EffectApiSurfaceCtx,
 ): boolean {
   const withHook = adapters.filter(
@@ -675,7 +675,7 @@ async function followDeclarationReference(
 }
 
 function classifyImportEdge(
-  adapters: readonly ModuleRoleAdapter[],
+  adapters: readonly ModuleRolePlugin[],
   ctx: ImportEdgeCtx,
   warnings: string[],
 ): ImportEdgeContext {

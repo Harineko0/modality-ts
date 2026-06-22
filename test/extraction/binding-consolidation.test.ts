@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import type { StateVarDecl } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { runPluginDiscoveryPhase } from "../../src/extract/engine/pipeline/index.js";
 import { decodeSetterBinding } from "../../src/extract/engine/ts/context.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import { jotaiSource } from "../../src/extract/sources/jotai/plugin.js";
 import { swrSource } from "../../src/extract/sources/swr/plugin.js";
-import { runPluginDiscoveryPhase } from "../../src/extract/engine/pipeline/index.js";
+import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 
 function legacySetterBindingFromDecl(decl: StateVarDecl) {
   const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);
@@ -25,7 +25,7 @@ function legacySetterBindingFromDecl(decl: StateVarDecl) {
   };
 }
 
-const sourcePlugins = [useStateSource(), jotaiSource(), swrSource()];
+const statePlugins = [useStateSource(), jotaiSource(), swrSource()];
 
 describe("binding consolidation", () => {
   const sourceText = `
@@ -48,7 +48,7 @@ describe("binding consolidation", () => {
       sourceText,
       fileName: "App.tsx",
       route: "/",
-      sourcePlugins,
+      statePlugins,
     });
     const allVars = [
       ...discovery.stateVars,
@@ -58,7 +58,7 @@ describe("binding consolidation", () => {
     for (const varId of varIds) {
       const decl = allVars.find((candidate) => candidate.id === varId);
       expect(decl, `missing ${varId}`).toBeDefined();
-      expect(decodeSetterBinding(decl!, sourcePlugins)).toEqual(
+      expect(decodeSetterBinding(decl!, statePlugins)).toEqual(
         legacySetterBindingFromDecl(decl!),
       );
     }
@@ -72,7 +72,7 @@ describe("binding consolidation", () => {
       { id: "swr:api:data", domain: { kind: "lengthCat" } },
     ];
     for (const decl of decls) {
-      const claimants = sourcePlugins.filter((plugin) =>
+      const claimants = statePlugins.filter((plugin) =>
         Boolean(plugin.decodeBinding?.(decl)),
       );
       expect(claimants).toHaveLength(1);

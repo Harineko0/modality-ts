@@ -1,5 +1,3 @@
-import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
-import type * as ts from "typescript";
 import type {
   AbstractDomain,
   EffectIR,
@@ -8,7 +6,9 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import type * as ts from "typescript";
 import type { ExtractableHandler } from "../../engine/ts/ast.js";
+import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
 
 export interface UseStateExtractionOptions {
   route?: string;
@@ -20,8 +20,8 @@ export interface UseStateExtractionOptions {
   environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly import("../../engine/spi/index.js").WriteChannel[];
-  sourcePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];
-  routerPlugin?: import("../../engine/spi/index.js").NavigationAdapter;
+  statePlugins?: readonly import("../../engine/spi/index.js").StateSourcePlugin[];
+  routePlugin?: import("../../engine/spi/index.js").RoutePlugin;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
   bounds?: Pick<import("modality-ts/core").Bounds, "maxDepth">;
 }

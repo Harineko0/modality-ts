@@ -1,9 +1,14 @@
 import type { EffectIR } from "modality-ts/core";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../../spi/index.js";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
 import { callName } from "../ast.js";
 import { resolveSetterBinding } from "../context.js";
-import type { BoundExpr, EffectSummary, SetterBinding, SetterCall } from "../types.js";
+import type {
+  BoundExpr,
+  EffectSummary,
+  SetterBinding,
+  SetterCall,
+} from "../types.js";
 import { setterArgumentExpr } from "./expressions.js";
 
 export interface StatementSummaryResetOptions {

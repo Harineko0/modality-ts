@@ -1,4 +1,17 @@
+import {
+  type EffectIR,
+  type ExprIR,
+  effectReads,
+  type Locator,
+  type Transition,
+  type Value,
+} from "modality-ts/core";
 import * as ts from "typescript";
+import type {
+  NavIntent,
+  RouteInventory,
+  RoutePlugin,
+} from "../../spi/index.js";
 import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
 import { safeId, uniqueStrings } from "../ids.js";
 import {
@@ -6,19 +19,6 @@ import {
   routeMountGuard,
   routeTargetValue,
 } from "../routes.js";
-import {
-  effectReads,
-  type EffectIR,
-  type ExprIR,
-  type Locator,
-  type Transition,
-  type Value,
-} from "modality-ts/core";
-import type {
-  NavigationAdapter,
-  NavIntent,
-  RouteInventory,
-} from "../../spi/index.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { effectWriteVars } from "./effects.js";
 import { callArgumentValue } from "./plugin-calls.js";
@@ -333,7 +333,7 @@ export function navigationTransition(
   component: string,
   call: ts.CallExpression,
   _locator: Locator | undefined,
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePatterns: readonly string[] = [],
   inventory?: RouteInventory,
 ): Transition | undefined {
@@ -382,7 +382,7 @@ export function navigationTransition(
 
 export function navigationCall(
   call: ts.CallExpression,
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePatterns: readonly string[] = [],
 ): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   const name = callName(call.expression);
@@ -405,7 +405,7 @@ export function navigationJsxTransition(
   node: ts.Node,
   component: string,
   routePatterns: readonly string[],
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePattern: string | undefined,
   inventory?: RouteInventory,
 ): Transition | undefined {
@@ -466,7 +466,7 @@ export function navigationJsxTransition(
 }
 
 export function isNavigationJsxTag(
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   tag: string,
 ): boolean {
   if (!adapter?.classifyNavigationJsx) return false;
@@ -478,7 +478,7 @@ export function isNavigationJsxTag(
 }
 
 export function navigationRouteJsxAttribute(
-  adapter: NavigationAdapter,
+  adapter: RoutePlugin,
   tag: string,
   properties: ts.NodeArray<ts.JsxAttributeLike>,
 ): ts.JsxAttribute | undefined {
@@ -511,7 +511,7 @@ function jsxLiteralValue(expression: ts.Expression): unknown {
 }
 
 function jsxLiteralAttrs(
-  source: ts.SourceFile,
+  _source: ts.SourceFile,
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
   routePatterns: readonly string[],
 ): Map<string, unknown> {
@@ -560,7 +560,7 @@ export function escapedSetters(
 
 export function firstNavigationInStatements(
   statements: readonly ts.Statement[],
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePatterns: readonly string[],
 ): { mode: "push" | "replace" | "back"; to?: string } | undefined {
   for (const statement of statements) {
@@ -600,7 +600,7 @@ export function navigationEffect(
 }
 
 export function applyLowerNavigation(
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   intent: NavIntent,
   inventory: RouteInventory | undefined,
   routePatterns: readonly string[],

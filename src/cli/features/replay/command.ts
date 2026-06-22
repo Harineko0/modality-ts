@@ -3,25 +3,25 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createDomReplayActor,
+  type ModalityReplayHarness,
   ObservableActionReplayDriver,
+  type ObservationSource,
   observationSource,
   replayTrace,
   StateSequenceDriver,
   statesFromTrace,
-  type ModalityReplayHarness,
-  type ObservationSource,
 } from "modality-ts/cli/harness";
 import {
   createBuiltinModalityRegistry,
-  navigationObservationId,
   observationSourcesFromProviders,
-  setupObservationProviders,
   type RegistrySummary,
+  routeObservationId,
+  setupObservationPlugins,
 } from "modality-ts/cli/registry";
 import {
   canonicalJson,
-  parseTraceArtifact,
   type ModelState,
+  parseTraceArtifact,
   type ReplayReport,
   type Trace,
   type Value,
@@ -98,7 +98,7 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
     const replayHarness = await harnessModule.renderModalityReplay(trace);
     const registry = options.registry ?? createBuiltinModalityRegistry();
     const observations = registry.adapters.observations;
-    const observationRuntime = setupObservationProviders(
+    const observationRuntime = setupObservationPlugins(
       observations,
       trace.steps[0]?.pre ? { initialState: trace.steps[0].pre } : {},
     );
@@ -109,7 +109,7 @@ async function replayAction(trace: Trace, options: ReplayCommandOptions) {
     const navigation = registry.adapters.navigation;
     const navigationHandles = navigation
       ? observationRuntime.handlesByProviderId.get(
-          navigationObservationId(navigation),
+          routeObservationId(navigation),
         )
       : undefined;
     const sources = [

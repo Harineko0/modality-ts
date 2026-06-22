@@ -1,20 +1,13 @@
 import type { StateVarDecl, Value } from "modality-ts/core";
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type { StateSourcePlugin, WriteChannel } from "../spi/index.js";
+import { componentNameFor, isExtractableHandler, propertyName } from "./ast.js";
 import {
-  componentNameFor,
-  isExtractableHandler,
-  propertyName,
-} from "./ast.js";
-import {
+  type CustomHookRegistry,
   customHookDeclarationName,
   resolveCustomHookEntry,
-  type CustomHookRegistry,
 } from "./components.js";
-import type {
-  SemanticTypeContext,
-  StateSourcePlugin,
-  WriteChannel,
-} from "../spi/index.js";
 import type {
   ContextBindings,
   CustomHookDecl,
@@ -28,9 +21,9 @@ export function emptyContextBindings(): ContextBindings {
 
 export function decodeSetterBinding(
   decl: StateVarDecl,
-  sourcePlugins: readonly StateSourcePlugin[] = [],
+  statePlugins: readonly StateSourcePlugin[] = [],
 ): SetterBinding {
-  for (const plugin of sourcePlugins) {
+  for (const plugin of statePlugins) {
     const binding = plugin.decodeBinding?.(decl);
     if (binding) return binding;
   }
@@ -46,7 +39,7 @@ export function decodeSetterBinding(
 export interface DiscoverContextBindingsOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
+  statePlugins?: readonly StateSourcePlugin[];
   route?: string;
   types?: SemanticTypeContext;
 }
@@ -141,7 +134,7 @@ export function discoverContextBindings(
         component,
         fileName,
         discovery,
-        options.sourcePlugins ?? [],
+        options.statePlugins ?? [],
       )) {
         localSetters.set(symbolName, setter);
       }
@@ -251,7 +244,7 @@ function resolveUseStateDiscoveryForFile(
       writeChannels: options.writeChannels,
     };
   }
-  const useStatePlugin = options.sourcePlugins?.find(
+  const useStatePlugin = options.statePlugins?.find(
     (plugin) => plugin.id === "use-state",
   );
   if (!useStatePlugin) {
@@ -281,7 +274,7 @@ function localSettersForComponent(
     stateVars: readonly StateVarDecl[];
     writeChannels: readonly WriteChannel[];
   },
-  sourcePlugins: readonly StateSourcePlugin[],
+  statePlugins: readonly StateSourcePlugin[],
 ): Map<string, SetterBinding> {
   const localSetters = new Map<string, SetterBinding>();
   const prefix = `local:${component}.`;
@@ -292,7 +285,7 @@ function localSettersForComponent(
       (candidate) => candidate.id === channel.varId,
     );
     if (!decl) continue;
-    const binding = decodeSetterBinding(decl, sourcePlugins);
+    const binding = decodeSetterBinding(decl, statePlugins);
     if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
     localSetters.set(channel.symbolName, binding);
   }

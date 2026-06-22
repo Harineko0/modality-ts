@@ -1,9 +1,9 @@
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { checkModel } from "modality-ts/check";
+import type { StateSpaceContributor } from "modality-ts/core";
 import { buildStateContributors } from "../src/check/slicing/contributors.js";
 import { buildPropertySlicePlan } from "../src/cli/features/extract/command.js";
-import type { StateSpaceContributor } from "modality-ts/core";
 import {
   COFFEE_SHAPED_DENSITY_ONE_PROPERTY,
   coffeeShapedPerformanceModel,

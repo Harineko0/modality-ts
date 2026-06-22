@@ -110,6 +110,10 @@ export default defineConfig({
         "./src/extract/sources/react-hook-form/index.ts",
         import.meta.url,
       ).pathname,
+      "modality-ts/extract/sources/react-hook-form/unwrap": new URL(
+        "./src/extract/sources/react-hook-form/unwrap.ts",
+        import.meta.url,
+      ).pathname,
       "modality-ts/extract/sources/redux/harness": new URL(
         "./src/extract/sources/redux/harness.ts",
         import.meta.url,
@@ -136,6 +140,10 @@ export default defineConfig({
       ).pathname,
       "modality-ts/extract/lang/ts": new URL(
         "./src/extract/lang/ts/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/plugins": new URL(
+        "./src/extract/plugins/index.ts",
         import.meta.url,
       ).pathname,
       "modality-ts/extract/compile": new URL(

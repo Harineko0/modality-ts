@@ -1,9 +1,9 @@
+import type { AbstractDomain, StateVarDecl } from "modality-ts/core";
 import type {
   LocationLowering,
   ResolvedOptions,
   RouteInventory,
 } from "modality-ts/extract/engine/spi";
-import type { AbstractDomain, StateVarDecl } from "modality-ts/core";
 
 export function locationVars(
   inventory: RouteInventory,

@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
   parseCheckReportArtifact,
   parseConformReportArtifact,
@@ -10,6 +9,7 @@ import {
   parseTraceArtifact,
   traceArtifact,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 describe("artifact parsers", () => {
   const checkReport = {

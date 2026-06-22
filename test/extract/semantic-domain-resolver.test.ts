@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import * as ts from "typescript";
 import {
   inferDomainFromExpressionSemanticDetailed,
   inferDomainFromTypeDetailed,
   inferDomainFromTypeNodeSemanticDetailed,
 } from "modality-ts/extract/engine";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
 
 const projectRoot = resolve("/project");

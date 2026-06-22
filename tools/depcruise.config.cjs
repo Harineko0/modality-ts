@@ -17,7 +17,7 @@ module.exports = {
       severity: "error",
       from: { path: "^src/extract/engine", pathNot: "^src/.*/test/" },
       to: {
-        path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks|^src/extract/effect-models|^src/extract/lang",
+        path: "^src/(check|cli)|^src/extract/sources|^src/extract/frameworks|^src/extract/effect-models",
       },
     },
     {
@@ -38,6 +38,7 @@ module.exports = {
         pathNot: [
           "^src/core",
           "^src/extract/engine/spi",
+          "^src/extract/lang",
           "^src/extract/compile",
         ],
       },
@@ -119,7 +120,10 @@ module.exports = {
     {
       name: "framework-slices-are-independent",
       severity: "error",
-      from: { path: "^src/extract/frameworks/([^/]+)", pathNot: "^src/.*/test/" },
+      from: {
+        path: "^src/extract/frameworks/([^/]+)",
+        pathNot: "^src/.*/test/",
+      },
       to: {
         path: "^src/extract/frameworks/([^/]+)",
         pathNot: "^src/extract/frameworks/$1",
@@ -128,21 +132,43 @@ module.exports = {
     {
       name: "effect-model-slices-do-not-import-product-or-peers",
       severity: "error",
-      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      from: {
+        path: "^src/extract/effect-models/[^/]+",
+        pathNot: "^src/.*/test/",
+      },
       to: { path: "^src/check|^src/cli/(features|registry|codegen|runtime)" },
     },
     {
       name: "effect-model-slices-use-extraction-spi-only",
       severity: "error",
-      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      from: {
+        path: "^src/extract/effect-models/[^/]+",
+        pathNot: "^src/.*/test/",
+      },
       to: {
         path: "^src/extract/engine/(?!spi/|ts/)",
       },
     },
     {
+      name: "plugins-slices-use-core-lang-spi-only",
+      severity: "error",
+      from: { path: "^src/extract/plugins", pathNot: "^src/.*/test/" },
+      to: {
+        path: "^src/",
+        pathNot: [
+          "^src/core",
+          "^src/extract/engine/spi",
+          "^src/extract/plugins",
+        ],
+      },
+    },
+    {
       name: "effect-model-slices-do-not-import-sources-or-frameworks",
       severity: "error",
-      from: { path: "^src/extract/effect-models/[^/]+", pathNot: "^src/.*/test/" },
+      from: {
+        path: "^src/extract/effect-models/[^/]+",
+        pathNot: "^src/.*/test/",
+      },
       to: {
         path: "^src/extract/(sources|frameworks)/",
       },

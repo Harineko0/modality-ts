@@ -1,15 +1,16 @@
 export {
-  loadManagementSummary,
   bulkSuspendAccounts,
+  loadManagementSummary,
 } from "../../../../shared/features/management/infra/fake-management-api.js";
+
 import useSWR from "swr";
+import type { RiskBucket } from "../../../../shared/features/fixtures/domain/fixtures.js";
 import {
   loadManagementSummary,
   loadOperationsQueueData,
   loadRevenueQueueData,
   loadRiskQueueData,
 } from "../../../../shared/features/management/infra/fake-management-api.js";
-import type { RiskBucket } from "../../../../shared/features/fixtures/domain/fixtures.js";
 
 export function useManagementSummary() {
   return useSWR("management-summary", () => loadManagementSummary());

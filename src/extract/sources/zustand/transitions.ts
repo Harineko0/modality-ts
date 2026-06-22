@@ -1,19 +1,19 @@
-import type { StateVarDecl, EffectIR } from "modality-ts/core";
+import type { EffectIR, StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
 import { extractSharedReactTransitions } from "../shared/react-transition-extract.js";
 import type { ExtractedModelSkeleton } from "../use-state/types.js";
+import { augmentZustandActionSelectorSource } from "./augment.js";
 import { discoverZustandStoresDetailed } from "./discover.js";
+import { zustandSource } from "./plugin.js";
 import {
   discoverZustandSafetyWarnings,
   discoverZustandWriteChannels,
   discoverZustandWritesDetailed,
 } from "./writes.js";
-import { augmentZustandActionSelectorSource } from "./augment.js";
-import { zustandSource } from "./plugin.js";
 
 export interface ZustandExtractionOptions {
   route?: string;
@@ -22,8 +22,8 @@ export interface ZustandExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export function extractZustandSkeleton(
@@ -56,7 +56,7 @@ export function extractZustandSkeleton(
     ...extraChannels,
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [zustandSource(), ...(options.sourcePlugins ?? [])];
+  const statePlugins = [zustandSource(), ...(options.statePlugins ?? [])];
   const safetyWarnings = discoverZustandSafetyWarnings(
     augmentedSource,
     fileName,
@@ -92,10 +92,10 @@ export function extractZustandSkeleton(
     routePatterns: options.routePatterns ?? [],
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
-    sourcePlugins,
+    statePlugins,
     setterFixedEffects,
     resettableVarIds: writeDiscovery.resettableVarIds,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
   });
   return {
     vars,

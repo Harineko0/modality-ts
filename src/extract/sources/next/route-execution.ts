@@ -1,6 +1,6 @@
 import type {
   RouteActionDescriptor,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
   RouteLoaderDescriptor,
 } from "modality-ts/extract/engine/spi";
 import { discoverNextServerCacheUsage } from "./server-effects.js";
@@ -8,9 +8,9 @@ import { discoverNextServerCacheUsage } from "./server-effects.js";
 const AUTH_GUARD_PATTERNS =
   /\b(auth|session|unauthorized|forbidden|getServerSession|getSession|currentUser|requireAuth|assertAuth|isAuthenticated|checkAuth|verifyAuth)\b/i;
 
-export function nextRouteExecutionProvider(
+export function nextRouteExecutionPlugin(
   options: { id?: string; packageNames?: readonly string[] } = {},
-): RouteExecutionProvider {
+): RouteExecutionPlugin {
   return {
     id: options.id ?? "next-route-execution",
     version: "0.1.0",

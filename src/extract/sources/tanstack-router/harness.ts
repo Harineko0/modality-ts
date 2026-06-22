@@ -1,9 +1,9 @@
+import type { Value } from "modality-ts/core";
 import type {
   HarnessCtx,
   HarnessHooks,
   ObservedRead,
 } from "modality-ts/extract/engine/spi";
-import type { Value } from "modality-ts/core";
 import { TANSTACK_BRANCH_NONE, tanstackBranchVarId } from "./routes.js";
 
 export interface TanstackRouterHarnessHooks extends HarnessHooks {

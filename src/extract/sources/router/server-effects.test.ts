@@ -1,12 +1,12 @@
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { reactRouterEffectApiProvider } from "./index.js";
 import {
   discoverReactRouterActionEffectApis,
   reactRouterActionOpId,
-  reactRouterLoaderOpId,
   reactRouterActionOutcomeHints,
+  reactRouterLoaderOpId,
 } from "./server-effects.js";
-import { reactRouterEffectApiProvider } from "./index.js";
 
 function parseActionBody(source: string): ts.Node | undefined {
   const file = ts.createSourceFile(

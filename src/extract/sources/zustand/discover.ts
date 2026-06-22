@@ -1,26 +1,23 @@
-import * as ts from "typescript";
-import type {
-  SourceDecl,
-  SemanticTypeContext,
-  DomainRefinementProvider,
-} from "modality-ts/extract/engine/spi";
 import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
+import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
-import {
-  isMiddlewareCall,
-  isStoreCreatorCall,
-  middlewareName,
-  resolveZustandImports,
-} from "./imports.js";
+import { compilerBackedTypeAliases } from "../../engine/ts/domains.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   inferFieldDomain,
   isActionFunction,
   propertyNameFromMember,
   returnObjectLiteral,
 } from "./domains.js";
-import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import { storeVarId } from "./ids.js";
+import {
+  isMiddlewareCall,
+  isStoreCreatorCall,
+  middlewareName,
+  resolveZustandImports,
+} from "./imports.js";
 import { metadataToRecord } from "./types.js";
 
 export interface UnwrappedCreator {
@@ -92,7 +89,7 @@ export function discoverZustandStoresDetailed(
   sourceText: string,
   fileName = "state.ts",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): DiscoverZustandResult {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const imports = resolveZustandImports(source, types);
@@ -152,7 +149,7 @@ export function discoverZustandStoresDetailed(
           storeFieldInitials,
           warnings,
           types,
-          domainRefinements,
+          typePlugins,
         );
       } else {
         const objectLiteral = returnObjectLiteral(creatorCall.creatorFn);
@@ -170,7 +167,7 @@ export function discoverZustandStoresDetailed(
             storeFieldInitials,
             warnings,
             types,
-            domainRefinements,
+            typePlugins,
           );
         }
       }
@@ -211,7 +208,7 @@ function processCombineStore(
   >,
   warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): void {
   emitStateFieldsFromObject(
     initialLiteral,
@@ -225,7 +222,7 @@ function processCombineStore(
     storeFieldInitials,
     warnings,
     types,
-    domainRefinements,
+    typePlugins,
   );
   const creatorObject = returnObjectLiteral(creatorFn);
   if (creatorObject) {
@@ -263,7 +260,7 @@ function processStoreObject(
   >,
   warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const actions =
@@ -285,7 +282,7 @@ function processStoreObject(
     storeFieldInitials,
     warnings,
     types,
-    domainRefinements,
+    typePlugins,
   );
   collectActionsFromObject(objectLiteral, storeName, storeActions, storeFields);
 
@@ -312,7 +309,7 @@ function emitStateFieldsFromObject(
   >,
   warnings: ZustandDiscoveryWarning[],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): void {
   const fields = storeFields.get(storeName) ?? new Set<string>();
   const initials =
@@ -352,7 +349,7 @@ function emitStateFieldsFromObject(
       varId,
       source,
       types,
-      domainRefinements,
+      typePlugins,
     );
     fields.add(name);
     initials.set(name, fieldDomain.initial);

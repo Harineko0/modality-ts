@@ -22,7 +22,7 @@ import {
 import { pending, route } from "modality-ts/vars";
 
 const sessionRole = variable("atom:sessionAtom").at("role");
-const permissionRole = variable("atom:permissionCacheAtom").at("role");
+const _permissionRole = variable("atom:permissionCacheAtom").at("role");
 const returnTo = variable("atom:returnToAtom");
 const loginRole = s({ name: "LoginForm" }).role;
 

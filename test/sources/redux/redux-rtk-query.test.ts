@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { reduxSource } from "modality-ts/extract/sources/redux";
+import { describe, expect, it } from "vitest";
 import { templateForReduxDecl } from "../../../src/extract/sources/redux/template.js";
 import { queryMetadataToRecord } from "../../../src/extract/sources/redux/types.js";
 
@@ -23,7 +23,9 @@ describe("Redux RTK Query", () => {
     expect(decls.some((decl) => decl.kind === "redux-query/useQuery")).toBe(
       true,
     );
-    const queryDecl = decls.find((decl) => decl.kind === "redux-query/useQuery");
+    const queryDecl = decls.find(
+      (decl) => decl.kind === "redux-query/useQuery",
+    );
     const template = templateForReduxDecl(queryDecl!);
     expect(template.vars.length).toBeGreaterThan(0);
     expect(template.transitions.length).toBeGreaterThan(0);

@@ -1,15 +1,15 @@
 import type {
   RouteActionDescriptor,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
   RouteLoaderDescriptor,
 } from "modality-ts/extract/engine/spi";
 
 const AUTH_GUARD_PATTERNS =
   /\b(auth|session|unauthorized|forbidden|getSession|currentUser|requireAuth|assertAuth|isAuthenticated|checkAuth|verifyAuth)\b/i;
 
-export function reactRouterRouteExecutionProvider(
+export function reactRouterRouteExecutionPlugin(
   options: { id?: string; packageNames?: readonly string[] } = {},
-): RouteExecutionProvider {
+): RouteExecutionPlugin {
   return {
     id: options.id ?? "router-route-execution",
     version: "0.1.0",

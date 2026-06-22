@@ -1,5 +1,5 @@
-import * as ts from "typescript";
 import type { EffectIR, ExprIR, Value } from "modality-ts/core";
+import * as ts from "typescript";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import { storeVarId } from "./ids.js";
 
@@ -82,7 +82,8 @@ export function lowerReducerCase(
     }
     if (ctx.immer && ts.isExpressionStatement(statement)) {
       const effect = lowerImmerMutation(statement.expression, localCtx);
-      if (effect === "unsupported" || effect === undefined) return "unsupported";
+      if (effect === "unsupported" || effect === undefined)
+        return "unsupported";
       effects.push(effect);
       continue;
     }
@@ -148,7 +149,8 @@ function lowerImmerBlock(
   for (const statement of body.statements) {
     if (ts.isExpressionStatement(statement)) {
       const effect = lowerImmerMutation(statement.expression, ctx);
-      if (effect === "unsupported" || effect === undefined) return "unsupported";
+      if (effect === "unsupported" || effect === undefined)
+        return "unsupported";
       effects.push(effect);
       continue;
     }
@@ -217,7 +219,9 @@ function lowerImmerAssignment(
   }
   const field = path[0];
   if (!field) return "unsupported";
-  const varId = ctx.fieldVarIds.get(field) ?? storeVarId(ctx.storeName, `${ctx.sliceKey}.${field}`);
+  const varId =
+    ctx.fieldVarIds.get(field) ??
+    storeVarId(ctx.storeName, `${ctx.sliceKey}.${field}`);
   if (path.length === 1) {
     return { kind: "assign", var: varId, expr };
   }
@@ -267,8 +271,7 @@ function lowerImmerUpdateExpression(
   if (!varId) return "unsupported";
   const read: ExprIR = { kind: "read", var: varId };
   const isPrefix = ts.isPrefixUnaryExpression(expression);
-  const isIncrement =
-    expression.operator === ts.SyntaxKind.PlusPlusToken;
+  const isIncrement = expression.operator === ts.SyntaxKind.PlusPlusToken;
   const delta: ExprIR = { kind: "lit", value: 1 };
   const expr: ExprIR = isIncrement
     ? { kind: "add", args: [read, delta] }
@@ -330,7 +333,7 @@ function statementThenEffect(
   return "unsupported";
 }
 
-function actionTypeFromCondition(
+function _actionTypeFromCondition(
   expression: ts.Expression,
   ctx: ReducerLoweringContext,
 ): string | undefined {
@@ -388,7 +391,12 @@ export function lowerExpr(
     if (op === ts.SyntaxKind.PlusToken) {
       const left = lowerExpr(expression.left, ctx);
       const right = lowerExpr(expression.right, ctx);
-      if (!left || left === "unsupported" || !right || right === "unsupported") {
+      if (
+        !left ||
+        left === "unsupported" ||
+        !right ||
+        right === "unsupported"
+      ) {
         return "unsupported";
       }
       return { kind: "add", args: [left, right] };
@@ -396,7 +404,12 @@ export function lowerExpr(
     if (op === ts.SyntaxKind.MinusToken) {
       const left = lowerExpr(expression.left, ctx);
       const right = lowerExpr(expression.right, ctx);
-      if (!left || left === "unsupported" || !right || right === "unsupported") {
+      if (
+        !left ||
+        left === "unsupported" ||
+        !right ||
+        right === "unsupported"
+      ) {
         return "unsupported";
       }
       return { kind: "sub", args: [left, right] };
@@ -481,7 +494,9 @@ function stateFieldPath(
   return undefined;
 }
 
-function blockReturnObject(block: ts.Block): ts.ObjectLiteralExpression | undefined {
+function blockReturnObject(
+  block: ts.Block,
+): ts.ObjectLiteralExpression | undefined {
   for (const statement of block.statements) {
     if (
       ts.isReturnStatement(statement) &&
@@ -499,9 +514,7 @@ function primarySliceVar(ctx: ReducerLoweringContext): string | undefined {
   return first;
 }
 
-export function havocSliceVars(
-  ctx: ReducerLoweringContext,
-): EffectIR {
+export function havocSliceVars(ctx: ReducerLoweringContext): EffectIR {
   const effects: EffectIR[] = [];
   for (const varId of new Set(ctx.fieldVarIds.values())) {
     effects.push({ kind: "havoc", var: varId });

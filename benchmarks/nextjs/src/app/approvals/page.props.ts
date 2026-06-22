@@ -11,7 +11,12 @@ import { useApprovalStore } from "../../features/subscription/state/approval-sto
 group("approvals", () => {
   always(
     "approvals.rejectedApprovalCannotApply",
-    not(and(eq(useApprovalStore.approvalStatus, "rejected"), eq(useApprovalStore.decisionStatus, "success"))),
+    not(
+      and(
+        eq(useApprovalStore.approvalStatus, "rejected"),
+        eq(useApprovalStore.decisionStatus, "success"),
+      ),
+    ),
   );
 
   stepChangedTo("zustand:useApprovalStore.approvalStatus", "approved");

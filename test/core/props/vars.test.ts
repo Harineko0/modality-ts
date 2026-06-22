@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { history, pending, route } from "modality-ts/vars";
+import { describe, expect, it } from "vitest";
 
 describe("built-in system var handles", () => {
   it("exports real handles for stable system variables", () => {

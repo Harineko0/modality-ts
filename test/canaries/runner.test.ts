@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CheckReport, ExtractionReport } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 import {
   assertCoverageThreshold,
@@ -13,7 +14,6 @@ import {
 } from "../../tools/canary/classify.js";
 import { parseCanaryManifest } from "../../tools/canary/manifest.js";
 import { runCanarySuite } from "../../tools/canary/runner.js";
-import type { CheckReport, ExtractionReport } from "modality-ts/core";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifestPath = join(repoRoot, "test/canaries/canaries.json");

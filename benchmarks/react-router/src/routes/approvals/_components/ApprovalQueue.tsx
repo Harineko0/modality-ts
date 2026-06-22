@@ -1,7 +1,7 @@
-import { useApprovalStore } from "../../../features/subscription/state/approval-store.js";
-import { useApprovals } from "../../../features/subscription/infra/subscription-queries.js";
 import { approvalStatusSchema } from "../../../../shared/features/subscription/domain/subscription.ark.js";
 import { api } from "../../../features/auth/infra/api.js";
+import { useApprovals } from "../../../features/subscription/infra/subscription-queries.js";
+import { useApprovalStore } from "../../../features/subscription/state/approval-store.js";
 
 export function ApprovalQueue() {
   const queueFilter = useApprovalStore((s) => s.queueFilter);

@@ -1,8 +1,8 @@
-import { registerSourceExtractor } from "../../engine/pipeline/source-extraction.js";
 import {
   extractReactSourceTransitions,
   type ReactSourceTransitionOptions,
-} from "../../engine/ts/react-source-transitions.js";
+} from "../ts/react-source-transitions.js";
+import { registerSourceExtractor } from "./source-extraction.js";
 
 registerSourceExtractor("react", (sourceText, options) =>
   extractReactSourceTransitions(

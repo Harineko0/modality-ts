@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { routeMountScope } from "../../../extract/engine/ts/routes.js";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { checkModel } from "modality-ts/check";
-import { eq, lit, readVar, type Model } from "modality-ts/core";
+import { eq, lit, type Model, readVar } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { reachable } from "../../../../test/helpers/property-builders.js";
+import { routeMountScope } from "../../../extract/engine/ts/routes.js";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {
@@ -65,14 +65,11 @@ describe("runExtractCommand", () => {
         plugin.version,
       ]),
     ).toEqual([
-      ["domain-refinement", "arktype", "0.1.0"],
-      ["domain-refinement", "zod", "0.1.0"],
+      ["effect", "timers", "0.1.0"],
+      ["effect", "websocket", "0.1.0"],
       ["effect-api", "router-effect-api", "0.1.0"],
-      ["effect-model", "timers", "0.1.0"],
-      ["effect-model", "websocket", "0.1.0"],
       ["framework", "react", "0.1.0"],
       ["module-roles", "router-module-roles", "0.1.0"],
-      ["navigation", "router", "0.1.0"],
       ["observation", "jotai", "0.1.0"],
       ["observation", "redux", "0.1.0"],
       ["observation", "router-observation", "0.1.0"],
@@ -80,6 +77,7 @@ describe("runExtractCommand", () => {
       ["observation", "tanstack-query", "0.1.0"],
       ["observation", "use-state", "0.1.0"],
       ["observation", "zustand", "0.1.0"],
+      ["route", "router", "0.1.0"],
       ["route-execution", "router-route-execution", "0.1.0"],
       ["state-source", "jotai", "0.1.0"],
       ["state-source", "redux", "0.1.0"],
@@ -87,6 +85,8 @@ describe("runExtractCommand", () => {
       ["state-source", "tanstack-query", "0.1.0"],
       ["state-source", "use-state", "0.1.0"],
       ["state-source", "zustand", "0.1.0"],
+      ["type", "arktype", "0.1.0"],
+      ["type", "zod", "0.1.0"],
     ]);
     expect(report).toMatchObject({
       schemaVersion: 1,

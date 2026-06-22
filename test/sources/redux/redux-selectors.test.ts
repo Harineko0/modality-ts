@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { reduxSource } from "modality-ts/extract/sources/redux";
+import { describe, expect, it } from "vitest";
 import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
 
 describe("Redux selector reads", () => {

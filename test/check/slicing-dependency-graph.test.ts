@@ -1,11 +1,11 @@
+import { lit, type Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import {
   buildModelDependencyGraph,
   computeStateSliceClosure,
   computeTargetedStepSliceClosure,
 } from "../../src/check/slicing/dependency-graph.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { lit, type Model } from "modality-ts/core";
-import { describe, expect, it } from "vitest";
 
 const bool = { kind: "bool" } as const;
 const twoRoutes = {

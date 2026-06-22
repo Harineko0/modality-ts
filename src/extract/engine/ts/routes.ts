@@ -1,5 +1,5 @@
-import * as ts from "typescript";
 import type { ExprIR, StateVarScope } from "modality-ts/core";
+import * as ts from "typescript";
 import { literalValue } from "./ast.js";
 
 export function routeMountScope(

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
 import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 function countModel(effect: Model["transitions"][number]["effect"]): Model {
   return {

@@ -1,11 +1,8 @@
 import { resolve } from "node:path";
-import * as ts from "typescript";
 import type { StateVarDecl } from "modality-ts/core";
-import type {
-  NavigationAdapter,
-  RouteInventory,
-  SemanticTypeContext,
-} from "../spi/index.js";
+import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type { RouteInventory, RoutePlugin } from "../spi/index.js";
 import { typeAliasDeclarations } from "./domains.js";
 import { routeMountScope } from "./routes.js";
 import type { ContextBindings, SetterBinding } from "./types.js";
@@ -109,7 +106,7 @@ export function collectProjectTypeAliases(
 export function supplementalSourcesForRegistry(
   relatedFragments: readonly { sourceText: string; fileName: string }[],
   primaryFileName: string,
-  types?: SemanticTypeContext,
+  _types?: SemanticTypeContext,
 ): { sourceText: string; fileName: string }[] {
   return relatedFragments
     .filter((fragment) => fragment.fileName !== primaryFileName)
@@ -119,7 +116,9 @@ export function supplementalSourcesForRegistry(
     }));
 }
 
-export function cloneContextBindings(bindings: ContextBindings): ContextBindings {
+export function cloneContextBindings(
+  bindings: ContextBindings,
+): ContextBindings {
   const hookReturns = new Map<string, Map<string, SetterBinding>>();
   for (const [hook, fields] of bindings.hookReturns) {
     hookReturns.set(hook, new Map(fields));
@@ -153,7 +152,7 @@ export function mergeContextBindings(
 }
 
 export function resolveComponentRoutePattern(
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   inventory: RouteInventory | undefined,
   componentName: string,
 ): string | undefined {
@@ -164,12 +163,12 @@ export function resolveComponentRoutePattern(
 export function scopeForLocalState(
   component: string,
   route: string,
-  routerPlugin: NavigationAdapter | undefined,
+  routePlugin: RoutePlugin | undefined,
   inventory: RouteInventory | undefined,
   providerGlobal: boolean,
 ): StateVarDecl["scope"] {
   if (providerGlobal) return { kind: "global" };
-  const mountScope = routerPlugin?.mountScopeForComponent?.(
+  const mountScope = routePlugin?.mountScopeForComponent?.(
     component,
     inventory ?? { routes: [] },
   );

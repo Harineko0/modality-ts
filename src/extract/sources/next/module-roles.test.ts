@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { nextModuleRolePlugin } from "./index.js";
 import {
   classifyNextImportEdge,
   classifyNextModule,
   nextModuleEntryExports,
 } from "./module-roles.js";
-import { nextModuleRoleAdapter } from "./index.js";
 import { discoverNextServerEffectApis } from "./server-effects.js";
 
-describe("nextModuleRoleAdapter", () => {
-  const provider = nextModuleRoleAdapter();
+describe("nextModuleRolePlugin", () => {
+  const provider = nextModuleRolePlugin();
 
   it('classifies "use client" modules as client', () => {
     expect(

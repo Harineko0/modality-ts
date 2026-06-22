@@ -1,11 +1,11 @@
+import { websocketEffectPlugin } from "modality-ts/extract/effect-models/websocket";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { websocketEffectModelProvider } from "modality-ts/extract/effect-models/websocket";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 
 describe("websocket effect model provider", () => {
-  const provider = websocketEffectModelProvider();
+  const provider = websocketEffectPlugin();
 
   it("recognizeEffect returns identical connect enqueue IR", () => {
     const source = ts.createSourceFile(
@@ -36,7 +36,7 @@ describe("websocket effect model provider", () => {
       webSocketBindings: new Map(),
       webSocketRegistrations,
       environment: {
-        webSockets: [{ match: "wss://example.test/feed", messages: ["tick"] }],
+        webSockets: [{ url: "wss://example.test/feed", messages: ["tick"] }],
       },
     });
     expect(recognized?.model.channel).toBe("websocket");
@@ -49,7 +49,7 @@ describe("websocket effect model provider", () => {
   });
 
   it("matches full extraction websocket CPS lowering", () => {
-    const routerPlugin = reactRouterAdapter();
+    const routePlugin = reactRouterAdapter();
     const result = extractReactSourceTransitions(
       `
       import { useEffect } from 'react';
@@ -65,9 +65,9 @@ describe("websocket effect model provider", () => {
       {
         route: "/",
         fileName: "Feed.tsx",
-        routerPlugin,
+        routePlugin,
         environment: {
-          webSockets: [{ match: "wss://example.test/feed", messages: ["tick"] }],
+          webSockets: [{ url: "wss://example.test/feed", messages: ["tick"] }],
         },
       },
     );
@@ -76,8 +76,8 @@ describe("websocket effect model provider", () => {
         decl.id.startsWith("sys:websocket:Feed.Feed.useEffect"),
       ),
     ).toBe(true);
-    expect(result.transitions.some((transition) => transition.cls === "env")).toBe(
-      true,
-    );
+    expect(
+      result.transitions.some((transition) => transition.cls === "env"),
+    ).toBe(true);
   });
 });

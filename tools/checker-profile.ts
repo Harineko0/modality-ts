@@ -1,6 +1,6 @@
 import { checkModel } from "modality-ts/check";
-import { reachable } from "../test/helpers/property-builders.js";
 import type { Model } from "modality-ts/core";
+import { reachable } from "../test/helpers/property-builders.js";
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;

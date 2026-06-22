@@ -145,16 +145,16 @@ export interface PluginProvenance {
   id: string;
   version: string;
   kind:
-    | "navigation"
+    | "route"
     | "module-roles"
     | "effect-api"
     | "route-execution"
     | "cache-storage"
     | "observation"
     | "state-source"
-    | "domain-refinement"
+    | "type"
     | "framework"
-    | "effect-model";
+    | "effect";
   packageNames: readonly string[];
 }
 

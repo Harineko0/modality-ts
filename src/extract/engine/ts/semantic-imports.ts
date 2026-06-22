@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../spi/index.js";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 
 export interface ResolvedSemanticImport {
   localName: string;

@@ -7,13 +7,6 @@ import {
   targetedAlwaysStepTransitionIds,
 } from "modality-ts/check";
 import {
-  always,
-  alwaysStep,
-  leadsToWithin,
-  reachable,
-  reachableFrom,
-} from "../helpers/property-builders.js";
-import {
   and,
   lit as coreLit,
   enabled,
@@ -35,6 +28,13 @@ import {
 import { describe, expect, it } from "vitest";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
+import {
+  always,
+  alwaysStep,
+  leadsToWithin,
+  reachable,
+  reachableFrom,
+} from "../helpers/property-builders.js";
 import { checkerOracleCorpus } from "./oracle-corpus.js";
 
 function lit(value: unknown) {
@@ -2727,7 +2727,7 @@ describe("checker", () => {
           role: { kind: "pending-queue" },
           initial: [],
         },
-        ...densityValues.map((value, index) => ({
+        ...densityValues.map((_value, index) => ({
           id: `optimisticDensity${index}`,
           domain: bool,
           origin: "system" as const,
@@ -3427,7 +3427,7 @@ describe("checker", () => {
           },
         ),
       ];
-      const unsliced = checkModel(m, props);
+      const _unsliced = checkModel(m, props);
       const sliced = checkModel(m, props, { slicing: true });
       expect(
         sliced.verdicts.map((verdict) => [verdict.property, verdict.status]),

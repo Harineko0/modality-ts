@@ -1,6 +1,6 @@
 import { mkdtemp, symlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EffectIR } from "modality-ts/core";
 

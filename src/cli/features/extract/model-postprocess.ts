@@ -1,17 +1,17 @@
 import type { EffectIR, Model, StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
   RouteInventory,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
 import {
   buildFieldPruningMetadata,
   fieldPruningCollapseCaveats,
 } from "../../../extract/engine/ts/field-pruning.js";
-import { mergeExtractionCaveats, emptyExtractionCaveats } from "./report.js";
+import { emptyExtractionCaveats, mergeExtractionCaveats } from "./report.js";
 
 export function applyMountScopesFromRouter(
   vars: readonly StateVarDecl[],
-  adapter: NavigationAdapter,
+  adapter: RoutePlugin,
   inventory: RouteInventory,
 ): StateVarDecl[] {
   if (!adapter.mountScopeForComponent) return [...vars];

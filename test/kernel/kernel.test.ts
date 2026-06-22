@@ -1,11 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { canSliceProperty } from "modality-ts/check";
 import {
-  always,
-  alwaysStep,
-  reachableFrom,
-} from "../helpers/property-builders.js";
-import {
+  type AbstractDomain,
   and,
   canonicalJson,
   canonicalState,
@@ -15,6 +10,7 @@ import {
   eq,
   evalStatePredicate,
   lit,
+  type Model,
   not,
   readVar,
   stepChanged,
@@ -22,9 +18,13 @@ import {
   stepEnqueued,
   validateModel,
   validateValue,
-  type AbstractDomain,
-  type Model,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import {
+  always,
+  alwaysStep,
+  reachableFrom,
+} from "../helpers/property-builders.js";
 
 const bool = { kind: "bool" } as const;
 const route = { kind: "enum", values: ["/"] } as const;
@@ -1501,7 +1501,7 @@ describe("property DSL", () => {
   });
 
   it("emits transitionEnabledPrefix IR for suffixed transition families", () => {
-    const model = baseModel();
+    const _model = baseModel();
     expect(enabledTransitionPrefix("LaneTimer.onClick.draftSec")).toEqual({
       kind: "transitionEnabledPrefix",
       prefix: "LaneTimer.onClick.draftSec",

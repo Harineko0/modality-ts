@@ -1,6 +1,6 @@
+import type { ExprIR, Transition } from "modality-ts/core";
 import * as ts from "typescript";
 import { isPropertyAccessLike, lineAndColumn, literalValue } from "../ast.js";
-import type { ExprIR, Transition } from "modality-ts/core";
 import type { BoundExpr, ExtractionWarning, SetterBinding } from "../types.js";
 import { unwrapTsExpression, valueExpr } from "./expressions.js";
 import { stringAttribute } from "./ui.js";

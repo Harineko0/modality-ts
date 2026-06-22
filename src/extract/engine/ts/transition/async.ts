@@ -1,7 +1,3 @@
-import * as ts from "typescript";
-import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
-import { uniqueStrings } from "../ids.js";
-import { templateRoutePattern } from "../routes.js";
 import type {
   EffectIR,
   ExprIR,
@@ -10,16 +6,24 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import * as ts from "typescript";
+import type { RoutePlugin } from "../../spi/index.js";
+import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
+import {
+  unextractableHandlerCaveat,
+  unhandledRejectionCaveat,
+} from "../caveats.js";
 import {
   canonicalEffectOp,
   type EffectOpAliases,
 } from "../effect-op-aliases.js";
-import type { NavigationAdapter } from "../../spi/index.js";
+import { uniqueStrings } from "../ids.js";
+import { templateRoutePattern } from "../routes.js";
 import type {
   BoundExpr,
+  EffectSummary,
   ExtractableHandler,
   ExtractionWarning,
-  EffectSummary,
   SetterBinding,
 } from "../types.js";
 import {
@@ -31,19 +35,15 @@ import { valueExpr } from "./expressions.js";
 import {
   andGuard,
   combineParsedGuards,
-  parseGuardExpression,
   type ParsedGuard,
+  parseGuardExpression,
 } from "./guards.js";
 import {
+  appendEffect,
   firstNavigationInStatements,
   navigationEffect,
-  appendEffect,
 } from "./navigation.js";
 import { labelForEvent } from "./ui.js";
-import {
-  unhandledRejectionCaveat,
-  unextractableHandlerCaveat,
-} from "../caveats.js";
 
 export interface AwaitedEffect {
   op: string;
@@ -62,7 +62,7 @@ export function transitionsFromAsyncHandler(
   effectApis: Set<string>,
   asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   locator: Locator | undefined,
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePatterns: readonly string[],
   warnings: ExtractionWarning[],
   effectOpAliases: EffectOpAliases = new Map(),
@@ -195,7 +195,9 @@ export function transitionsFromAsyncHandler(
         outcomeLocals,
       )
     : [];
-  const preEffects = preSummaries.map((summary) => summary.effect);
+  const preEffects = nonIdentityEffects(
+    preSummaries.map((summary) => summary.effect),
+  );
   const finallySummaries = tryStatement?.finallyBlock
     ? summarizeAsyncSegment(
         tryStatement.finallyBlock.statements,
@@ -204,7 +206,9 @@ export function transitionsFromAsyncHandler(
         outcomeLocals,
       )
     : [];
-  const finallyEffects = finallySummaries.map((summary) => summary.effect);
+  const finallyEffects = nonIdentityEffects(
+    finallySummaries.map((summary) => summary.effect),
+  );
   const preReads = uniqueStrings([
     ...preSummaries.flatMap((summary) => summary.reads),
     ...opArgs.reads,
@@ -242,15 +246,19 @@ export function transitionsFromAsyncHandler(
     ...finallyEffects,
   ];
   const enqueueArgKeys = new Set(Object.keys(opArgs.args));
-  const successEffects = rewriteMissingOutcomeReadsInEffects(
-    successEffectsInitial,
-    op,
-    enqueueArgKeys,
+  const successEffects = nonIdentityEffects(
+    rewriteMissingOutcomeReadsInEffects(
+      successEffectsInitial,
+      op,
+      enqueueArgKeys,
+    ),
   );
-  const catchEffects = rewriteMissingOutcomeReadsInEffects(
-    catchEffectsInitial,
-    op,
-    enqueueArgKeys,
+  const catchEffects = nonIdentityEffects(
+    rewriteMissingOutcomeReadsInEffects(
+      catchEffectsInitial,
+      op,
+      enqueueArgKeys,
+    ),
   );
   const successNavigate = firstNavigationInStatements(
     successStatements,
@@ -865,6 +873,12 @@ export function confidenceForEffects(
     : "exact";
 }
 
+function nonIdentityEffects(effects: readonly EffectIR[]): EffectIR[] {
+  return effects.filter(
+    (effect) => !(effect.kind === "seq" && effect.effects.length === 0),
+  );
+}
+
 export function setterAssignEffect(
   statement: ts.Statement,
   setters: Map<string, { varId: string }>,
@@ -1133,8 +1147,8 @@ export function promiseAllAwaitOps(
   return ops.length > 0 ? ops : undefined;
 }
 
-export { canonicalEffectOp } from "../effect-op-aliases.js";
 export type { EffectOpAliases } from "../effect-op-aliases.js";
+export { canonicalEffectOp } from "../effect-op-aliases.js";
 
 export function pendingIs(op: string): Transition["guard"] {
   return pendingIsAt(0, op);

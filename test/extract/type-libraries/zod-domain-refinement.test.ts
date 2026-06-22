@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { zodTypePlugin } from "modality-ts/extract/type-libraries/zod";
 import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { resolveDomainRefinements } from "../../../src/extract/engine/ts/domain-refinements.js";
-import { zodDomainRefinementProvider } from "modality-ts/extract/type-libraries/zod";
+import { typeRefinementContextFromTs } from "../../../src/extract/engine/ts/type-refinement-bridge.js";
 
 function refinementContext(source: string): {
   initializer: ts.Expression;
@@ -30,19 +31,19 @@ function refinementContext(source: string): {
 function resolveZod(source: string) {
   const { initializer, sourceFile } = refinementContext(source);
   return resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       initializer,
       sourceFile,
       typeAliases: new Map(),
       visited: new Set(),
       varId: "local:App.n",
-    },
-    [zodDomainRefinementProvider()],
+    }),
+    [zodTypePlugin()],
   );
 }
 
 describe("zod domain refinement provider", () => {
-  const provider = zodDomainRefinementProvider();
+  const provider = zodTypePlugin();
 
   it("resolves z.number().int().min(0).max(3) to boundedInt", () => {
     const result = resolveZod(
@@ -215,13 +216,13 @@ describe("zod domain refinement provider", () => {
       `const limit = 3; const [n] = useState(z.number().int().min(0).max(limit));`,
     );
     const result = resolveDomainRefinements(
-      {
+      typeRefinementContextFromTs({
         initializer,
         sourceFile,
         typeAliases: new Map(),
         visited: new Set(),
         varId: "local:App.n",
-      },
+      }),
       [provider],
     );
     expect(result.domain).toBeUndefined();
@@ -233,13 +234,15 @@ describe("zod domain refinement provider", () => {
     const { initializer, sourceFile } = refinementContext(
       `const [label] = useState(z.string());`,
     );
-    const result = provider.refineDomain({
-      initializer,
-      sourceFile,
-      typeAliases: new Map(),
-      visited: new Set(),
-      varId: "local:App.label",
-    });
+    const result = provider.refineDomain(
+      typeRefinementContextFromTs({
+        initializer,
+        sourceFile,
+        typeAliases: new Map(),
+        visited: new Set(),
+        varId: "local:App.label",
+      }),
+    );
     expect(result).toBeUndefined();
   });
 });

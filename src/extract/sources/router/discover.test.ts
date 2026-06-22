@@ -1,8 +1,7 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
 import {
   discoverRoutes,
   parseReactRouterRoutes,
@@ -10,6 +9,7 @@ import {
   routeForComponent,
 } from "./discover.js";
 import { reactRouterAdapter } from "./index.js";
+import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
 
 const TINYURL_MANIFEST = `import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
@@ -254,7 +254,7 @@ describe("classifyNavigationJsx", () => {
 });
 
 describe("reactRouterAdapter", () => {
-  it("satisfies NavigationAdapter with the required methods", () => {
+  it("satisfies RoutePlugin with the required methods", () => {
     const adapter = reactRouterAdapter();
     expect(adapter.id).toBe("router");
     expect(typeof adapter.discoverRoutes).toBe("function");

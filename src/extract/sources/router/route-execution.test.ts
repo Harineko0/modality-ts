@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { reactRouterRouteExecutionProvider } from "./route-execution.js";
+import { reactRouterRouteExecutionPlugin } from "./route-execution.js";
 import { discoverReactRouterActionEffectApis } from "./server-effects.js";
 
-describe("reactRouterRouteExecutionProvider", () => {
+describe("reactRouterRouteExecutionPlugin", () => {
   it("maps route loaders, actions, gated loaders, and action revalidation", () => {
     const file = {
       path: "/repo/app/routes/dashboard.tsx",
@@ -29,12 +29,13 @@ describe("reactRouterRouteExecutionProvider", () => {
       inventory,
     });
 
-    const descriptor =
-      reactRouterRouteExecutionProvider().describeRouteExecution({
+    const descriptor = reactRouterRouteExecutionPlugin().describeRouteExecution(
+      {
         inventory,
         effectApis,
         files: [file],
-      });
+      },
+    );
 
     expect(descriptor.loaders).toEqual([
       expect.objectContaining({

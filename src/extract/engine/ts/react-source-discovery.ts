@@ -1,16 +1,34 @@
-import * as ts from "typescript";
-import type { EffectIR, StateVarDecl, Transition, Value } from "modality-ts/core";
 import type {
-  DomainRefinementProvider,
-  EffectModelProvider,
-  HandlerWrapperProvider,
-  NavigationAdapter,
+  EffectIR,
+  StateVarDecl,
+  Transition,
+  Value,
+} from "modality-ts/core";
+import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type {
+  EffectPlugin,
+  RouteFormSubmitCtx,
   RouteInventory,
-  SemanticTypeContext,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
   WriteChannel,
 } from "../spi/index.js";
 import { resolveImportedName } from "../spi/index.js";
+import {
+  componentNameFor,
+  currentEngineFramework,
+  isExtractableHandler,
+  isRecognizedUseStateCall,
+  isUseReducerCall,
+  lineAndColumn,
+  recognizeHookFromTs,
+  recognizeRenderBoundaryFromTs,
+  unwrapHandlerInitializer,
+} from "./ast.js";
+import { globalTaintCaveat, unextractableEffectCaveat } from "./caveats.js";
+import type { ComponentRegistry, CustomHookRegistry } from "./components.js";
 import {
   calledCustomHook,
   inlineCustomHookState,
@@ -18,7 +36,6 @@ import {
   isForwardablePropName,
   isIntrinsicJsxAttribute,
 } from "./components.js";
-import type { ComponentRegistry, CustomHookRegistry } from "./components.js";
 import {
   bindContextHookObjectDeclaration,
   bindSetter,
@@ -32,26 +49,21 @@ import {
   initialValueForUseStateDetailed,
   useStateCallForSemanticInference,
 } from "./domains.js";
+import type { EnvironmentEventConfig } from "./environment-config.js";
 import {
-  componentNameFor,
-  currentEngineFramework,
-  isExtractableHandler,
-  isRecognizedUseStateCall,
-  isUseReducerCall,
-  lineAndColumn,
-  unwrapHandlerInitializer,
-} from "./ast.js";
-import {
-  globalTaintCaveat,
-  unextractableEffectCaveat,
-} from "./caveats.js";
+  lowerSurfaceNodeFromTs,
+  symbolRefFromIdentifier,
+} from "./framework-bridge.js";
 import { tagStableIdKey } from "./ids.js";
-import { scopeForLocalState, resolveComponentRoutePattern } from "./react-source-project.js";
 import {
   type JsxHandlerVisitContext,
   visitComponentPropJsxAttribute,
   visitEventJsxAttribute,
 } from "./react-source-jsx-handlers.js";
+import {
+  resolveComponentRoutePattern,
+  scopeForLocalState,
+} from "./react-source-project.js";
 import {
   deferredSyncTransition,
   extractUseDeferredValueBinding,
@@ -68,7 +80,6 @@ import {
 } from "./transition/environment-callbacks.js";
 import { stateVarForName } from "./transition/expressions.js";
 import { navigationJsxTransition } from "./transition/navigation.js";
-import type { NavFormSubmitCtx } from "../spi/index.js";
 import {
   boundaryIdForComponent,
   suspenseInitialForBoundary,
@@ -89,15 +100,14 @@ import type {
   ExtractionWarning,
   SetterBinding,
 } from "./types.js";
-import type { EnvironmentEventConfig } from "./environment-config.js";
 
 export interface ReactSourceDiscoveryOptions {
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
   types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
-  effectModelProviders?: readonly EffectModelProvider[];
+  effectPlugins?: readonly EffectPlugin[];
   environment?: EnvironmentEventConfig;
   setterFixedEffects?: ReadonlyMap<string, EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
@@ -115,9 +125,8 @@ export interface ReactSourceDiscoveryContext {
   warnings: ExtractionWarning[];
   effectApis: Set<string>;
   effectOpAliases: ReadonlyMap<string, ReadonlyMap<string, string>>;
-  sourcePlugins: readonly StateSourcePlugin[];
-  handlerWrapperProviders: readonly HandlerWrapperProvider[];
-  routerPlugin: NavigationAdapter | undefined;
+  statePlugins: readonly StateSourcePlugin[];
+  routePlugin: RoutePlugin | undefined;
   inventory: RouteInventory | undefined;
   setters: Map<string, SetterBinding>;
   contextBindings: ContextBindings;
@@ -164,9 +173,8 @@ export function discoverReactSourceTransitions(
     warnings,
     effectApis,
     effectOpAliases,
-    sourcePlugins,
-    handlerWrapperProviders,
-    routerPlugin,
+    statePlugins,
+    routePlugin,
     inventory,
     setters,
     contextBindings,
@@ -190,12 +198,12 @@ export function discoverReactSourceTransitions(
   let webSocketCounter = ctx.webSocketCounter;
   let transitionBindingCounter = ctx.transitionBindingCounter;
   let suspenseBoundaryCounter = ctx.suspenseBoundaryCounter;
-  const routerSubmitContext = (component: string): NavFormSubmitCtx => ({
-    source,
+  const routerSubmitContext = (component: string): RouteFormSubmitCtx => ({
+    sourceText: source.text,
     fileName,
     component,
     route:
-      resolveComponentRoutePattern(routerPlugin, inventory, component) ?? route,
+      resolveComponentRoutePattern(routePlugin, inventory, component) ?? route,
     setters: settersForComponent(setters, component),
     actionDataVarId: actionDataVarByComponent.get(component),
     submitBindings,
@@ -243,15 +251,11 @@ export function discoverReactSourceTransitions(
       ts.isIdentifier(node.name) &&
       node.initializer
     ) {
-      const handler = unwrapHandlerInitializer(
-        node.initializer,
-        handlerWrapperProviders,
-        {
-          sourceFile: source,
-          fileName,
-          ...(options.types ? { types: options.types } : {}),
-        },
-      );
+      const handler = unwrapHandlerInitializer(node.initializer, {
+        sourceFile: source,
+        fileName,
+        ...(options.types ? { types: options.types } : {}),
+      });
       if (handler) handlers.set(node.name.text, handler);
     }
     if (
@@ -295,12 +299,12 @@ export function discoverReactSourceTransitions(
         scopeForLocalState(
           nextComponent,
           route,
-          routerPlugin,
+          routePlugin,
           inventory,
           providerComponents.has(nextComponent),
         ),
         options.types,
-        options.domainRefinements,
+        options.typePlugins,
       )
     ) {
       return;
@@ -359,7 +363,7 @@ export function discoverReactSourceTransitions(
           source,
           varId,
           options.types,
-          options.domainRefinements ?? [],
+          options.typePlugins ?? [],
         );
         const domain = discovered?.domain ?? inferred.domain;
         warnings.push(...domainInferenceWarnings(inferred, anchor));
@@ -378,7 +382,7 @@ export function discoverReactSourceTransitions(
             scope: scopeForLocalState(
               component,
               route,
-              routerPlugin,
+              routePlugin,
               inventory,
               providerComponents.has(component),
             ),
@@ -400,13 +404,13 @@ export function discoverReactSourceTransitions(
                 scope: scopeForLocalState(
                   component,
                   route,
-                  routerPlugin,
+                  routePlugin,
                   inventory,
                   providerComponents.has(component),
                 ),
                 initial: initialResult.value,
               } satisfies StateVarDecl);
-            const binding = decodeSetterBinding(decl, sourcePlugins);
+            const binding = decodeSetterBinding(decl, statePlugins);
             if (options.types?.localSymbolKey?.(setterName.name)) {
               binding.symbolKey = options.types.localSymbolKey(setterName.name);
             }
@@ -422,9 +426,10 @@ export function discoverReactSourceTransitions(
     }
     const activeComponent = nextComponent ?? "Anonymous";
     const engineFw = currentEngineFramework();
-    const renderBoundary = engineFw.framework.recognizeRenderBoundary(
+    const renderBoundary = recognizeRenderBoundaryFromTs(
       node,
-      engineFw.ctx,
+      engineFw,
+      fileName,
     );
     if (renderBoundary?.kind === "suspense") {
       const boundaryId = boundaryIdForComponent(
@@ -449,7 +454,7 @@ export function discoverReactSourceTransitions(
       return;
     }
     const routePattern = resolveComponentRoutePattern(
-      routerPlugin,
+      routePlugin,
       inventory,
       activeComponent,
     );
@@ -459,20 +464,18 @@ export function discoverReactSourceTransitions(
       node,
       activeComponent,
       routePatterns,
-      routerPlugin,
+      routePlugin,
       routePattern,
       inventory,
     );
     if (link) transitions.push(link);
     const scopedSetters = settersForComponent(setters, nextComponent);
-    const formRecognition = routerPlugin?.recognizeFormSubmit?.(
-      node,
+    const formRecognition = routePlugin?.recognizeFormSubmit?.(
+      lowerSurfaceNodeFromTs(node, fileName),
       routerSubmitContext(activeComponent),
     );
     if (formRecognition?.kind === "submit") {
-      transitions.push(
-        ...tagStableIdKey(formRecognition.transitions, node),
-      );
+      transitions.push(...tagStableIdKey(formRecognition.transitions, node));
     }
     const refTaint = refSetterTaint(node, scopedSetters);
     if (refTaint) {
@@ -510,14 +513,14 @@ export function discoverReactSourceTransitions(
         routePatterns,
         effectApis,
         asyncOutcomes: options.asyncOutcomes ?? {},
-        sourcePlugins,
-        routerPlugin,
+        statePlugins,
+        routePlugin,
         contextBindings,
         resetSymbols,
         ...(options.types ? { types: options.types } : {}),
         effectOpAliases,
-        ...(options.effectModelProviders
-          ? { effectModelProviders: options.effectModelProviders }
+        ...(options.effectPlugins
+          ? { effectPlugins: options.effectPlugins }
           : {}),
         vars,
         transitions,
@@ -559,14 +562,14 @@ export function discoverReactSourceTransitions(
         routePatterns,
         effectApis,
         asyncOutcomes: options.asyncOutcomes ?? {},
-        sourcePlugins,
-        routerPlugin,
+        statePlugins,
+        routePlugin,
         contextBindings,
         resetSymbols,
         ...(options.types ? { types: options.types } : {}),
         effectOpAliases,
-        ...(options.effectModelProviders
-          ? { effectModelProviders: options.effectModelProviders }
+        ...(options.effectPlugins
+          ? { effectPlugins: options.effectPlugins }
           : {}),
         vars,
         transitions,
@@ -602,9 +605,10 @@ export function discoverReactSourceTransitions(
       nextComponent &&
       ts.isIdentifier(node.name)
     ) {
-      const deferredHook = engineFw.framework.recognizeHook(
+      const deferredHook = recognizeHookFromTs(
         node.initializer,
-        engineFw.ctx,
+        engineFw,
+        fileName,
       );
       if (deferredHook?.hook.kind === "deferred") {
         const arg = node.initializer.arguments[0];
@@ -627,7 +631,7 @@ export function discoverReactSourceTransitions(
             scopeForLocalState(
               nextComponent,
               route,
-              routerPlugin,
+              routePlugin,
               inventory,
               providerComponents.has(nextComponent),
             ),
@@ -649,26 +653,28 @@ export function discoverReactSourceTransitions(
       }
     }
     if (ts.isVariableDeclaration(node) && nextComponent) {
-      const hookRecognition = routerPlugin?.recognizeFormSubmit?.(
-        node,
+      const hookRecognition = routePlugin?.recognizeFormSubmit?.(
+        lowerSurfaceNodeFromTs(node, fileName),
         {
           ...routerSubmitContext(nextComponent),
           route:
-            resolveComponentRoutePattern(routerPlugin, inventory, nextComponent) ??
-            route,
+            resolveComponentRoutePattern(
+              routePlugin,
+              inventory,
+              nextComponent,
+            ) ?? route,
         },
       );
       if (hookRecognition?.kind === "use-submit-binding") {
         submitBindings.set(hookRecognition.name, true);
       }
       if (hookRecognition?.kind === "action-data") {
-        if (!vars.some((candidate) => candidate.id === hookRecognition.varDecl.id))
+        if (
+          !vars.some((candidate) => candidate.id === hookRecognition.varDecl.id)
+        )
           vars.push(hookRecognition.varDecl);
         actionDataVarByComponent.set(nextComponent, hookRecognition.varDecl.id);
-        setters.set(
-          hookRecognition.localName,
-          hookRecognition.setterBinding,
-        );
+        setters.set(hookRecognition.localName, hookRecognition.setterBinding);
       }
     }
     if (ts.isVariableDeclaration(node) && nextComponent) {
@@ -682,7 +688,7 @@ export function discoverReactSourceTransitions(
         scopeForLocalState(
           nextComponent,
           route,
-          routerPlugin,
+          routePlugin,
           inventory,
           providerComponents.has(nextComponent),
         ),
@@ -715,14 +721,17 @@ export function discoverReactSourceTransitions(
     }
     const effectHook =
       ts.isCallExpression(node) && ts.isIdentifier(node.expression)
-        ? engineFw.framework.recognizeHook(node, engineFw.ctx)
+        ? recognizeHookFromTs(node, engineFw, fileName)
         : undefined;
     if (
       effectHook?.hook.kind === "effect" &&
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression)
     ) {
-      const hookLabel = resolveImportedName(node.expression, engineFw.ctx);
+      const hookLabel = resolveImportedName(
+        symbolRefFromIdentifier(node.expression, fileName),
+        engineFw.ctx,
+      );
       const effectPhase = effectHook.hook.phase;
       const timerRegistrations: TimerRegistration[] = [];
       const webSocketRegistrations: WebSocketRegistration[] = [];
@@ -746,7 +755,7 @@ export function discoverReactSourceTransitions(
           environment: options.environment,
           transitionBindings,
           types: options.types,
-          effectModelProviders: options.effectModelProviders,
+          effectPlugins: options.effectPlugins,
         },
       );
       registerTimerVars(timerRegistrations);
@@ -784,4 +793,3 @@ export function discoverReactSourceTransitions(
     suspenseBoundaryCounter,
   };
 }
-

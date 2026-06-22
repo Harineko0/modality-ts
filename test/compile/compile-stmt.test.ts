@@ -1,13 +1,14 @@
 import {
-  compileStatements,
   type CompileStmtOptions,
+  compileStatements,
 } from "modality-ts/extract/compile";
 import type {
   CompileCtx,
   LeafDispatch,
   LeafEffect,
+  SurfaceCall,
+  SurfaceStmt,
 } from "modality-ts/extract/engine/spi";
-import type { SurfaceCall, SurfaceStmt } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 
 function stubLeaf(effect: LeafEffect): LeafDispatch {
@@ -22,14 +23,8 @@ function compileWith(
   stmts: SurfaceStmt[],
   leaf: LeafDispatch,
   locals: CompileCtx["locals"] = new Map([
-    [
-      "a",
-      { expr: { kind: "read", var: "a" }, reads: ["a"] },
-    ],
-    [
-      "p",
-      { expr: { kind: "read", var: "p" }, reads: ["p"] },
-    ],
+    ["a", { expr: { kind: "read", var: "a" }, reads: ["a"] }],
+    ["p", { expr: { kind: "read", var: "p" }, reads: ["p"] }],
   ]),
 ): ReturnType<typeof compileStatements> {
   const ctx: CompileCtx = {
@@ -52,7 +47,11 @@ describe("compile-stmt", () => {
     const stmts: SurfaceStmt[] = [
       {
         kind: "if",
-        cond: { kind: "ref", symbol: { name: "a", origin: { file: "f", start: 0, end: 1 } } },
+        cond: {
+          kind: "ref",
+          symbol: { name: "a", origin: { file: "f", start: 0, end: 1 } },
+        },
+        // biome-ignore lint/suspicious/noThenProperty: Surface IR uses Effect IR branch naming.
         then: {
           kind: "block",
           stmts: [
@@ -62,12 +61,18 @@ describe("compile-stmt", () => {
                 kind: "call",
                 callee: {
                   kind: "ref",
-                  symbol: { name: "setX", origin: { file: "f", start: 2, end: 3 } },
+                  symbol: {
+                    name: "setX",
+                    origin: { file: "f", start: 2, end: 3 },
+                  },
                 },
                 args: [
                   {
                     kind: "ref",
-                    symbol: { name: "p", origin: { file: "f", start: 4, end: 5 } },
+                    symbol: {
+                      name: "p",
+                      origin: { file: "f", start: 4, end: 5 },
+                    },
                   },
                 ],
                 origin: { file: "f", start: 2, end: 6 },
@@ -77,16 +82,20 @@ describe("compile-stmt", () => {
         },
       },
     ];
-    const compiled = compileWith(stmts, stubLeaf({
-      effect: {
-        kind: "assign",
-        var: "local:C.X",
-        expr: { kind: "read", var: "p" },
-      },
-    }));
+    const compiled = compileWith(
+      stmts,
+      stubLeaf({
+        effect: {
+          kind: "assign",
+          var: "local:C.X",
+          expr: { kind: "read", var: "p" },
+        },
+      }),
+    );
     expect(compiled?.effect).toEqual({
       kind: "if",
       cond: { kind: "read", var: "a" },
+      // biome-ignore lint/suspicious/noThenProperty: Effect IR branch field.
       then: {
         kind: "assign",
         var: "local:C.X",
@@ -164,7 +173,10 @@ describe("compile-stmt", () => {
                 kind: "call",
                 callee: {
                   kind: "ref",
-                  symbol: { name: "setX", origin: { file: "f", start: 1, end: 2 } },
+                  symbol: {
+                    name: "setX",
+                    origin: { file: "f", start: 1, end: 2 },
+                  },
                 },
                 args: [],
                 origin: { file: "f", start: 1, end: 3 },
@@ -176,7 +188,10 @@ describe("compile-stmt", () => {
                 kind: "call",
                 callee: {
                   kind: "ref",
-                  symbol: { name: "setY", origin: { file: "f", start: 4, end: 5 } },
+                  symbol: {
+                    name: "setY",
+                    origin: { file: "f", start: 4, end: 5 },
+                  },
                 },
                 args: [],
                 origin: { file: "f", start: 4, end: 6 },

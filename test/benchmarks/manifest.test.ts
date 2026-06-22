@@ -1,17 +1,17 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ledgerOpsEffectApis } from "../../benchmarks/shared/app-spec/property-catalog.js";
 import { ledgerOpsPages } from "../../benchmarks/shared/app-spec/pages.js";
-import { ledgerOpsProperties } from "../../benchmarks/shared/app-spec/property-catalog.js";
-import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
-import { ledgerOpsSeededOutcomes } from "../../benchmarks/shared/app-spec/seeded-outcomes.js";
 import {
   ledgerOpsArktypeDomains,
+  ledgerOpsEffectApis,
   ledgerOpsJotaiPrimaryRoutes,
+  ledgerOpsProperties,
   ledgerOpsZodDomains,
   ledgerOpsZustandPrimaryRoutes,
 } from "../../benchmarks/shared/app-spec/property-catalog.js";
+import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
+import { ledgerOpsSeededOutcomes } from "../../benchmarks/shared/app-spec/seeded-outcomes.js";
 import { readBenchmarkManifest } from "../../tools/benchmark/manifest.js";
 
 const repoRoot = join(import.meta.dirname, "..", "..");

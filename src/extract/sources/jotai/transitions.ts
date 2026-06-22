@@ -1,19 +1,19 @@
 import type { StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
 import { extractSharedReactTransitions } from "../shared/react-transition-extract.js";
 import type { ExtractedModelSkeleton } from "../use-state/types.js";
 import { discoverJotaiAtomsDetailed } from "./discover.js";
+import { jotaiSource } from "./plugin.js";
 import {
   discoverJotaiSafetyWarnings,
   discoverJotaiWriteChannels,
   discoverJotaiWritesDetailed,
   jotaiResetSymbols,
 } from "./writes.js";
-import { jotaiSource } from "./plugin.js";
 
 export interface JotaiExtractionOptions {
   route?: string;
@@ -22,8 +22,8 @@ export interface JotaiExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export function extractJotaiSkeleton(
@@ -47,7 +47,7 @@ export function extractJotaiSkeleton(
     ...discoverJotaiWriteChannels(sourceText, fileName),
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [jotaiSource(), ...(options.sourcePlugins ?? [])];
+  const statePlugins = [jotaiSource(), ...(options.statePlugins ?? [])];
   const safetyWarnings = discoverJotaiSafetyWarnings(sourceText, fileName);
   const discoveryWarnings = discovery.warnings.map((warning) => ({
     message: warning.message,
@@ -68,11 +68,11 @@ export function extractJotaiSkeleton(
     routePatterns: options.routePatterns ?? [],
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
-    sourcePlugins,
+    statePlugins,
     resetSymbols: jotaiResetSymbols(sourceText, fileName),
     setterFixedEffects: writeDiscovery.setterFixedEffects,
     resettableVarIds: writeDiscovery.resettableVarIds,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
   });
   return {
     vars,

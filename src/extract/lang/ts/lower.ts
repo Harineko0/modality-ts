@@ -1,10 +1,11 @@
-import * as ts from "typescript";
 import type { Value } from "modality-ts/core";
+import * as ts from "typescript";
 import { nodeRefFor } from "./node-ref.js";
 import type {
   SurfaceBinding,
   SurfaceExpr,
   SurfaceFunction,
+  SurfaceLValue,
   SurfaceModule,
   SurfaceParam,
   SurfaceStmt,
@@ -15,6 +16,21 @@ type SurfaceBlock = Extract<SurfaceStmt, { kind: "block" }>;
 
 function symbolRef(node: ts.Identifier, fileName: string): SymbolRef {
   return { name: node.text, origin: nodeRefFor(node, fileName) };
+}
+
+function lowerLValue(node: ts.Expression, fileName: string): SurfaceLValue {
+  if (ts.isIdentifier(node)) {
+    return { kind: "ref", symbol: symbolRef(node, fileName) };
+  }
+  if (ts.isPropertyAccessExpression(node)) {
+    return {
+      kind: "member",
+      object: lowerExpr(node.expression, fileName),
+      name: node.name.text,
+      origin: nodeRefFor(node, fileName),
+    };
+  }
+  return { kind: "opaque", origin: nodeRefFor(node, fileName) };
 }
 
 function literalValue(node: ts.Expression): Value | undefined {
@@ -134,6 +150,9 @@ function lowerExpr(node: ts.Expression, fileName: string): SurfaceExpr {
     return lowerJsx(node, fileName);
   }
   if (ts.isParenthesizedExpression(node)) {
+    return lowerExpr(node.expression, fileName);
+  }
+  if (ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) {
     return lowerExpr(node.expression, fileName);
   }
   if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) {
@@ -355,7 +374,20 @@ export function lowerStatement(
     };
   }
   if (ts.isExpressionStatement(statement)) {
-    return { kind: "expr", expr: lowerExpr(statement.expression, fileName) };
+    const expr = statement.expression;
+    if (
+      ts.isBinaryExpression(expr) &&
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      return {
+        kind: "assign",
+        target: lowerLValue(expr.left, fileName),
+        op: "=",
+        value: lowerExpr(expr.right, fileName),
+        origin: nodeRefFor(statement, fileName),
+      };
+    }
+    return { kind: "expr", expr: lowerExpr(expr, fileName) };
   }
   if (ts.isThrowStatement(statement)) {
     return { kind: "throw", origin: nodeRefFor(statement, fileName) };

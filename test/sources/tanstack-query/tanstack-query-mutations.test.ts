@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
 import {
   createTanstackMutationTemplate,
   tanstackQuerySource,
 } from "modality-ts/extract/sources/tanstack-query";
+import { describe, expect, it } from "vitest";
 import { summarizeTanstackQueryWrite } from "../../../src/extract/sources/tanstack-query/writes.js";
 
 describe("TanStack Query mutations", () => {

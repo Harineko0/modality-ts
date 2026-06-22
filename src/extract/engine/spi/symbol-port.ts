@@ -1,5 +1,8 @@
 import type { Value } from "modality-ts/core";
-import type { NodeRef, SurfaceExpr, SymbolRef } from "./surface-ir.js";
+import type { NodeRef } from "../../lang/ts/node-ref.js";
+import type { SurfaceExpr, SymbolRef } from "../../lang/ts/surface-ir.js";
+
+export type { NodeRef, SymbolRef };
 
 export interface ResolvedSymbol {
   name: string;

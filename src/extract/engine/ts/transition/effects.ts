@@ -1,6 +1,7 @@
 import type { ExprIR, Locator, Transition } from "modality-ts/core";
 import * as ts from "typescript";
-import type { EffectModelProvider, SemanticTypeContext } from "../../spi/index.js";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
+import type { EffectPlugin } from "../../spi/index.js";
 import { lineAndColumn } from "../ast.js";
 import type { EnvironmentEventConfig } from "../environment-config.js";
 import { uniqueStrings } from "../ids.js";
@@ -10,15 +11,15 @@ import type {
   SetterBinding,
 } from "../types.js";
 import type { TransitionBinding } from "./concurrent.js";
+import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
 import { finalizeImplicitWebSocketOpens } from "./environment-callbacks.js";
-import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { dependencyNameSegment } from "./semantic-ids.js";
 import type { StatementSummaryOptions } from "./statement-driver.js";
-import type { StatementSummaryState } from "./statement-summary-state.js";
 import { effectWriteVars, summarizeStatements } from "./statement-driver.js";
+import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
 import { labelForEvent } from "./ui.js";
 
@@ -73,7 +74,7 @@ export interface EffectExtractionContext {
   environment?: EnvironmentEventConfig;
   transitionBindings?: Map<string, TransitionBinding>;
   types?: SemanticTypeContext;
-  effectModelProviders?: readonly EffectModelProvider[];
+  effectPlugins?: readonly EffectPlugin[];
 }
 
 export function transitionsFromUseEffect(
@@ -252,13 +253,13 @@ export function cleanupSummaries(
       environment: options.environment,
       fileName: options.fileName,
       source: options.source,
-      effectModelProviders: options.effectModelProviders,
+      effectPlugins: options.effectPlugins,
     };
     const summary = dispatchEffectRecognition(
       expression.body,
       setters,
       state,
-      options.effectModelProviders,
+      options.effectPlugins,
     );
     return summary ? [summary] : undefined;
   }
@@ -288,7 +289,7 @@ function effectSummaryOptions(
     fileName,
     source,
     types: effectContext.types,
-    effectModelProviders: effectContext.effectModelProviders,
+    effectPlugins: effectContext.effectPlugins,
   };
 }
 

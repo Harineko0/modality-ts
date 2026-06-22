@@ -1,15 +1,15 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import Link from "next/link";
 import { useAtom } from "jotai";
-import {
-  selectedAccountAtom,
-  accountDetailTabAtom,
-} from "../../../../features/accounts/state/selection-atoms.js";
-import { useAccountDetail } from "../../../../features/accounts/infra/account-queries.js";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { parseAccountRecord } from "../../../../../shared/features/accounts/domain/account.ark.js";
 import { AccountStatusBadge } from "../../../../features/accounts/_components/AccountStatusBadge.js";
+import { useAccountDetail } from "../../../../features/accounts/infra/account-queries.js";
+import {
+  accountDetailTabAtom,
+  selectedAccountAtom,
+} from "../../../../features/accounts/state/selection-atoms.js";
 
 export function AccountProfile() {
   const { accountId: rawAccountId = "acct-alpha" } = useParams();
@@ -17,7 +17,7 @@ export function AccountProfile() {
     ? rawAccountId[0]
     : rawAccountId;
   const [selectedAccount, setSelectedAccount] = useAtom(selectedAccountAtom);
-  const [tab, setTab] = useAtom(accountDetailTabAtom);
+  const [_tab, setTab] = useAtom(accountDetailTabAtom);
   const { data } = useAccountDetail(accountId as typeof selectedAccount);
   if (data) parseAccountRecord(data);
   if (accountId !== selectedAccount)

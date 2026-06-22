@@ -1,17 +1,17 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import * as ts from "typescript";
 import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
-import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
+import * as ts from "typescript";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as components from "../../src/extract/engine/ts/components.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
 } from "../../src/extract/engine/ts/components.js";
-import * as components from "../../src/extract/engine/ts/components.js";
 import { buildReactExtractionProjectSummary } from "../../src/extract/engine/ts/react-extraction-project-summary.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 
@@ -22,22 +22,21 @@ function extractReactSourceTransitions(
   options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
 ) {
   return extractReactSourceTransitionsBase(source, {
-    sourcePlugins: defaultSourcePlugins,
     ...options,
-    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+    statePlugins: options.statePlugins ?? defaultSourcePlugins,
   });
 }
 
+import {
+  collectSemanticNamedImports,
+  resolveSemanticNamedExport,
+} from "../../src/extract/engine/ts/semantic-imports.js";
 import {
   createSemanticProject,
   createSemanticProjectForTest,
   loadSemanticProjectConfig,
   writeSemanticProjectFixture,
 } from "../../src/extract/engine/ts/semantic-project.js";
-import {
-  collectSemanticNamedImports,
-  resolveSemanticNamedExport,
-} from "../../src/extract/engine/ts/semantic-imports.js";
 
 const projectRoot = resolve("/project");
 const tempDirs: string[] = [];
@@ -597,7 +596,7 @@ describe("runExtractionPipeline semantic context", () => {
       sourceText,
       fileName,
       route: "/",
-      sourcePlugins: [plugin],
+      statePlugins: [plugin],
       semanticProject,
     });
 
@@ -614,7 +613,7 @@ describe("runExtractionPipeline semantic context", () => {
 }`,
       fileName: "App.tsx",
       route: "/",
-      sourcePlugins: [useStateSource()],
+      statePlugins: [useStateSource()],
     });
     expect(
       result.transitions.some((transition) =>
@@ -654,7 +653,7 @@ describe("runExtractionPipeline semantic context", () => {
       sourceText,
       fileName: appPath,
       route: "/",
-      sourcePlugins: [plugin],
+      statePlugins: [plugin],
       semanticProject,
     });
 
@@ -679,7 +678,7 @@ export function App() {
       sourceText: appText,
       fileName: appPath,
       route: "/",
-      sourcePlugins: [useStateSource()],
+      statePlugins: [useStateSource()],
       semanticProject,
       discoverFragments: [
         { sourceText: typesText, fileName: typesPath },
@@ -1102,7 +1101,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
-      sourcePlugins: defaultSourcePlugins,
+      statePlugins: defaultSourcePlugins,
     });
     const uncached = extractReactSourceTransitions(appText, {
       fileName: appPath,
@@ -1161,7 +1160,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
-      sourcePlugins: defaultSourcePlugins,
+      statePlugins: defaultSourcePlugins,
     });
     expect(buildComponentSpy).toHaveBeenCalledTimes(1);
     expect(buildHookSpy).toHaveBeenCalledTimes(1);
@@ -1212,7 +1211,7 @@ export function App() {
       relatedFragments,
       types,
       route: "/",
-      sourcePlugins: defaultSourcePlugins,
+      statePlugins: defaultSourcePlugins,
     });
     expect(buildComponentSpy).toHaveBeenCalledTimes(1);
     const options = buildComponentSpy.mock.calls[0]?.[1];
@@ -1246,7 +1245,7 @@ export function App() {
       discoverFragments: relatedFragments,
       relatedFragments,
       route: "/",
-      sourcePlugins: defaultSourcePlugins,
+      statePlugins: defaultSourcePlugins,
     });
     const uncached = extractReactSourceTransitions(appText, {
       fileName: appPath,

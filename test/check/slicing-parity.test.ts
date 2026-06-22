@@ -3,11 +3,6 @@ import {
   sliceModel,
   sliceModelForCheckProperty,
 } from "modality-ts/check";
-import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
-import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
-import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 import {
   collectRecordDomainFieldPaths,
   domainCardinality,
@@ -15,18 +10,23 @@ import {
   enabledTransitionPrefix,
   eq,
   lit,
+  type Model,
   neq,
   not,
   or,
+  type Property,
   readVar,
   stepChangedTo,
   stepEnqueued,
   stepTransitionId,
   validateModel,
-  type Model,
-  type Property,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
+import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
+import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
+import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 
 const bool = { kind: "bool" } as const;
 const twoRoutes = { kind: "enum", values: ["/a", "/b"] } as const;
@@ -1035,7 +1035,7 @@ describe("record field domain projection", () => {
       eq(readVar("product", ["flag0"]), lit(true)),
       { name: "flag0TrueParity", reads: ["product"] },
     );
-    const unsliced = checkModel(model, [property]);
+    const _unsliced = checkModel(model, [property]);
     const sliced = checkModel(model, [property], { slicing: true });
     expect(sliced.verdicts[0]?.status).toBe("verified");
   });

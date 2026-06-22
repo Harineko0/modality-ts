@@ -6,8 +6,9 @@
  * submits (router-submit.ts). The pattern is common in TanStack/React Query
  * and plain mutation helpers used inside react-hook-form handleSubmit callbacks.
  */
-import * as ts from "typescript";
+
 import type { EffectIR, ExprIR, Locator, Transition } from "modality-ts/core";
+import * as ts from "typescript";
 import { callName, isExtractableHandler, lineAndColumn } from "../ast.js";
 import {
   canonicalEffectOp,
@@ -19,6 +20,7 @@ import type {
   ExtractionWarning,
   SetterBinding,
 } from "../types.js";
+import { confidenceForEffects, pendingIs } from "./async.js";
 import {
   effectWriteVars,
   PENDING_QUEUE_VAR,
@@ -26,11 +28,10 @@ import {
 } from "./effects.js";
 import {
   combineParsedGuards,
-  parseGuardExpression,
   type ParsedGuard,
+  parseGuardExpression,
 } from "./guards.js";
 import { labelForEvent } from "./ui.js";
-import { pendingIs, confidenceForEffects } from "./async.js";
 
 // ---------------------------------------------------------------------------
 // Detection

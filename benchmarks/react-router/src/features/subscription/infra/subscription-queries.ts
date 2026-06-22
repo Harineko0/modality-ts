@@ -1,7 +1,8 @@
 export {
-  requestApproval,
   applyApproval,
+  requestApproval,
 } from "../../../../shared/features/subscription/infra/fake-subscription-api.js";
+
 import useSWR from "swr";
 import { seedApprovalRequests } from "../../../../shared/features/fixtures/domain/fixtures.js";
 

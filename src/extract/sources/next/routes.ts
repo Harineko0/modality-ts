@@ -1,28 +1,28 @@
 import type {
-  LocationLowering,
-  NavIntent,
-  ResolvedOptions,
-  RouteInventory,
-  RouteNode,
-} from "modality-ts/extract/engine/spi";
-import type {
   AbstractDomain,
   EffectIR,
   ExprIR,
   StateVarDecl,
   Value,
 } from "modality-ts/core";
+import type {
+  LocationLowering,
+  NavIntent,
+  ResolvedOptions,
+  RouteInventory,
+  RouteNode,
+} from "modality-ts/extract/engine/spi";
 import {
   normalizeRouteTarget,
   routeMountScope,
 } from "../../engine/ts/routes.js";
 import { locationEffect } from "../../engine/ts/transition/navigation.js";
 import {
-  nextRouteTreeToMetadata,
   type NextInterceptInfo,
   type NextParam,
-  type NextRouteTreeNode,
   type NextRouterKind,
+  type NextRouteTreeNode,
+  nextRouteTreeToMetadata,
 } from "./types.js";
 
 export const NEXT_SLOT_NONE = "__none";

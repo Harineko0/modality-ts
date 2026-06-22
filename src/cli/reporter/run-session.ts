@@ -1,4 +1,9 @@
-import type { FooterContext, Reporter, ReporterTask, RunMeta } from "./types.js";
+import type {
+  FooterContext,
+  Reporter,
+  ReporterTask,
+  RunMeta,
+} from "./types.js";
 
 export async function runReport<TEntry>(args: {
   reporter: Reporter;

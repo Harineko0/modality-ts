@@ -4,7 +4,8 @@ export const TenantSettingsForm = {
   // transitions
   onChange: {
     zustand: {
-      useSettingsStore_setState: "TenantSettingsForm.onChange.zustand.useSettingsStore_setState" as TransitionRef<"TenantSettingsForm.onChange.zustand.useSettingsStore_setState">,
+      useSettingsStore_setState:
+        "TenantSettingsForm.onChange.zustand.useSettingsStore_setState" as TransitionRef<"TenantSettingsForm.onChange.zustand.useSettingsStore_setState">,
     },
   },
 };

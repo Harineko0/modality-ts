@@ -1,6 +1,6 @@
-import type { Account, AccountId } from "../domain/account.js";
 import type { AccountStatus } from "../../fixtures/domain/fixtures.js";
 import { getAccount, listAccounts } from "../application/account-service.js";
+import type { Account, AccountId } from "../domain/account.js";
 
 export async function loadAccount(
   accountId: AccountId,

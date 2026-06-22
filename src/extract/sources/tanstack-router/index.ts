@@ -1,9 +1,9 @@
 import type {
   EffectApiProvider,
-  ModuleRoleAdapter,
-  NavigationAdapter,
+  ModuleRolePlugin,
   ResolvedOptions,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
@@ -14,14 +14,14 @@ import {
   tanstackModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
+import { tanstackRouterRouteExecutionPlugin as createTanstackRouterRouteExecutionPlugin } from "./route-execution.js";
+import { isServerOnlyModulePath } from "./route-options.js";
 import {
   locationVars,
   lowerNavigation,
   mountScopeForComponent,
   routeTreeVars,
 } from "./routes.js";
-import { isServerOnlyModulePath } from "./route-options.js";
-import { tanstackRouterRouteExecutionProvider as createTanstackRouterRouteExecutionProvider } from "./route-execution.js";
 import { discoverTanstackRouteEffectApis } from "./server-effects.js";
 
 export interface TanstackRouterSourceOptions {
@@ -30,9 +30,9 @@ export interface TanstackRouterSourceOptions {
   historyMaxLen?: number;
 }
 
-export function tanstackRouterModuleRoleAdapter(
+export function tanstackRouterModuleRolePlugin(
   options: Pick<TanstackRouterSourceOptions, "id" | "packageNames"> = {},
-): ModuleRoleAdapter {
+): ModuleRolePlugin {
   return {
     id: options.id ?? "tanstack-module-roles",
     version: "0.1.0",
@@ -59,15 +59,15 @@ export function tanstackRouterEffectApiProvider(
   };
 }
 
-export function tanstackRouterRouteExecutionProvider(
+export function tanstackRouterRouteExecutionPlugin(
   options: Pick<TanstackRouterSourceOptions, "id" | "packageNames"> = {},
-): RouteExecutionProvider {
-  return createTanstackRouterRouteExecutionProvider(options);
+): RouteExecutionPlugin {
+  return createTanstackRouterRouteExecutionPlugin(options);
 }
 
 export function tanstackRouterAdapter(
   options: TanstackRouterSourceOptions = {},
-): NavigationAdapter {
+): RoutePlugin {
   const historyMaxLen = options.historyMaxLen ?? 4;
   const withHistoryBounds = (
     resolvedOptions: ResolvedOptions,
@@ -79,7 +79,7 @@ export function tanstackRouterAdapter(
     },
   });
 
-  return {
+  return createRoutePlugin({
     id: options.id ?? "tanstack-router",
     version: "0.1.0",
     packageNames: options.packageNames ?? ["@tanstack/react-router"],
@@ -94,26 +94,17 @@ export function tanstackRouterAdapter(
     lowerNavigation,
     mountScopeForComponent,
     harness,
-  };
+  });
 }
 
 export { tanstackRouterCacheStorageProvider } from "./cache-provider.js";
-export {
-  discoverTanstackRouteEffectApis,
-  tanstackBeforeLoadOpId,
-  tanstackLoaderOpId,
-  tanstackRedirectTargetForFile,
-} from "./server-effects.js";
-export {
-  classifyTanstackModule,
-  shouldDiscoverTanstackEffectApis,
-  tanstackModuleEntryExports,
-} from "./module-roles.js";
+
+import { createRoutePlugin } from "modality-ts/extract/plugins";
+
 export {
   discoverTanstackLoaderCache,
   tanstackLoaderCacheVarId,
 } from "./cache.js";
-
 export {
   discoverRoutes,
   parseTanstackCodeRoutes,
@@ -122,5 +113,16 @@ export {
   tanstackFilePathToPattern,
   tanstackPathToPattern,
 } from "./discover.js";
+export {
+  classifyTanstackModule,
+  shouldDiscoverTanstackEffectApis,
+  tanstackModuleEntryExports,
+} from "./module-roles.js";
+export {
+  discoverTanstackRouteEffectApis,
+  tanstackBeforeLoadOpId,
+  tanstackLoaderOpId,
+  tanstackRedirectTargetForFile,
+} from "./server-effects.js";
 
 export default tanstackRouterAdapter;

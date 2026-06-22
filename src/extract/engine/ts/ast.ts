@@ -4,14 +4,22 @@ import type {
   EngineFrameworkContext,
   FrameworkCtx,
   FrameworkPlugin,
-  HandlerWrapperCtx,
-  HandlerWrapperProvider,
 } from "../spi/index.js";
 import {
   createEngineFrameworkContext,
   resolveFrameworkPlugin,
-  resolveImportedName,
 } from "../spi/index.js";
+import {
+  recognizeHookFromTs,
+  symbolRefFromIdentifier,
+} from "./framework-bridge.js";
+import { engineFrameworkPlugin } from "./framework-ts-bridge.js";
+
+export {
+  recognizeHookFromTs,
+  recognizeRenderBoundaryFromTs,
+  surfaceCallFromTs,
+} from "./framework-bridge.js";
 
 export type ExtractableHandler =
   | ts.ArrowFunction
@@ -50,19 +58,44 @@ function engineFramework(
 function calleeName(
   node: ts.CallExpression,
   ctx: FrameworkCtx,
+  fileName: string,
 ): string | undefined {
   if (!ts.isIdentifier(node.expression)) return undefined;
-  return resolveImportedName(node.expression, ctx);
+  return resolveImportedNameFromTs(node.expression, ctx, fileName);
+}
+
+function resolveImportedNameFromTs(
+  identifier: ts.Identifier,
+  ctx: FrameworkCtx,
+  fileName: string,
+): string {
+  return resolveImportedName(
+    symbolRefFromIdentifier(identifier, fileName),
+    ctx,
+  );
+}
+
+function resolveImportedName(
+  symbol: import("../../lang/ts/surface-ir.js").SymbolRef,
+  ctx: FrameworkCtx,
+): string {
+  if (ctx.symbols) {
+    const binding = ctx.symbols.importBinding(symbol);
+    if (binding) return binding.exportedName;
+  }
+  return symbol.name;
 }
 
 function hookNamed(
   node: ts.Expression,
   name: string,
   engineFw?: EngineFrameworkContext,
+  fileName?: string,
 ): node is ts.CallExpression {
   const fw = engineFramework(engineFw);
   if (!ts.isCallExpression(node)) return false;
-  return calleeName(node, fw.ctx) === name;
+  const resolvedFile = fileName ?? fw.ctx.fileName ?? "";
+  return calleeName(node, fw.ctx, resolvedFile) === name;
 }
 
 export function isUseStateCall(
@@ -75,12 +108,14 @@ export function isUseStateCall(
 export function isRecognizedUseStateCall(
   node: ts.Expression,
   engineFw?: EngineFrameworkContext,
+  fileName?: string,
 ): node is ts.CallExpression {
   const fw = engineFramework(engineFw);
   if (!ts.isCallExpression(node)) return false;
-  const hook = fw.framework.recognizeHook(node, fw.ctx);
+  const resolvedFile = fileName ?? fw.ctx.fileName ?? "";
+  const hook = recognizeHookFromTs(node, fw, resolvedFile);
   if (hook?.hook.kind !== "state") return false;
-  return calleeName(node, fw.ctx) === "useState";
+  return calleeName(node, fw.ctx, resolvedFile) === "useState";
 }
 
 export function isUseReducerCall(
@@ -110,28 +145,41 @@ export function isExtractableHandler(
 export function extractableHandlerInitializer(
   node: ts.Expression,
   engineFw?: EngineFrameworkContext,
+  fileName?: string,
 ): ExtractableHandler | undefined {
   if (isExtractableHandler(node)) return node;
   const fw = engineFramework(engineFw);
   if (!ts.isCallExpression(node)) return undefined;
-  const hook = fw.framework.recognizeHook(node, fw.ctx);
+  const resolvedFile = fileName ?? fw.ctx.fileName ?? "";
+  const hook = recognizeHookFromTs(node, fw, resolvedFile);
   if (hook?.hook.kind === "callback") {
-    const callback = hook.hook.handler;
-    return isExtractableHandler(callback) ? callback : undefined;
+    const _callbackRef = hook.hook.handler;
+    const originNode = node.arguments[0];
+    if (originNode && isExtractableHandler(originNode)) return originNode;
+    return undefined;
   }
   return undefined;
 }
 
 export function unwrapHandlerInitializer(
   node: ts.Expression,
-  providers: readonly HandlerWrapperProvider[],
-  ctx: HandlerWrapperCtx,
+  ctx: {
+    sourceFile: ts.SourceFile;
+    fileName: string;
+    types?: import("../../lang/ts/semantic-type-context.js").SemanticTypeContext;
+  },
   engineFw?: EngineFrameworkContext,
 ): ExtractableHandler | undefined {
-  const direct = extractableHandlerInitializer(node, engineFw);
+  const direct = extractableHandlerInitializer(node, engineFw, ctx.fileName);
   if (direct) return direct;
-  for (const provider of providers) {
-    const result = provider.unwrapHandler(node, ctx);
+  const fw = engineFramework(engineFw);
+  const enginePlugin = engineFrameworkPlugin(fw.framework);
+  if (enginePlugin.unwrapTsHandler) {
+    const result = enginePlugin.unwrapTsHandler(node, {
+      sourceFile: ctx.sourceFile,
+      fileName: ctx.fileName,
+      ...(ctx.types ? { types: ctx.types } : {}),
+    });
     if (result && isExtractableHandler(result)) return result;
   }
   return undefined;

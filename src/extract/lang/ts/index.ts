@@ -1,3 +1,21 @@
+export {
+  lowerBlock,
+  lowerExpr,
+  lowerFunction,
+  lowerModule,
+  lowerStatement,
+} from "./lower.js";
+export { findNodeAt, type NodeRef, nodeRefFor } from "./node-ref.js";
+export {
+  createTsOriginReader,
+  type OriginReader,
+  type TsOriginReader,
+  type TsOriginReaderContext,
+} from "./origin-reader.js";
+export type {
+  ResolvedModuleName,
+  SemanticTypeContext,
+} from "./semantic-type-context.js";
 export type {
   AssignOp,
   SurfaceBinding,
@@ -12,19 +30,12 @@ export type {
   SurfaceStmt,
   SymbolRef,
 } from "./surface-ir.js";
-export { findNodeAt, nodeRefFor, type NodeRef } from "./node-ref.js";
 export {
   createTsSymbolPort,
   type ImportBinding,
   type ResolvedSymbol,
   type SymbolPort,
   type SymbolPortContext,
+  type TsSymbolPort,
   type TypeView,
 } from "./symbol-port.js";
-export {
-  lowerBlock,
-  lowerExpr,
-  lowerFunction,
-  lowerModule,
-  lowerStatement,
-} from "./lower.js";

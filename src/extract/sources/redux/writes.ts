@@ -1,33 +1,33 @@
-import * as ts from "typescript";
+import type { EffectIR } from "modality-ts/core";
 import type {
   CallSite,
   ExtractionWarning,
   M0Ctx,
-  SemanticTypeContext,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
-import type { EffectIR } from "modality-ts/core";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import {
+  discoverDispatchBindings,
+  discoverMapDispatchChannels,
+  summarizeReduxDispatch,
+} from "./dispatch.js";
+import { storeVarId } from "./ids.js";
 import { resolveReduxImports } from "./imports.js";
-import { anchor, discoverReduxStoresDetailed } from "./store.js";
 import {
   collectExportedSelectors,
   discoverConnectReadChannels,
   discoverGetStateReadChannels,
   discoverSelectorReadChannels,
 } from "./selectors.js";
-import {
-  discoverDispatchBindings,
-  discoverMapDispatchChannels,
-  summarizeReduxDispatch,
-} from "./dispatch.js";
+import { anchor, discoverReduxStoresDetailed } from "./store.js";
 import {
   discoverStaticThunks,
   registerAsyncThunkLifecycle,
   thunkSafetyWarnings,
 } from "./thunks.js";
-import { storeVarId } from "./ids.js";
 
 export interface ReduxWriteDiscovery {
   channels: WriteChannel[];
@@ -55,18 +55,16 @@ export function discoverReduxWritesDetailed(
     ts.ScriptKind.TSX,
   );
   const imports = resolveReduxImports(source, types);
-  const discovery = discoverReduxStoresDetailed(
-    sourceText,
-    fileName,
-    types,
-  );
+  const discovery = discoverReduxStoresDetailed(sourceText, fileName, types);
   const channels: WriteChannel[] = [];
   const warnings: ExtractionWarning[] = discovery.warnings.map((warning) => ({
     message: warning.message,
     ...(warning.source ? { source: warning.source } : {}),
     ...(warning.caveat ? { caveat: warning.caveat } : {}),
   }));
-  const dispatchFixedEffects = new Map<string, EffectIR>(discovery.actionEffects);
+  const dispatchFixedEffects = new Map<string, EffectIR>(
+    discovery.actionEffects,
+  );
 
   if (
     imports.reactRedux.size === 0 &&
@@ -92,7 +90,9 @@ export function discoverReduxWritesDetailed(
       exportedSelectors,
     ),
   );
-  channels.push(...discoverGetStateReadChannels(source, fileName, discovery.storeHandles));
+  channels.push(
+    ...discoverGetStateReadChannels(source, fileName, discovery.storeHandles),
+  );
   const connectReads = discoverConnectReadChannels(
     source,
     fileName,
@@ -141,7 +141,7 @@ export function discoverReduxSafetyWarnings(
   fileName = "App.tsx",
   types?: SemanticTypeContext,
 ): ExtractionWarning[] {
-  const source = semanticSourceFileFor(
+  const _source = semanticSourceFileFor(
     sourceText,
     fileName,
     types,
@@ -158,7 +158,11 @@ export function discoverReduxSafetyWarnings(
       producer: { kind: "state-source" as const, id: "redux" },
     })),
   );
-  const writeDiscovery = discoverReduxWritesDetailed(sourceText, fileName, types);
+  const writeDiscovery = discoverReduxWritesDetailed(
+    sourceText,
+    fileName,
+    types,
+  );
   warnings.push(...writeDiscovery.warnings);
 
   for (const [, storeInfo] of discovery.storeInfos) {

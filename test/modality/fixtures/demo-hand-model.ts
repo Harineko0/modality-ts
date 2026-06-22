@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
+import type { ExprIR, Model, Value } from "modality-ts/core";
 import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import { locationEffect } from "../../../src/extract/engine/ts/transition/navigation.js";
-import type { ExprIR, Model, Value } from "modality-ts/core";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
 const read = (id: string, path?: string[]): ExprIR => ({

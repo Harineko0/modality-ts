@@ -1,14 +1,14 @@
-import { describe, expect, it } from "vitest";
 import {
   enabled,
   eq,
   finalizeProperties,
   group,
   harvest,
+  type Model,
   reachable,
   resetRegistry,
-  type Model,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 const model: Model = {
   schemaVersion: 1,

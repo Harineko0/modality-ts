@@ -5,21 +5,16 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
-import type * as ts from "typescript";
-import type { SemanticTypeContext } from "./index.js";
-import type {
-  ExtractionWarning,
-  SetterBinding,
-} from "../ts/types.js";
+import type { NodeRef } from "../../lang/ts/node-ref.js";
+import type { SurfaceExpr } from "../../lang/ts/surface-ir.js";
+import type { DecodedSetterBinding, ExtractionWarning } from "./index.js";
 
-export type SurfaceNode = ts.Node;
-
-export interface NavFormSubmitCtx {
-  source: ts.SourceFile;
+export interface RouteFormSubmitCtx {
   fileName: string;
+  sourceText?: string;
   component: string;
   route: string;
-  setters: Map<string, SetterBinding>;
+  setters: Map<string, DecodedSetterBinding>;
   actionDataVarId?: string;
   submitBindings: Map<string, boolean>;
   modeledSubmitHandlers: Set<string>;
@@ -44,17 +39,26 @@ export type FormSubmitRecognition =
       kind: "action-data";
       localName: string;
       varDecl: StateVarDecl;
-      setterBinding: SetterBinding;
+      setterBinding: DecodedSetterBinding;
     };
 
-export interface NavUseSubmitHandlerCtx extends NavFormSubmitCtx {
+export interface RouteUseSubmitHandlerCtx extends RouteFormSubmitCtx {
   attr: string;
   effectApis: ReadonlySet<string>;
-  disabledGuard?: import("../ts/transition/guards.js").ParsedGuard;
-  types?: SemanticTypeContext;
+  disabledGuard?: { expression: SurfaceExpr; origin: NodeRef };
 }
 
 export interface UseSubmitHandlerRecognition {
   form: FormSubmit;
   transitions: Transition[];
+}
+
+export interface RouteJsxSubmitCtx extends RouteFormSubmitCtx {
+  tag: string;
+  attrs: ReadonlyMap<string, SurfaceExpr | undefined>;
+}
+
+export interface RouteHandlerRef {
+  origin: NodeRef;
+  name?: string;
 }

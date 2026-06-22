@@ -1,6 +1,4 @@
-import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import * as ts from "typescript";
 import {
   inferDomainFromTypeNode,
   inferDomainFromTypeNodeDetailed,
@@ -9,6 +7,8 @@ import {
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
 } from "modality-ts/extract/engine";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
 
 function typeNode(source: string): ts.TypeNode {

@@ -1,11 +1,10 @@
-import { useManagementStore } from "../../../../features/management/state/management-store.js";
-import { useRiskQueue } from "../../../../features/management/infra/management-queries.js";
-import { riskBucketSchema } from "../../../../shared/features/management/domain/dashboard.ark.js";
 import { PermissionGate } from "../../../../features/auth/_components/PermissionGate.js";
-import { BulkActionButton } from "../../../../features/management/_components/BulkActionButton.js";
-import { BucketSelect } from "../../../../features/common/_components/BucketSelect.js";
-
 import { api } from "../../../../features/auth/infra/api.js";
+import { BucketSelect } from "../../../../features/common/_components/BucketSelect.js";
+import { BulkActionButton } from "../../../../features/management/_components/BulkActionButton.js";
+import { useRiskQueue } from "../../../../features/management/infra/management-queries.js";
+import { useManagementStore } from "../../../../features/management/state/management-store.js";
+import { riskBucketSchema } from "../../../../shared/features/management/domain/dashboard.ark.js";
 
 export function RiskBulkPanel() {
   const riskFilter = useManagementStore((state) => state.riskFilter);

@@ -18,11 +18,13 @@ const store = configureStore({
 const { increment } = counterSlice.actions;
 
 export function App() {
-  const value = useSelector((state: { counter: { value: number } }) => state.counter.value);
+  const value = useSelector(
+    (state: { counter: { value: number } }) => state.counter.value,
+  );
   const dispatch = useDispatch();
   return (
     <Provider store={store}>
-      <button onClick={() => dispatch(increment())}>
+      <button type="button" onClick={() => dispatch(increment())}>
         {value}
       </button>
     </Provider>

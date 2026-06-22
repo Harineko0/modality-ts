@@ -1,10 +1,10 @@
 "use client";
 
-import { useSettingsStore } from "../../../features/settings/state/settings-store.js";
-import { useSettings } from "../../../features/settings/infra/settings-queries.js";
 import { settingsDraftSchema } from "../../../../shared/features/settings/domain/settings.schema.js";
-import { SettingsSaveBar } from "../../../features/settings/_components/SettingsSaveBar.js";
 import { api } from "../../../features/auth/infra/api.js";
+import { SettingsSaveBar } from "../../../features/settings/_components/SettingsSaveBar.js";
+import { useSettings } from "../../../features/settings/infra/settings-queries.js";
+import { useSettingsStore } from "../../../features/settings/state/settings-store.js";
 
 export function TenantSettingsForm() {
   const settingsDraft = useSettingsStore((s) => s.settingsDraft);

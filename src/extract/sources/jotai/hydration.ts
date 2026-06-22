@@ -1,10 +1,10 @@
-import * as ts from "typescript";
 import type { SourceAnchor, Value } from "modality-ts/core";
-import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import * as ts from "typescript";
 import { literalValue, propertyName } from "../../engine/ts/ast.js";
-import { providerScopeFromJsx } from "./jsx.js";
-import { isHookCall, resolveJotaiImports } from "./imports.js";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { atomVarId } from "./ids.js";
+import { isHookCall, resolveJotaiImports } from "./imports.js";
+import { providerScopeFromJsx } from "./jsx.js";
 
 export interface HydrationOverride {
   varId: string;

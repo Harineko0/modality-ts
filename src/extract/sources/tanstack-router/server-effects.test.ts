@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { tanstackRouterEffectApiProvider } from "./index.js";
 import {
   discoverTanstackRouteEffectApis,
   tanstackBeforeLoadOpId,
   tanstackLoaderOpId,
   tanstackRedirectTargetForFile,
 } from "./server-effects.js";
-import { tanstackRouterEffectApiProvider } from "./index.js";
 
 describe("tanstackRouterEffectApiProvider", () => {
   it("discovers LOADER operations", () => {

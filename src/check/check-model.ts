@@ -1,5 +1,7 @@
 import type { Model, Property } from "modality-ts/core";
 import { sliceContributorFieldPaths } from "modality-ts/core";
+import { initialStateReachableVerdict } from "./initial-state-reachable.js";
+import { runRustCheck } from "./native.js";
 import { compareModelEconomics } from "./slicing/contributors.js";
 import {
   canSliceAllProperties,
@@ -7,8 +9,6 @@ import {
   propertySlicingSkipReason,
   sliceModelForCheckProperty,
 } from "./slicing/slice-model.js";
-import { initialStateReachableVerdict } from "./initial-state-reachable.js";
-import { runRustCheck } from "./native.js";
 import type {
   CheckDiagnostics,
   CheckOptions,

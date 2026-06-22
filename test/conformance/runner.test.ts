@@ -1,9 +1,15 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type {
+  CheckReport,
+  ConformReport,
+  ExtractionReport,
+  Model,
+} from "modality-ts/core";
 import { describe, expect, it } from "vitest";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   assertConformPassRate,
   assertCoverageThreshold,
@@ -20,12 +26,6 @@ import {
   listFixtureRootEntries,
   runConformanceMatrix,
 } from "../../tools/conformance/runner.js";
-import type {
-  CheckReport,
-  ConformReport,
-  ExtractionReport,
-  Model,
-} from "modality-ts/core";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const matrixPath = join(repoRoot, "test/conformance/matrix.json");

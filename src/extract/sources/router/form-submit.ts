@@ -1,21 +1,22 @@
-import * as ts from "typescript";
+import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
 import type {
   FormSubmitRecognition,
-  NavFormSubmitCtx,
-  NavUseSubmitHandlerCtx,
+  RouteFormSubmitCtx,
+  RouteHandlerRef,
+  RouteUseSubmitHandlerCtx,
   UseSubmitHandlerRecognition,
 } from "modality-ts/extract/engine/spi";
-import { callName, lineAndColumn } from "../../engine/ts/ast.js";
+import type { NodeRef, SurfaceNode } from "modality-ts/extract/lang/ts";
+import { findNodeAt } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
+import {
+  callName,
+  isExtractableHandler,
+  lineAndColumn,
+} from "../../engine/ts/ast.js";
 import { unextractableHandlerCaveat } from "../../engine/ts/caveats.js";
 import { safeId, uniqueStrings } from "../../engine/ts/ids.js";
 import { routeMountScope } from "../../engine/ts/routes.js";
-import type { EffectIR, ExprIR, Transition } from "modality-ts/core";
-import type {
-  BoundExpr,
-  ExtractableHandler,
-  ExtractionWarning,
-  SetterBinding,
-} from "../../engine/ts/types.js";
 import {
   confidenceForEffects,
   containsAwaitedEffect,
@@ -31,8 +32,8 @@ import {
   applyParsedGuard,
   jsxAttributeBoolean,
   jsxElementForAttribute,
-  submitButtonDisabledAttribute,
   type ParsedGuard,
+  submitButtonDisabledAttribute,
 } from "../../engine/ts/transition/guards.js";
 import {
   labelForEvent,
@@ -40,6 +41,12 @@ import {
   locatorForJsxElement,
   stringAttribute,
 } from "../../engine/ts/transition/ui.js";
+import type {
+  BoundExpr,
+  ExtractableHandler,
+  ExtractionWarning,
+  SetterBinding,
+} from "../../engine/ts/types.js";
 
 export function isReactRouterFormElement(
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
@@ -51,7 +58,7 @@ export function isReactRouterFormElement(
 
 export function isActionFormMethod(
   attrs: ts.JsxAttributes,
-  source: ts.SourceFile,
+  _source: ts.SourceFile,
 ): boolean {
   const method = stringAttribute(attrs, "method");
   if (!method) return false;
@@ -573,15 +580,38 @@ export function transitionsFromUseSubmitHandler(
   return applyParsedGuard([enqueue, success, error], disabledGuard);
 }
 
-export type ReactRouterSubmitContext = NavFormSubmitCtx;
+export type ReactRouterSubmitContext = RouteFormSubmitCtx;
 
-function submitContextFromNav(ctx: NavFormSubmitCtx): ReactRouterSubmitContext {
+function submitContextFromNav(
+  ctx: RouteFormSubmitCtx,
+): ReactRouterSubmitContext {
   return ctx;
 }
 
+export function sourceFileForFormCtx(ctx: RouteFormSubmitCtx): ts.SourceFile {
+  return ts.createSourceFile(
+    ctx.fileName,
+    ctx.sourceText ?? "",
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+}
+
 export function recognizeFormSubmit(
+  node: SurfaceNode,
+  ctx: RouteFormSubmitCtx,
+): FormSubmitRecognition | undefined {
+  const source = sourceFileForFormCtx(ctx);
+  const tsNode = "origin" in node ? findNodeAt(source, node.origin) : undefined;
+  if (!tsNode) return undefined;
+  return recognizeFormSubmitFromTs(tsNode, ctx, source);
+}
+
+function recognizeFormSubmitFromTs(
   node: ts.Node,
-  ctx: NavFormSubmitCtx,
+  ctx: RouteFormSubmitCtx,
+  source: ts.SourceFile,
 ): FormSubmitRecognition | undefined {
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
     const submitName = discoverUseSubmitBindings(node);
@@ -593,7 +623,7 @@ export function recognizeFormSubmit(
     ) {
       const decl = reactRouterActionDataVarDecl(ctx.component, ctx.route, {
         file: ctx.fileName,
-        ...lineAndColumn(ctx.source, node),
+        ...lineAndColumn(source, node),
       });
       const setterBinding: SetterBinding = {
         varId: decl.id,
@@ -613,10 +643,10 @@ export function recognizeFormSubmit(
   }
   if (
     (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
-    isReactRouterFormElement(node, ctx.source)
+    isReactRouterFormElement(node, source)
   ) {
     const transitions = transitionsFromReactRouterForm(
-      ctx.source,
+      source,
       ctx.fileName,
       node,
       ctx.component,
@@ -626,12 +656,14 @@ export function recognizeFormSubmit(
       submitContextFromNav(ctx),
     );
     if (transitions.length === 0) return undefined;
-    const start = transitions.find((transition) => transition.id.endsWith(".start"));
-    if (!start || start.effect.kind !== "seq") return undefined;
+    const start = transitions.find((transition) =>
+      transition.id.endsWith(".start"),
+    );
+    if (start?.effect.kind !== "seq") return undefined;
     const enqueueEffect = start.effect.effects.find(
       (effect) => effect.kind === "enqueue",
     );
-    if (!enqueueEffect || enqueueEffect.kind !== "enqueue") return undefined;
+    if (enqueueEffect?.kind !== "enqueue") return undefined;
     return {
       kind: "submit",
       form: {
@@ -646,27 +678,36 @@ export function recognizeFormSubmit(
 }
 
 export function recognizeUseSubmitHandler(
-  node: ts.JsxAttribute,
-  attr: string,
-  handler: ExtractableHandler,
-  ctx: NavUseSubmitHandlerCtx,
+  attribute: NodeRef,
+  handler: RouteHandlerRef,
+  ctx: RouteUseSubmitHandlerCtx,
 ): UseSubmitHandlerRecognition | undefined {
+  const source = sourceFileForFormCtx(ctx);
+  const attributeNode = jsxAttributeForRef(source, attribute, ctx.attr);
+  const handlerNode = findNodeAt(source, handler.origin);
+  if (!attributeNode || !ts.isJsxAttribute(attributeNode)) return undefined;
+  if (!handlerNode || !isExtractableHandler(handlerNode)) return undefined;
+  const attr = ctx.attr;
   const transitions = transitionsFromUseSubmitHandler(
-    ctx.source,
+    source,
     ctx.fileName,
-    node,
+    attributeNode,
     attr,
-    handler,
+    handlerNode,
     ctx.setters,
     ctx.component,
     ctx.warnings,
     submitContextFromNav(ctx),
-    ctx.disabledGuard,
+    ctx.disabledGuard as
+      | import("../../engine/ts/transition/guards.js").ParsedGuard
+      | undefined,
     ctx.effectApis,
   );
   if (transitions.length === 0) return undefined;
-  const start = transitions.find((transition) => transition.id.endsWith(".start"));
-  if (!start || start.effect.kind !== "seq") return undefined;
+  const start = transitions.find((transition) =>
+    transition.id.endsWith(".start"),
+  );
+  if (start?.effect.kind !== "seq") return undefined;
   return {
     form: {
       action: ctx.route,
@@ -674,4 +715,22 @@ export function recognizeUseSubmitHandler(
     },
     transitions,
   };
+}
+
+function jsxAttributeForRef(
+  source: ts.SourceFile,
+  ref: NodeRef,
+  attr: string,
+): ts.JsxAttribute | undefined {
+  const node = findNodeAt(source, ref);
+  if (node && ts.isJsxAttribute(node)) return node;
+  if (node && ts.isJsxAttributes(node)) {
+    return node.properties.find(
+      (property): property is ts.JsxAttribute =>
+        ts.isJsxAttribute(property) &&
+        ts.isIdentifier(property.name) &&
+        property.name.text === attr,
+    );
+  }
+  return undefined;
 }

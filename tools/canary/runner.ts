@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
-  canonicalJson,
   type CanaryRunReport,
   type CheckReport,
   type ConformReport,
+  canonicalJson,
 } from "modality-ts/core";
 import { runCheckCommand } from "../../src/cli/check.ts";
 import { runCiCommand } from "../../src/cli/ci.ts";
@@ -21,12 +21,12 @@ import {
 } from "./assertions.js";
 import { classifyCanaryFailure } from "./classify.js";
 import {
-  readCanaryManifest,
-  selectActiveCanaries,
-  validateActiveCanaryPaths,
   type CanaryDefinition,
   type CanaryKind,
   type CanaryManifest,
+  readCanaryManifest,
+  selectActiveCanaries,
+  validateActiveCanaryPaths,
 } from "./manifest.js";
 
 export interface CanaryRunnerOptions {

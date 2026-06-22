@@ -1,11 +1,11 @@
 import { useAtom } from "jotai";
 import { useNavigate } from "react-router-dom";
+import { accountStatusSchema } from "../../../../shared/features/accounts/domain/account.ark.js";
+import { useAccounts } from "../../../features/accounts/infra/account-queries.js";
 import {
   accountStatusFilterAtom,
   selectedAccountAtom,
 } from "../../../features/accounts/state/selection-atoms.js";
-import { useAccounts } from "../../../features/accounts/infra/account-queries.js";
-import { accountStatusSchema } from "../../../../shared/features/accounts/domain/account.ark.js";
 import { BucketSelect } from "../../../features/common/_components/BucketSelect.js";
 
 export function AccountList() {

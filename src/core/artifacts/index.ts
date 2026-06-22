@@ -1,4 +1,9 @@
-import type { Model } from "../ir/types.js";
+import type {
+  Model,
+  Property,
+  StepPredicateFlat,
+  StepPredicateIR,
+} from "../ir/types.js";
 import type {
   CanaryFailureCategory,
   CanaryRunReport,
@@ -10,11 +15,6 @@ import type {
   PropertySliceManifestEntry,
   ReplayReport,
 } from "../report/types.js";
-import type {
-  Property,
-  StepPredicateFlat,
-  StepPredicateIR,
-} from "../ir/types.js";
 import type { Trace, TraceArtifact } from "../trace/types.js";
 
 export function parseModelArtifact(json: string): Model {

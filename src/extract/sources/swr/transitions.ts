@@ -1,6 +1,6 @@
 import type { StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
@@ -18,8 +18,8 @@ export interface SwrExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export function extractSwrSkeleton(
@@ -41,7 +41,7 @@ export function extractSwrSkeleton(
     ...discoverSwrReadChannels(sourceText, fileName),
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [swrSource(), ...(options.sourcePlugins ?? [])];
+  const statePlugins = [swrSource(), ...(options.statePlugins ?? [])];
   const { transitions, warnings = [] } = extractSharedReactTransitions({
     sourceText,
     fileName,
@@ -50,8 +50,8 @@ export function extractSwrSkeleton(
     routePatterns: options.routePatterns ?? [],
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
-    sourcePlugins,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    statePlugins,
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
   });
   return {
     vars,

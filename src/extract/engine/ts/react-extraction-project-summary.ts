@@ -1,20 +1,22 @@
 import { resolve } from "node:path";
 import * as ts from "typescript";
-import type { SemanticTypeContext, StateSourcePlugin } from "../spi/index.js";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 import type { ExtractionProjectSummary } from "../pipeline/source-extraction.js";
+import type { StateSourcePlugin } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
-  componentRegistryWithPrimaryDisplay,
-  customHookRegistryWithPrimaryDisplay,
   type ComponentRegistry,
   type CustomHookRegistry,
+  componentRegistryWithPrimaryDisplay,
+  customHookRegistryWithPrimaryDisplay,
 } from "./components.js";
 import { discoverContextBindings } from "./context.js";
 import { typeAliasDeclarations } from "./domains.js";
 import type { ContextBindings } from "./types.js";
 
-export interface ReactExtractionProjectSummary extends ExtractionProjectSummary {
+export interface ReactExtractionProjectSummary
+  extends ExtractionProjectSummary {
   relatedSourceFiles: readonly ts.SourceFile[];
   typeAliases: ReadonlyMap<string, ts.TypeNode>;
   contextBindings: ContextBindings;
@@ -27,13 +29,13 @@ export interface BuildReactExtractionProjectSummaryOptions {
   relatedFragments: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
   route: string;
-  sourcePlugins?: readonly StateSourcePlugin[];
+  statePlugins?: readonly StateSourcePlugin[];
 }
 
 export function buildReactExtractionProjectSummary(
   options: BuildReactExtractionProjectSummaryOptions,
 ): ReactExtractionProjectSummary {
-  const { discoverFragments, relatedFragments, types, route, sourcePlugins } =
+  const { discoverFragments, relatedFragments, types, route, statePlugins } =
     options;
   const canonicalFileNames = [
     ...new Set(
@@ -52,7 +54,7 @@ export function buildReactExtractionProjectSummary(
     route,
     typeAliases,
     types,
-    sourcePlugins,
+    statePlugins,
   );
   const primaryFragment = discoverFragments[0]!;
   const primarySource = sourceFileForFragment(primaryFragment, types);
@@ -177,10 +179,10 @@ function collectMergedContextBindings(
   route: string,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
-  sourcePlugins?: readonly StateSourcePlugin[],
+  statePlugins?: readonly StateSourcePlugin[],
 ): ContextBindings {
   const contextBindingOptions = {
-    sourcePlugins,
+    statePlugins,
     route,
     ...(types ? { types } : {}),
   };

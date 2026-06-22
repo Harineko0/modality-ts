@@ -1,23 +1,21 @@
+import type { StateVarDecl, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type {
+  EffectPlugin,
+  FrameworkPlugin,
+  RouteInventory,
+  RoutePlugin,
+  StateSourcePlugin,
+  TypePlugin,
+  WriteChannel,
+} from "../spi/index.js";
+import { resolveFrameworkPlugin } from "../spi/index.js";
 import {
   bindEngineFrameworkFromPlugin,
   providerComponentNames,
   withEngineFramework,
 } from "./ast.js";
-import type { EffectOpAliases } from "./effect-op-aliases.js";
-import type { StateVarDecl, Transition, Value } from "modality-ts/core";
-import type {
-  DomainRefinementProvider,
-  EffectModelProvider,
-  FrameworkPlugin,
-  HandlerWrapperProvider,
-  NavigationAdapter,
-  RouteInventory,
-  SemanticTypeContext,
-  StateSourcePlugin,
-  WriteChannel,
-} from "../spi/index.js";
-import { resolveFrameworkPlugin } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -30,16 +28,13 @@ import {
   decodeSetterBinding,
   discoverContextBindings,
 } from "./context.js";
+import type { EffectOpAliases } from "./effect-op-aliases.js";
 import { withStableTransitionIds } from "./ids.js";
 import {
   componentRegistryForPrimary,
   customHookRegistryForPrimary,
   type ReactExtractionProjectSummary,
 } from "./react-extraction-project-summary.js";
-import { collectMutationAliases } from "./transition/callback-effects.js";
-import {
-  discoverComponentRenderBoundaries,
-} from "./transition/suspense.js";
 import { discoverReactSourceTransitions } from "./react-source-discovery.js";
 import {
   cloneContextBindings,
@@ -49,7 +44,13 @@ import {
   supplementalSourcesForRegistry,
 } from "./react-source-project.js";
 import { staticNavigationTransitions } from "./static-navigation.js";
-import type { ExtractableHandler, ExtractionWarning, SetterBinding } from "./types.js";
+import { collectMutationAliases } from "./transition/callback-effects.js";
+import { discoverComponentRenderBoundaries } from "./transition/suspense.js";
+import type {
+  ExtractableHandler,
+  ExtractionWarning,
+  SetterBinding,
+} from "./types.js";
 
 export interface ReactSourceTransitionOptions {
   route?: string;
@@ -61,19 +62,18 @@ export interface ReactSourceTransitionOptions {
   environment?: import("./environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
   inventory?: RouteInventory;
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, import("modality-ts/core").EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
   projectSummary?: ReactExtractionProjectSummary;
   framework?: FrameworkPlugin;
-  effectModelProviders?: readonly EffectModelProvider[];
+  effectPlugins?: readonly EffectPlugin[];
 }
 
 export interface ReactSourceTransitionResult {
@@ -101,8 +101,6 @@ export function extractReactSourceTransitions(
           ts.ScriptKind.TSX,
         );
   const engineFramework = bindEngineFrameworkFromPlugin(framework, {
-    ...(options.types ? { types: options.types } : {}),
-    sourceFile: source,
     fileName,
   });
   return withEngineFramework(engineFramework, () =>
@@ -147,15 +145,14 @@ function extractReactSourceTransitionsImpl(
         return merged;
       })()
     : baseEffectOpAliases;
-  const sourcePlugins = options.sourcePlugins ?? [];
-  const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
-  const routerPlugin = options.routerPlugin;
+  const statePlugins = options.statePlugins ?? [];
+  const routePlugin = options.routePlugin;
   const inventory = options.inventory;
   const setters = new Map<string, SetterBinding>();
   const contextBindingOptions: DiscoverContextBindingsOptions = {
     ...(options.stateVars ? { stateVars: options.stateVars } : {}),
     ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
-    sourcePlugins,
+    statePlugins,
     route,
     ...(options.types ? { types: options.types } : {}),
   };
@@ -231,7 +228,7 @@ function extractReactSourceTransitionsImpl(
   for (const channel of options.writeChannels ?? []) {
     const decl = vars.find((candidate) => candidate.id === channel.varId);
     if (!decl) continue;
-    const binding = decodeSetterBinding(decl, sourcePlugins);
+    const binding = decodeSetterBinding(decl, statePlugins);
     if (
       channel.id.endsWith(".reset") ||
       options.resettableVarIds?.has(channel.varId)
@@ -253,14 +250,16 @@ function extractReactSourceTransitionsImpl(
   discoverReactSourceTransitions({
     options: {
       ...(options.stateVars ? { stateVars: options.stateVars } : {}),
-      ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
-      ...(options.types ? { types: options.types } : {}),
-      ...(options.domainRefinements
-        ? { domainRefinements: options.domainRefinements }
+      ...(options.writeChannels
+        ? { writeChannels: options.writeChannels }
         : {}),
-      ...(options.asyncOutcomes ? { asyncOutcomes: options.asyncOutcomes } : {}),
-      ...(options.effectModelProviders
-        ? { effectModelProviders: options.effectModelProviders }
+      ...(options.types ? { types: options.types } : {}),
+      ...(options.typePlugins ? { typePlugins: options.typePlugins } : {}),
+      ...(options.asyncOutcomes
+        ? { asyncOutcomes: options.asyncOutcomes }
+        : {}),
+      ...(options.effectPlugins
+        ? { effectPlugins: options.effectPlugins }
         : {}),
       ...(options.environment ? { environment: options.environment } : {}),
       ...(options.setterFixedEffects
@@ -280,9 +279,8 @@ function extractReactSourceTransitionsImpl(
     warnings,
     effectApis,
     effectOpAliases,
-    sourcePlugins,
-    handlerWrapperProviders,
-    routerPlugin,
+    statePlugins,
+    routePlugin,
     inventory,
     setters,
     contextBindings,
@@ -312,7 +310,7 @@ function extractReactSourceTransitionsImpl(
       fileName,
       routePatterns,
       componentDisplayMap,
-      routerPlugin,
+      routePlugin,
       inventory,
     ),
   );

@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { routeMountScope } from "../../../extract/engine/ts/routes.js";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { mkSchemaExtractTemp } from "./test-helpers.js";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { routeMountScope } from "../../../extract/engine/ts/routes.js";
 import { runExtractCommand } from "./index.js";
+import { mkSchemaExtractTemp } from "./test-helpers.js";
 
 describe("runExtractCommand", () => {
   it("loads navigation.routeBySource from modality config", async () => {
@@ -1003,7 +1003,7 @@ export function App() {
     });
     expect(model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+        expect.objectContaining({ id: "zod", kind: "type" }),
       ]),
     );
   });
@@ -1044,7 +1044,7 @@ export function App() {
     });
     expect(model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+        expect.objectContaining({ id: "zod", kind: "type" }),
       ]),
     );
   });
@@ -1203,7 +1203,7 @@ export function App() {
     });
     expect(model.metadata?.plugins).not.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "zod", kind: "domain-refinement" }),
+        expect.objectContaining({ id: "zod", kind: "type" }),
       ]),
     );
   });

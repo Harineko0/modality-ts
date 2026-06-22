@@ -1,16 +1,3 @@
-import { describe, expect, it } from "vitest";
-import { always, reachable } from "../helpers/property-builders.js";
-import {
-  and,
-  eq,
-  evalStatePredicate,
-  lit,
-  neq,
-  or,
-  readVar,
-  StatePredicateEvalError,
-  type Model,
-} from "modality-ts/core";
 import {
   assertObservableInvariantsOrThrow,
   assertObservableState,
@@ -19,6 +6,19 @@ import {
   evaluateObservableInvariants,
   observable,
 } from "modality-ts/cli/runtime";
+import {
+  and,
+  eq,
+  evalStatePredicate,
+  lit,
+  type Model,
+  neq,
+  or,
+  readVar,
+  StatePredicateEvalError,
+} from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { always, reachable } from "../helpers/property-builders.js";
 
 const model = {} as Model;
 

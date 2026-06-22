@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { arktypeTypePlugin } from "modality-ts/extract/type-libraries/arktype";
 import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { resolveDomainRefinements } from "../../../src/extract/engine/ts/domain-refinements.js";
-import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
+import { typeRefinementContextFromTs } from "../../../src/extract/engine/ts/type-refinement-bridge.js";
 
 function refinementContext(source: string): {
   initializer: ts.Expression;
@@ -30,19 +31,19 @@ function refinementContext(source: string): {
 function resolveWithProvider(source: string) {
   const { initializer, sourceFile } = refinementContext(source);
   return resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       initializer,
       sourceFile,
       typeAliases: new Map(),
       visited: new Set(),
       varId: "local:App.n",
-    },
-    [arktypeDomainRefinementProvider()],
+    }),
+    [arktypeTypePlugin()],
   );
 }
 
 describe("arktype domain refinement provider", () => {
-  const provider = arktypeDomainRefinementProvider();
+  const provider = arktypeTypePlugin();
 
   it('resolves type("0 <= number.integer <= 3") to boundedInt', () => {
     const result = resolveWithProvider(
@@ -192,13 +193,15 @@ describe("arktype domain refinement provider", () => {
     const { initializer, sourceFile } = refinementContext(
       `const [n] = useState(0);`,
     );
-    const result = provider.refineDomain({
-      initializer,
-      sourceFile,
-      typeAliases: new Map(),
-      visited: new Set(),
-      varId: "local:App.n",
-    });
+    const result = provider.refineDomain(
+      typeRefinementContextFromTs({
+        initializer,
+        sourceFile,
+        typeAliases: new Map(),
+        visited: new Set(),
+        varId: "local:App.n",
+      }),
+    );
     expect(result).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
-import * as ts from "typescript";
 import type { Transition } from "modality-ts/core";
+import * as ts from "typescript";
+import type { RouteInventory, RoutePlugin } from "../spi/index.js";
 import {
   isPropertyAccessLike,
   lineAndColumn,
@@ -14,13 +15,12 @@ import {
   templateRoutePattern,
 } from "./routes.js";
 import {
-  isNavigationJsxTag,
-  navigationRouteJsxAttribute,
   applyLowerNavigation,
   historyRouteValuesForNavigation,
+  isNavigationJsxTag,
   locationEffect,
+  navigationRouteJsxAttribute,
 } from "./transition/navigation.js";
-import type { NavigationAdapter, RouteInventory } from "../spi/index.js";
 import type {
   ComponentDecl,
   InternalTransition,
@@ -33,7 +33,7 @@ export function staticNavigationTransitions(
   fileName: string,
   routePatterns: readonly string[],
   components: ReadonlyMap<string, ComponentDecl>,
-  adapter?: NavigationAdapter,
+  adapter?: RoutePlugin,
   inventory?: RouteInventory,
 ): Transition[] {
   const transitions: InternalTransition[] = [];
@@ -187,7 +187,7 @@ function staticNavigationJsxTransitions(
   component: string,
   env: StaticEnv,
   routePatterns: readonly string[],
-  adapter: NavigationAdapter | undefined,
+  adapter: RoutePlugin | undefined,
   routePattern: string | undefined,
   inventory?: RouteInventory,
 ): InternalTransition[] {

@@ -1,5 +1,5 @@
-import { ledgerOpsRoutes, type LedgerOpsRoute } from "../app-spec/routes.js";
 import { ledgerOpsPages } from "../app-spec/pages.js";
+import { type LedgerOpsRoute, ledgerOpsRoutes } from "../app-spec/routes.js";
 
 export type RouteFixture = {
   route: LedgerOpsRoute;

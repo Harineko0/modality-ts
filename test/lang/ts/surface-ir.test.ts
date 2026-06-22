@@ -26,10 +26,14 @@ function createChecker(source: string): {
   const originalRead = host.readFile.bind(host);
   host.readFile = (file) =>
     file === sourceFile.fileName ? source : originalRead(file);
-  const program = ts.createProgram([sourceFile.fileName], {
-    target: ts.ScriptTarget.Latest,
-    jsx: ts.JsxEmit.ReactJSX,
-  }, host);
+  const program = ts.createProgram(
+    [sourceFile.fileName],
+    {
+      target: ts.ScriptTarget.Latest,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+    host,
+  );
   return {
     sourceFile,
     program,
@@ -118,5 +122,15 @@ describe("surface IR lowering", () => {
         isNamespace: true,
       });
     }
+  });
+
+  it("imports canonical Surface IR from lang/ts in compile", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const compileStmt = await readFile(
+      resolve("src/extract/compile/compile-stmt.ts"),
+      "utf8",
+    );
+    expect(compileStmt).toMatch(/lang\/ts\/surface-ir/);
   });
 });

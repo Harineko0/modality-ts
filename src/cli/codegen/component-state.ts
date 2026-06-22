@@ -6,8 +6,8 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
-import { quoteProperty, stringLiteralType } from "./model.js";
 import { varHandleNaming } from "./handle-naming.js";
+import { quoteProperty, stringLiteralType } from "./model.js";
 import {
   buildTransitionTree,
   componentExportName,

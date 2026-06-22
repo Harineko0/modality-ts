@@ -4,6 +4,7 @@ import type {
   ReportPropertyVerdict,
 } from "modality-ts/core";
 import {
+  ANSI,
   colorize,
   formatArtifactLine,
   formatCountValue,
@@ -16,7 +17,6 @@ import {
   formatTimeValue,
   type OutputOptions,
   statusSymbol,
-  ANSI,
 } from "../../output.js";
 
 export type CheckOutputOptions = OutputOptions;
@@ -181,7 +181,9 @@ export function renderHumanCheckTarget(
       verdict.confidence,
     ]),
   );
-  lines.push(` ${symbol} ${target.propsPath}${duration} ${formatTargetStats(target.check)}`);
+  lines.push(
+    ` ${symbol} ${target.propsPath}${duration} ${formatTargetStats(target.check)}`,
+  );
   const por = target.check.diagnostics?.partialOrderReduction;
   if (por?.requested || por?.enabled) {
     if (por.enabled) {

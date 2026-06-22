@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -9,10 +8,11 @@ import {
   runExtractionPipeline,
   type StateSourcePlugin,
 } from "modality-ts/extract";
-import type { NavigationAdapter } from "modality-ts/extract/engine/spi";
-import { locationVars } from "../../src/extract/sources/router/routes.js";
+import type { RoutePlugin } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
+import { locationVars } from "../../src/extract/sources/router/routes.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -163,7 +163,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: NavigationAdapter = {
+    const routePlugin: RoutePlugin = {
       id: "router",
       packageNames: ["router"],
       discoverRoutes: async () => inventory,
@@ -181,8 +181,8 @@ describe("extraction architecture surface", () => {
       sourceText: "",
       fileName: "Demo.tsx",
       route: "/",
-      sourcePlugins: [sourcePlugin],
-      routerPlugin,
+      statePlugins: [sourcePlugin],
+      routePlugin,
       inventory,
       lowering: {
         pushTargets: ["/next"],
@@ -238,7 +238,7 @@ describe("extraction architecture surface", () => {
         { pattern: "/next", kind: "page" as const },
       ],
     };
-    const routerPlugin: NavigationAdapter = {
+    const routePlugin: RoutePlugin = {
       id: "route-tree",
       packageNames: ["next"],
       discoverRoutes: async () => inventory,
@@ -306,7 +306,7 @@ describe("extraction architecture surface", () => {
         route: "/",
         fileName: "App.tsx",
         routePatterns: ["/", "/next"],
-        routerPlugin,
+        routePlugin,
         inventory,
       },
     );
@@ -334,7 +334,7 @@ describe("extraction architecture surface", () => {
       sourceText: "",
       fileName: "App.tsx",
       route: "/",
-      routerPlugin,
+      routePlugin,
       inventory,
       lowering: {
         pushTargets: ["/next"],
@@ -527,7 +527,7 @@ describe("extraction architecture surface", () => {
       sourceText,
       fileName: "LaneTimer.tsx",
       route: "/",
-      sourcePlugins: [useStateSource()],
+      statePlugins: [useStateSource()],
       bounds: { maxDepth },
     });
     const draftSec = result.stateVars.find(

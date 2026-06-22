@@ -1,22 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
 import { ledgerOpsPages } from "../../benchmarks/shared/app-spec/pages.js";
 import {
   ledgerOpsEffectApis,
   ledgerOpsProperties,
 } from "../../benchmarks/shared/app-spec/property-catalog.js";
+import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
 import { ledgerOpsSeededOutcomes } from "../../benchmarks/shared/app-spec/seeded-outcomes.js";
+import { permissionsByRole } from "../../benchmarks/shared/features/auth/domain/rbac.js";
 import {
   allPermissions,
   type Permission,
 } from "../../benchmarks/shared/features/fixtures/domain/fixtures.js";
-import { permissionsByRole } from "../../benchmarks/shared/features/auth/domain/rbac.js";
 import {
   assertSharedSpecParity,
-  manifestIncludesAllEffectApis,
   type BenchmarkManifest,
+  manifestIncludesAllEffectApis,
 } from "../../benchmarks/shared/testing/parity.js";
 
 const repoRoot = join(import.meta.dirname, "..", "..");

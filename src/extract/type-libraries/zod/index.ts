@@ -1,1 +1,1 @@
-export { zodDomainRefinementProvider } from "./domains.js";
+export { zodTypePlugin } from "./domains.js";

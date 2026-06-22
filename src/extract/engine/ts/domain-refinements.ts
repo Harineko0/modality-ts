@@ -1,20 +1,20 @@
-import * as ts from "typescript";
 import type { SourceAnchor } from "modality-ts/core";
+import * as ts from "typescript";
 import type {
-  DomainRefinementContext,
-  DomainRefinementProvider,
-  DomainRefinementResolution,
-} from "../spi/index.js";
+  TypePlugin,
+  TypeRefinementContext,
+  TypeRefinementResolution,
+} from "../spi/type-plugin.js";
 import { resolveNativeNumericAlias } from "./numeric/native-aliases.js";
 
-export function emptyDomainRefinementResolution(): DomainRefinementResolution {
+export function emptyTypeRefinementResolution(): TypeRefinementResolution {
   return { caveats: [] };
 }
 
 export function resolveDomainRefinements(
-  ctx: DomainRefinementContext,
-  providers: readonly DomainRefinementProvider[] = [],
-): DomainRefinementResolution {
+  ctx: TypeRefinementContext,
+  providers: readonly TypePlugin[] = [],
+): TypeRefinementResolution {
   const native = resolveNativeNumericAlias(ctx);
   if (native && (native.domain !== undefined || native.caveats.length > 0)) {
     return native;

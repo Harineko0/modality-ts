@@ -1,14 +1,9 @@
+import { reduxSource } from "modality-ts/extract/sources/redux";
+import type * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import {
-  reduxSource,
-} from "modality-ts/extract/sources/redux";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
-import type * as ts from "typescript";
-import {
-  observe,
-  setup,
-} from "../../../src/extract/sources/redux/harness.js";
+import { observe, setup } from "../../../src/extract/sources/redux/harness.js";
 import { discoverReduxStoresDetailed } from "../../../src/extract/sources/redux/store.js";
 
 describe("Redux source plugin", () => {
@@ -42,7 +37,7 @@ describe("Redux source plugin", () => {
         react: "^18.0.0",
       },
     });
-    expect(registry.sourcePluginIds).toContain("redux");
+    expect(registry.statePluginIds).toContain("redux");
   });
 
   it("registers when redux and react-redux are dependencies", () => {
@@ -53,7 +48,7 @@ describe("Redux source plugin", () => {
         react: "^18.0.0",
       },
     });
-    expect(registry.sourcePluginIds).toContain("redux");
+    expect(registry.statePluginIds).toContain("redux");
   });
 
   it("is absent when redux is disabled", () => {
@@ -64,14 +59,14 @@ describe("Redux source plugin", () => {
       },
       disabledPlugins: ["redux"],
     });
-    expect(registry.sourcePluginIds).not.toContain("redux");
+    expect(registry.statePluginIds).not.toContain("redux");
   });
 
   it("is absent when no redux packages are dependencies", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { react: "^18.0.0" },
     });
-    expect(registry.sourcePluginIds).not.toContain("redux");
+    expect(registry.statePluginIds).not.toContain("redux");
   });
 
   it("observes store values through harness handles", () => {
@@ -184,9 +179,9 @@ describe("Redux source plugin", () => {
       sourceText: source,
       fileName: "store.ts",
     });
-    expect(warnings?.some((warning) => warning.message.includes("Multiple"))).toBe(
-      true,
-    );
+    expect(
+      warnings?.some((warning) => warning.message.includes("Multiple")),
+    ).toBe(true);
   });
 
   it("uses semantic import resolution when a project is available", () => {

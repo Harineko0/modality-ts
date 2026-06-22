@@ -1,5 +1,5 @@
-import type { ApprovalRequest, SubscriptionDraft } from "../domain/approval.js";
 import { canApplyApproval } from "../application/subscription-service.js";
+import type { ApprovalRequest, SubscriptionDraft } from "../domain/approval.js";
 
 export async function requestApproval(
   draft: SubscriptionDraft,

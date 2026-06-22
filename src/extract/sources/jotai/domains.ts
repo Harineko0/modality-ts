@@ -1,25 +1,23 @@
-import * as ts from "typescript";
 import type { AbstractDomain, Value } from "modality-ts/core";
+import {
+  type AbstractDomain as CoreDomain,
+  validateValue,
+} from "modality-ts/core";
+import type { TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
+import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import {
   firstValue,
   inferDomainFromTypeNode,
-} from "modality-ts/extract/engine/spi";
-import type {
-  SemanticTypeContext,
-  DomainRefinementProvider,
-} from "modality-ts/extract/engine/spi";
+} from "../../engine/ts/domains.js";
 import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
-import { literalValue, propertyName } from "../../engine/ts/ast.js";
-import {
-  validateValue,
-  type AbstractDomain as CoreDomain,
-} from "modality-ts/core";
-import { atomCreatorName, type JotaiResolvedImports } from "./imports.js";
 import {
   getCallsInReadFunction,
   isAsyncReadFunction,
   isReadFunction,
 } from "./derived-writes.js";
+import { atomCreatorName, type JotaiResolvedImports } from "./imports.js";
 import type { AtomConfigKind, JotaiAtomMetadata } from "./types.js";
 
 export interface AtomClassification {
@@ -38,7 +36,7 @@ export function classifyAtomCall(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AtomClassification {
   const creator = atomCreatorName(call, imports.atomCreators) ?? "atom";
   switch (creator) {
@@ -91,7 +89,7 @@ export function classifyAtomCall(
         typeAliases,
         types,
         sourceFile,
-        domainRefinements,
+        typePlugins,
       );
   }
 }
@@ -102,7 +100,7 @@ function classifyCoreAtom(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AtomClassification {
   const args = call.arguments;
   const first = args[0];
@@ -133,16 +131,10 @@ function classifyCoreAtom(
           typeAliases,
           types,
           sourceFile,
-          domainRefinements,
+          typePlugins,
         ),
         initial: firstValue(
-          inferAtomDomain(
-            call,
-            typeAliases,
-            types,
-            sourceFile,
-            domainRefinements,
-          ),
+          inferAtomDomain(call, typeAliases, types, sourceFile, typePlugins),
         ),
         emitVar: false,
         metadata: {
@@ -192,7 +184,7 @@ function classifyCoreAtom(
     typeAliases,
     types,
     sourceFile,
-    domainRefinements,
+    typePlugins,
   );
   return {
     configKind: "primitive",
@@ -409,7 +401,7 @@ function classifyRefreshAtom(
 }
 
 function classifyLoadableAtom(
-  call: ts.CallExpression,
+  _call: ts.CallExpression,
   atomName: string,
 ): AtomClassification {
   return {
@@ -581,7 +573,7 @@ export function inferAtomDomain(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AbstractDomain {
   const typeArg = call.typeArguments?.[0];
   const semanticSource = types?.sourceFile ?? sourceFile;
@@ -590,7 +582,7 @@ export function inferAtomDomain(
       checker: types.checker,
       sourceFile: semanticSource,
       initializer: call.arguments[0],
-      domainRefinements,
+      typePlugins,
       typeAliases,
     }).domain;
   }
@@ -603,7 +595,7 @@ export function inferAtomDomain(
     undefined,
     types,
     semanticSource,
-    domainRefinements,
+    typePlugins,
   );
 }
 
@@ -622,14 +614,14 @@ function domainFromExpression(
   typeArg?: ts.TypeNode,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AbstractDomain {
   if (typeArg && types?.checker) {
     return inferDomainSemantic(typeArg, {
       checker: types.checker,
       sourceFile: types.sourceFile ?? sourceFile,
       initializer: expr,
-      domainRefinements,
+      typePlugins,
     }).domain;
   }
   if (typeArg) return inferDomainFromTypeNode(typeArg, typeAliases);
@@ -637,7 +629,7 @@ function domainFromExpression(
     return inferDomainSemantic(expr, {
       checker: types.checker,
       sourceFile: types.sourceFile ?? sourceFile,
-      domainRefinements,
+      typePlugins,
       typeAliases,
       broadTypeNode: typeArg,
     }).domain;

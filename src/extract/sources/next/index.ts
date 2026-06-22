@@ -1,9 +1,9 @@
 import type {
   EffectApiProvider,
-  ModuleRoleAdapter,
-  NavigationAdapter,
+  ModuleRolePlugin,
   ResolvedOptions,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import * as harness from "./harness.js";
@@ -14,15 +14,18 @@ import {
   nextModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
-import { discoverNextServerEffectApis } from "./server-effects.js";
-import { nextRouteExecutionProvider as createNextRouteExecutionProvider } from "./route-execution.js";
+import { nextRouteExecutionPlugin as createNextRouteExecutionPlugin } from "./route-execution.js";
 import {
   locationVars,
   lowerNextNavigation,
   mountScopeForComponent,
   routeTreeVars,
 } from "./routes.js";
+import { discoverNextServerEffectApis } from "./server-effects.js";
+
 export { nextCacheStorageProvider } from "./cache-provider.js";
+
+import { createRoutePlugin } from "modality-ts/extract/plugins";
 
 export interface NextSourceOptions {
   id?: string;
@@ -30,9 +33,9 @@ export interface NextSourceOptions {
   historyMaxLen?: number;
 }
 
-export function nextModuleRoleAdapter(
+export function nextModuleRolePlugin(
   options: Pick<NextSourceOptions, "id" | "packageNames"> = {},
-): ModuleRoleAdapter {
+): ModuleRolePlugin {
   return {
     id: options.id ?? "next-module-roles",
     version: "0.1.0",
@@ -65,15 +68,13 @@ export function nextEffectApiProvider(
   };
 }
 
-export function nextRouteExecutionProvider(
+export function nextRouteExecutionPlugin(
   options: Pick<NextSourceOptions, "id" | "packageNames"> = {},
-): RouteExecutionProvider {
-  return createNextRouteExecutionProvider(options);
+): RouteExecutionPlugin {
+  return createNextRouteExecutionPlugin(options);
 }
 
-export function nextAdapter(
-  options: NextSourceOptions = {},
-): NavigationAdapter {
+export function nextAdapter(options: NextSourceOptions = {}): RoutePlugin {
   const historyMaxLen = options.historyMaxLen ?? 4;
   const withHistoryBounds = (
     resolvedOptions: ResolvedOptions,
@@ -85,7 +86,7 @@ export function nextAdapter(
     },
   });
 
-  return {
+  return createRoutePlugin({
     id: options.id ?? "next",
     version: "0.1.0",
     packageNames: options.packageNames ?? ["next"],
@@ -99,7 +100,7 @@ export function nextAdapter(
     routeTreeVars,
     lowerNavigation: lowerNextNavigation,
     harness,
-  };
+  });
 }
 
 export const nextSource = nextAdapter;
@@ -107,11 +108,11 @@ export const nextSource = nextAdapter;
 export {
   configSecurityWarnings,
   expandInventoryForI18n,
+  type NextParsedConfig,
   nextConfigCandidates,
   nextConfigExtractionWarnings,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
-  type NextParsedConfig,
 } from "./config.js";
 
 export default nextAdapter;

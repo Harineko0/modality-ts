@@ -1,11 +1,11 @@
+import { timerEffectPlugin } from "modality-ts/extract/effect-models/timers";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { timerEffectModelProvider } from "modality-ts/extract/effect-models/timers";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 
 describe("timer effect model provider", () => {
-  const provider = timerEffectModelProvider();
+  const provider = timerEffectPlugin();
 
   it("recognizeEffect returns identical schedule and resolution IR", () => {
     const source = ts.createSourceFile(
@@ -65,7 +65,7 @@ describe("timer effect model provider", () => {
   });
 
   it("matches full extraction timer CPS lowering", () => {
-    const routerPlugin = reactRouterAdapter();
+    const routePlugin = reactRouterAdapter();
     const result = extractReactSourceTransitions(
       `
       import { useEffect, useState } from 'react';
@@ -81,7 +81,7 @@ describe("timer effect model provider", () => {
       {
         route: "/",
         fileName: "Clock.tsx",
-        routerPlugin,
+        routePlugin,
       },
     );
     expect(

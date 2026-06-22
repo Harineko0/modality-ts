@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
-import * as ts from "typescript";
 import type { AbstractDomain, StateVarDecl, Value } from "modality-ts/core";
+import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type { TypePlugin } from "../spi/index.js";
 import {
   componentNameFor,
   isExtractableHandler,
@@ -12,14 +14,10 @@ import {
 import {
   domainInferenceWarnings,
   inferUseStateDomainSemanticDetailed,
-  useStateCallForSemanticInference,
   initialValueForUseStateDetailed,
+  useStateCallForSemanticInference,
 } from "./domains.js";
 import { routeMountScope } from "./routes.js";
-import type {
-  SemanticTypeContext,
-  DomainRefinementProvider,
-} from "../spi/index.js";
 import type {
   ComponentDecl,
   CustomHookDecl,
@@ -500,7 +498,7 @@ export function inlineCustomHookState(
   warnings: ExtractionWarning[],
   scope?: StateVarDecl["scope"],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): boolean {
   if (
     !ts.isArrayBindingPattern(node.name) ||
@@ -534,7 +532,7 @@ export function inlineCustomHookState(
     typeAliases,
     anchor,
     types,
-    domainRefinements,
+    typePlugins,
   );
   if (!summary) return false;
   if (summary.warnings) warnings.push(...summary.warnings);
@@ -716,7 +714,7 @@ function hookStateReturn(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   anchor: { line?: number; column?: number },
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): HookStateReturn | undefined {
   const body = hookBody(hook);
   if (!body) return undefined;
@@ -771,7 +769,7 @@ function hookStateReturn(
     source,
     varId,
     types,
-    domainRefinements ?? [],
+    typePlugins ?? [],
   );
   const domain = inferred.domain;
   const hookWarnings = [...domainInferenceWarnings(inferred, anchor)];

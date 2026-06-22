@@ -2,15 +2,15 @@ import {
   enabled,
   eq,
   lit,
+  type Model,
   neq,
   not,
   or,
-  readVar,
-  type Model,
   type Property,
+  readVar,
 } from "modality-ts/core";
-import { always as buildAlways } from "../../test/helpers/property-builders.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { always as buildAlways } from "../../test/helpers/property-builders.js";
 
 export const COFFEE_SHAPED_DENSITY_ONE_PROPERTY =
   "densityOneRequiresConnectedPrinter";

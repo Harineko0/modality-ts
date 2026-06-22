@@ -1,10 +1,10 @@
-import * as ts from "typescript";
 import type {
   DiscoveredEffectApi,
   EffectApiDiscoveryCtx,
   RouteInventory,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import {
   parseTanstackRouteModule,

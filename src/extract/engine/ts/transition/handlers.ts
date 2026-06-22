@@ -1,5 +1,6 @@
 import type { Transition } from "modality-ts/core";
-import type { NavFormSubmitCtx, SemanticTypeContext } from "../../spi/index.js";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
+import type { RouteFormSubmitCtx } from "../../spi/index.js";
 import type { EffectOpAliases } from "../effect-op-aliases.js";
 import type { BoundExpr } from "../types.js";
 import type { TransitionBinding } from "./concurrent.js";
@@ -13,9 +14,9 @@ export interface HandlerExtractionContext {
   timerRegistrations?: TimerRegistration[];
   envTransitions?: Transition[];
   timerIndex?: { value: number };
-  routerSubmitContext?: NavFormSubmitCtx;
+  routerSubmitContext?: RouteFormSubmitCtx;
   effectOpAliases?: EffectOpAliases;
-  effectModelProviders?: readonly import("../../spi/index.js").EffectModelProvider[];
+  effectPlugins?: readonly import("../../spi/index.js").EffectPlugin[];
   types?: SemanticTypeContext;
   semanticName?: string;
 }

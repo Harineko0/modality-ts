@@ -1,15 +1,21 @@
-import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
+import { createTypePlugin } from "modality-ts/extract/plugins";
+import * as ts from "typescript";
 import type {
-  DomainRefinementContext,
-  DomainRefinementProvider,
-  DomainRefinementResolution,
-} from "modality-ts/extract/engine/spi";
+  TypePlugin,
+  TypeRefinementContext,
+  TypeRefinementResolution,
+} from "../../engine/spi/type-plugin.js";
 import {
   modelSlackCaveat,
   unprovableNumericDomainCaveat,
 } from "../../engine/ts/caveats.js";
 import { sourceAnchorFromNode } from "../../engine/ts/domain-refinements.js";
+import {
+  sourceFileFromRefinementContext,
+  tsExpressionFromRefinementContext,
+  tsTypeNodeFromRefinementContext,
+} from "../../engine/ts/type-refinement-bridge.js";
 
 const ARKTYPE_INTEGER_RANGE = /^(-?\d+)\s*<=\s*number\.integer\s*<=\s*(-?\d+)$/;
 const ARKTYPE_BOUNDED_DIVISOR =
@@ -25,19 +31,21 @@ type ArktypeParseResult =
   | { kind: "caveat"; reason: string; numeric?: boolean }
   | { kind: "abstain" };
 
-export function arktypeDomainRefinementProvider(): DomainRefinementProvider {
-  return {
+export function arktypeTypePlugin(): TypePlugin {
+  return createTypePlugin({
     id: "arktype",
     version: "0.1.0",
     packageNames: ["arktype"],
     refineDomain: resolveArktypeSchema,
-  };
+  });
 }
 
 function resolveArktypeSchema(
-  ctx: DomainRefinementContext,
-): DomainRefinementResolution | undefined {
-  const expression = schemaExpressionFromArktypeInfer(ctx) ?? ctx.initializer;
+  ctx: TypeRefinementContext,
+): TypeRefinementResolution | undefined {
+  const expression =
+    schemaExpressionFromArktypeInfer(ctx) ??
+    tsExpressionFromRefinementContext(ctx, ctx.initializer);
   if (!expression) return undefined;
   const objectSchema = arktypeObjectExpression(expression);
   if (objectSchema) {
@@ -47,7 +55,10 @@ function resolveArktypeSchema(
   const schema = staticStringValue(expression);
   if (!schema) return undefined;
   const parsed = parseArktypeSchema(schema);
-  const source = sourceAnchorFromNode(expression, ctx.sourceFile);
+  const source = sourceAnchorFromNode(
+    expression,
+    sourceFileFromRefinementContext(ctx),
+  );
   const id = ctx.varId ?? "schema";
   if (parsed.kind === "domain") {
     return { domain: parsed.domain, caveats: [] };
@@ -340,9 +351,9 @@ function looksLikeArktypeSchema(
 }
 
 function schemaExpressionFromArktypeInfer(
-  ctx: DomainRefinementContext,
+  ctx: TypeRefinementContext,
 ): ts.Expression | undefined {
-  const typeNode = ctx.typeNode;
+  const typeNode = tsTypeNodeFromRefinementContext(ctx);
   if (
     !typeNode ||
     !ts.isTypeQueryNode(typeNode) ||
@@ -352,7 +363,10 @@ function schemaExpressionFromArktypeInfer(
   ) {
     return undefined;
   }
-  return resolveConstInitializer(typeNode.exprName.left.text, ctx.sourceFile);
+  return resolveConstInitializer(
+    typeNode.exprName.left.text,
+    sourceFileFromRefinementContext(ctx),
+  );
 }
 
 function resolveConstInitializer(

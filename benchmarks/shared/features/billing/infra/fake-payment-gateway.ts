@@ -1,10 +1,10 @@
-import type { Invoice } from "../domain/invoice.js";
-import type { PaymentIntent } from "../domain/payment.js";
 import {
   canCapturePayment,
   getInvoice,
   validatePaymentIntent,
 } from "../application/billing-service.js";
+import type { Invoice } from "../domain/invoice.js";
+import type { PaymentIntent } from "../domain/payment.js";
 
 export async function createPaymentIntent(
   input: unknown,

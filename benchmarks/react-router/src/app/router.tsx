@@ -1,22 +1,22 @@
 import { createBrowserRouter } from "react-router-dom";
-import { AppShell } from "./shell/AppShell.js";
-import LoginRoute from "../routes/login/index.js";
-import DashboardRoute from "../routes/dashboard/index.js";
-import ManagementRoute from "../routes/management/index.js";
-import ManagementRiskRoute from "../routes/management/risk/index.js";
-import ManagementRevenueRoute from "../routes/management/revenue/index.js";
-import ManagementOperationsRoute from "../routes/management/operations/index.js";
-import AccountsRoute from "../routes/accounts/index.js";
-import AccountDetailRoute from "../routes/accounts/$accountId/index.js";
-import SubscriptionRoute from "../routes/accounts/$accountId/subscription/index.js";
 import BillingRoute from "../routes/accounts/$accountId/billing/index.js";
-import PaymentMethodsRoute from "../routes/accounts/$accountId/payment-methods/index.js";
+import AccountDetailRoute from "../routes/accounts/$accountId/index.js";
 import InvoiceRoute from "../routes/accounts/$accountId/invoices/$invoiceId/index.js";
+import PaymentMethodsRoute from "../routes/accounts/$accountId/payment-methods/index.js";
+import SubscriptionRoute from "../routes/accounts/$accountId/subscription/index.js";
 import SupportRoute from "../routes/accounts/$accountId/support/index.js";
+import AccountsRoute from "../routes/accounts/index.js";
 import ApprovalsRoute from "../routes/approvals/index.js";
 import AuditRoute from "../routes/audit/index.js";
+import DashboardRoute from "../routes/dashboard/index.js";
+import LoginRoute from "../routes/login/index.js";
+import ManagementRoute from "../routes/management/index.js";
+import ManagementOperationsRoute from "../routes/management/operations/index.js";
+import ManagementRevenueRoute from "../routes/management/revenue/index.js";
+import ManagementRiskRoute from "../routes/management/risk/index.js";
 import SettingsRoute from "../routes/settings/index.js";
 import RbacRoute from "../routes/settings/rbac/index.js";
+import { AppShell } from "./shell/AppShell.js";
 
 export const router = createBrowserRouter([
   {

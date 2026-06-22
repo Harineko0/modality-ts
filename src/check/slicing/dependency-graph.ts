@@ -1,11 +1,3 @@
-import {
-  effectReads,
-  effectReadsForModel,
-  effectWrites,
-  exprReads,
-  initialValues,
-  mountGuardForScope,
-} from "modality-ts/core";
 import type {
   ExprIR,
   Model,
@@ -14,7 +6,16 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
-import { evalStatePredicate, StatePredicateEvalError } from "modality-ts/core";
+import {
+  effectReads,
+  effectReadsForModel,
+  effectWrites,
+  evalStatePredicate,
+  exprReads,
+  initialValues,
+  mountGuardForScope,
+  StatePredicateEvalError,
+} from "modality-ts/core";
 import type { MountScopeDependency } from "../types.js";
 import { projectEffectToVars } from "./effect-projection.js";
 import {

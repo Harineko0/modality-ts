@@ -1,10 +1,10 @@
+import { reduxSource } from "modality-ts/extract/sources/redux";
 import { describe, expect, it } from "vitest";
 import {
   observe,
   providerWrapperMetadata,
   setup,
 } from "../../../src/extract/sources/redux/harness.js";
-import { reduxSource } from "modality-ts/extract/sources/redux";
 
 describe("Redux harness", () => {
   it("observes nested Redux state through a real store handle", () => {

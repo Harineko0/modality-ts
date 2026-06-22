@@ -1,11 +1,11 @@
-import { lift, type Operand } from "./operand.js";
 import type {
   FairnessConstraint,
   StatePredicateIR,
   TemporalFormula,
 } from "../ir/types.js";
+import { lift, type Operand } from "./operand.js";
 
-export type { TemporalFormula, FairnessConstraint };
+export type { FairnessConstraint, TemporalFormula };
 
 // ---------------------------------------------------------------------------
 // Low-level formula constructors (used internally and re-exported via `ctl`)

@@ -1,10 +1,10 @@
-import * as ts from "typescript";
 import type { WriteChannel } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
+import { propertyName } from "../../engine/ts/ast.js";
+import { storeVarId } from "./ids.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import { isUseSelectorCall } from "./imports.js";
-import { storeVarId } from "./ids.js";
 import { anchor } from "./store.js";
-import { propertyName } from "../../engine/ts/ast.js";
 
 export function discoverSelectorReadChannels(
   source: ts.SourceFile,
@@ -12,15 +12,15 @@ export function discoverSelectorReadChannels(
   imports: ReduxResolvedImports,
   storeName: string,
   sliceKeys: ReadonlyMap<string, string>,
-  exportedSelectors: ReadonlyMap<string, ts.ArrowFunction | ts.FunctionExpression>,
+  exportedSelectors: ReadonlyMap<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >,
 ): WriteChannel[] {
   const channels: WriteChannel[] = [];
   const typedSelectors = collectTypedSelectorAliases(source, imports);
   const visit = (node: ts.Node): void => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.initializer
-    ) {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
       if (ts.isIdentifier(node.name)) {
         const selectorChannel = selectorBindingChannel(
           node,
@@ -34,7 +34,10 @@ export function discoverSelectorReadChannels(
         );
         if (selectorChannel) channels.push(selectorChannel);
       }
-      if (ts.isObjectBindingPattern(node.name) && isUseSelectorCall(node.initializer, imports)) {
+      if (
+        ts.isObjectBindingPattern(node.name) &&
+        isUseSelectorCall(node.initializer, imports)
+      ) {
         const paths = objectSelectorFieldsFromArg(
           node.initializer.arguments[0],
           storeName,
@@ -107,7 +110,10 @@ function selectorBindingChannel(
   imports: ReduxResolvedImports,
   defaultStoreName: string,
   sliceKeys: ReadonlyMap<string, string>,
-  exportedSelectors: ReadonlyMap<string, ts.ArrowFunction | ts.FunctionExpression>,
+  exportedSelectors: ReadonlyMap<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >,
   typedSelectors: ReadonlySet<string>,
 ): WriteChannel | undefined {
   if (!node.initializer || !ts.isIdentifier(node.name)) return undefined;
@@ -185,7 +191,10 @@ function channelFromSelectorArg(
   fileName: string,
   defaultStoreName: string,
   sliceKeys: ReadonlyMap<string, string>,
-  exportedSelectors: ReadonlyMap<string, ts.ArrowFunction | ts.FunctionExpression>,
+  exportedSelectors: ReadonlyMap<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >,
   node: ts.Node,
 ): WriteChannel | undefined {
   if (!selector) return undefined;
@@ -281,8 +290,8 @@ function statePathToVarId(
 
 function objectSelectorFieldsFromArg(
   selector: ts.Expression | undefined,
-  storeName: string,
-  sliceKeys: ReadonlyMap<string, string>,
+  _storeName: string,
+  _sliceKeys: ReadonlyMap<string, string>,
 ): string[] {
   if (
     !selector ||
@@ -428,7 +437,9 @@ function getStateAccessPath(
   return undefined;
 }
 
-function connectCallExpression(node: ts.CallExpression): ts.CallExpression | undefined {
+function connectCallExpression(
+  node: ts.CallExpression,
+): ts.CallExpression | undefined {
   if (ts.isIdentifier(node.expression) && node.expression.text === "connect") {
     return node;
   }
@@ -446,7 +457,7 @@ export function discoverConnectReadChannels(
   source: ts.SourceFile,
   fileName: string,
   storeName: string,
-  sliceKeys: ReadonlyMap<string, string>,
+  _sliceKeys: ReadonlyMap<string, string>,
 ): { channels: WriteChannel[]; warnings: string[] } {
   const channels: WriteChannel[] = [];
   const warnings: string[] = [];
@@ -468,7 +479,8 @@ export function discoverConnectReadChannels(
     const resolvedMapper = resolveMapperFunction(mapper, source);
     if (resolvedMapper) {
       const param =
-        resolvedMapper.parameters[0] && ts.isIdentifier(resolvedMapper.parameters[0].name)
+        resolvedMapper.parameters[0] &&
+        ts.isIdentifier(resolvedMapper.parameters[0].name)
           ? resolvedMapper.parameters[0].name.text
           : "state";
       let body = resolvedMapper.body;
@@ -495,7 +507,9 @@ export function discoverConnectReadChannels(
         resolvedMapper.parameters.length === 0 ||
         ts.isIdentifier(resolvedMapper.body)
       ) {
-        warnings.push("Redux dynamic connect mapStateToProps factory not modeled");
+        warnings.push(
+          "Redux dynamic connect mapStateToProps factory not modeled",
+        );
         return;
       }
     }
@@ -527,21 +541,27 @@ export function discoverConnectReadChannels(
       return;
     }
     if (ts.isCallExpression(mapper)) {
-      warnings.push("Redux dynamic connect mapStateToProps factory not modeled");
+      warnings.push(
+        "Redux dynamic connect mapStateToProps factory not modeled",
+      );
       return;
     }
     if (
       (ts.isArrowFunction(mapper) || ts.isFunctionExpression(mapper)) &&
       mapper.parameters.length === 0
     ) {
-      warnings.push("Redux dynamic connect mapStateToProps factory not modeled");
+      warnings.push(
+        "Redux dynamic connect mapStateToProps factory not modeled",
+      );
       return;
     }
     if (
       (ts.isArrowFunction(mapper) || ts.isFunctionExpression(mapper)) &&
       ts.isIdentifier(mapper.body)
     ) {
-      warnings.push("Redux dynamic connect mapStateToProps factory not modeled");
+      warnings.push(
+        "Redux dynamic connect mapStateToProps factory not modeled",
+      );
       return;
     }
     ts.forEachChild(node, visit);

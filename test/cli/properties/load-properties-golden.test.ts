@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { loadProperties } from "../../../src/cli/properties/load-properties.js";
 
 const repoRoot = join(import.meta.dirname, "../../..");

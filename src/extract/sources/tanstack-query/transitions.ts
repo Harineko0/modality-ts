@@ -1,6 +1,6 @@
 import type { StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
@@ -12,8 +12,8 @@ import {
   createTanstackMutationTemplate,
   templateForTanstackQueryDecl,
 } from "./template.js";
-import { discoverTanstackQueryWriteChannels } from "./writes.js";
 import { mutationMetadataFromRecord } from "./types.js";
+import { discoverTanstackQueryWriteChannels } from "./writes.js";
 
 export interface TanstackQueryExtractionOptions {
   route?: string;
@@ -22,8 +22,8 @@ export interface TanstackQueryExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export function extractTanstackQuerySkeleton(
@@ -59,10 +59,7 @@ export function extractTanstackQuerySkeleton(
     ...discoverTanstackQueryWriteChannels(sourceText, fileName),
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [
-    tanstackQuerySource(),
-    ...(options.sourcePlugins ?? []),
-  ];
+  const statePlugins = [tanstackQuerySource(), ...(options.statePlugins ?? [])];
   const { transitions, warnings = [] } = extractSharedReactTransitions({
     sourceText,
     fileName,
@@ -71,8 +68,8 @@ export function extractTanstackQuerySkeleton(
     routePatterns: options.routePatterns ?? [],
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
-    sourcePlugins,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    statePlugins,
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
   });
   return {
     vars,

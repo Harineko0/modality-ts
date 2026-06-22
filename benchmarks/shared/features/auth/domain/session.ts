@@ -1,5 +1,4 @@
-import type { Role } from "../../fixtures/domain/fixtures.js";
-import type { Permission } from "../../fixtures/domain/fixtures.js";
+import type { Permission, Role } from "../../fixtures/domain/fixtures.js";
 
 export type Session = {
   userId: string;

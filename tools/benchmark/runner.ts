@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { canonicalJson, type CheckReport, type Model } from "modality-ts/core";
+import { type CheckReport, canonicalJson, type Model } from "modality-ts/core";
 import { runCheckCommand } from "../../src/cli/check.ts";
 import { runExtractCommand } from "../../src/cli/extract.ts";
 import { runReplayCommand } from "../../src/cli/replay.ts";
@@ -10,17 +10,17 @@ import {
   libraryEvidenceFromExtraction,
 } from "./classify.js";
 import {
-  buildBenchmarkRunReport,
-  type BenchmarkFrameworkReport,
-  type BenchmarkRunReport,
-} from "./report.js";
-import {
+  type BenchmarkDefinition,
+  type BenchmarkManifest,
   readBenchmarkManifest,
   selectBenchmarks,
   validateBenchmarkPaths,
-  type BenchmarkDefinition,
-  type BenchmarkManifest,
 } from "./manifest.js";
+import {
+  type BenchmarkFrameworkReport,
+  type BenchmarkRunReport,
+  buildBenchmarkRunReport,
+} from "./report.js";
 
 export interface BenchmarkRunnerOptions {
   repoRoot: string;

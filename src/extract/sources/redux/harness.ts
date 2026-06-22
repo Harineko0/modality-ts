@@ -1,10 +1,10 @@
+import type { AbstractDomain, ModelState, Value } from "modality-ts/core";
 import type {
   HarnessCtx,
   HarnessHooks,
   ObservedRead,
   WitnessFactory,
 } from "modality-ts/extract/engine/spi";
-import type { AbstractDomain, ModelState, Value } from "modality-ts/core";
 import {
   fieldFromMutationVarId,
   fieldFromQueryVarId,
@@ -50,8 +50,7 @@ export function observe(
   const storeName = storeNameFromVarId(varId);
   const path = pathFromVarId(varId);
   const store =
-    (storeName ? redux.stores?.[storeName] : undefined) ??
-    redux.store;
+    (storeName ? redux.stores?.[storeName] : undefined) ?? redux.store;
   if (store && path) {
     const value = readPath(store.getState(), path.split("."));
     if (value !== undefined) return { value: value as Value };
@@ -101,7 +100,9 @@ function observeRtkMutationVar(
   const siteId = mutationSiteIdFromVarId(varId);
   if (siteId && redux.initialState[`redux-mutation-site:${siteId}:${field}`]) {
     return {
-      value: redux.initialState[`redux-mutation-site:${siteId}:${field}`] as Value,
+      value: redux.initialState[
+        `redux-mutation-site:${siteId}:${field}`
+      ] as Value,
     };
   }
   return "unobservable";

@@ -7,14 +7,14 @@ import {
   group,
   neq,
   property,
-  readOpArg,
   reachableFrom,
+  readOpArg,
   stepEnqueued,
   stepResolved,
   sub,
 } from "modality-ts/properties";
-import { BillingWorkbench } from "./_components/BillingWorkbench.modals";
 import { useBillingStore } from "../../../../features/billing/state/billing-store.modals";
+import { BillingWorkbench } from "./_components/BillingWorkbench.modals";
 
 const paymentIntentStatus = useBillingStore.paymentIntentStatus;
 const selectedInvoiceId = useBillingStore.selectedInvoiceId;

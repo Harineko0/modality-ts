@@ -10,6 +10,7 @@ import {
   componentNameFor,
   currentEngineFramework,
   lineAndColumn,
+  recognizeRenderBoundaryFromTs,
 } from "../ast.js";
 import { pendingIs } from "./async.js";
 import { andGuard } from "./guards.js";
@@ -21,7 +22,7 @@ const DEFAULT_SUSPENSE_DOMAIN = {
 
 function recognizeRenderBoundary(node: ts.Node): RenderBoundary | undefined {
   const fw = currentEngineFramework();
-  return fw.framework.recognizeRenderBoundary(node, fw.ctx);
+  return recognizeRenderBoundaryFromTs(node, fw, node.getSourceFile().fileName);
 }
 
 export function suspenseVarId(boundaryId: string): string {

@@ -1,13 +1,12 @@
 import type { StateVarDecl, Transition } from "modality-ts/core";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 import type {
-  DomainRefinementProvider,
-  EffectModelProvider,
+  EffectPlugin,
   FrameworkPlugin,
-  HandlerWrapperProvider,
-  NavigationAdapter,
   RouteInventory,
-  SemanticTypeContext,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
   WriteChannel,
 } from "../spi/index.js";
 import { resolveFrameworkPlugin } from "../spi/index.js";
@@ -26,18 +25,17 @@ export interface SourceExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
+  statePlugins?: readonly StateSourcePlugin[];
   environment?: EnvironmentEventConfig;
-  routerPlugin?: NavigationAdapter;
+  routePlugin?: RoutePlugin;
   inventory?: RouteInventory;
   resetSymbols?: ReadonlySet<string>;
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
   projectSummary?: ExtractionProjectSummary;
   framework?: FrameworkPlugin;
-  effectModelProviders?: readonly EffectModelProvider[];
+  effectPlugins?: readonly EffectPlugin[];
   effectOpAliases?: EffectOpAliases;
 }
 

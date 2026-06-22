@@ -1,17 +1,22 @@
 import { resolveImportedName } from "modality-ts/extract/engine/spi";
 import {
-  createTsSymbolPort,
-} from "modality-ts/extract/lang/ts";
-import {
   reactFramework,
   SUSPENSE_DOMAIN,
 } from "modality-ts/extract/frameworks/react";
+import type { SurfaceCall } from "modality-ts/extract/lang/ts";
+import {
+  createTsSymbolPort,
+  lowerExpr,
+  nodeRefFor,
+} from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+const FILE = "App.tsx";
+
 function parseCall(source: string): ts.CallExpression {
   const file = ts.createSourceFile(
-    "App.tsx",
+    FILE,
     source,
     ts.ScriptTarget.Latest,
     true,
@@ -31,9 +36,17 @@ function parseCall(source: string): ts.CallExpression {
   return call;
 }
 
-function parseNode(source: string): ts.Node {
+function parseSurfaceCall(source: string): SurfaceCall {
+  const surface = lowerExpr(parseCall(source), FILE);
+  if (surface.kind !== "call") {
+    throw new Error(`Expected surface call in: ${source}`);
+  }
+  return surface;
+}
+
+function parseSurfaceNode(source: string) {
   const file = ts.createSourceFile(
-    "App.tsx",
+    FILE,
     source,
     ts.ScriptTarget.Latest,
     true,
@@ -50,17 +63,18 @@ function parseNode(source: string): ts.Node {
   };
   visit(file);
   if (!target) throw new Error(`No target node in: ${source}`);
-  return target;
+  return lowerExpr(target as ts.Expression, FILE);
 }
 
 describe("reactFramework", () => {
   const framework = reactFramework();
-  const ctx = { fileName: "App.tsx" };
+  const ctx = { fileName: FILE };
 
   it("exposes plugin shape", () => {
     expect(framework.id).toBe("react");
     expect(framework.packageNames).toEqual(["react"]);
     expect(framework.version).toBe("0.1.0");
+    expect(framework.kind).toBe("framework");
   });
 
   it.each([
@@ -71,13 +85,16 @@ describe("reactFramework", () => {
     ["useTransition", "transition"],
     ["useDeferredValue", "deferred"],
   ] as const)("recognizeHook classifies %s as %s", (hook, kind) => {
-    const hookCall = framework.recognizeHook(parseCall(`${hook}()`), ctx);
+    const hookCall = framework.recognizeHook(
+      parseSurfaceCall(`${hook}()`),
+      ctx,
+    );
     expect(hookCall?.hook.kind).toBe(kind);
   });
 
   it("recognizeHook assigns useEffect phase 1", () => {
     const hookCall = framework.recognizeHook(
-      parseCall("useEffect(() => {})"),
+      parseSurfaceCall("useEffect(() => {})"),
       ctx,
     );
     expect(hookCall?.hook).toEqual({ kind: "effect", phase: 1 });
@@ -88,7 +105,7 @@ describe("reactFramework", () => {
     "useInsertionEffect",
   ] as const)("recognizeHook assigns %s phase 0", (hook) => {
     const hookCall = framework.recognizeHook(
-      parseCall(`${hook}(() => {})`),
+      parseSurfaceCall(`${hook}(() => {})`),
       ctx,
     );
     expect(hookCall?.hook).toEqual({ kind: "effect", phase: 0 });
@@ -96,18 +113,18 @@ describe("reactFramework", () => {
 
   it("recognizeHook unwraps useCallback handler target", () => {
     const hookCall = framework.recognizeHook(
-      parseCall("useCallback(() => {})"),
+      parseSurfaceCall("useCallback(() => {})"),
       ctx,
     );
     expect(hookCall?.hook.kind).toBe("callback");
     if (hookCall?.hook.kind === "callback") {
-      expect(ts.isArrowFunction(hookCall.hook.handler)).toBe(true);
+      expect(hookCall.hook.handler.file).toBe(FILE);
     }
   });
 
   it("recognizeRenderBoundary classifies Suspense with gating domain", () => {
     const boundary = framework.recognizeRenderBoundary(
-      parseNode("<Suspense><Child /></Suspense>"),
+      parseSurfaceNode("<Suspense><Child /></Suspense>"),
       ctx,
     );
     expect(boundary).toEqual(
@@ -124,7 +141,7 @@ describe("reactFramework", () => {
 
   it("recognizeRenderBoundary classifies React.lazy", () => {
     const boundary = framework.recognizeRenderBoundary(
-      parseNode("const C = React.lazy(() => import('./C'))"),
+      parseSurfaceNode("const C = React.lazy(() => import('./C'))"),
       ctx,
     );
     expect(boundary?.kind).toBe("lazy");
@@ -132,7 +149,7 @@ describe("reactFramework", () => {
 
   it("recognizeRenderBoundary classifies use()", () => {
     const boundary = framework.recognizeRenderBoundary(
-      parseCall("use(promise)"),
+      parseSurfaceCall("use(promise)"),
       ctx,
     );
     expect(boundary?.kind).toBe("use");
@@ -143,7 +160,7 @@ describe("reactFramework", () => {
     ["flushSync", "flush-sync"],
   ] as const)("recognizeHook classifies %s as %s", (call, kind) => {
     const hookCall = framework.recognizeHook(
-      parseCall(`${call}(() => {})`),
+      parseSurfaceCall(`${call}(() => {})`),
       ctx,
     );
     expect(hookCall?.hook.kind).toBe(kind);
@@ -153,7 +170,7 @@ describe("reactFramework", () => {
     const source = `import { useState as useLocalState } from "react";
 useLocalState(0);`;
     const file = ts.createSourceFile(
-      "App.tsx",
+      FILE,
       source,
       ts.ScriptTarget.Latest,
       true,
@@ -161,28 +178,27 @@ useLocalState(0);`;
     );
     const host = ts.createCompilerHost({});
     const originalRead = host.readFile.bind(host);
-    host.readFile = (path) => (path.endsWith("App.tsx") ? source : originalRead(path));
-    const program = ts.createProgram([file.fileName], {
-      target: ts.ScriptTarget.Latest,
-      jsx: ts.JsxEmit.ReactJSX,
-    }, host);
+    host.readFile = (path) =>
+      path.endsWith("App.tsx") ? source : originalRead(path);
+    const program = ts.createProgram(
+      [file.fileName],
+      {
+        target: ts.ScriptTarget.Latest,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+      host,
+    );
     const symbols = createTsSymbolPort({
       program,
       checker: program.getTypeChecker(),
       sourceFile: file,
-      getSourceFile: (fileName) => (fileName === file.fileName ? file : undefined),
+      getSourceFile: (fileName) =>
+        fileName === file.fileName ? file : undefined,
     });
-    let call: ts.CallExpression | undefined;
-    const visit = (node: ts.Node): void => {
-      if (call) return;
-      if (ts.isCallExpression(node)) call = node;
-      ts.forEachChild(node, visit);
-    };
-    visit(file);
+    const call = parseSurfaceCall("useLocalState(0)");
     expect(
-      framework.recognizeHook(call!, {
-        fileName: "App.tsx",
-        sourceFile: file,
+      framework.recognizeHook(call, {
+        fileName: FILE,
         symbols,
       }),
     ).toBeDefined();
@@ -191,7 +207,7 @@ useLocalState(0);`;
   it("resolveImportedName uses importBinding when SymbolPort is provided", () => {
     const source = `import { useState as useLocalState } from "react";`;
     const file = ts.createSourceFile(
-      "App.tsx",
+      FILE,
       source,
       ts.ScriptTarget.Latest,
       true,
@@ -204,23 +220,31 @@ useLocalState(0);`;
     const specifier = named.elements[0]!;
     const host = ts.createCompilerHost({});
     const originalRead = host.readFile.bind(host);
-    host.readFile = (path) => (path.endsWith("App.tsx") ? source : originalRead(path));
-    const program = ts.createProgram([file.fileName], {
-      target: ts.ScriptTarget.Latest,
-      jsx: ts.JsxEmit.ReactJSX,
-    }, host);
+    host.readFile = (path) =>
+      path.endsWith("App.tsx") ? source : originalRead(path);
+    const program = ts.createProgram(
+      [file.fileName],
+      {
+        target: ts.ScriptTarget.Latest,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+      host,
+    );
     const symbols = createTsSymbolPort({
       program,
       checker: program.getTypeChecker(),
       sourceFile: file,
-      getSourceFile: (fileName) => (fileName === file.fileName ? file : undefined),
+      getSourceFile: (fileName) =>
+        fileName === file.fileName ? file : undefined,
     });
     expect(
-      resolveImportedName(specifier.name, {
-        fileName: file.fileName,
-        sourceFile: file,
-        symbols,
-      }),
+      resolveImportedName(
+        {
+          name: specifier.name.text,
+          origin: nodeRefFor(specifier.name, file.fileName),
+        },
+        { symbols },
+      ),
     ).toBe("useState");
   });
 });

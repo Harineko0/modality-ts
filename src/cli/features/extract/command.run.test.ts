@@ -1,24 +1,24 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { checkModel } from "modality-ts/check";
-import { reachable } from "../../../../test/helpers/property-builders.js";
 import {
   eq,
   lit,
+  type Model,
   parseModelArtifact,
   parsePropertySliceManifestArtifact,
   readVar,
   validateModel,
-  type Model,
 } from "modality-ts/core";
-import { runExtractCommand } from "./index.js";
+import { describe, expect, it } from "vitest";
+import { reachable } from "../../../../test/helpers/property-builders.js";
 import {
   sliceManifestPathForModel,
   sliceModelPathForProperty,
 } from "../../defaults.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
+import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {
   it("wires module-role and effect API providers from registry adapters", () => {
@@ -731,7 +731,7 @@ describe("runExtractCommand", () => {
       reactOnly.model.vars.some((decl) => decl.id === "atom:authAtom"),
     ).toBe(false);
     expect(reactOnly.lines).toContain(
-      "plugins=effect-model:timers@0.1.0,effect-model:websocket@0.1.0,framework:react@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect:timers@0.1.0,effect:websocket@0.1.0,framework:react@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
     );
     expect(reactOnly.report.warnings).toEqual([]);
 
@@ -749,7 +749,7 @@ describe("runExtractCommand", () => {
       withJotai.model.vars.some((decl) => decl.id === "atom:authAtom"),
     ).toBe(true);
     expect(withJotai.lines).toContain(
-      "plugins=effect-model:timers@0.1.0,effect-model:websocket@0.1.0,framework:react@0.1.0,observation:jotai@0.1.0,observation:use-state@0.1.0,state-source:jotai@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect:timers@0.1.0,effect:websocket@0.1.0,framework:react@0.1.0,observation:jotai@0.1.0,observation:use-state@0.1.0,state-source:jotai@0.1.0,state-source:use-state@0.1.0",
     );
     expect(withJotai.report.warnings).toEqual([]);
   });
@@ -786,7 +786,7 @@ describe("runExtractCommand", () => {
       false,
     );
     expect(result.lines).toContain(
-      "plugins=effect-model:timers@0.1.0,effect-model:websocket@0.1.0,framework:react@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect:timers@0.1.0,effect:websocket@0.1.0,framework:react@0.1.0,observation:use-state@0.1.0,state-source:use-state@0.1.0",
     );
   });
 
@@ -860,7 +860,7 @@ describe("runExtractCommand", () => {
     );
     expect(result.lines).toContain(`config=${configPath}`);
     expect(result.lines).toContain(
-      "plugins=effect-api:router-effect-api@0.1.0,effect-model:timers@0.1.0,effect-model:websocket@0.1.0,framework:react@0.1.0,module-roles:router-module-roles@0.1.0,navigation:router@0.1.0,observation:router-observation@0.1.0,observation:use-state@0.1.0,route-execution:router-route-execution@0.1.0,state-source:use-state@0.1.0",
+      "plugins=effect:timers@0.1.0,effect:websocket@0.1.0,effect-api:router-effect-api@0.1.0,framework:react@0.1.0,module-roles:router-module-roles@0.1.0,observation:router-observation@0.1.0,observation:use-state@0.1.0,route:router@0.1.0,route-execution:router-route-execution@0.1.0,state-source:use-state@0.1.0",
     );
   });
 

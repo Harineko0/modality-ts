@@ -1,5 +1,5 @@
+import { type ExprIR, type Model, validateModel } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { validateModel, type ExprIR, type Model } from "modality-ts/core";
 
 function baseModel(
   countDomain: Model["vars"][number]["domain"],

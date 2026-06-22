@@ -1,15 +1,14 @@
 import type { SourceAnchor } from "modality-ts/core";
-import type { FrameworkCtx, HookCall } from "modality-ts/extract/engine/spi";
-import { resolveImportedName } from "modality-ts/extract/engine/spi";
-import * as ts from "typescript";
-
-function lineAndColumn(
-  source: ts.SourceFile,
-  node: ts.Node,
-): { line: number; column: number } {
-  const pos = source.getLineAndCharacterOfPosition(node.getStart(source));
-  return { line: pos.line + 1, column: pos.character + 1 };
-}
+import type {
+  FrameworkCtx,
+  HookCall,
+  SurfaceCall,
+} from "modality-ts/extract/engine/spi";
+import {
+  calleeNameFromCall,
+  sourceAnchorFromNodeRef,
+} from "modality-ts/extract/engine/spi";
+import type { NodeRef } from "modality-ts/extract/lang/ts";
 
 export type ReactEffectHookName =
   | "useEffect"
@@ -26,35 +25,22 @@ export function reactEffectPhase(hookName: ReactEffectHookName): number {
   return hookName === "useEffect" ? 1 : 0;
 }
 
-function calleeIdentifier(call: ts.CallExpression): ts.Identifier | undefined {
-  return ts.isIdentifier(call.expression) ? call.expression : undefined;
+function sourceAnchorFor(call: SurfaceCall, ctx: FrameworkCtx): SourceAnchor {
+  return sourceAnchorFromNodeRef(call.origin, ctx.fileName);
 }
 
-function calleeName(
-  call: ts.CallExpression,
-  ctx: FrameworkCtx,
-): string | undefined {
-  const identifier = calleeIdentifier(call);
-  return identifier ? resolveImportedName(identifier, ctx) : undefined;
-}
-
-function sourceAnchorFor(
-  call: ts.CallExpression,
-  ctx: FrameworkCtx,
-): SourceAnchor {
-  const source = ctx.sourceFile;
-  const fileName = ctx.fileName ?? source?.fileName ?? "unknown";
-  if (source) {
-    return { file: fileName, ...lineAndColumn(source, call) };
-  }
-  return { file: fileName };
+function callbackHandlerRef(call: SurfaceCall): NodeRef | undefined {
+  const callback = call.args[0];
+  if (!callback || callback.kind === "array") return undefined;
+  if ("origin" in callback) return callback.origin;
+  return undefined;
 }
 
 export function recognizeReactHook(
-  call: ts.CallExpression,
+  call: SurfaceCall,
   ctx: FrameworkCtx,
 ): HookCall | undefined {
-  const name = calleeName(call, ctx);
+  const name = calleeNameFromCall(call, ctx);
   if (!name) return undefined;
   const origin = sourceAnchorFor(call, ctx);
 
@@ -86,9 +72,9 @@ export function recognizeReactHook(
     return { hook: { kind: "context" }, origin };
   }
   if (name === "useCallback") {
-    const callback = call.arguments[0];
-    if (callback && isExtractableHandler(callback)) {
-      return { hook: { kind: "callback", handler: callback }, origin };
+    const handler = callbackHandlerRef(call);
+    if (handler) {
+      return { hook: { kind: "callback", handler }, origin };
     }
     return undefined;
   }
@@ -96,56 +82,18 @@ export function recognizeReactHook(
 }
 
 export function isReactEffectHookName(
-  call: ts.CallExpression,
+  call: SurfaceCall,
   ctx: FrameworkCtx,
 ): ReactEffectHookName | undefined {
-  const name = calleeName(call, ctx);
+  const name = calleeNameFromCall(call, ctx);
   if (!name || !EFFECT_HOOK_NAMES.has(name)) return undefined;
   return name as ReactEffectHookName;
 }
 
 export function isReactHookNamed(
-  call: ts.CallExpression,
+  call: SurfaceCall,
   ctx: FrameworkCtx,
   expected: string,
 ): boolean {
-  return calleeName(call, ctx) === expected;
-}
-
-export function isReactStartTransitionCall(
-  node: ts.Node,
-  ctx: FrameworkCtx,
-): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) && isReactHookNamed(node, ctx, "startTransition")
-  );
-}
-
-export function isReactFlushSyncCall(
-  node: ts.Node,
-  ctx: FrameworkCtx,
-): node is ts.CallExpression {
-  return ts.isCallExpression(node) && isReactHookNamed(node, ctx, "flushSync");
-}
-
-export function isReactUseTransitionCall(
-  node: ts.Expression,
-  ctx: FrameworkCtx,
-): node is ts.CallExpression {
-  return (
-    ts.isCallExpression(node) && isReactHookNamed(node, ctx, "useTransition")
-  );
-}
-
-function isExtractableHandler(
-  node: ts.Node,
-): node is
-  | ts.ArrowFunction
-  | ts.FunctionExpression
-  | (ts.FunctionDeclaration & { body: ts.Block }) {
-  return (
-    ts.isArrowFunction(node) ||
-    ts.isFunctionExpression(node) ||
-    (ts.isFunctionDeclaration(node) && Boolean(node.body))
-  );
+  return calleeNameFromCall(call, ctx) === expected;
 }

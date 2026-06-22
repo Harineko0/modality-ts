@@ -45,9 +45,11 @@ export interface SymbolPort {
   localSymbolKey(ref: SymbolRef): string | undefined;
   importBinding(ref: SymbolRef): ImportBinding | undefined;
   typeOf(expr: SurfaceExpr): TypeView | undefined;
-  /** L4-only: re-resolve the original language node behind a Surface IR origin. */
-  nodeAt(ref: NodeRef): ts.Node | undefined;
 }
+
+export type TsSymbolPort = SymbolPort & {
+  nodeAt(ref: NodeRef): ts.Node | undefined;
+};
 
 function localSymbol(
   node: ts.Node,
@@ -188,7 +190,7 @@ function importBindingFromSource(
   return undefined;
 }
 
-export function createTsSymbolPort(ctx: SymbolPortContext): SymbolPort {
+export function createTsSymbolPort(ctx: SymbolPortContext): TsSymbolPort {
   const nodeAt = (ref: NodeRef): ts.Node | undefined => {
     const source =
       ctx.sourceFile && sameSourceFile(ctx.sourceFile.fileName, ref.file)

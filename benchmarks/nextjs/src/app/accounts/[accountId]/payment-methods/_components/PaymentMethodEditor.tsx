@@ -1,10 +1,10 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { usePaymentMethodStore } from "../../../../../features/billing/state/payment-method-store.js";
-import { usePaymentMethods } from "../../../../../features/billing/infra/billing-queries.js";
-import { paymentMethodSchema } from "../../../../../shared/features/billing/domain/billing.schema.js";
 import { api } from "../../../../../features/auth/infra/api.js";
+import { usePaymentMethods } from "../../../../../features/billing/infra/billing-queries.js";
+import { usePaymentMethodStore } from "../../../../../features/billing/state/payment-method-store.js";
+import { paymentMethodSchema } from "../../../../../shared/features/billing/domain/billing.schema.js";
 
 export function PaymentMethodEditor() {
   const { accountId: rawAccountId = "acct-alpha" } = useParams();

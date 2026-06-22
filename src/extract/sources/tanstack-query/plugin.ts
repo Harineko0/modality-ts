@@ -1,43 +1,56 @@
-import type { SourceDecl } from "modality-ts/extract/engine/spi";
-import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
 import type { TemplateFragment } from "modality-ts/core";
-import * as harness from "./harness.js";
+import type {
+  SourceDecl,
+  StateSourcePlugin,
+} from "modality-ts/extract/engine/spi";
+import { createStateSourcePlugin } from "modality-ts/extract/plugins";
+import type {
+  ChannelCtxWithTypes,
+  DiscoverCtxWithTypes,
+} from "../../engine/ts/plugin-context.js";
 import { discoverTanstackQueryHooks } from "./discover.js";
+import * as harness from "./harness.js";
 import {
   createTanstackMutationTemplate,
   templateForTanstackQueryDecl,
 } from "./template.js";
+import { mutationMetadataFromRecord } from "./types.js";
 import {
   discoverTanstackQuerySafetyWarnings,
   discoverTanstackQueryWriteChannels,
   summarizeTanstackQueryWrite,
 } from "./writes.js";
-import { mutationMetadataFromRecord } from "./types.js";
 
 export function tanstackQuerySource(): StateSourcePlugin {
-  return {
+  return createStateSourcePlugin({
     id: "tanstack-query",
     version: "0.1.0",
     packageNames: ["@tanstack/react-query"],
-    discover: (ctx) =>
-      discoverTanstackQueryHooks(
+    discover: (ctx) => {
+      const typed = ctx as DiscoverCtxWithTypes;
+      return discoverTanstackQueryHooks(
         ctx.sourceText,
         ctx.fileName,
-        ctx.types,
-        ctx.domainRefinements,
-      ),
-    writeChannels: (ctx) =>
-      discoverTanstackQueryWriteChannels(
+        typed.types,
+        ctx.typePlugins,
+      );
+    },
+    writeChannels: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverTanstackQueryWriteChannels(
         ctx.sourceText,
         ctx.fileName,
-        ctx.types,
-      ),
-    safetyWarnings: (ctx) =>
-      discoverTanstackQuerySafetyWarnings(
+        typed.types,
+      );
+    },
+    safetyWarnings: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverTanstackQuerySafetyWarnings(
         ctx.sourceText,
         ctx.fileName,
-        ctx.types,
-      ),
+        typed.types,
+      );
+    },
     summarizeWrite: summarizeTanstackQueryWrite,
     template: (decl) => templateForTanstackDecl(decl),
     harness,
@@ -45,7 +58,7 @@ export function tanstackQuerySource(): StateSourcePlugin {
       templateProbes: [],
       testedVersions: "@tanstack/react-query>=5",
     },
-  };
+  });
 }
 
 function templateForTanstackDecl(decl: SourceDecl): TemplateFragment {

@@ -1,36 +1,36 @@
+import { resolve } from "node:path";
 import type {
+  Bounds,
   Model,
   PluginProvenance,
   StateVarDecl,
   TemplateFragment,
   Transition,
-  Bounds,
 } from "modality-ts/core";
-import { resolve } from "node:path";
+import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 import type {
-  StateSourcePlugin,
-  NavigationAdapter,
-  WriteChannel,
-  RouteInventory,
-  LocationLowering,
-  SemanticTypeContext,
-  DomainRefinementProvider,
-  EffectModelProvider,
-  HandlerWrapperProvider,
+  EffectPlugin,
   FrameworkPlugin,
+  LocationLowering,
+  RouteInventory,
+  RoutePlugin,
+  StateSourcePlugin,
+  TypePlugin,
+  WriteChannel,
 } from "../spi/index.js";
 import {
-  isEffectOpAliasesPopulated,
   type EffectOpAliases,
+  isEffectOpAliasesPopulated,
 } from "../ts/effect-op-aliases.js";
-import type { ExtractionWarning } from "../ts/types.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
-import { synthesizeRedirectTransitions } from "./redirects.js";
 import type { SemanticProject } from "../ts/semantic-project.js";
+import type { ExtractionWarning } from "../ts/types.js";
+import { synthesizeRedirectTransitions } from "./redirects.js";
 import {
   type ExtractionProjectSummary,
   runSourceExtraction,
 } from "./source-extraction.js";
+import "./register-react-extractor.js";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -44,8 +44,8 @@ export interface HandlerExtractorOptions {
   effectApis: readonly string[];
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
-  sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export interface SharedPluginDiscovery {
@@ -63,12 +63,11 @@ export interface ExtractionPipelineOptions {
   routePatterns?: readonly string[];
   effectApis?: readonly string[];
   environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
-  sourcePlugins?: readonly StateSourcePlugin[];
-  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
   framework?: FrameworkPlugin;
-  effectModelProviders?: readonly EffectModelProvider[];
-  domainRefinements?: readonly DomainRefinementProvider[];
+  effectPlugins?: readonly EffectPlugin[];
+  typePlugins?: readonly TypePlugin[];
   inventory?: RouteInventory;
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
@@ -90,7 +89,7 @@ export interface ExtractionPipelineResult {
   plugins: {
     sources: readonly PluginProvenance[];
     router?: PluginProvenance;
-    domainRefinements?: readonly PluginProvenance[];
+    typePlugins?: readonly PluginProvenance[];
   };
 }
 
@@ -111,20 +110,20 @@ export const extractionPipelinePhases: readonly PipelinePhase[] = [
 ];
 
 export function createPluginRegistry(
-  sourcePlugins: readonly StateSourcePlugin[] = [],
-  routerPlugin?: NavigationAdapter,
-  domainRefinementProviders: readonly DomainRefinementProvider[] = [],
+  statePlugins: readonly StateSourcePlugin[] = [],
+  routePlugin?: RoutePlugin,
+  typePlugins: readonly TypePlugin[] = [],
 ): ExtractionPipelineResult["plugins"] {
-  validateUniquePlugins(sourcePlugins);
-  validateUniqueDomainRefinementProviders(domainRefinementProviders);
+  validateUniquePlugins(statePlugins);
+  validateUniqueTypePlugins(typePlugins);
   return {
-    sources: sourcePlugins
+    sources: statePlugins
       .map((plugin) => provenanceForSource(plugin))
       .sort(comparePluginProvenance),
-    ...(routerPlugin ? { router: provenanceForRouter(routerPlugin) } : {}),
-    ...(domainRefinementProviders.length > 0
+    ...(routePlugin ? { router: provenanceForRouter(routePlugin) } : {}),
+    ...(typePlugins.length > 0
       ? {
-          domainRefinements: domainRefinementProviders
+          typePlugins: typePlugins
             .map((provider) => provenanceForDomainRefinement(provider))
             .sort(comparePluginProvenance),
         }
@@ -135,8 +134,8 @@ export function createPluginRegistry(
 export function runPluginDiscoveryPhase(
   options: ExtractionPipelineOptions,
 ): SharedPluginDiscovery {
-  const sourcePlugins = options.sourcePlugins ?? [];
-  const domainRefinements = options.domainRefinements ?? [];
+  const statePlugins = options.statePlugins ?? [];
+  const typePlugins = options.typePlugins ?? [];
   const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
   ];
@@ -153,7 +152,7 @@ export function runPluginDiscoveryPhase(
       options.semanticProject,
       fragment.fileName,
     );
-    return sourcePlugins.map((plugin) => ({
+    return statePlugins.map((plugin) => ({
       plugin,
       decls: plugin.discover({
         sourceText: fragment.sourceText,
@@ -161,7 +160,7 @@ export function runPluginDiscoveryPhase(
         route: options.route,
         relatedFragments,
         ...(types ? { types } : {}),
-        ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+        ...(typePlugins.length > 0 ? { typePlugins } : {}),
       }),
     }));
   });
@@ -179,12 +178,12 @@ export function runPluginDiscoveryPhase(
         options.semanticProject,
         fragment.fileName,
       );
-      return sourcePlugins.flatMap((plugin) =>
+      return statePlugins.flatMap((plugin) =>
         plugin.writeChannels({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
           ...(types ? { types } : {}),
-          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+          ...(typePlugins.length > 0 ? { typePlugins } : {}),
         }),
       );
     })
@@ -197,13 +196,13 @@ export function runPluginDiscoveryPhase(
       options.semanticProject,
       fragment.fileName,
     );
-    return sourcePlugins.flatMap(
+    return statePlugins.flatMap(
       (plugin) =>
         plugin.safetyWarnings?.({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
           ...(types ? { types } : {}),
-          ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+          ...(typePlugins.length > 0 ? { typePlugins } : {}),
         }) ?? [],
     );
   });
@@ -230,12 +229,12 @@ export function runPluginDiscoveryPhase(
 export function runExtractionPipeline(
   options: ExtractionPipelineOptions,
 ): ExtractionPipelineResult {
-  const sourcePlugins = options.sourcePlugins ?? [];
-  const domainRefinements = options.domainRefinements ?? [];
+  const statePlugins = options.statePlugins ?? [];
+  const typePlugins = options.typePlugins ?? [];
   const plugins = createPluginRegistry(
-    sourcePlugins,
-    options.routerPlugin,
-    domainRefinements,
+    statePlugins,
+    options.routePlugin,
+    typePlugins,
   );
   const allDiscoveryFragments = options.discoverFragments ?? [
     { sourceText: options.sourceText, fileName: options.fileName },
@@ -269,11 +268,11 @@ export function runExtractionPipeline(
       ...templateFragments.flatMap((fragment) => fragment.vars),
     ],
     writeChannels,
-    sourcePlugins,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    statePlugins,
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
-    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+    ...(typePlugins.length > 0 ? { typePlugins } : {}),
   };
   const genericExtraction = runSourceExtraction(options.sourceText, {
     route: options.route,
@@ -282,20 +281,15 @@ export function runExtractionPipeline(
     routePatterns: options.routePatterns ?? [],
     stateVars: extractionCtx.stateVars,
     writeChannels,
-    sourcePlugins,
+    statePlugins,
     framework: options.framework,
-    ...(options.effectModelProviders
-      ? { effectModelProviders: options.effectModelProviders }
-      : {}),
-    ...(options.handlerWrapperProviders?.length
-      ? { handlerWrapperProviders: options.handlerWrapperProviders }
-      : {}),
+    ...(options.effectPlugins ? { effectPlugins: options.effectPlugins } : {}),
     relatedFragments,
     ...(options.environment ? { environment: options.environment } : {}),
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
     ...(options.inventory ? { inventory: options.inventory } : {}),
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
-    ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
+    ...(typePlugins.length > 0 ? { typePlugins } : {}),
     ...(isEffectOpAliasesPopulated(options.effectOpAliases)
       ? { effectOpAliases: options.effectOpAliases }
       : {}),
@@ -303,7 +297,7 @@ export function runExtractionPipeline(
       ? { projectSummary: options.projectSummary }
       : {}),
   });
-  const sourceExtractions = sourcePlugins.map(
+  const sourceExtractions = statePlugins.map(
     (plugin) =>
       plugin.extract?.(extractionCtx) ?? { transitions: [], warnings: [] },
   );
@@ -327,8 +321,8 @@ export function runExtractionPipeline(
       decl.id.startsWith("router:actionData:") && !pluginVarIds.has(decl.id),
   );
   const routeVars =
-    options.routerPlugin && options.inventory && options.lowering
-      ? options.routerPlugin.locationVars(
+    options.routePlugin && options.inventory && options.lowering
+      ? options.routePlugin.locationVars(
           options.inventory,
           { route: options.route, bounds: { maxHistory: 4 } },
           options.lowering,
@@ -408,22 +402,20 @@ function provenanceForSource(plugin: StateSourcePlugin): PluginProvenance {
   };
 }
 
-function provenanceForDomainRefinement(
-  provider: DomainRefinementProvider,
-): PluginProvenance {
+function provenanceForDomainRefinement(provider: TypePlugin): PluginProvenance {
   return {
     id: provider.id,
     version: provider.version ?? "unknown",
-    kind: "domain-refinement",
+    kind: "type",
     packageNames: [...provider.packageNames].sort(),
   };
 }
 
-function provenanceForRouter(plugin: NavigationAdapter): PluginProvenance {
+function provenanceForRouter(plugin: RoutePlugin): PluginProvenance {
   return {
     id: plugin.id,
     version: plugin.version ?? "unknown",
-    kind: "navigation",
+    kind: "route",
     packageNames: [...plugin.packageNames].sort(),
   };
 }
@@ -435,9 +427,7 @@ function comparePluginProvenance(
   return left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
 }
 
-function validateUniqueDomainRefinementProviders(
-  providers: readonly DomainRefinementProvider[],
-): void {
+function validateUniqueTypePlugins(providers: readonly TypePlugin[]): void {
   const seen = new Set<string>();
   for (const provider of providers) {
     if (seen.has(provider.id))
@@ -447,10 +437,10 @@ function validateUniqueDomainRefinementProviders(
 }
 
 function validateUniquePlugins(
-  sourcePlugins: readonly StateSourcePlugin[],
+  statePlugins: readonly StateSourcePlugin[],
 ): void {
   const seen = new Set<string>();
-  for (const plugin of sourcePlugins) {
+  for (const plugin of statePlugins) {
     if (seen.has(plugin.id))
       throw new Error(`Duplicate extraction source plugin ${plugin.id}`);
     seen.add(plugin.id);

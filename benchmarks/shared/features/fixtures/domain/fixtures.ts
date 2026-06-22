@@ -1,11 +1,11 @@
 import type { Account, AccountId } from "../../accounts/domain/account.js";
+import type { AuditEvent } from "../../audit/domain/audit.js";
+import type { Session } from "../../auth/domain/session.js";
 import type { Invoice } from "../../billing/domain/invoice.js";
 import type { ManagementSummary } from "../../management/domain/dashboard.js";
+import type { TenantSettings } from "../../settings/domain/settings.js";
 import type { ApprovalRequest } from "../../subscription/domain/approval.js";
 import type { SupportCase } from "../../support/domain/escalation.js";
-import type { AuditEvent } from "../../audit/domain/audit.js";
-import type { TenantSettings } from "../../settings/domain/settings.js";
-import type { Session } from "../../auth/domain/session.js";
 
 export type Role = "guest" | "analyst" | "manager" | "admin";
 export type Permission =

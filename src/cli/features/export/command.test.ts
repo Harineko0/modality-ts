@@ -1,21 +1,21 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
-import { locationEffect } from "../../../extract/engine/ts/transition/navigation.js";
+import { join } from "node:path";
 import { checkModel } from "modality-ts/check";
-import { reachable } from "../../../../test/helpers/property-builders.js";
 import {
   and,
   canonicalState,
+  type ExprIR,
   eq,
   lit,
-  readVar,
-  type ExprIR,
   type Model,
   type ModelState,
+  readVar,
   type Value,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { reachable } from "../../../../test/helpers/property-builders.js";
+import { locationEffect } from "../../../extract/engine/ts/transition/navigation.js";
 import {
   generateTlaModule,
   generateTlaStructuredModel,

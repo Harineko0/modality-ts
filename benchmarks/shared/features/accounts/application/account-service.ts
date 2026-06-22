@@ -1,11 +1,11 @@
-import { parseAccountRecord } from "../domain/account.ark.js";
-import type { Account, AccountId } from "../domain/account.js";
 import type { AccountStatus } from "../../fixtures/domain/fixtures.js";
 import {
   accountById,
   accountsByStatus,
   seedAccounts,
 } from "../../fixtures/domain/fixtures.js";
+import { parseAccountRecord } from "../domain/account.ark.js";
+import type { Account, AccountId } from "../domain/account.js";
 
 export function listAccounts(status?: AccountStatus): readonly Account[] {
   return status ? accountsByStatus(status) : seedAccounts;

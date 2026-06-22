@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { sliceModelForCheckProperty } from "modality-ts/check";
+import { describe, expect, it } from "vitest";
 import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
 import { runCheckPerformanceBenchmark } from "../../tools/check-performance-benchmark.js";
 import {

@@ -1,4 +1,3 @@
-import { enumerateDomain } from "modality-ts/core";
 import type {
   AbstractDomain,
   ExprIR,
@@ -8,6 +7,7 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import { enumerateDomain } from "modality-ts/core";
 import type { SourceDecl } from "modality-ts/extract/engine/spi";
 import { queryVarId } from "./ids.js";
 import { queryMetadataFromRecord } from "./types.js";
@@ -381,9 +381,9 @@ function successTransitions(
           kind: "assign" as const,
           var: staleVar,
           expr: lit(
-            options.staleTime === "infinity" || options.staleTime === "static"
-              ? false
-              : true,
+            !(
+              options.staleTime === "infinity" || options.staleTime === "static"
+            ),
           ),
         },
         { kind: "assign" as const, var: failureCountVar, expr: lit("0") },
@@ -653,7 +653,7 @@ function manualRefetchTransition(
   options: TanstackQueryTemplateOptions,
   active: ExprIR,
   source: Transition["source"],
-  fetchStatusVar: string,
+  _fetchStatusVar: string,
 ): Transition {
   return fetchTransition(options, active, source, "refetch");
 }

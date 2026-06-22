@@ -1,8 +1,8 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { rewriteImportedSymbols } from "../../../src/cli/properties/resolve-symbols.js";
 
 const model: Model = {

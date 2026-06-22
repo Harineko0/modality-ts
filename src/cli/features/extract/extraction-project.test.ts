@@ -1,13 +1,13 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { dirname, join, resolve } from "node:path";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import {
   tanstackRouterAdapter,
   tanstackRouterEffectApiProvider,
-  tanstackRouterModuleRoleAdapter,
+  tanstackRouterModuleRolePlugin,
 } from "modality-ts/extract/sources/tanstack-router";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { describe, expect, it } from "vitest";
 import {
   attachRouteInventory,
   buildClientProjectSurface,
@@ -93,7 +93,7 @@ describe("attachRouteInventory", () => {
     );
     const surfaced = await buildClientProjectSurface(project, {
       navigation: tanstackRouterAdapter(),
-      moduleRoleAdapters: [tanstackRouterModuleRoleAdapter()],
+      moduleRoleAdapters: [tanstackRouterModuleRolePlugin()],
       effectApiProviders: [tanstackRouterEffectApiProvider()],
       inventory: project.inventory,
     });

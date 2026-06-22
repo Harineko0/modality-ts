@@ -1,18 +1,18 @@
 import type {
-  LocationLowering,
-  NavIntent,
-  NavigationLoweringCtx,
-  ResolvedOptions,
-  RouteInventory,
-  RouteNode,
-} from "modality-ts/extract/engine/spi";
-import type {
   AbstractDomain,
   EffectIR,
   ExprIR,
   StateVarDecl,
   Value,
 } from "modality-ts/core";
+import type {
+  LocationLowering,
+  NavIntent,
+  ResolvedOptions,
+  RouteInventory,
+  RouteLoweringCtx,
+  RouteNode,
+} from "modality-ts/extract/engine/spi";
 import {
   normalizeRouteTarget,
   routeMountScope,
@@ -128,7 +128,7 @@ export function routeTreeVars(
 
 export function lowerNavigation(
   intent: NavIntent,
-  ctx: NavigationLoweringCtx,
+  ctx: RouteLoweringCtx,
 ): {
   effect: EffectIR;
   reads: readonly string[];

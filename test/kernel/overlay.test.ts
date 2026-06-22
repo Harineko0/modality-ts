@@ -1,5 +1,5 @@
+import { applyOverlay, type Model, overlay } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { applyOverlay, overlay, type Model } from "modality-ts/core";
 
 const model: Model = {
   schemaVersion: 1,

@@ -1,11 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { performance } from "node:perf_hooks";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { performance } from "node:perf_hooks";
+import type { Bounds } from "modality-ts/core";
 import {
   canonicalJson,
-  parseModelArtifact,
-  sliceContributorFieldPaths,
   type ExtractionPropertySliceDiagnostics,
   type ExtractionPropertySliceDiagnosticsEntry,
   type ExtractionReport,
@@ -13,36 +12,37 @@ import {
   type Property,
   type PropertySliceManifest,
   type PropertySliceManifestEntry,
+  parseModelArtifact,
+  sliceContributorFieldPaths,
 } from "modality-ts/core";
-import type { Bounds } from "modality-ts/core";
 import type {
-  DomainRefinementProvider,
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
 } from "modality-ts/extract/engine/spi";
-import { emitAppModel } from "../../codegen/model.js";
 import { compareModelEconomics } from "../../../check/slicing/contributors.js";
 import {
   propertySlicingSkipReason,
   sliceModelForCheckProperty,
 } from "../../../check/slicing/slice-model.js";
+import { emitAppModel } from "../../codegen/model.js";
 import {
   sliceArtifactsDirForModel,
   sliceManifestPathForModel,
   sliceModelPathForProperty,
 } from "../../defaults.js";
-import { loadProperties } from "../../properties/load-properties.js";
-import type { ExtractArtifactEntry, ExtractPropsError } from "./output.js";
 import {
   buildExtractionModel,
   createExtractDiagnosticsClock,
   type ExtractionModelBuild,
   type ModalityConfig,
 } from "../../extraction/build-model.js";
+import { loadProperties } from "../../properties/load-properties.js";
+import type { ExtractArtifactEntry, ExtractPropsError } from "./output.js";
 
-export type { ModalityConfig, ExtractionModelBuild };
-export { buildExtractionModel, createExtractDiagnosticsClock };
 export type { ExtractDiagnosticsClock } from "../../extraction/build-model.js";
+export type { ExtractionModelBuild, ModalityConfig };
+export { buildExtractionModel, createExtractDiagnosticsClock };
 
 export interface ExtractCommandOptions {
   sourcePath?: string;
@@ -57,9 +57,9 @@ export interface ExtractCommandOptions {
   packageJsonPath?: string;
   configPath?: string;
   disabledPlugins?: readonly string[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  domainRefinements?: readonly DomainRefinementProvider[];
-  routerPlugin?: NavigationAdapter | false;
+  statePlugins?: readonly StateSourcePlugin[];
+  typePlugins?: readonly TypePlugin[];
+  routePlugin?: RoutePlugin | false;
   bounds?: Partial<Bounds>;
   propsPath?: string;
   propsPaths?: readonly string[];

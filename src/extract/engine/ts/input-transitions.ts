@@ -1,4 +1,3 @@
-import * as ts from "typescript";
 import type {
   AbstractDomain,
   Locator,
@@ -6,11 +5,12 @@ import type {
   Value,
 } from "modality-ts/core";
 import { exceedsWideNumericThreshold } from "modality-ts/core";
+import * as ts from "typescript";
+import { lineAndColumn } from "./ast.js";
 import {
   DEFAULT_INPUT_CLASSES,
   inputClassDomain,
 } from "./numeric/abstraction.js";
-import { lineAndColumn } from "./ast.js";
 import type { SetterBinding } from "./types.js";
 
 export function inputTransitions(

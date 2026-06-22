@@ -27,12 +27,20 @@ group("dashboard", () => {
     ),
   );
 
-  reachable("dashboard.summaryDataReachable", neq(useDashboardSummary.data, null));
+  reachable(
+    "dashboard.summaryDataReachable",
+    neq(useDashboardSummary.data, null),
+  );
 
   inevitably(
     "dashboard.summaryFairProgress",
     ctl.eventually(
-      ctl.holds(or(eq(useDashboardSummary.isValidating, false), neq(useDashboardSummary.data, null))),
+      ctl.holds(
+        or(
+          eq(useDashboardSummary.isValidating, false),
+          neq(useDashboardSummary.data, null),
+        ),
+      ),
     ),
     {
       fairness: [

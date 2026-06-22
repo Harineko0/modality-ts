@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 import type { Model, ModelState, Property, TraceStep } from "modality-ts/core";
 import { serializeProperties } from "./serialize-properties.js";
 import type { CheckOptions, CheckResult } from "./types.js";

@@ -1,9 +1,9 @@
-import { domainPathAt, type FieldPath } from "modality-ts/core";
 import type {
   ExtractionCaveat,
   FieldPruningMetadata,
   Model,
 } from "modality-ts/core";
+import { domainPathAt, type FieldPath } from "modality-ts/core";
 import { modelSlackCaveat } from "./caveats.js";
 
 export {

@@ -1,12 +1,12 @@
-import { useSetAtom, useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
+import { permissionsForRole } from "../../../../shared/features/auth/domain/rbac.js";
+import { api } from "../infra/api.js";
 import {
   loginStatusAtom,
   permissionCacheAtom,
   returnToAtom,
   sessionAtom,
 } from "../state/session-atoms.js";
-import { permissionsForRole } from "../../../../shared/features/auth/domain/rbac.js";
-import { api } from "../infra/api.js";
 
 export function useAuthActions() {
   const setSession = useSetAtom(sessionAtom);

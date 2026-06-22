@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useBillingStore } from "../../../../../features/billing/state/billing-store.js";
-import { useBillingAccount } from "../../../../../features/billing/infra/billing-queries.js";
-import { paymentIntentSchema } from "../../../../../shared/features/billing/domain/billing.schema.js";
-import { PaymentIntentPanel } from "../../../../../features/billing/_components/PaymentIntentPanel.js";
 import { api } from "../../../../../features/auth/infra/api.js";
+import { PaymentIntentPanel } from "../../../../../features/billing/_components/PaymentIntentPanel.js";
+import { useBillingAccount } from "../../../../../features/billing/infra/billing-queries.js";
+import { useBillingStore } from "../../../../../features/billing/state/billing-store.js";
+import { paymentIntentSchema } from "../../../../../shared/features/billing/domain/billing.schema.js";
 
 export function BillingWorkbench() {
   const { accountId = "acct-alpha" } = useParams();

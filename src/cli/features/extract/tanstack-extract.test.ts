@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { dirname, join } from "node:path";
 import { checkModel } from "modality-ts/check";
-import { always } from "../../../../test/helpers/property-builders.js";
 import { lit, neq, readVar, UNMOUNTED } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { always } from "../../../../test/helpers/property-builders.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import { runExtractCommand } from "./index.js";
 
@@ -69,7 +69,7 @@ describe("runExtractCommand tanstack router", () => {
 
     expect(result.model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "navigation", id: "tanstack-router" }),
+        expect.objectContaining({ kind: "route", id: "tanstack-router" }),
         expect.objectContaining({
           kind: "module-roles",
           id: "tanstack-module-roles",
@@ -295,7 +295,7 @@ describe("runExtractCommand tanstack router", () => {
         react: "^18.0.0",
       },
     });
-    expect(registry.routerPluginId).toBe("tanstack-router");
+    expect(registry.routePluginId).toBe("tanstack-router");
     expect(
       registry.adapters.observations.some(
         (provider) => provider.id === "tanstack-router-observation",

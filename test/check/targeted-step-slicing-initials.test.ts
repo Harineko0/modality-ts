@@ -1,12 +1,12 @@
-import { alwaysStep } from "../helpers/property-builders.js";
 import {
-  eq,
   lit as coreLit,
+  eq,
   type Model,
   readVar,
   stepTransitionId,
 } from "modality-ts/core";
 import { describe, expect, it, vi } from "vitest";
+import { alwaysStep } from "../helpers/property-builders.js";
 
 const { modelInitialStatesMock } = vi.hoisted(() => ({
   modelInitialStatesMock: vi.fn(() => {

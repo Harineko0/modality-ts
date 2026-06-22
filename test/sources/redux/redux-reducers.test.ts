@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest";
 import * as ts from "typescript";
-import { lowerReducerCase } from "../../../src/extract/sources/redux/reducers.js";
+import { describe, expect, it } from "vitest";
 import { storeVarId } from "../../../src/extract/sources/redux/ids.js";
+import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
+import { lowerReducerCase } from "../../../src/extract/sources/redux/reducers.js";
 import {
   collectSliceDefinitions,
   lowerSliceActionEffects,
 } from "../../../src/extract/sources/redux/slices.js";
-import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
 
 function parseArrow(body: string): ts.ArrowFunction {
   const source = ts.createSourceFile(
@@ -25,7 +25,9 @@ function parseArrow(body: string): ts.ArrowFunction {
 }
 
 describe("Redux reducer lowering", () => {
-  const fieldVarIds = new Map([["value", storeVarId("store", "counter.value")]]);
+  const fieldVarIds = new Map([
+    ["value", storeVarId("store", "counter.value")],
+  ]);
   const fieldInitials = new Map([["value", 0]]);
   const baseCtx = {
     storeName: "store",
@@ -193,7 +195,12 @@ describe("Redux reducer lowering", () => {
         },
       });
     `;
-    const file = ts.createSourceFile("bad.ts", source, ts.ScriptTarget.Latest, true);
+    const file = ts.createSourceFile(
+      "bad.ts",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+    );
     const imports = resolveReduxImports(file);
     const slices = collectSliceDefinitions(file, imports);
     const slice = slices.get("badSlice")!;

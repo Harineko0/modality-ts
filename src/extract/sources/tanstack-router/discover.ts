@@ -1,18 +1,18 @@
 import { basename, dirname, extname, resolve } from "node:path";
-import * as ts from "typescript";
 import type {
   RouteDiscoveryCtx,
   RouteInventory,
   RouteKind,
   RouteNode,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
+import { parseTanstackRouteModule } from "./route-options.js";
 import {
-  tanstackRouteTreeToMetadata,
   type TanstackDiscoveryMode,
   type TanstackRouteTreeNode,
   type TanstackSegmentKind,
+  tanstackRouteTreeToMetadata,
 } from "./types.js";
-import { parseTanstackRouteModule } from "./route-options.js";
 
 const ROUTES_ROOT = /(?:^|\/)(?:src\/)?routes(?:\/|$)/;
 const ROUTE_FILE = /\.(?:tsx?|jsx?)$/;
@@ -517,7 +517,7 @@ function mergeCodeRoutes(
   file: string,
   discovered: Map<string, DiscoveredTanstackRoute>,
 ): void {
-  const byVar = new Map(codeRoutes.map((route) => [route.varName, route]));
+  const _byVar = new Map(codeRoutes.map((route) => [route.varName, route]));
   const parentPatterns = new Map<string, string>();
 
   for (const route of codeRoutes) {
@@ -585,7 +585,7 @@ function finalizeRoutes(
   const seenPatterns = new Map<string, DiscoveredTanstackRoute>();
 
   for (const route of discovered.values()) {
-    const dedupeKey = routeKey(route.pattern, route.kind, route.file);
+    const _dedupeKey = routeKey(route.pattern, route.kind, route.file);
     const exactDuplicate = nodes.find(
       (node) =>
         node.pattern === route.pattern &&

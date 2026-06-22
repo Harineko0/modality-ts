@@ -5,7 +5,8 @@ export const ManagementTabs = {
   onClick: {
     managementTabAtom: {
       escaped: {
-        escaped: "ManagementTabs.onClick.managementTabAtom.escaped.escaped" as TransitionRef<"ManagementTabs.onClick.managementTabAtom.escaped.escaped">,
+        escaped:
+          "ManagementTabs.onClick.managementTabAtom.escaped.escaped" as TransitionRef<"ManagementTabs.onClick.managementTabAtom.escaped.escaped">,
       },
     },
   },

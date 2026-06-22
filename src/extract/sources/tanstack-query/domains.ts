@@ -1,21 +1,19 @@
 import type { AbstractDomain } from "modality-ts/core";
-import type {
-  SemanticTypeContext,
-  DomainRefinementProvider,
-} from "modality-ts/extract/engine/spi";
+import type { TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
 import {
   compilerBackedTypeAliases,
   inferDomainFromTypeNode,
-} from "modality-ts/extract/engine/spi";
+} from "../../engine/ts/domains.js";
 import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
-import * as ts from "typescript";
 
 export function inferQueryPayloadDomain(
   typeArg: ts.TypeNode | undefined,
-  typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
+  _typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AbstractDomain {
   if (!typeArg) return { kind: "tokens", count: 1 };
   const fallbackAliases = compilerBackedTypeAliases(
@@ -28,7 +26,7 @@ export function inferQueryPayloadDomain(
   const semanticDomain = inferDomainSemantic(typeArg, {
     checker: types.checker,
     sourceFile: types.sourceFile ?? sourceFile,
-    domainRefinements,
+    typePlugins,
     typeAliases: fallbackAliases,
   }).domain;
   if (isUninformativeDomain(astDomain) && semanticDomain.kind !== "tokens") {
@@ -38,7 +36,7 @@ export function inferQueryPayloadDomain(
 }
 
 export function inferInfinitePageDomain(
-  payloadDomain: AbstractDomain,
+  _payloadDomain: AbstractDomain,
 ): AbstractDomain {
   return {
     kind: "enum",
@@ -51,14 +49,14 @@ export function inferMutationDataDomain(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types?: SemanticTypeContext,
   sourceFile?: ts.SourceFile,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): AbstractDomain {
   return inferQueryPayloadDomain(
     typeArg,
     typeAliases,
     types,
     sourceFile,
-    domainRefinements,
+    typePlugins,
   );
 }
 

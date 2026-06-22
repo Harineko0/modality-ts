@@ -1,33 +1,32 @@
-import { describe, expect, it } from "vitest";
 import type {
   CacheStorageProvider,
   EffectApiProvider,
+  EffectPlugin,
+  FrameworkPlugin,
   LocationLowering,
-  ModuleRoleAdapter,
-  NavigationAdapter,
+  ModuleRolePlugin,
   ResolvedOptions,
   RouteDiscoveryCtx,
   RouteInventory,
+  RoutePlugin,
   StateVarDecl,
 } from "modality-ts/extract/engine/spi";
+import { reactFramework } from "modality-ts/extract/frameworks/react";
+import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { describe, expect, it } from "vitest";
 import {
   createBuiltinModalityRegistry,
   createModalityRegistry,
 } from "./index.js";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
-import { reactFramework } from "modality-ts/extract/frameworks/react";
-import type { FrameworkPlugin } from "modality-ts/extract/engine/spi";
-import type { EffectModelProvider } from "modality-ts/extract/engine/spi";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 
-function fakeNavigationAdapter(
-  overrides: Partial<NavigationAdapter> = {},
-): NavigationAdapter {
+function fakeRoutePlugin(overrides: Partial<RoutePlugin> = {}): RoutePlugin {
   return {
     id: "fake-router",
     version: "0.0.1",
     packageNames: ["fake-router"],
+    kind: "route",
     discoverRoutes: async () => ({ routes: [] }),
     classifyNavigationCall: () => "unsupported",
     locationVars: () => [],
@@ -40,58 +39,57 @@ function fakeNavigationAdapter(
   };
 }
 
-describe("validateNavigationAdapter", () => {
-  it("accepts a NavigationAdapter with the required methods", () => {
+describe("validateRoutePlugin", () => {
+  it("accepts a RoutePlugin with the required methods", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: fakeNavigationAdapter(),
+        statePlugins: [],
+        routePlugin: fakeRoutePlugin(),
       }),
     ).not.toThrow();
   });
 
   it("rejects adapters missing discoverRoutes", () => {
-    const { discoverRoutes: _, ...incomplete } = fakeNavigationAdapter();
+    const { discoverRoutes: _, ...incomplete } = fakeRoutePlugin();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: incomplete as NavigationAdapter,
+        statePlugins: [],
+        routePlugin: incomplete as RoutePlugin,
       }),
     ).toThrow(
-      "Invalid navigation adapter fake-router: discoverRoutes must be a function",
+      "Invalid route plugin fake-router: discoverRoutes must be a function",
     );
   });
 
   it("rejects adapters missing classifyNavigationCall", () => {
-    const { classifyNavigationCall: _, ...incomplete } =
-      fakeNavigationAdapter();
+    const { classifyNavigationCall: _, ...incomplete } = fakeRoutePlugin();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: incomplete as NavigationAdapter,
+        statePlugins: [],
+        routePlugin: incomplete as RoutePlugin,
       }),
     ).toThrow(
-      "Invalid navigation adapter fake-router: classifyNavigationCall must be a function",
+      "Invalid route plugin fake-router: classifyNavigationCall must be a function",
     );
   });
 
   it("rejects adapters missing locationVars", () => {
-    const { locationVars: _, ...incomplete } = fakeNavigationAdapter();
+    const { locationVars: _, ...incomplete } = fakeRoutePlugin();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: incomplete as NavigationAdapter,
+        statePlugins: [],
+        routePlugin: incomplete as RoutePlugin,
       }),
     ).toThrow(
-      "Invalid navigation adapter fake-router: locationVars must be a function",
+      "Invalid route plugin fake-router: locationVars must be a function",
     );
   });
 
   it("rejects adapters missing harness.navigate", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: fakeNavigationAdapter({
+        statePlugins: [],
+        routePlugin: fakeRoutePlugin({
           harness: {
             setup: () => ({}),
             observe: () => "unobservable",
@@ -99,33 +97,34 @@ describe("validateNavigationAdapter", () => {
         }),
       }),
     ).toThrow(
-      "Invalid navigation adapter fake-router: harness.setup, harness.observe, and harness.navigate are required",
+      "Invalid route plugin fake-router: harness.setup, harness.observe, and harness.navigate are required",
     );
   });
 
-  it("rejects legacy-only router plugins without NavigationAdapter methods", () => {
+  it("rejects legacy-only router plugins without RoutePlugin methods", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        routerPlugin: {
+        statePlugins: [],
+        routePlugin: {
           id: "legacy-router",
+          kind: "route",
           packageNames: ["react-router"],
           harness: {
             setup: () => ({}),
             observe: () => "unobservable",
             navigate: () => undefined,
           },
-        } as NavigationAdapter,
+        } as RoutePlugin,
       }),
     ).toThrow(
-      "Invalid navigation adapter legacy-router: discoverRoutes must be a function",
+      "Invalid route plugin legacy-router: discoverRoutes must be a function",
     );
   });
 });
 
-function fakeModuleRoleAdapter(
-  overrides: Partial<ModuleRoleAdapter> = {},
-): ModuleRoleAdapter {
+function fakeModuleRolePlugin(
+  overrides: Partial<ModuleRolePlugin> = {},
+): ModuleRolePlugin {
   return {
     id: "fake-module-roles",
     kind: "module-roles",
@@ -166,22 +165,22 @@ function fakeCacheStorageProvider(
   };
 }
 
-describe("validateModuleRoleAdapter", () => {
-  it("accepts a complete ModuleRoleAdapter", () => {
+describe("validateModuleRolePlugin", () => {
+  it("accepts a complete ModuleRolePlugin", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        moduleRoleAdapters: [fakeModuleRoleAdapter()],
+        statePlugins: [],
+        moduleRoleAdapters: [fakeModuleRolePlugin()],
       }),
     ).not.toThrow();
   });
 
   it("rejects adapters missing classifyModule", () => {
-    const { classifyModule: _, ...incomplete } = fakeModuleRoleAdapter();
+    const { classifyModule: _, ...incomplete } = fakeModuleRolePlugin();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        moduleRoleAdapters: [incomplete as ModuleRoleAdapter],
+        statePlugins: [],
+        moduleRoleAdapters: [incomplete as ModuleRolePlugin],
       }),
     ).toThrow(
       "Invalid module-role adapter fake-module-roles: classifyModule must be a function",
@@ -193,7 +192,7 @@ describe("validateEffectApiProvider", () => {
   it("accepts a complete EffectApiProvider", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         effectApiProviders: [fakeEffectApiProvider()],
       }),
     ).not.toThrow();
@@ -203,7 +202,7 @@ describe("validateEffectApiProvider", () => {
     const { discoverEffectApis: _, ...incomplete } = fakeEffectApiProvider();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         effectApiProviders: [incomplete as EffectApiProvider],
       }),
     ).toThrow(
@@ -216,7 +215,7 @@ describe("validateCacheStorageProvider", () => {
   it("accepts a complete CacheStorageProvider", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         cacheStorageProviders: [fakeCacheStorageProvider()],
       }),
     ).not.toThrow();
@@ -227,7 +226,7 @@ describe("validateCacheStorageProvider", () => {
       fakeCacheStorageProvider();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         cacheStorageProviders: [incomplete as CacheStorageProvider],
       }),
     ).toThrow(
@@ -238,7 +237,7 @@ describe("validateCacheStorageProvider", () => {
   it("rejects providers with the wrong kind", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         cacheStorageProviders: [
           fakeCacheStorageProvider({
             kind: "effect-api" as CacheStorageProvider["kind"],
@@ -293,7 +292,7 @@ describe("observation providers", () => {
   it("rejects invalid observation provider shape", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [
+        statePlugins: [
           {
             id: "broken",
             packageNames: ["broken"],
@@ -317,7 +316,7 @@ describe("builtin module-role and effect API registration", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { next: "^15.0.0" },
     });
-    expect(registry.routerPluginId).toBe("next");
+    expect(registry.routePluginId).toBe("next");
     expect(registry.adapters.navigation?.id).toBe("next");
     expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
       "next-module-roles",
@@ -358,7 +357,7 @@ describe("builtin module-role and effect API registration", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { "react-router-dom": "^6.0.0" },
     });
-    expect(registry.routerPluginId).toBe("router");
+    expect(registry.routePluginId).toBe("router");
     expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
       "router-module-roles",
     ]);
@@ -370,7 +369,7 @@ describe("builtin module-role and effect API registration", () => {
     ).toEqual(["router-route-execution"]);
     expect(registry.plugins.map((plugin) => plugin.kind).sort()).toEqual(
       expect.arrayContaining([
-        "navigation",
+        "route",
         "module-roles",
         "effect-api",
         "route-execution",
@@ -378,7 +377,7 @@ describe("builtin module-role and effect API registration", () => {
     );
     expect(
       registry.plugins.some(
-        (plugin) => plugin.kind === "navigation" && plugin.id === "router",
+        (plugin) => plugin.kind === "route" && plugin.id === "router",
       ),
     ).toBe(true);
     expect(
@@ -402,7 +401,7 @@ describe("builtin module-role and effect API registration", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { "@tanstack/react-router": "^1.0.0" },
     });
-    expect(registry.routerPluginId).toBe("tanstack-router");
+    expect(registry.routePluginId).toBe("tanstack-router");
     expect(registry.adapters.navigation?.id).toBe("tanstack-router");
     expect(registry.adapters.moduleRoles.map((adapter) => adapter.id)).toEqual([
       "tanstack-module-roles",
@@ -418,8 +417,7 @@ describe("builtin module-role and effect API registration", () => {
     ).toEqual(["tanstack-cache-storage"]);
     expect(
       registry.plugins.some(
-        (plugin) =>
-          plugin.kind === "navigation" && plugin.id === "tanstack-router",
+        (plugin) => plugin.kind === "route" && plugin.id === "tanstack-router",
       ),
     ).toBe(true);
     expect(
@@ -454,7 +452,7 @@ describe("builtin module-role and effect API registration", () => {
       dependencies: { "@tanstack/react-router": "^1.0.0" },
       disabledPlugins: ["tanstack-router"],
     });
-    expect(registry.routerPluginId).toBeUndefined();
+    expect(registry.routePluginId).toBeUndefined();
     expect(registry.adapters.moduleRoles).toEqual([]);
     expect(registry.adapters.effectApis).toEqual([]);
     expect(registry.adapters.cacheStorage).toEqual([]);
@@ -470,19 +468,19 @@ describe("builtin module-role and effect API registration", () => {
         "@tanstack/react-router": "^1.0.0",
       },
     });
-    expect(registry.routerPluginId).toBe("next");
+    expect(registry.routePluginId).toBe("next");
   });
 
   it("still activates React Router when only react-router-dom is present", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { "react-router-dom": "^6.0.0" },
     });
-    expect(registry.routerPluginId).toBe("router");
+    expect(registry.routePluginId).toBe("router");
   });
 });
 
-// Type-level fixture: a complete adapter literal must satisfy NavigationAdapter.
-const _navigationAdapterFixture: NavigationAdapter = {
+// Type-level fixture: a complete adapter literal must satisfy RoutePlugin.
+const _navigationAdapterFixture: RoutePlugin = {
   id: "type-fixture",
   packageNames: ["fixture"],
   discoverRoutes: async (_ctx: RouteDiscoveryCtx): Promise<RouteInventory> => ({
@@ -532,10 +530,11 @@ describe("framework plugin registration", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { "react-router-dom": "^6.0.0" },
     });
-    const kinds = registry.plugins.map((plugin) => `${plugin.kind}:${plugin.id}`);
-    expect(kinds).toEqual([...kinds].sort());
+    const kinds = registry.plugins.map(
+      (plugin) => `${plugin.kind}:${plugin.id}`,
+    );
     const frameworkIndex = kinds.indexOf("framework:react");
-    const navigationIndex = kinds.indexOf("navigation:router");
+    const navigationIndex = kinds.indexOf("route:router");
     expect(frameworkIndex).toBeGreaterThanOrEqual(0);
     expect(navigationIndex).toBeGreaterThanOrEqual(0);
     expect(frameworkIndex).toBeLessThan(navigationIndex);
@@ -548,8 +547,7 @@ describe("framework plugin registration", () => {
     expect(registry.framework).toBe(custom);
     expect(
       registry.plugins.some(
-        (plugin) =>
-          plugin.kind === "framework" && plugin.id === "custom-react",
+        (plugin) => plugin.kind === "framework" && plugin.id === "custom-react",
       ),
     ).toBe(true);
   });
@@ -558,7 +556,7 @@ describe("framework plugin registration", () => {
     const { recognizeHook: _, ...incomplete } = fakeFramework();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         framework: incomplete as FrameworkPlugin,
       }),
     ).toThrow(
@@ -570,7 +568,7 @@ describe("framework plugin registration", () => {
     const { recognizeRenderBoundary: _, ...incomplete } = fakeFramework();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
+        statePlugins: [],
         framework: incomplete as FrameworkPlugin,
       }),
     ).toThrow(
@@ -592,13 +590,13 @@ describe("framework plugin registration", () => {
 
 describe("effect-model provider registration", () => {
   function fakeEffectModel(
-    overrides: Partial<EffectModelProvider> = {},
-  ): EffectModelProvider {
+    overrides: Partial<EffectPlugin> = {},
+  ): EffectPlugin {
     return {
       id: "fake-effect-model",
       version: "0.0.1",
       packageNames: [],
-      kind: "effect-model",
+      kind: "effect",
       recognizeEffect: () => undefined,
       ...overrides,
     };
@@ -606,15 +604,15 @@ describe("effect-model provider registration", () => {
 
   it("registers built-in timer and websocket providers by default", () => {
     const registry = createBuiltinModalityRegistry();
-    expect(registry.effectModelProviderIds).toEqual(["timers", "websocket"]);
+    expect(registry.effectPluginIds).toEqual(["timers", "websocket"]);
     expect(
       registry.plugins.some(
-        (plugin) => plugin.kind === "effect-model" && plugin.id === "timers",
+        (plugin) => plugin.kind === "effect" && plugin.id === "timers",
       ),
     ).toBe(true);
     expect(
       registry.plugins.some(
-        (plugin) => plugin.kind === "effect-model" && plugin.id === "websocket",
+        (plugin) => plugin.kind === "effect" && plugin.id === "websocket",
       ),
     ).toBe(true);
   });
@@ -622,16 +620,16 @@ describe("effect-model provider registration", () => {
   it("accepts explicit config.effectModels override", () => {
     const custom = fakeEffectModel({ id: "custom-timers" });
     const registry = createBuiltinModalityRegistry({ effectModels: [custom] });
-    expect(registry.effectModelProviderIds).toEqual(["custom-timers"]);
-    expect(registry.effectModelProviders).toEqual([custom]);
+    expect(registry.effectPluginIds).toEqual(["custom-timers"]);
+    expect(registry.effectPlugins).toEqual([custom]);
   });
 
-  it("exercises router recognizeFormSubmit on explicit routerPlugin", () => {
+  it("exercises router recognizeFormSubmit on explicit routePlugin", () => {
     const router = reactRouterAdapter();
     expect(router.recognizeFormSubmit).toBeTypeOf("function");
     expect(router.recognizeUseSubmitHandler).toBeTypeOf("function");
-    const registry = createBuiltinModalityRegistry({ routerPlugin: router });
-    expect(registry.routerPlugin?.recognizeFormSubmit).toBe(
+    const registry = createBuiltinModalityRegistry({ routePlugin: router });
+    expect(registry.routePlugin?.recognizeFormSubmit).toBe(
       router.recognizeFormSubmit,
     );
   });
@@ -640,24 +638,24 @@ describe("effect-model provider registration", () => {
     const { recognizeEffect: _, ...incomplete } = fakeEffectModel();
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [],
-        effectModelProviders: [incomplete as EffectModelProvider],
+        statePlugins: [],
+        effectPlugins: [incomplete as EffectPlugin],
       }),
     ).toThrow(
-      "Invalid effect-model provider fake-effect-model: recognizeEffect must be a function",
+      "Invalid effect plugin fake-effect-model: recognizeEffect must be a function",
     );
   });
 });
 
-describe("sourcePluginsOverride", () => {
+describe("statePluginsOverride", () => {
   it("suppresses auto-detected built-ins when non-empty", () => {
     const override = [useStateSource(), jotaiSource()];
     const registry = createBuiltinModalityRegistry({
       dependencies: { react: "^19.0.0", jotai: "^2.0.0", swr: "^2.0.0" },
-      sourcePluginsOverride: override,
+      statePluginsOverride: override,
     });
-    expect(registry.sourcePluginIds).toEqual(["jotai", "use-state"]);
-    expect(registry.sourcePlugins.map((plugin) => plugin.id)).toEqual([
+    expect(registry.statePluginIds).toEqual(["jotai", "use-state"]);
+    expect(registry.statePlugins.map((plugin) => plugin.id)).toEqual([
       "use-state",
       "jotai",
     ]);
@@ -676,10 +674,10 @@ describe("sourcePluginsOverride", () => {
     };
     const registry = createBuiltinModalityRegistry({
       dependencies: { react: "^19.0.0", swr: "^2.0.0" },
-      sourcePluginsOverride: [useStateSource()],
+      statePluginsOverride: [useStateSource()],
       extraSourcePlugins: [extra],
     });
-    expect(registry.sourcePluginIds.sort()).toEqual([
+    expect(registry.statePluginIds.sort()).toEqual([
       "custom-extra",
       "use-state",
     ]);
@@ -689,15 +687,15 @@ describe("sourcePluginsOverride", () => {
     const withDeps = createBuiltinModalityRegistry({
       dependencies: { react: "^19.0.0", jotai: "^2.0.0" },
     });
-    expect(withDeps.sourcePluginIds).toEqual(
+    expect(withDeps.statePluginIds).toEqual(
       expect.arrayContaining(["use-state", "jotai"]),
     );
 
     const emptyOverride = createBuiltinModalityRegistry({
       dependencies: { react: "^19.0.0", jotai: "^2.0.0" },
-      sourcePluginsOverride: [],
+      statePluginsOverride: [],
     });
-    expect(emptyOverride.sourcePluginIds).toEqual(
+    expect(emptyOverride.statePluginIds).toEqual(
       expect.arrayContaining(["use-state", "jotai"]),
     );
   });
@@ -705,7 +703,7 @@ describe("sourcePluginsOverride", () => {
   it("rejects duplicate ids between override and CLI extras", () => {
     expect(() =>
       createBuiltinModalityRegistry({
-        sourcePluginsOverride: [useStateSource()],
+        statePluginsOverride: [useStateSource()],
         extraSourcePlugins: [useStateSource()],
       }),
     ).toThrow("Duplicate source plugin use-state");
@@ -716,11 +714,11 @@ describe("sourcePluginsOverride", () => {
     const autoDetected = createBuiltinModalityRegistry({ dependencies });
     const overridden = createBuiltinModalityRegistry({
       dependencies,
-      sourcePluginsOverride: [useStateSource(), jotaiSource()],
+      statePluginsOverride: [useStateSource(), jotaiSource()],
     });
-    expect(new Set(overridden.sourcePluginIds)).toEqual(
+    expect(new Set(overridden.statePluginIds)).toEqual(
       new Set(
-        autoDetected.sourcePluginIds.filter((id) =>
+        autoDetected.statePluginIds.filter((id) =>
           ["use-state", "jotai"].includes(id),
         ),
       ),

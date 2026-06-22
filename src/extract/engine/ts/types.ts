@@ -1,4 +1,3 @@
-import type * as ts from "typescript";
 import type {
   AbstractDomain,
   EffectIR,
@@ -6,6 +5,7 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import type * as ts from "typescript";
 import type { ExtractableHandler } from "./ast.js";
 
 export interface SetterBinding {

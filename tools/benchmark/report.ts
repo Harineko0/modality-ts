@@ -1,7 +1,7 @@
 import type { CheckReport, ExtractionReport } from "modality-ts/core";
 import type {
-  ClassifiedPropertyVerdict,
   ClassificationSummary,
+  ClassifiedPropertyVerdict,
 } from "./classify.js";
 
 export type BenchmarkArtifactPaths = {

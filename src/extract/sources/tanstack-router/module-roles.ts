@@ -1,4 +1,3 @@
-import * as ts from "typescript";
 import type {
   ImportEdgeContext,
   ImportEdgeCtx,
@@ -7,6 +6,7 @@ import type {
   ModuleRoleCtx,
   ModuleRuntimeContext,
 } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 import {
   isServerOnlyModulePath,
   isTanstackRouteModule,

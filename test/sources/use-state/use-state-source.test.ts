@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
-import * as ts from "typescript";
 import { inferDomainFromTypeNode } from "modality-ts/extract/engine";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
+import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import {
   observe,
   setup,

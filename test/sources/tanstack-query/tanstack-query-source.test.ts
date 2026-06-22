@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
   createTanstackQueryTemplate,
   extractTanstackQuerySkeleton,
@@ -7,9 +6,10 @@ import {
   tanstackQueryView,
   templateForTanstackQueryDecl,
 } from "modality-ts/extract/sources/tanstack-query";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
-import * as ts from "typescript";
 
 describe("TanStack Query source plugin", () => {
   it("exposes a StateSourcePlugin-compatible source slice", () => {
@@ -32,7 +32,7 @@ describe("TanStack Query source plugin", () => {
     const registry = createBuiltinModalityRegistry({
       dependencies: { "@tanstack/react-query": "^5.0.0", react: "^18.0.0" },
     });
-    expect(registry.sourcePluginIds).toContain("tanstack-query");
+    expect(registry.statePluginIds).toContain("tanstack-query");
   });
 
   it("is absent when @tanstack/react-query is not a dependency", () => {
@@ -40,7 +40,7 @@ describe("TanStack Query source plugin", () => {
       dependencies: { react: "^18.0.0" },
       disabledPlugins: [],
     });
-    expect(registry.sourcePluginIds).not.toContain("tanstack-query");
+    expect(registry.statePluginIds).not.toContain("tanstack-query");
   });
 
   it("is absent when tanstack-query is disabled", () => {
@@ -48,7 +48,7 @@ describe("TanStack Query source plugin", () => {
       dependencies: { "@tanstack/react-query": "^5.0.0" },
       disabledPlugins: ["tanstack-query"],
     });
-    expect(registry.sourcePluginIds).not.toContain("tanstack-query");
+    expect(registry.statePluginIds).not.toContain("tanstack-query");
   });
 
   it("discovers useQuery with static queryKey and creates template vars", () => {

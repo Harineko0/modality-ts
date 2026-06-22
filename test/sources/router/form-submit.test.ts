@@ -1,6 +1,8 @@
+import type { SurfaceNode } from "modality-ts/extract/engine/spi";
+import { nodeRefFor } from "modality-ts/extract/lang/ts";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 
 function sourceFile(sourceText: string, fileName = "Form.tsx"): ts.SourceFile {
   return ts.createSourceFile(
@@ -12,11 +14,15 @@ function sourceFile(sourceText: string, fileName = "Form.tsx"): ts.SourceFile {
   );
 }
 
+function surfaceNodeFor(node: ts.Node, fileName: string): SurfaceNode {
+  return { kind: "opaque", origin: nodeRefFor(node, fileName) };
+}
+
 describe("router recognizeFormSubmit", () => {
   const router = reactRouterAdapter();
 
   it("returns the identical enqueue effect for <Form method=post>", () => {
-    const source = sourceFile(`
+    const sourceText = `
       import { Form } from 'react-router';
       export default function Home() {
         return (
@@ -26,23 +32,27 @@ describe("router recognizeFormSubmit", () => {
           </Form>
         );
       }
-    `);
+    `;
+    const source = sourceFile(sourceText);
     const opening = source.statements[1] as ts.FunctionDeclaration;
     const returnStmt = (opening.body!.statements[0] as ts.ReturnStatement)
       .expression as ts.ParenthesizedExpression;
     const formElement = (returnStmt.expression as ts.JsxElement).openingElement;
     const warnings: import("modality-ts/extract/engine/ts/types.js").ExtractionWarning[] =
       [];
-    const recognized = router.recognizeFormSubmit?.(formElement, {
-      source,
-      fileName: "Form.tsx",
-      component: "Home",
-      route: "/",
-      setters: new Map(),
-      submitBindings: new Map(),
-      modeledSubmitHandlers: new Set(),
-      warnings,
-    });
+    const recognized = router.recognizeFormSubmit?.(
+      surfaceNodeFor(formElement, "Form.tsx"),
+      {
+        sourceText,
+        fileName: "Form.tsx",
+        component: "Home",
+        route: "/",
+        setters: new Map(),
+        submitBindings: new Map(),
+        modeledSubmitHandlers: new Set(),
+        warnings,
+      },
+    );
     expect(recognized?.kind).toBe("submit");
     if (recognized?.kind !== "submit") return;
     expect(recognized.form.effect).toEqual({
@@ -66,14 +76,15 @@ describe("router recognizeFormSubmit", () => {
   });
 
   it("recognizes useSubmit bindings and useActionData vars", () => {
-    const source = sourceFile(`
+    const sourceText = `
       import { useSubmit, useActionData } from 'react-router';
       export default function CustomerHome() {
         const submit = useSubmit();
         const actionData = useActionData();
         return null;
       }
-    `);
+    `;
+    const source = sourceFile(sourceText);
     const fn = source.statements.find(ts.isFunctionDeclaration);
     expect(fn).toBeDefined();
     const decls: ts.VariableDeclaration[] = [];
@@ -83,17 +94,15 @@ describe("router recognizeFormSubmit", () => {
     };
     visit(fn!);
     const submitDecl = decls.find(
-      (decl) =>
-        ts.isIdentifier(decl.name) && decl.name.text === "submit",
+      (decl) => ts.isIdentifier(decl.name) && decl.name.text === "submit",
     );
     const actionDataDecl = decls.find(
-      (decl) =>
-        ts.isIdentifier(decl.name) && decl.name.text === "actionData",
+      (decl) => ts.isIdentifier(decl.name) && decl.name.text === "actionData",
     );
     expect(submitDecl).toBeDefined();
     expect(actionDataDecl).toBeDefined();
     const ctx = {
-      source,
+      sourceText,
       fileName: "Form.tsx",
       component: "CustomerHome",
       route: "/customer",
@@ -102,14 +111,24 @@ describe("router recognizeFormSubmit", () => {
       modeledSubmitHandlers: new Set<string>(),
       warnings: [],
     };
-    expect(router.recognizeFormSubmit?.(submitDecl!, ctx)).toEqual({
+    expect(
+      router.recognizeFormSubmit?.(
+        surfaceNodeFor(submitDecl!, "Form.tsx"),
+        ctx,
+      ),
+    ).toEqual({
       kind: "use-submit-binding",
       name: "submit",
     });
-    const actionData = router.recognizeFormSubmit?.(actionDataDecl!, ctx);
+    const actionData = router.recognizeFormSubmit?.(
+      surfaceNodeFor(actionDataDecl!, "Form.tsx"),
+      ctx,
+    );
     expect(actionData?.kind).toBe("action-data");
     if (actionData?.kind !== "action-data") return;
-    expect(actionData.varDecl.id).toBe("router:actionData:_customer:CustomerHome");
+    expect(actionData.varDecl.id).toBe(
+      "router:actionData:_customer:CustomerHome",
+    );
     expect(actionData.setterBinding.varId).toBe(
       "router:actionData:_customer:CustomerHome",
     );

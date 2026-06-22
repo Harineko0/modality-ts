@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { describe, expect, it } from "vitest";
 import {
   navigate,
   observe,
@@ -7,7 +7,7 @@ import {
 } from "../../../src/extract/sources/router/harness.js";
 
 describe("router source plugin", () => {
-  it("exposes a NavigationAdapter-compatible source slice", () => {
+  it("exposes a RoutePlugin-compatible source slice", () => {
     const plugin = reactRouterAdapter({ historyMaxLen: 2 });
     expect(plugin.id).toBe("router");
     expect(plugin.packageNames).toEqual(["react-router", "react-router-dom"]);

@@ -18,20 +18,24 @@ import {
 } from "modality-ts/extract";
 import type {
   CacheStorageFragment,
-  DomainRefinementProvider,
   EffectApiProvider,
-  EffectModelProvider,
+  EffectPlugin,
   FrameworkPlugin,
-  HandlerWrapperProvider,
-  ModuleRoleAdapter,
-  NavigationAdapter,
+  ModuleRolePlugin,
   RouteExecutionDescriptor,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
   RouteInventory,
   RouteNode,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
 } from "modality-ts/extract/engine/spi";
+import { resolveFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import { parseReactRouterRoutes } from "modality-ts/extract/sources/router";
+import {
+  bindEngineFrameworkFromPlugin,
+  withEngineFramework,
+} from "../../../extract/engine/ts/ast.js";
 import type { EffectOpAliases } from "../../../extract/engine/ts/effect-op-aliases.js";
 import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
 import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
@@ -42,11 +46,6 @@ import {
   type SemanticProjectConfig,
   tsConfigResolutionFromSemanticConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
-import {
-  bindEngineFrameworkFromPlugin,
-  withEngineFramework,
-} from "../../../extract/engine/ts/ast.js";
-import { resolveFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
 import type { RegistrySummary } from "../../registry/index.js";
 import type { ExtractCommandOptions, ModalityConfig } from "./command.js";
@@ -172,10 +171,10 @@ function emptySurfaceProject(input: {
 export async function buildClientProjectSurface(
   project: ExtractionProject,
   options: {
-    navigation: NavigationAdapter;
-    moduleRoleAdapters: readonly ModuleRoleAdapter[];
+    navigation: RoutePlugin;
+    moduleRoleAdapters: readonly ModuleRolePlugin[];
     effectApiProviders: readonly EffectApiProvider[];
-    routeExecutionProviders?: readonly RouteExecutionProvider[];
+    routeExecutionProviders?: readonly RouteExecutionPlugin[];
     inventory: RouteInventory;
   },
 ): Promise<ExtractionProject> {
@@ -253,7 +252,7 @@ export async function buildClientProjectSurface(
 }
 
 function describeRouteExecution(
-  providers: readonly RouteExecutionProvider[],
+  providers: readonly RouteExecutionPlugin[],
   inventory: RouteInventory,
   effectApiProvenance: readonly EffectApiProvenanceEntry[],
   files: readonly { path: string; text: string }[],
@@ -326,12 +325,11 @@ export function runProjectExtractionPipeline(
     effectApis: readonly string[];
     effectOpAliases?: EffectOpAliases;
     environment?: EnvironmentEventConfig;
-    sourcePlugins: readonly StateSourcePlugin[];
-    handlerWrapperProviders?: readonly HandlerWrapperProvider[];
-    routerPlugin?: NavigationAdapter;
+    statePlugins: readonly StateSourcePlugin[];
+    routePlugin?: RoutePlugin;
     framework?: FrameworkPlugin;
-    effectModelProviders?: readonly EffectModelProvider[];
-    domainRefinements?: readonly DomainRefinementProvider[];
+    effectPlugins?: readonly EffectPlugin[];
+    typePlugins?: readonly TypePlugin[];
     inventory: RouteInventory;
     bounds?: Pick<Bounds, "maxDepth">;
   },
@@ -384,7 +382,7 @@ export function runProjectExtractionPipeline(
       relatedFragments,
       ...(fragmentTypes ? { types: fragmentTypes } : {}),
       route: options.route,
-      sourcePlugins: options.sourcePlugins,
+      statePlugins: options.statePlugins,
     }),
   );
   const sharedDiscovery = runPluginDiscoveryPhase(pipelineOptions);
@@ -517,7 +515,7 @@ async function loadMultiFileExtractionProject(
 
 export async function attachRouteInventory(
   project: ExtractionProject,
-  adapter: NavigationAdapter,
+  adapter: RoutePlugin,
 ): Promise<ExtractionProject> {
   const files = [...project.rawEntries];
   if (

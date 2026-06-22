@@ -1,23 +1,20 @@
+import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import type {
-  DomainRefinementProvider,
-  SemanticTypeContext,
-  SourceDecl,
-} from "modality-ts/extract/engine/spi";
+import { literalValue } from "../../engine/ts/ast.js";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
 import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
-import { literalValue } from "../../engine/ts/ast.js";
-import { isCreateApiCall, resolveReduxImports } from "./imports.js";
 import { propertyNameFromMember } from "./domains.js";
 import { mutationVarId, queryVarId, safeKeyId } from "./ids.js";
+import { isCreateApiCall, resolveReduxImports } from "./imports.js";
+import type { ReduxDiscoveryWarning } from "./store.js";
+import { anchor } from "./store.js";
 import {
   mutationMetadataToRecord,
   queryMetadataToRecord,
   type ReduxMutationMetadata,
   type ReduxQueryMetadata,
 } from "./types.js";
-import type { ReduxDiscoveryWarning } from "./store.js";
-import { anchor } from "./store.js";
 
 export interface RtkQueryDiscovery {
   decls: SourceDecl[];
@@ -29,9 +26,14 @@ export function discoverRtkQueryApis(
   sourceText: string,
   fileName = "api.ts",
   types?: SemanticTypeContext,
-  _domainRefinements?: readonly DomainRefinementProvider[],
+  _domainRefinements?: readonly TypePlugin[],
 ): RtkQueryDiscovery {
-  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const source = semanticSourceFileFor(
+    sourceText,
+    fileName,
+    types,
+    ts.ScriptKind.TSX,
+  );
   const imports = resolveReduxImports(source, types);
   if (imports.apiCreators.size === 0) {
     return { decls: [], warnings: [], apiNames: new Set() };
@@ -61,20 +63,20 @@ export function discoverRtkQueryApis(
           reducerPath = prop.initializer.text;
         }
         if (name === "endpoints") {
-        if (ts.isArrowFunction(prop.initializer)) {
-          const body = prop.initializer.body;
-          if (ts.isCallExpression(body) && ts.isIdentifier(body.expression)) {
-            parseEndpointsBuilder(body, endpoints);
-          } else if (ts.isObjectLiteralExpression(body)) {
-            parseEndpointsObject(body, endpoints);
-          } else if (
-            ts.isParenthesizedExpression(body) &&
-            ts.isObjectLiteralExpression(body.expression)
-          ) {
-            parseEndpointsObject(body.expression, endpoints);
+          if (ts.isArrowFunction(prop.initializer)) {
+            const body = prop.initializer.body;
+            if (ts.isCallExpression(body) && ts.isIdentifier(body.expression)) {
+              parseEndpointsBuilder(body, endpoints);
+            } else if (ts.isObjectLiteralExpression(body)) {
+              parseEndpointsObject(body, endpoints);
+            } else if (
+              ts.isParenthesizedExpression(body) &&
+              ts.isObjectLiteralExpression(body.expression)
+            ) {
+              parseEndpointsObject(body.expression, endpoints);
+            }
           }
         }
-      }
       }
       for (const [endpoint, kind] of endpoints) {
         const keyId = safeKeyId(endpoint);
@@ -115,7 +117,7 @@ export function discoverRtkQueryApis(
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       const hookName = node.expression.text;
       if (hookName.startsWith("use") && hookName.endsWith("Query")) {
-        const endpoint = endpointFromHookName(hookName);
+        const _endpoint = endpointFromHookName(hookName);
         const keyArg = node.arguments[0];
         const keyId = queryKeyIdFromArg(keyArg);
         if (!keyId) {

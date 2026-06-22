@@ -2,14 +2,15 @@ import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
-  canonicalJson,
   type CheckReport,
   type ConformanceMatrixReport,
   type ConformReport,
+  canonicalJson,
 } from "modality-ts/core";
 import { runCheckCommand } from "../../src/cli/check.ts";
 import { runConformCommand } from "../../src/cli/conform.ts";
 import { runExtractCommand } from "../../src/cli/extract.ts";
+import { classifyConformanceFailure } from "../canary/classify.js";
 import { evaluateAcceptedCaveats } from "../shared-gates/caveats.js";
 import {
   assertSemanticExpectations,
@@ -17,13 +18,12 @@ import {
   assertThresholds,
   type ThresholdAssertionResult,
 } from "./assertions.js";
-import { classifyConformanceFailure } from "../canary/classify.js";
 import {
+  type ConformanceFixtureManifest,
+  type ConformanceMatrixManifest,
   loadConformanceFixtureManifests,
   readConformanceMatrixManifest,
   validateConformanceFixturePaths,
-  type ConformanceFixtureManifest,
-  type ConformanceMatrixManifest,
 } from "./manifest.js";
 
 export interface ConformanceRunnerOptions {

@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
 import { parseCanaryRunReportArtifact } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import {
   parseCanaryManifest,
   readCanaryManifest,

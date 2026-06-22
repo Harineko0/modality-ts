@@ -1,13 +1,13 @@
-import * as ts from "typescript";
-import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
-import { safeId } from "../ids.js";
 import {
   effectReads,
   effectWrites,
   type Locator,
   type Transition,
 } from "modality-ts/core";
+import * as ts from "typescript";
 import type { CallSite, M0Ctx, StateSourcePlugin } from "../../spi/index.js";
+import { callName, lineAndColumn, literalValue, propertyName } from "../ast.js";
+import { safeId } from "../ids.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 import { stateVarForName } from "./expressions.js";
 import { labelForEvent } from "./ui.js";
@@ -21,7 +21,7 @@ export function pluginWriteTransition(
   call: ts.CallExpression,
   setters: Map<string, SetterBinding>,
   locals: Map<string, BoundExpr>,
-  sourcePlugins: readonly StateSourcePlugin[],
+  statePlugins: readonly StateSourcePlugin[],
   locator: Locator | undefined,
 ): Transition | undefined {
   const callee = callName(call.expression);
@@ -50,7 +50,7 @@ export function pluginWriteTransition(
     arguments: call.arguments.map(callArgumentValue),
     source: { file: fileName, ...lineAndColumn(source, call) },
   };
-  for (const plugin of sourcePlugins) {
+  for (const plugin of statePlugins) {
     const summary = plugin.summarizeWrite?.(callSite, ctx);
     if (!summary || summary === "unsupported") continue;
     const reads = [...effectReads(summary)].sort();

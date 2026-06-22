@@ -1,16 +1,14 @@
 import type {
-  SemanticTypeContext,
-  SourceDecl,
-  DomainRefinementProvider,
   ExtractionWarning,
+  SourceDecl,
+  TypePlugin,
 } from "modality-ts/extract/engine/spi";
-import {
-  compilerBackedTypeAliases,
-  collectSemanticNamedImports,
-} from "modality-ts/extract/engine/spi";
-import { modelSlackCaveat } from "../../engine/ts/caveats.js";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import { compilerBackedTypeAliases } from "../../engine/ts/domains.js";
+import { collectSemanticNamedImports } from "../../engine/ts/semantic-imports.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   domainFromInitialData,
   inferInfinitePageDomain,
@@ -41,21 +39,17 @@ export function discoverTanstackQueryHooks(
   sourceText: string,
   fileName = "App.tsx",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): SourceDecl[] {
-  return discoverTanstackQueryDetailed(
-    sourceText,
-    fileName,
-    types,
-    domainRefinements,
-  ).decls;
+  return discoverTanstackQueryDetailed(sourceText, fileName, types, typePlugins)
+    .decls;
 }
 
 export function discoverTanstackQueryDetailed(
   sourceText: string,
   fileName = "App.tsx",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): TanstackQueryDiscovery {
   const source = semanticSourceFileFor(
     sourceText,
@@ -126,7 +120,7 @@ export function discoverTanstackQueryDetailed(
           typeAliases,
           types,
           source,
-          domainRefinements,
+          typePlugins,
         );
         if (metadata) {
           if (metadata.queryKey.dynamic) {
@@ -158,7 +152,7 @@ export function discoverTanstackQueryDetailed(
           typeAliases,
           types,
           source,
-          domainRefinements,
+          typePlugins,
           fileName,
         );
         if (metadata) {
@@ -187,7 +181,7 @@ function parseQueryOptions(
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types: SemanticTypeContext | undefined,
   source: ts.SourceFile,
-  domainRefinements: readonly DomainRefinementProvider[] | undefined,
+  typePlugins: readonly TypePlugin[] | undefined,
 ): QueryOptionsMetadata | undefined {
   if (!optionsExpr) return undefined;
   let queryKeyExpr: ts.Expression | undefined;
@@ -300,7 +294,7 @@ function parseQueryOptions(
     typeAliases,
     types,
     source,
-    domainRefinements,
+    typePlugins,
   );
   const initialDomain = domainFromInitialData(initialDataExpr, typeAliases);
   if (initialDomain) payloadDomain = initialDomain;
@@ -333,12 +327,12 @@ function parseQueryOptions(
 }
 
 function parseMutationOptions(
-  optionsExpr: ts.ObjectLiteralExpression | undefined,
+  _optionsExpr: ts.ObjectLiteralExpression | undefined,
   call: ts.CallExpression,
   typeAliases: ReadonlyMap<string, ts.TypeNode>,
   types: SemanticTypeContext | undefined,
   source: ts.SourceFile,
-  domainRefinements: readonly DomainRefinementProvider[] | undefined,
+  typePlugins: readonly TypePlugin[] | undefined,
   fileName: string,
 ): MutationOptionsMetadata | undefined {
   const pos = lineAndColumn(source, call);
@@ -348,7 +342,7 @@ function parseMutationOptions(
     typeAliases,
     types,
     source,
-    domainRefinements,
+    typePlugins,
   );
   const variablesDomain = inferMutationVariablesDomain(
     call.typeArguments?.[1],

@@ -1,4 +1,3 @@
-import * as ts from "typescript";
 import type {
   EffectIR,
   ExprIR,
@@ -8,8 +7,9 @@ import type {
   Transition,
 } from "modality-ts/core";
 import type { RouteInventory, RouteNode } from "modality-ts/extract/engine/spi";
-import { cacheDynamicRequestCaveat } from "../../engine/ts/caveats.js";
+import * as ts from "typescript";
 import { PENDING_QUEUE_VAR } from "../../compile/index.js";
+import { cacheDynamicRequestCaveat } from "../../engine/ts/caveats.js";
 import { NEXT_CACHE_DOMAIN, nextCacheVarId, nextTreeNodes } from "./routes.js";
 
 export type NextCacheKeyKind =

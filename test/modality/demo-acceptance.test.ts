@@ -1,8 +1,7 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 import {
   createDomReplayActor,
@@ -11,6 +10,7 @@ import {
   replayTrace,
 } from "modality-ts/cli/harness";
 import type { ModelState, Trace } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { runCheckCommand } from "../../src/cli/check.js";
 import { runCiCommand } from "../../src/cli/ci.js";
 import { runExtractCommand } from "../../src/cli/extract.js";

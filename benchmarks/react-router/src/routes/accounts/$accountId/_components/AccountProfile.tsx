@@ -1,17 +1,17 @@
-import { Link, useParams } from "react-router-dom";
 import { useAtom } from "jotai";
-import {
-  selectedAccountAtom,
-  accountDetailTabAtom,
-} from "../../../../features/accounts/state/selection-atoms.js";
-import { useAccountDetail } from "../../../../features/accounts/infra/account-queries.js";
+import { Link, useParams } from "react-router-dom";
 import { parseAccountRecord } from "../../../../../shared/features/accounts/domain/account.ark.js";
 import { AccountStatusBadge } from "../../../../features/accounts/_components/AccountStatusBadge.js";
+import { useAccountDetail } from "../../../../features/accounts/infra/account-queries.js";
+import {
+  accountDetailTabAtom,
+  selectedAccountAtom,
+} from "../../../../features/accounts/state/selection-atoms.js";
 
 export function AccountProfile() {
   const { accountId = "acct-alpha" } = useParams();
   const [selectedAccount, setSelectedAccount] = useAtom(selectedAccountAtom);
-  const [tab, setTab] = useAtom(accountDetailTabAtom);
+  const [_tab, setTab] = useAtom(accountDetailTabAtom);
   const { data } = useAccountDetail(accountId as typeof selectedAccount);
   if (data) parseAccountRecord(data);
   if (accountId !== selectedAccount)

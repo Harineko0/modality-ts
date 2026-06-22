@@ -1,11 +1,11 @@
 import type {
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
   RouteLoaderDescriptor,
 } from "modality-ts/extract/engine/spi";
 
-export function tanstackRouterRouteExecutionProvider(
+export function tanstackRouterRouteExecutionPlugin(
   options: { id?: string; packageNames?: readonly string[] } = {},
-): RouteExecutionProvider {
+): RouteExecutionPlugin {
   return {
     id: options.id ?? "tanstack-route-execution",
     version: "0.1.0",

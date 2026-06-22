@@ -1,3 +1,9 @@
+import { roleHasPermission } from "../../auth/domain/rbac.js";
+import type { RiskBucket, Role } from "../../fixtures/domain/fixtures.js";
+import {
+  bucketCount,
+  seedManagementSummary,
+} from "../../fixtures/domain/fixtures.js";
 import { parseManagementSummary } from "../domain/dashboard.ark.js";
 import type {
   ManagementSummary,
@@ -5,12 +11,6 @@ import type {
   RevenueQueue,
   RiskQueue,
 } from "../domain/dashboard.js";
-import type { RiskBucket, Role } from "../../fixtures/domain/fixtures.js";
-import { roleHasPermission } from "../../auth/domain/rbac.js";
-import {
-  bucketCount,
-  seedManagementSummary,
-} from "../../fixtures/domain/fixtures.js";
 
 export function loadSummary(): ManagementSummary {
   parseManagementSummary(seedManagementSummary);

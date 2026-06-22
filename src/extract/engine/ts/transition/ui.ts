@@ -1,6 +1,6 @@
+import type { Locator, Transition } from "modality-ts/core";
 import * as ts from "typescript";
 import { isPropertyAccessLike } from "../ast.js";
-import type { Locator, Transition } from "modality-ts/core";
 
 export function isEventAttribute(name: string): boolean {
   return (
@@ -54,7 +54,7 @@ export function semanticTextForEventAttribute(
 
 export function locatorForJsxElement(
   element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
-  source?: ts.SourceFile,
+  _source?: ts.SourceFile,
 ): Locator | undefined {
   const attrs = element.attributes;
   const testId = stringAttribute(attrs, "data-testid");

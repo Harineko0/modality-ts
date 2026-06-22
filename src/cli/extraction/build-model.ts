@@ -1,41 +1,39 @@
-import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { performance } from "node:perf_hooks";
+import { readFile } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
+import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
-import * as ts from "typescript";
 import type {
+  Bounds,
   ExtractionPhaseTiming,
   ExtractionReport,
   Model,
   OverlaySpec,
 } from "modality-ts/core";
-import type { Bounds } from "modality-ts/core";
 import type {
-  DomainRefinementProvider,
-  EffectModelProvider,
+  EffectPlugin,
   FrameworkPlugin,
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
 } from "modality-ts/extract/engine/spi";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
 import {
   expandInventoryForI18n,
+  type NextParsedConfig,
   nextConfigCandidates,
   nextConfigExtractionWarnings,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
-  type NextParsedConfig,
 } from "modality-ts/extract/sources/next";
-import { buildVarAnchorsFromVars } from "../properties/var-anchors.js";
-import { loadAndApplyOverlay, loadOverlaySpec } from "../overlay.js";
-import { createBuiltinModalityRegistry } from "../registry/index.js";
+import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import * as ts from "typescript";
+import type { EnvironmentEventConfig } from "../../extract/engine/ts/environment-config.js";
 import {
   applyInputClassToWideInputVars,
   attachNumericReductions,
 } from "../../extract/engine/ts/numeric/abstraction.js";
-import type { EnvironmentEventConfig } from "../../extract/engine/ts/environment-config.js";
 import type { ExtractionWarning } from "../../extract/engine/ts/types.js";
+import { buildRouteExecutionTemplate } from "../../extract/sources/shared/route-execution.js";
 import {
   attachRouteInventory,
   buildClientProjectSurface,
@@ -52,7 +50,6 @@ import {
   attachFieldPruning,
   refineAssignedLiteralDomains,
 } from "../features/extract/model-postprocess.js";
-import { buildLocationLowering } from "../features/extract/route-lowering.js";
 import {
   buildEffectOperations,
   createExtractionCaveats,
@@ -64,8 +61,11 @@ import {
   wideNumericReachabilityWarnings,
   wideProductDomainReachabilityWarnings,
 } from "../features/extract/report.js";
+import { buildLocationLowering } from "../features/extract/route-lowering.js";
 import { synthesizeSystemVars } from "../features/extract/system-vars.js";
-import { buildRouteExecutionTemplate } from "../../extract/sources/shared/route-execution.js";
+import { loadAndApplyOverlay, loadOverlaySpec } from "../overlay.js";
+import { buildVarAnchorsFromVars } from "../properties/var-anchors.js";
+import { createBuiltinModalityRegistry } from "../registry/index.js";
 
 export interface ModalityConfig {
   navigation?: {
@@ -79,9 +79,9 @@ export interface ModalityConfig {
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
   framework?: FrameworkPlugin;
-  effectModels?: readonly EffectModelProvider[];
-  domainRefinements?: readonly DomainRefinementProvider[];
-  routerPlugin?: NavigationAdapter | false;
+  effectModels?: readonly EffectPlugin[];
+  typePlugins?: readonly TypePlugin[];
+  routePlugin?: RoutePlugin | false;
 }
 
 export interface BuildExtractionModelOptions {
@@ -95,11 +95,11 @@ export interface BuildExtractionModelOptions {
   packageJsonPath?: string;
   configPath?: string;
   disabledPlugins?: readonly string[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  domainRefinements?: readonly DomainRefinementProvider[];
-  routerPlugin?: NavigationAdapter | false;
+  statePlugins?: readonly StateSourcePlugin[];
+  typePlugins?: readonly TypePlugin[];
+  routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectModelProvider[];
+  effectModels?: readonly EffectPlugin[];
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
   now?: Date;
@@ -154,22 +154,22 @@ export async function buildExtractionModel(
             ...(config.disabledPlugins ?? []),
             ...(options.disabledPlugins ?? []),
           ],
-          sourcePluginsOverride: config.plugins?.length
+          statePluginsOverride: config.plugins?.length
             ? config.plugins
             : undefined,
-          extraSourcePlugins: [...(options.sourcePlugins ?? [])],
-          extraDomainRefinementProviders: [
-            ...(config.domainRefinements ?? []),
-            ...(options.domainRefinements ?? []),
+          extraSourcePlugins: [...(options.statePlugins ?? [])],
+          extraTypePlugins: [
+            ...(config.typePlugins ?? []),
+            ...(options.typePlugins ?? []),
           ],
-          routerPlugin: options.routerPlugin ?? config.routerPlugin,
+          routePlugin: options.routePlugin ?? config.routePlugin,
           framework: options.framework ?? config.framework,
           effectModels: options.effectModels ?? config.effectModels,
         });
         return {
           config,
           registry,
-          routerAdapter: registry.routerPlugin ?? reactRouterAdapter(),
+          routerAdapter: registry.routePlugin ?? reactRouterAdapter(),
           dependencies,
         };
       },
@@ -266,12 +266,11 @@ export async function buildExtractionModel(
         effectApis,
         effectOpAliases,
         environment: config.environment,
-        sourcePlugins: registry.sourcePlugins,
-        handlerWrapperProviders: registry.handlerWrapperProviders,
-        routerPlugin: routerAdapter,
+        statePlugins: registry.statePlugins,
+        routePlugin: routerAdapter,
         framework: registry.framework,
-        effectModelProviders: registry.effectModelProviders,
-        domainRefinements: registry.domainRefinementProviders,
+        effectPlugins: registry.effectPlugins,
+        typePlugins: registry.typePlugins,
         inventory: project.inventory,
         bounds: { maxDepth: bounds.maxDepth },
       }),
@@ -389,7 +388,7 @@ export async function buildExtractionModel(
     ...wideNumericReachabilityWarnings(overlay.overlay.model),
     ...wideProductDomainReachabilityWarnings(overlay.overlay.model),
     ...overlay.overlay.warnings.map((message) => ({ message })),
-    ...pluginConformanceWarnings(registry.sourcePlugins, dependencies).map(
+    ...pluginConformanceWarnings(registry.statePlugins, dependencies).map(
       (message) => ({ message }),
     ),
   ];

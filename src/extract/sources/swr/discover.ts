@@ -1,16 +1,11 @@
 import type { ExprIR, Value } from "modality-ts/core";
-import type {
-  SemanticTypeContext,
-  SourceDecl,
-  DomainRefinementProvider,
-} from "modality-ts/extract/engine/spi";
+import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { inferPayloadDomain } from "./domains.js";
-import {
-  collectSemanticNamedImports,
-  compilerBackedTypeAliases,
-} from "modality-ts/extract/engine/spi";
+import { compilerBackedTypeAliases } from "../../engine/ts/domains.js";
+import { collectSemanticNamedImports } from "../../engine/ts/semantic-imports.js";
 import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import { inferPayloadDomain } from "./domains.js";
 
 function sourceFileForDiscovery(
   sourceText: string,
@@ -24,7 +19,7 @@ export function discoverSwrHooks(
   sourceText: string,
   fileName = "App.tsx",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const useSwrNames = useSwrImportNames(source, types);
@@ -56,7 +51,7 @@ export function discoverSwrHooks(
               typeAliases,
               types,
               source,
-              domainRefinements,
+              typePlugins,
             ) as Value,
             ...(key.activeWhen ? { activeWhen: key.activeWhen as Value } : {}),
             ...optionsMetadata(node.arguments[2]),

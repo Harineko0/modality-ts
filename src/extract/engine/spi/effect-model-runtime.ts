@@ -1,21 +1,21 @@
-import type { EffectModelProvider } from "./effect-model.js";
+import type { EffectPlugin } from "./effect-model.js";
 
-let registeredEffectModelProviders: readonly EffectModelProvider[] | undefined;
+let registeredEffectPlugins: readonly EffectPlugin[] | undefined;
 
-export function registerEffectModelProviders(
-  providers: readonly EffectModelProvider[],
+export function registerEffectPlugins(
+  providers: readonly EffectPlugin[],
 ): void {
-  registeredEffectModelProviders = providers;
+  registeredEffectPlugins = providers;
 }
 
-export function resolveEffectModelProviders(
-  explicit?: readonly EffectModelProvider[],
-): readonly EffectModelProvider[] {
+export function resolveEffectPlugins(
+  explicit?: readonly EffectPlugin[],
+): readonly EffectPlugin[] {
   if (explicit !== undefined) return explicit;
-  if (!registeredEffectModelProviders) {
+  if (!registeredEffectPlugins) {
     throw new Error(
-      "No effect-model providers configured. Pass effectModels in extraction options or register providers via registerEffectModelProviders.",
+      "No effect-model providers configured. Pass effectModels in extraction options or register providers via registerEffectPlugins.",
     );
   }
-  return registeredEffectModelProviders;
+  return registeredEffectPlugins;
 }

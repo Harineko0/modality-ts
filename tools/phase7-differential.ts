@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { checkModel, modelInitialStates } from "../src/check/index.ts";
+import { generateTlaModule } from "../src/cli/features/export/command.ts";
 import type {
   ExprIR,
   Model,
@@ -12,7 +13,6 @@ import type {
   Transition,
   Value,
 } from "../src/core/index.ts";
-import { generateTlaModule } from "../src/cli/features/export/command.ts";
 import { checkoutHandModel } from "../test/modality/fixtures/checkout-hand-model.ts";
 import { todoHandModel } from "../test/modality/fixtures/todo-hand-model.ts";
 

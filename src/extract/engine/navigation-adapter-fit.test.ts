@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { runExtractionPipeline } from "./pipeline/index.js";
 import type {
   LocationLowering,
-  NavigationAdapter,
-  NavigationLoweringCtx,
-  NavigationLoweringResult,
   ResolvedOptions,
   RouteDiscoveryCtx,
   RouteInventory,
+  RouteLoweringCtx,
+  RouteLoweringResult,
+  RoutePlugin,
 } from "./spi/index.js";
-import { runExtractionPipeline } from "./pipeline/index.js";
 import { extractReactSourceTransitions } from "./ts/react-source-transitions.js";
 
 function fitLocationVars(
@@ -53,7 +53,7 @@ function fitLocationVars(
   ];
 }
 
-function nextStyleAdapter(): NavigationAdapter {
+function nextStyleAdapter(): RoutePlugin {
   return {
     id: "next-fit",
     packageNames: ["next/navigation"],
@@ -140,7 +140,7 @@ describe("navigation adapter interface fit", () => {
       route: "/settings",
       fileName: "app/settings/page.tsx",
       routePatterns: ["/", "/settings"],
-      routerPlugin: adapter,
+      routePlugin: adapter,
       inventory,
     });
 
@@ -169,7 +169,7 @@ describe("navigation adapter interface fit", () => {
       fileName: "app/settings/page.tsx",
       route: "/settings",
       routePatterns: ["/", "/settings"],
-      routerPlugin: adapter,
+      routePlugin: adapter,
       inventory,
       lowering,
     });
@@ -194,12 +194,12 @@ describe("navigation adapter interface fit", () => {
     ).toBe(true);
   });
 
-  it("NavigationLoweringCtx and NavigationLoweringResult type-check", () => {
-    const ctx: NavigationLoweringCtx = {
+  it("RouteLoweringCtx and RouteLoweringResult type-check", () => {
+    const ctx: RouteLoweringCtx = {
       inventory,
       routePatterns: ["/", "/settings"],
     };
-    const result: NavigationLoweringResult = {
+    const result: RouteLoweringResult = {
       effect: {
         kind: "assign",
         var: "sys:route",

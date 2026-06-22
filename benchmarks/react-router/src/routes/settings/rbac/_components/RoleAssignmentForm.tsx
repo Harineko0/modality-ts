@@ -1,15 +1,15 @@
 import { useAtom, useAtomValue } from "jotai";
+import { canAssignRole } from "../../../../../shared/features/auth/application/auth-service.js";
+import { permissionsForRole } from "../../../../../shared/features/auth/domain/rbac.js";
+import { parseRoleAssignment } from "../../../../../shared/features/auth/domain/session.ark.js";
+import { roleAssignmentSchema } from "../../../../../shared/features/auth/domain/session.schema.js";
+import { api } from "../../../../features/auth/infra/api.js";
 import {
   permissionCacheAtom,
   roleSaveStatusAtom,
   targetRoleAtom,
 } from "../../../../features/auth/state/session-atoms.js";
 import { useRoleAssignments } from "../../../../features/settings/infra/settings-queries.js";
-import { parseRoleAssignment } from "../../../../../shared/features/auth/domain/session.ark.js";
-import { roleAssignmentSchema } from "../../../../../shared/features/auth/domain/session.schema.js";
-import { canAssignRole } from "../../../../../shared/features/auth/application/auth-service.js";
-import { permissionsForRole } from "../../../../../shared/features/auth/domain/rbac.js";
-import { api } from "../../../../features/auth/infra/api.js";
 
 export function RoleAssignmentForm() {
   const [targetRole, setTargetRole] = useAtom(targetRoleAtom);

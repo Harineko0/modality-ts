@@ -1,10 +1,11 @@
-import type * as ts from "typescript";
 import type {
-  EffectModelProvider,
-  EffectModelRecognition,
+  EffectCtx,
+  EffectPlugin,
+  EffectRecognition,
   EffectSurfaceCall,
 } from "modality-ts/extract/engine/spi";
-import type { EffectCtx } from "modality-ts/extract/engine/spi";
+import { createEffectPlugin } from "modality-ts/extract/plugins";
+import * as ts from "typescript";
 import {
   bindTimerHandle,
   isTimerClearCall,
@@ -17,24 +18,39 @@ import {
 function recognizeTimerEffect(
   call: EffectSurfaceCall,
   ctx: EffectCtx,
-): EffectModelRecognition | undefined {
-  if (!ctx.component || !ctx.source || !ctx.fileName) return undefined;
-  if (isTimerScheduleCall(call)) {
-    const timerIndex = ctx.timerIndex?.value ?? 0;
+): EffectRecognition | undefined {
+  const tsCall = call as unknown as ts.CallExpression;
+  if (!("flags" in tsCall) || !ts.isCallExpression(tsCall)) return undefined;
+  const runtime = ctx as EffectCtx & {
+    source?: ts.SourceFile;
+    timerContext?: string;
+    timerIndex?: { value: number };
+    timerBindings?: Map<string, string>;
+    timerRegistrations?: unknown[];
+    envTransitions?: unknown[];
+  };
+  if (!runtime.component || !runtime.source || !runtime.fileName)
+    return undefined;
+  const setters =
+    runtime.setters instanceof Map
+      ? runtime.setters
+      : new Map([...runtime.setters.entries()]);
+  if (isTimerScheduleCall(tsCall)) {
+    const timerIndex = runtime.timerIndex?.value ?? 0;
     const registered = registerTimerFromScheduleCall(
-      ctx.source,
-      ctx.fileName,
-      call,
-      ctx.setters,
-      ctx.component,
-      ctx.timerContext ?? "handler",
+      runtime.source,
+      runtime.fileName,
+      tsCall,
+      setters,
+      runtime.component,
+      runtime.timerContext ?? "handler",
       timerIndex,
-      ctx.timerBindings ?? new Map(),
+      runtime.timerBindings ?? new Map(),
     );
     if (!registered) return undefined;
-    ctx.timerRegistrations?.push(registered.registration);
-    if (ctx.timerIndex) ctx.timerIndex.value += 1;
-    ctx.envTransitions?.push(registered.fireTransition);
+    runtime.timerRegistrations?.push(registered.registration);
+    if (runtime.timerIndex) runtime.timerIndex.value += 1;
+    runtime.envTransitions?.push(registered.fireTransition);
     return {
       model: {
         channel: "timer",
@@ -47,10 +63,10 @@ function recognizeTimerEffect(
       scheduleSummary: registered.scheduleSummary,
     };
   }
-  if (isTimerClearCall(call)) {
+  if (isTimerClearCall(tsCall)) {
     const clearSummary = timerClearSummaryFromCall(
-      call,
-      ctx.timerBindings ?? new Map(),
+      tsCall,
+      runtime.timerBindings ?? new Map(),
     );
     if (!clearSummary) return undefined;
     return {
@@ -68,14 +84,13 @@ function recognizeTimerEffect(
   return undefined;
 }
 
-export function timerEffectModelProvider(): EffectModelProvider {
-  return {
+export function timerEffectPlugin(): EffectPlugin {
+  return createEffectPlugin({
     id: "timers",
     version: "0.1.0",
     packageNames: [],
-    kind: "effect-model",
     recognizeEffect: recognizeTimerEffect,
-  };
+  });
 }
 
 export function bindTimerDeclaration(
@@ -86,4 +101,4 @@ export function bindTimerDeclaration(
   bindTimerHandle(declaration, timerVarIdValue, bindings);
 }
 
-export default timerEffectModelProvider;
+export default timerEffectPlugin;

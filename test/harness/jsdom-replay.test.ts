@@ -1,8 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, describe, expect, it } from "vitest";
-import type { Trace } from "modality-ts/core";
+
 import {
   createDeterministicReplayAsyncController,
   createDomReplayActor,
@@ -14,8 +13,10 @@ import {
 import {
   createBuiltinModalityRegistry,
   observationSourcesFromProviders,
-  setupObservationProviders,
+  setupObservationPlugins,
 } from "modality-ts/cli/registry";
+import type { Trace } from "modality-ts/core";
+import { afterEach, describe, expect, it } from "vitest";
 
 describe("jsdom replay", () => {
   afterEach(() => {
@@ -25,7 +26,7 @@ describe("jsdom replay", () => {
   it("observes built-in route, useState, Jotai, SWR, and Zustand vars through registry providers", () => {
     const atom = {};
     const registry = createBuiltinModalityRegistry();
-    const runtime = setupObservationProviders(registry.adapters.observations, {
+    const runtime = setupObservationPlugins(registry.adapters.observations, {
       initialState: { "sys:route": "/checkout" },
       atoms: { "atom:cartAtom": atom },
       store: { get: () => "ready" },

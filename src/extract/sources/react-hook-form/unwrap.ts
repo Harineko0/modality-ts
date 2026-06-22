@@ -1,10 +1,10 @@
 import * as ts from "typescript";
 import {
   callName,
-  isExtractableHandler,
   type ExtractableHandler,
+  isExtractableHandler,
 } from "../../engine/ts/ast.js";
-import type { HandlerWrapperCtx } from "../../engine/spi/index.js";
+import type { TsUnwrapHandlerCtx } from "../../engine/ts/framework-ts-bridge.js";
 
 /**
  * Returns the set of local names that are bound to a handleSubmit function
@@ -55,7 +55,7 @@ function isUseFormCall(node: ts.CallExpression): boolean {
 
 export function unwrapReactHookFormHandler(
   node: ts.Expression,
-  ctx: HandlerWrapperCtx,
+  ctx: TsUnwrapHandlerCtx,
 ): ExtractableHandler | undefined {
   if (!ts.isCallExpression(node)) return undefined;
   const callee = callName(node.expression);

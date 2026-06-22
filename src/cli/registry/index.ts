@@ -1,107 +1,104 @@
-import type { PluginProvenance } from "modality-ts/core";
 import {
-  observationSource,
   type ObservationSource,
+  observationSource,
 } from "modality-ts/cli/harness";
+import type { PluginProvenance } from "modality-ts/core";
+import { timerEffectPlugin } from "modality-ts/extract/effect-models/timers";
+import { websocketEffectPlugin } from "modality-ts/extract/effect-models/websocket";
 import type {
   CacheStorageProvider,
-  DomainRefinementProvider,
   EffectApiProvider,
-  EffectModelProvider,
+  EffectPlugin,
   FrameworkPlugin,
-  HandlerWrapperProvider,
   HarnessCtx,
   HarnessHooks,
-  ModuleRoleAdapter,
-  NavigationAdapter,
-  ObservationProvider,
+  ModuleRolePlugin,
+  ObservationPlugin,
   ObservedRead,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
+  RoutePlugin,
   StateSourcePlugin,
+  TypePlugin,
 } from "modality-ts/extract/engine/spi";
-import { arktypeDomainRefinementProvider } from "modality-ts/extract/type-libraries/arktype";
-import { zodDomainRefinementProvider } from "modality-ts/extract/type-libraries/zod";
+import { registerEffectPlugins } from "modality-ts/extract/engine/spi";
+import { reactFramework } from "modality-ts/extract/frameworks/react";
 import { jotaiSource } from "modality-ts/extract/sources/jotai";
 import {
   nextAdapter,
   nextCacheStorageProvider,
   nextEffectApiProvider,
-  nextModuleRoleAdapter,
-  nextRouteExecutionProvider,
+  nextModuleRolePlugin,
+  nextRouteExecutionPlugin,
 } from "modality-ts/extract/sources/next";
+import { reduxSource } from "modality-ts/extract/sources/redux";
 import {
   reactRouterAdapter,
   reactRouterEffectApiProvider,
-  reactRouterModuleRoleAdapter,
-  reactRouterRouteExecutionProvider,
+  reactRouterModuleRolePlugin,
+  reactRouterRouteExecutionPlugin,
 } from "modality-ts/extract/sources/router";
+import { swrSource } from "modality-ts/extract/sources/swr";
+import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
 import {
   tanstackRouterAdapter,
   tanstackRouterCacheStorageProvider,
   tanstackRouterEffectApiProvider,
-  tanstackRouterModuleRoleAdapter,
-  tanstackRouterRouteExecutionProvider,
+  tanstackRouterModuleRolePlugin,
+  tanstackRouterRouteExecutionPlugin,
 } from "modality-ts/extract/sources/tanstack-router";
-import { swrSource } from "modality-ts/extract/sources/swr";
-import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
 import { useStateSource } from "modality-ts/extract/sources/use-state";
-import { reduxSource } from "modality-ts/extract/sources/redux";
 import { zustandSource } from "modality-ts/extract/sources/zustand";
-import { reactHookFormSource } from "modality-ts/extract/sources/react-hook-form";
-import { reactFramework } from "modality-ts/extract/frameworks/react";
-import { timerEffectModelProvider } from "modality-ts/extract/effect-models/timers";
-import { websocketEffectModelProvider } from "modality-ts/extract/effect-models/websocket";
-import { registerEffectModelProviders } from "modality-ts/extract/engine/spi";
+import { arktypeTypePlugin } from "modality-ts/extract/type-libraries/arktype";
+import { zodTypePlugin } from "modality-ts/extract/type-libraries/zod";
+import { extendFrameworkWithTsUnwrap } from "../../extract/engine/ts/framework-ts-bridge.js";
+import { unwrapReactHookFormHandler } from "../../extract/sources/react-hook-form/unwrap.js";
 
 export interface RegistryAdaptersBundle {
-  navigation?: NavigationAdapter;
-  moduleRoles: readonly ModuleRoleAdapter[];
+  navigation?: RoutePlugin;
+  moduleRoles: readonly ModuleRolePlugin[];
   effectApis: readonly EffectApiProvider[];
-  routeExecution: readonly RouteExecutionProvider[];
+  routeExecution: readonly RouteExecutionPlugin[];
   cacheStorage: readonly CacheStorageProvider[];
   stateSources: readonly StateSourcePlugin[];
-  domainRefinements: readonly DomainRefinementProvider[];
-  observations: readonly ObservationProvider[];
+  typePlugins: readonly TypePlugin[];
+  observations: readonly ObservationPlugin[];
 }
 
 export interface ModalityPluginRegistry {
-  sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
   framework?: FrameworkPlugin;
-  effectModelProviders?: readonly EffectModelProvider[];
-  domainRefinementProviders: readonly DomainRefinementProvider[];
-  moduleRoleAdapters?: readonly ModuleRoleAdapter[];
+  effectPlugins?: readonly EffectPlugin[];
+  typePlugins: readonly TypePlugin[];
+  moduleRoleAdapters?: readonly ModuleRolePlugin[];
   effectApiProviders?: readonly EffectApiProvider[];
-  routeExecutionProviders?: readonly RouteExecutionProvider[];
+  routeExecutionProviders?: readonly RouteExecutionPlugin[];
   cacheStorageProviders?: readonly CacheStorageProvider[];
-  handlerWrapperProviders?: readonly HandlerWrapperProvider[];
 }
 
 export interface BuiltinRegistryOptions {
   dependencies?: Readonly<Record<string, string>>;
   disabledPlugins?: readonly string[];
   /** Explicit config plugin list; suppresses built-in auto-detection when non-empty. */
-  sourcePluginsOverride?: readonly StateSourcePlugin[];
+  statePluginsOverride?: readonly StateSourcePlugin[];
   extraSourcePlugins?: readonly StateSourcePlugin[];
-  extraDomainRefinementProviders?: readonly DomainRefinementProvider[];
+  extraTypePlugins?: readonly TypePlugin[];
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
-  extraHandlerWrapperProviders?: readonly HandlerWrapperProvider[];
-  routerPlugin?: NavigationAdapter | false;
+  routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectModelProvider[];
+  effectModels?: readonly EffectPlugin[];
 }
 
 export interface RegistrySummary {
-  sourcePluginIds: readonly string[];
-  routerPluginId?: string;
+  statePluginIds: readonly string[];
+  routePluginId?: string;
   frameworkPluginId?: string;
-  effectModelProviderIds: readonly string[];
-  sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  effectPluginIds: readonly string[];
+  statePlugins: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
   framework?: FrameworkPlugin;
-  effectModelProviders: readonly EffectModelProvider[];
-  domainRefinementProviders: readonly DomainRefinementProvider[];
-  handlerWrapperProviders: readonly HandlerWrapperProvider[];
+  effectPlugins: readonly EffectPlugin[];
+  typePlugins: readonly TypePlugin[];
   plugins: readonly PluginProvenance[];
   adapters: RegistryAdaptersBundle;
 }
@@ -119,8 +116,8 @@ export function createBuiltinModalityRegistry(
     tanstackQuerySource(),
     reduxSource(),
   ];
-  const sourcePlugins = options.sourcePluginsOverride?.length
-    ? [...options.sourcePluginsOverride, ...(options.extraSourcePlugins ?? [])]
+  const statePlugins = options.statePluginsOverride?.length
+    ? [...options.statePluginsOverride, ...(options.extraSourcePlugins ?? [])]
     : [
         ...builtins.filter(
           (plugin) =>
@@ -129,43 +126,32 @@ export function createBuiltinModalityRegistry(
         ),
         ...(options.extraSourcePlugins ?? []),
       ];
-  const domainRefinementBuiltins = [
-    zodDomainRefinementProvider(),
-    arktypeDomainRefinementProvider(),
-  ];
-  const domainRefinementProviders = [
+  const domainRefinementBuiltins = [zodTypePlugin(), arktypeTypePlugin()];
+  const typePlugins = [
     ...domainRefinementBuiltins.filter(
       (provider) =>
         !disabled.has(provider.id) &&
         shouldEnableBuiltin(provider, dependencies),
     ),
-    ...(options.extraDomainRefinementProviders ?? []),
+    ...(options.extraTypePlugins ?? []),
   ];
   const builtinNavigation = resolveBuiltinNavigationBundle(options, disabled);
   const cacheStorageProviders = resolveBuiltinCacheStorageProviders(
     options,
     disabled,
   );
-  const handlerWrapperBuiltins = [reactHookFormSource()];
-  const handlerWrapperProviders = [
-    ...handlerWrapperBuiltins.filter(
-      (p) => !disabled.has(p.id) && shouldEnableBuiltin(p, dependencies),
-    ),
-    ...(options.extraHandlerWrapperProviders ?? []),
-  ];
-  const effectModelProviders = resolveBuiltinEffectModels(options);
-  registerEffectModelProviders(effectModelProviders);
+  const effectPlugins = resolveBuiltinEffectModels(options);
+  registerEffectPlugins(effectPlugins);
   return createModalityRegistry({
-    sourcePlugins,
-    routerPlugin: builtinNavigation.navigation,
+    statePlugins,
+    routePlugin: builtinNavigation.navigation,
     framework: resolveBuiltinFramework(options),
-    effectModelProviders,
-    domainRefinementProviders,
+    effectPlugins,
+    typePlugins,
     moduleRoleAdapters: builtinNavigation.moduleRoles,
     effectApiProviders: builtinNavigation.effectApis,
     routeExecutionProviders: builtinNavigation.routeExecution,
     cacheStorageProviders,
-    handlerWrapperProviders,
   });
 }
 
@@ -173,17 +159,17 @@ function resolveBuiltinNavigationBundle(
   options: BuiltinRegistryOptions,
   disabled: Set<string>,
 ): {
-  navigation?: NavigationAdapter;
-  moduleRoles: ModuleRoleAdapter[];
+  navigation?: RoutePlugin;
+  moduleRoles: ModuleRolePlugin[];
   effectApis: EffectApiProvider[];
-  routeExecution: RouteExecutionProvider[];
+  routeExecution: RouteExecutionPlugin[];
 } {
-  if (options.routerPlugin === false) {
+  if (options.routePlugin === false) {
     return { moduleRoles: [], effectApis: [], routeExecution: [] };
   }
-  if (options.routerPlugin) {
+  if (options.routePlugin) {
     return {
-      navigation: options.routerPlugin,
+      navigation: options.routePlugin,
       moduleRoles: [],
       effectApis: [],
       routeExecution: [],
@@ -194,9 +180,9 @@ function resolveBuiltinNavigationBundle(
   if (!disabled.has("next") && hasDependency(dependencies, "next")) {
     return {
       navigation: nextAdapter(),
-      moduleRoles: [nextModuleRoleAdapter()],
+      moduleRoles: [nextModuleRolePlugin()],
       effectApis: [nextEffectApiProvider()],
-      routeExecution: [nextRouteExecutionProvider()],
+      routeExecution: [nextRouteExecutionPlugin()],
     };
   }
   if (
@@ -205,9 +191,9 @@ function resolveBuiltinNavigationBundle(
   ) {
     return {
       navigation: tanstackRouterAdapter(),
-      moduleRoles: [tanstackRouterModuleRoleAdapter()],
+      moduleRoles: [tanstackRouterModuleRolePlugin()],
       effectApis: [tanstackRouterEffectApiProvider()],
-      routeExecution: [tanstackRouterRouteExecutionProvider()],
+      routeExecution: [tanstackRouterRouteExecutionPlugin()],
     };
   }
   if (
@@ -217,17 +203,17 @@ function resolveBuiltinNavigationBundle(
   ) {
     return {
       navigation: reactRouterAdapter(),
-      moduleRoles: [reactRouterModuleRoleAdapter()],
+      moduleRoles: [reactRouterModuleRolePlugin()],
       effectApis: [reactRouterEffectApiProvider()],
-      routeExecution: [reactRouterRouteExecutionProvider()],
+      routeExecution: [reactRouterRouteExecutionPlugin()],
     };
   }
   if (!dependencies && !disabled.has("router")) {
     return {
       navigation: reactRouterAdapter(),
-      moduleRoles: [reactRouterModuleRoleAdapter()],
+      moduleRoles: [reactRouterModuleRolePlugin()],
       effectApis: [reactRouterEffectApiProvider()],
-      routeExecution: [reactRouterRouteExecutionProvider()],
+      routeExecution: [reactRouterRouteExecutionPlugin()],
     };
   }
   return { moduleRoles: [], effectApis: [], routeExecution: [] };
@@ -237,10 +223,10 @@ function resolveBuiltinCacheStorageProviders(
   options: BuiltinRegistryOptions,
   disabled: Set<string>,
 ): CacheStorageProvider[] {
-  if (options.routerPlugin === false) {
+  if (options.routePlugin === false) {
     return [...(options.extraCacheStorageProviders ?? [])];
   }
-  if (options.routerPlugin) {
+  if (options.routePlugin) {
     return [...(options.extraCacheStorageProviders ?? [])];
   }
 
@@ -269,16 +255,27 @@ function resolveBuiltinFramework(
   if (options.framework !== undefined && options.framework !== false) {
     return options.framework;
   }
-  return reactFramework();
+  const framework = reactFramework();
+  const dependencies = options.dependencies;
+  const disabled = new Set(options.disabledPlugins ?? []);
+  if (
+    disabled.has("react-hook-form") ||
+    (dependencies && dependencies["react-hook-form"] === undefined)
+  ) {
+    return framework;
+  }
+  return extendFrameworkWithTsUnwrap(framework, (node, ctx) =>
+    unwrapReactHookFormHandler(node, ctx),
+  );
 }
 
 function resolveBuiltinEffectModels(
   options: BuiltinRegistryOptions,
-): readonly EffectModelProvider[] {
+): readonly EffectPlugin[] {
   if (options.effectModels !== undefined) {
     return options.effectModels;
   }
-  return [timerEffectModelProvider(), websocketEffectModelProvider()];
+  return [timerEffectPlugin(), websocketEffectPlugin()];
 }
 
 function hasDependency(
@@ -290,38 +287,35 @@ function hasDependency(
 
 export function createModalityRegistry(
   options: ModalityPluginRegistry = {
-    sourcePlugins: [],
-    domainRefinementProviders: [],
+    statePlugins: [],
+    typePlugins: [],
   },
 ): RegistrySummary {
-  const domainRefinementProviders = options.domainRefinementProviders ?? [];
+  const typePlugins = options.typePlugins ?? [];
   const moduleRoleAdapters = options.moduleRoleAdapters ?? [];
   const effectApiProviders = options.effectApiProviders ?? [];
   const routeExecutionProviders = options.routeExecutionProviders ?? [];
   const cacheStorageProviders = options.cacheStorageProviders ?? [];
-  const handlerWrapperProviders = options.handlerWrapperProviders ?? [];
-  const effectModelProviders = options.effectModelProviders ?? [];
-  for (const plugin of options.sourcePlugins) validateStateSourcePlugin(plugin);
-  for (const provider of domainRefinementProviders)
-    validateDomainRefinementProvider(provider);
-  for (const adapter of moduleRoleAdapters) validateModuleRoleAdapter(adapter);
+  const effectPlugins = options.effectPlugins ?? [];
+  for (const plugin of options.statePlugins) validateStateSourcePlugin(plugin);
+  for (const provider of typePlugins) validateTypePlugin(provider);
+  for (const adapter of moduleRoleAdapters) validateModuleRolePlugin(adapter);
   for (const provider of effectApiProviders)
     validateEffectApiProvider(provider);
   for (const provider of routeExecutionProviders)
-    validateRouteExecutionProvider(provider);
+    validateRouteExecutionPlugin(provider);
   for (const provider of cacheStorageProviders)
     validateCacheStorageProvider(provider);
-  if (options.routerPlugin) validateNavigationAdapter(options.routerPlugin);
+  if (options.routePlugin) validateRoutePlugin(options.routePlugin);
   if (options.framework) validateFrameworkPlugin(options.framework);
-  for (const provider of effectModelProviders)
-    validateEffectModelProvider(provider);
-  const observations = buildObservationProviders(
-    options.sourcePlugins,
-    options.routerPlugin,
+  for (const provider of effectPlugins) validateEffectPlugin(provider);
+  const observations = buildObservationPlugins(
+    options.statePlugins,
+    options.routePlugin,
   );
-  for (const provider of observations) validateObservationProvider(provider);
-  const sourcePluginIds = sortedUnique(
-    options.sourcePlugins.map((plugin) => plugin.id),
+  for (const provider of observations) validateObservationPlugin(provider);
+  const statePluginIds = sortedUnique(
+    options.statePlugins.map((plugin) => plugin.id),
     "source plugin",
   );
   sortedUnique(
@@ -344,43 +338,42 @@ export function createModalityRegistry(
     observations.map((provider) => provider.id),
     "observation provider",
   );
-  const effectModelProviderIds = sortedUnique(
-    effectModelProviders.map((provider) => provider.id),
-    "effect-model provider",
+  const effectPluginIds = sortedUnique(
+    effectPlugins.map((provider) => provider.id),
+    "effect plugin",
   );
   return {
-    sourcePluginIds,
-    effectModelProviderIds,
-    sourcePlugins: options.sourcePlugins,
-    effectModelProviders,
-    domainRefinementProviders,
-    handlerWrapperProviders,
+    statePluginIds,
+    effectPluginIds,
+    statePlugins: options.statePlugins,
+    effectPlugins,
+    typePlugins,
     ...(options.framework ? { framework: options.framework } : {}),
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
     adapters: {
-      navigation: options.routerPlugin,
+      navigation: options.routePlugin,
       moduleRoles: moduleRoleAdapters,
       effectApis: effectApiProviders,
       routeExecution: routeExecutionProviders,
       cacheStorage: cacheStorageProviders,
-      stateSources: options.sourcePlugins,
-      domainRefinements: domainRefinementProviders,
+      stateSources: options.statePlugins,
+      typePlugins: typePlugins,
       observations,
     },
     plugins: [
-      ...options.sourcePlugins.map((plugin) => ({
+      ...options.statePlugins.map((plugin) => ({
         id: plugin.id,
         version: plugin.version ?? "unknown",
         kind: "state-source" as const,
         packageNames: [...plugin.packageNames].sort(),
       })),
-      ...(options.routerPlugin
+      ...(options.routePlugin
         ? [
             {
-              id: options.routerPlugin.id,
-              version: options.routerPlugin.version ?? "unknown",
-              kind: "navigation" as const,
-              packageNames: [...options.routerPlugin.packageNames].sort(),
+              id: options.routePlugin.id,
+              version: options.routePlugin.version ?? "unknown",
+              kind: "route" as const,
+              packageNames: [...options.routePlugin.packageNames].sort(),
             },
           ]
         : []),
@@ -394,10 +387,10 @@ export function createModalityRegistry(
             },
           ]
         : []),
-      ...effectModelProviders.map((provider) => ({
+      ...effectPlugins.map((provider) => ({
         id: provider.id,
         version: provider.version ?? "unknown",
-        kind: "effect-model" as const,
+        kind: "effect" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
       ...moduleRoleAdapters.map((adapter) => ({
@@ -424,10 +417,10 @@ export function createModalityRegistry(
         kind: "cache-storage" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
-      ...domainRefinementProviders.map((provider) => ({
+      ...typePlugins.map((provider) => ({
         id: provider.id,
         version: provider.version ?? "unknown",
-        kind: "domain-refinement" as const,
+        kind: "type" as const,
         packageNames: [...provider.packageNames].sort(),
       })),
       ...observations.map((provider) => ({
@@ -440,12 +433,8 @@ export function createModalityRegistry(
       (left, right) =>
         left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id),
     ),
-    ...(options.routerPlugin
-      ? { routerPluginId: options.routerPlugin.id }
-      : {}),
-    ...(options.framework
-      ? { frameworkPluginId: options.framework.id }
-      : {}),
+    ...(options.routePlugin ? { routePluginId: options.routePlugin.id } : {}),
+    ...(options.framework ? { frameworkPluginId: options.framework.id } : {}),
   };
 }
 
@@ -480,9 +469,7 @@ function validateStateSourcePlugin(plugin: StateSourcePlugin): void {
   }
 }
 
-function validateDomainRefinementProvider(
-  provider: DomainRefinementProvider,
-): void {
+function validateTypePlugin(provider: TypePlugin): void {
   validateCommonPluginShape(provider, "domain refinement provider");
   if (typeof provider.refineDomain !== "function")
     throw new Error(
@@ -490,7 +477,7 @@ function validateDomainRefinementProvider(
     );
 }
 
-function validateModuleRoleAdapter(adapter: ModuleRoleAdapter): void {
+function validateModuleRolePlugin(adapter: ModuleRolePlugin): void {
   validateCommonPluginShape(adapter, "module-role adapter");
   if (adapter.kind !== "module-roles")
     throw new Error(
@@ -526,9 +513,7 @@ function validateEffectApiProvider(provider: EffectApiProvider): void {
     );
 }
 
-function validateRouteExecutionProvider(
-  provider: RouteExecutionProvider,
-): void {
+function validateRouteExecutionPlugin(provider: RouteExecutionPlugin): void {
   validateCommonPluginShape(provider, "route-execution provider");
   if (provider.kind !== "route-execution")
     throw new Error(
@@ -552,19 +537,21 @@ function validateCacheStorageProvider(provider: CacheStorageProvider): void {
     );
 }
 
-function validateNavigationAdapter(adapter: NavigationAdapter): void {
-  validateCommonPluginShape(adapter, "navigation adapter");
+function validateRoutePlugin(adapter: RoutePlugin): void {
+  validateCommonPluginShape(adapter, "route plugin");
+  if (adapter.kind !== "route")
+    throw new Error(`Invalid route plugin ${adapter.id}: kind must be "route"`);
   if (typeof adapter.discoverRoutes !== "function")
     throw new Error(
-      `Invalid navigation adapter ${adapter.id}: discoverRoutes must be a function`,
+      `Invalid route plugin ${adapter.id}: discoverRoutes must be a function`,
     );
   if (typeof adapter.classifyNavigationCall !== "function")
     throw new Error(
-      `Invalid navigation adapter ${adapter.id}: classifyNavigationCall must be a function`,
+      `Invalid route plugin ${adapter.id}: classifyNavigationCall must be a function`,
     );
   if (typeof adapter.locationVars !== "function")
     throw new Error(
-      `Invalid navigation adapter ${adapter.id}: locationVars must be a function`,
+      `Invalid route plugin ${adapter.id}: locationVars must be a function`,
     );
   if (
     !adapter.harness ||
@@ -573,7 +560,7 @@ function validateNavigationAdapter(adapter: NavigationAdapter): void {
     typeof adapter.harness.navigate !== "function"
   ) {
     throw new Error(
-      `Invalid navigation adapter ${adapter.id}: harness.setup, harness.observe, and harness.navigate are required`,
+      `Invalid route plugin ${adapter.id}: harness.setup, harness.observe, and harness.navigate are required`,
     );
   }
 }
@@ -590,15 +577,15 @@ function validateFrameworkPlugin(plugin: FrameworkPlugin): void {
     );
 }
 
-function validateEffectModelProvider(provider: EffectModelProvider): void {
-  validateCommonPluginShape(provider, "effect-model provider");
-  if (provider.kind !== "effect-model")
+function validateEffectPlugin(provider: EffectPlugin): void {
+  validateCommonPluginShape(provider, "effect plugin");
+  if (provider.kind !== "effect")
     throw new Error(
-      `Invalid effect-model provider ${provider.id}: kind must be "effect-model"`,
+      `Invalid effect plugin ${provider.id}: kind must be "effect"`,
     );
   if (typeof provider.recognizeEffect !== "function")
     throw new Error(
-      `Invalid effect-model provider ${provider.id}: recognizeEffect must be a function`,
+      `Invalid effect plugin ${provider.id}: recognizeEffect must be a function`,
     );
 }
 
@@ -631,13 +618,13 @@ function sortedUnique(values: readonly string[], kind: string): string[] {
   return [...values].sort();
 }
 
-export interface ObservationProviderRuntime {
+export interface ObservationPluginRuntime {
   readonly handlesByProviderId: ReadonlyMap<string, HarnessHooks>;
 }
 
 export function observationProviderFromStateSource(
   plugin: StateSourcePlugin,
-): ObservationProvider {
+): ObservationPlugin {
   return {
     id: plugin.id,
     version: plugin.version,
@@ -653,11 +640,11 @@ export function observationProviderFromStateSource(
   };
 }
 
-export function observationProviderFromNavigation(
-  navigation: NavigationAdapter,
-): ObservationProvider {
+export function observationPluginFromRoute(
+  navigation: RoutePlugin,
+): ObservationPlugin {
   return {
-    id: navigationObservationId(navigation),
+    id: routeObservationId(navigation),
     version: navigation.version,
     packageNames: navigation.packageNames,
     kind: "observation",
@@ -667,14 +654,14 @@ export function observationProviderFromNavigation(
   };
 }
 
-export function navigationObservationId(navigation: NavigationAdapter): string {
+export function routeObservationId(navigation: RoutePlugin): string {
   return `${navigation.id}-observation`;
 }
 
-export function setupObservationProviders(
-  providers: readonly ObservationProvider[],
+export function setupObservationPlugins(
+  providers: readonly ObservationPlugin[],
   ctx: HarnessCtx & Record<string, unknown> = {},
-): ObservationProviderRuntime {
+): ObservationPluginRuntime {
   const handlesByProviderId = new Map<string, HarnessHooks>();
   for (const provider of providers) {
     handlesByProviderId.set(provider.id, provider.setup(ctx));
@@ -683,8 +670,8 @@ export function setupObservationProviders(
 }
 
 export function observationSourcesFromProviders(
-  providers: readonly ObservationProvider[],
-  runtime: ObservationProviderRuntime,
+  providers: readonly ObservationPlugin[],
+  runtime: ObservationPluginRuntime,
 ): ObservationSource[] {
   return providers.map((provider) =>
     observationSource(provider.id, (varId) => {
@@ -697,24 +684,24 @@ export function observationSourcesFromProviders(
 
 export function replayBlockingReasonForUnobservableVars(
   varIds: readonly string[],
-  providers: readonly ObservationProvider[],
+  providers: readonly ObservationPlugin[],
 ): string {
   const providerIds = providers.map((provider) => provider.id).sort();
   return `Unobservable model vars: ${varIds.join(", ")} (tried providers: ${providerIds.join(", ")})`;
 }
 
-function buildObservationProviders(
-  sourcePlugins: readonly StateSourcePlugin[],
-  navigation?: NavigationAdapter,
-): ObservationProvider[] {
+function buildObservationPlugins(
+  statePlugins: readonly StateSourcePlugin[],
+  navigation?: RoutePlugin,
+): ObservationPlugin[] {
   return [
-    ...sourcePlugins.map(observationProviderFromStateSource),
-    ...(navigation ? [observationProviderFromNavigation(navigation)] : []),
+    ...statePlugins.map(observationProviderFromStateSource),
+    ...(navigation ? [observationPluginFromRoute(navigation)] : []),
   ];
 }
 
 function observeNavigationVar(
-  navigation: NavigationAdapter,
+  navigation: RoutePlugin,
   varId: string,
   handles: HarnessHooks,
 ): ObservedRead | "unobservable" {
@@ -726,7 +713,7 @@ function observeNavigationVar(
   return observe(handles, varId);
 }
 
-function validateObservationProvider(provider: ObservationProvider): void {
+function validateObservationPlugin(provider: ObservationPlugin): void {
   validateCommonPluginShape(provider, "observation provider");
   if (provider.kind !== "observation")
     throw new Error(

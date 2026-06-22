@@ -2,43 +2,23 @@ import type {
   AbstractDomain,
   EffectIR,
   ExtractionCaveat,
-  Transition,
 } from "modality-ts/core";
-import type * as ts from "typescript";
-import type { ModalityAdapterBase } from "./index.js";
-import type { EnvironmentEventConfig } from "../ts/environment-config.js";
-import type {
-  ExtractableHandler,
-  EffectSummary,
-  SetterBinding,
-} from "../ts/types.js";
-import type { TimerRegistration } from "../ts/transition/timers.js";
-import type { WebSocketRegistration } from "../ts/transition/environment-callbacks.js";
-import type { TransitionBinding } from "../ts/transition/concurrent.js";
+import type { SurfaceCall, SurfaceStmt } from "../../lang/ts/surface-ir.js";
+import type { DecodedSetterBinding, ModalityAdapterBase } from "./index.js";
+import type { SymbolPort } from "./symbol-port.js";
 
-export type EffectSurfaceCall = ts.CallExpression | ts.NewExpression;
+export type EffectSurfaceCall = SurfaceCall;
+
+export interface EffectSummaryLike {
+  effect: EffectIR;
+  reads: string[];
+}
 
 export interface EffectCtx {
   component: string;
-  source: ts.SourceFile;
   fileName: string;
-  setters: Map<string, SetterBinding>;
-  timerContext?: string;
-  timerIndex?: { value: number };
-  timerBindings?: Map<string, string>;
-  timerRegistrations?: TimerRegistration[];
-  webSocketRegistrations?: WebSocketRegistration[];
-  webSocketBindings?: Map<string, string>;
-  webSocketIndex?: { value: number };
-  environment?: EnvironmentEventConfig;
-  transitionBindings?: Map<string, TransitionBinding>;
-  envTransitions?: Transition[];
-  handlers?: Map<string, ExtractableHandler>;
-  resetSymbols?: ReadonlySet<string>;
-  snapshotReads?: boolean;
-  snapshottedReads?: ReadonlySet<string>;
-  warnings?: import("../ts/types.js").ExtractionWarning[];
-  types?: import("./index.js").SemanticTypeContext;
+  symbols?: SymbolPort;
+  setters: ReadonlyMap<string, DecodedSetterBinding>;
 }
 
 export interface EffectModel {
@@ -48,23 +28,23 @@ export interface EffectModel {
   caveats?: ExtractionCaveat[];
 }
 
-export interface EffectModelRecognition {
+export interface EffectRecognition {
   model: EffectModel;
-  scheduleSummary: EffectSummary;
+  scheduleSummary: EffectSummaryLike;
 }
 
-export interface EffectModelAssignmentRecognition {
-  scheduleSummaries: EffectSummary[];
+export interface EffectAssignmentRecognition {
+  scheduleSummaries: EffectSummaryLike[];
 }
 
-export interface EffectModelProvider extends ModalityAdapterBase {
-  kind: "effect-model";
+export interface EffectPlugin extends ModalityAdapterBase {
+  kind: "effect";
   recognizeEffect(
     call: EffectSurfaceCall,
     ctx: EffectCtx,
-  ): EffectModelRecognition | undefined;
+  ): EffectRecognition | undefined;
   recognizeEffectAssignment?(
-    statement: ts.ExpressionStatement,
+    statement: SurfaceStmt,
     ctx: EffectCtx,
-  ): EffectModelAssignmentRecognition | undefined;
+  ): EffectAssignmentRecognition | undefined;
 }

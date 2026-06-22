@@ -1,7 +1,7 @@
-import * as ts from "typescript";
 import type { ExprIR } from "modality-ts/core";
-import type { EffectSummary } from "../../engine/ts/types.js";
-import { identityEffect, effectFromSummaries } from "../../compile/effects.js";
+import * as ts from "typescript";
+import type { EffectSummaryLike } from "../../lang/effect-ir.js";
+import { effectFromSummaries, identityEffect } from "../../lang/effect-ir.js";
 
 export function exitsWithoutEffects(statement: ts.Statement): boolean {
   if (ts.isReturnStatement(statement)) return true;
@@ -49,8 +49,8 @@ export function guardedRestEffect(
   condition: ExprIR,
   thenExits: boolean,
   elseExits: boolean,
-  restSummaries: readonly EffectSummary[],
-): { summaries: EffectSummary[]; terminated: boolean } | undefined {
+  restSummaries: readonly EffectSummaryLike[],
+): { summaries: EffectSummaryLike[]; terminated: boolean } | undefined {
   const restEffect = effectFromSummaries(restSummaries);
   if (restEffect.kind === "seq" && restEffect.effects.length === 0) {
     return { summaries: [], terminated: thenExits || elseExits };

@@ -1,25 +1,31 @@
-import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
+import { createTypePlugin } from "modality-ts/extract/plugins";
+import * as ts from "typescript";
 import type {
-  DomainRefinementContext,
-  DomainRefinementProvider,
-  DomainRefinementResolution,
-} from "modality-ts/extract/engine/spi";
+  TypePlugin,
+  TypeRefinementContext,
+  TypeRefinementResolution,
+} from "../../engine/spi/type-plugin.js";
 import { unprovableNumericDomainCaveat } from "../../engine/ts/caveats.js";
 import { sourceAnchorFromNode } from "../../engine/ts/domain-refinements.js";
+import {
+  sourceFileFromRefinementContext,
+  tsExpressionFromRefinementContext,
+  tsTypeNodeFromRefinementContext,
+} from "../../engine/ts/type-refinement-bridge.js";
 
-export function zodDomainRefinementProvider(): DomainRefinementProvider {
-  return {
+export function zodTypePlugin(): TypePlugin {
+  return createTypePlugin({
     id: "zod",
     version: "0.1.0",
     packageNames: ["zod"],
     refineDomain: resolveZodSchema,
-  };
+  });
 }
 
 function resolveZodSchema(
-  ctx: DomainRefinementContext,
-): DomainRefinementResolution | undefined {
+  ctx: TypeRefinementContext,
+): TypeRefinementResolution | undefined {
   const inferredExpression = schemaExpressionFromZodInfer(ctx);
   const expression = inferredExpression ?? expressionFromContext(ctx);
   if (!expression || !ts.isExpression(expression)) return undefined;
@@ -37,7 +43,10 @@ function resolveZodSchema(
         unprovableNumericDomainCaveat(
           ctx.varId ?? "numeric",
           "Zod numeric schema uses dynamic bounds",
-          sourceAnchorFromNode(expression, ctx.sourceFile),
+          sourceAnchorFromNode(
+            expression,
+            sourceFileFromRefinementContext(ctx),
+          ),
         ),
       ],
     };
@@ -49,7 +58,7 @@ function resolveZodSchema(
       unprovableNumericDomainCaveat(
         ctx.varId ?? "numeric",
         "Unsupported or unprovable Zod numeric schema",
-        sourceAnchorFromNode(expression, ctx.sourceFile),
+        sourceAnchorFromNode(expression, sourceFileFromRefinementContext(ctx)),
       ),
     ],
   };
@@ -166,15 +175,15 @@ function domainFromZodNumberParse(
 }
 
 function expressionFromContext(
-  ctx: DomainRefinementContext,
+  ctx: TypeRefinementContext,
 ): ts.Expression | undefined {
-  return ctx.initializer;
+  return tsExpressionFromRefinementContext(ctx, ctx.initializer);
 }
 
 function schemaExpressionFromZodInfer(
-  ctx: DomainRefinementContext,
+  ctx: TypeRefinementContext,
 ): ts.Expression | undefined {
-  const typeNode = ctx.typeNode;
+  const typeNode = tsTypeNodeFromRefinementContext(ctx);
   if (
     !typeNode ||
     !ts.isTypeReferenceNode(typeNode) ||
@@ -199,7 +208,10 @@ function schemaExpressionFromZodInfer(
   ) {
     return undefined;
   }
-  return resolveConstInitializer(query.exprName.text, ctx.sourceFile);
+  return resolveConstInitializer(
+    query.exprName.text,
+    sourceFileFromRefinementContext(ctx),
+  );
 }
 
 function resolveConstInitializer(

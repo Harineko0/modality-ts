@@ -1,8 +1,8 @@
 import { type } from "arktype";
-import { parseSubscriptionDraft } from "../domain/subscription.ark.js";
+import { seedApprovalRequests } from "../../fixtures/domain/fixtures.js";
 import type { ApprovalRequest, SubscriptionDraft } from "../domain/approval.js";
 import { isSeatCountValidForPlan } from "../domain/plan.js";
-import { seedApprovalRequests } from "../../fixtures/domain/fixtures.js";
+import { parseSubscriptionDraft } from "../domain/subscription.ark.js";
 
 export function validateSubscriptionDraft(
   input: unknown,

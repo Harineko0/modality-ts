@@ -108,6 +108,7 @@ export type SurfaceStmt =
       target: SurfaceLValue;
       op: AssignOp;
       value: SurfaceExpr;
+      origin: NodeRef;
     }
   | { kind: "declare"; bindings: SurfaceBinding[] }
   | { kind: "expr"; expr: SurfaceExpr }

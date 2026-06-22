@@ -1,21 +1,21 @@
 "use client";
 
-import { useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
-import { loginFormSchema } from "../../../../shared/features/auth/domain/session.schema.js";
+import { useState } from "react";
 import {
   permissionsForRole,
   roleHasPermission,
 } from "../../../../shared/features/auth/domain/rbac.js";
+import { loginFormSchema } from "../../../../shared/features/auth/domain/session.schema.js";
+import type { Role } from "../../../../shared/features/fixtures/domain/fixtures.js";
+import { api } from "../../../features/auth/infra/api.js";
 import {
   loginStatusAtom,
   permissionCacheAtom,
   returnToAtom,
   sessionAtom,
 } from "../../../features/auth/state/session-atoms.js";
-import { api } from "../../../features/auth/infra/api.js";
-import type { Role } from "../../../../shared/features/fixtures/domain/fixtures.js";
 
 const roles: Role[] = ["analyst", "manager", "admin"];
 

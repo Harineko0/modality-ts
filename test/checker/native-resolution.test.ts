@@ -1,12 +1,12 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   candidateNativeFilenames,
-  resolveNativeBinaryInDirs,
   type NativeRuntime,
+  resolveNativeBinaryInDirs,
 } from "../../src/check/native.js";
-import { describe, expect, it } from "vitest";
 
 function touch(dir: string, filename: string): void {
   writeFileSync(join(dir, filename), "");

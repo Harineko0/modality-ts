@@ -4,7 +4,8 @@ export const AccountList = {
   // transitions
   onChange: {
     selectedAccountAtom: {
-      unrepresentable: "AccountList.onChange.selectedAccountAtom.unrepresentable" as TransitionRef<"AccountList.onChange.selectedAccountAtom.unrepresentable">,
+      unrepresentable:
+        "AccountList.onChange.selectedAccountAtom.unrepresentable" as TransitionRef<"AccountList.onChange.selectedAccountAtom.unrepresentable">,
     },
   },
 };

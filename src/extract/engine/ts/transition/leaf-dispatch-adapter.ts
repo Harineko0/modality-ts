@@ -1,4 +1,14 @@
-
+import type {
+  SurfaceCall,
+  SurfaceExpr,
+  SurfaceNode,
+} from "../../../lang/ts/surface-ir.js";
+import type {
+  EffectPlugin,
+  FrameworkPlugin,
+  RoutePlugin,
+  StateSourcePlugin,
+} from "../../spi/index.js";
 import type {
   CompileCtx,
   LeafDispatch,
@@ -7,20 +17,13 @@ import type {
   RankedLeafEffect,
 } from "../../spi/leaf-dispatch.js";
 import { mergeLeafEffects } from "../../spi/leaf-dispatch.js";
-import type { SurfaceCall, SurfaceExpr, SurfaceNode } from "../../spi/surface-ir.js";
-import type {
-  EffectModelProvider,
-  FrameworkPlugin,
-  NavigationAdapter,
-  StateSourcePlugin,
-} from "../../spi/index.js";
 import type { SetterBinding } from "../types.js";
 
 export interface LeafDispatchAdapterOptions {
   framework?: FrameworkPlugin;
-  sourcePlugins?: readonly StateSourcePlugin[];
-  navigation?: NavigationAdapter;
-  effectModels?: readonly EffectModelProvider[];
+  statePlugins?: readonly StateSourcePlugin[];
+  navigation?: RoutePlugin;
+  effectModels?: readonly EffectPlugin[];
   setters: Map<string, SetterBinding>;
   resolveCallName: (call: SurfaceCall) => string | undefined;
   resolveSetterWrite: (
@@ -39,6 +42,7 @@ export interface LeafDispatchAdapterOptions {
     call: SurfaceCall,
     ctx: CompileCtx,
   ) => LeafEffect | undefined;
+  interpretAssignment?: LeafDispatch["interpretAssignment"];
 }
 
 function collectCallClaims(
@@ -63,17 +67,17 @@ function collectCallClaims(
   );
   push(
     "state-write",
-    options.sourcePlugins?.[0]?.id ?? "state",
+    options.statePlugins?.[0]?.id ?? "state",
     options.resolveSetterWrite(call, ctx),
   );
   push(
-    "navigation",
-    options.navigation?.id ?? "navigation",
+    "route",
+    options.navigation?.id ?? "route",
     options.resolveNavigation(call, ctx),
   );
   push(
-    "effect-model",
-    options.effectModels?.[0]?.id ?? "effect-model",
+    "effect",
+    options.effectModels?.[0]?.id ?? "effect",
     options.resolveEffectModel(call, ctx),
   );
   return claims;
@@ -81,33 +85,39 @@ function collectCallClaims(
 
 function defaultLeafEffect(
   call: SurfaceCall,
+  ctx: CompileCtx,
   options: LeafDispatchAdapterOptions,
 ): LeafEffect {
   const callee = options.resolveCallName(call) ?? "unknown";
-  const escaped = [...options.setters.values()].filter((setter) =>
-    callee.includes(setter.stateName),
-  );
+  const escaped = [...options.setters.entries()]
+    .filter(
+      ([setterName, setter]) =>
+        callee.includes(setter.stateName) ||
+        call.args.some(
+          (arg) =>
+            arg.kind === "ref" &&
+            (arg.symbol.name === setterName ||
+              ctx.locals.get(arg.symbol.name)?.setter === setter),
+        ),
+    )
+    .map(([, setter]) => setter);
   if (escaped.length === 0) {
     return {
       effect: { kind: "seq", effects: [] },
-      caveats: [
-        {
-          kind: "model-slack",
-          id: "unknown-call",
-          reason: `Unknown call ${callee}`,
-          severity: "over-approx",
-        },
-      ],
+      caveats: [],
     };
   }
   return {
-    effect: {
-      kind: "seq",
-      effects: escaped.map((setter) => ({
-        kind: "havoc" as const,
-        var: setter.varId,
-      })),
-    },
+    effect:
+      escaped.length === 1
+        ? { kind: "havoc", var: escaped[0]!.varId }
+        : {
+            kind: "seq",
+            effects: escaped.map((setter) => ({
+              kind: "havoc" as const,
+              var: setter.varId,
+            })),
+          },
     caveats: [
       {
         kind: "model-slack",
@@ -127,10 +137,26 @@ export function createLeafDispatchAdapter(
       const claims = collectCallClaims(call, ctx, options);
       const merged = mergeLeafEffects(claims);
       if (merged) return merged;
-      return defaultLeafEffect(call, options);
+      return defaultLeafEffect(call, ctx, options);
     },
 
+    ...(options.interpretAssignment
+      ? { interpretAssignment: options.interpretAssignment }
+      : {}),
+
     interpretExpr(expr: SurfaceExpr, ctx: CompileCtx) {
+      if (expr.kind === "ref") {
+        const setter =
+          options.setters.get(expr.symbol.name) ??
+          ctx.locals.get(expr.symbol.name)?.setter;
+        if (setter) {
+          return {
+            expr: { kind: "lit", value: null },
+            reads: [],
+            setter,
+          };
+        }
+      }
       if (expr.kind !== "call") return undefined;
       const leaf = this.interpretCall?.(expr, ctx);
       if (leaf?.effect.kind !== "assign") return undefined;

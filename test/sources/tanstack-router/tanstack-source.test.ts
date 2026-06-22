@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { tanstackRouterAdapter } from "modality-ts/extract/sources/tanstack-router";
+import { describe, expect, it } from "vitest";
 import {
   navigate,
   observe,
@@ -7,7 +7,7 @@ import {
 } from "../../../src/extract/sources/tanstack-router/harness.js";
 
 describe("tanstack router source plugin", () => {
-  it("exposes a NavigationAdapter-compatible source slice", () => {
+  it("exposes a RoutePlugin-compatible source slice", () => {
     const plugin = tanstackRouterAdapter({ historyMaxLen: 2 });
     expect(plugin.id).toBe("tanstack-router");
     expect(plugin.packageNames).toEqual(["@tanstack/react-router"]);

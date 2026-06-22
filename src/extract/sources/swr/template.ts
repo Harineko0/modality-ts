@@ -1,4 +1,3 @@
-import { canonicalJson, enumerateDomain } from "modality-ts/core";
 import type {
   AbstractDomain,
   ExprIR,
@@ -8,6 +7,7 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import { canonicalJson, enumerateDomain } from "modality-ts/core";
 import type { SourceDecl } from "modality-ts/extract/engine/spi";
 
 export interface SwrTemplateOptions {

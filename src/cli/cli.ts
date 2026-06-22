@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
 import os from "node:os";
-import { performance } from "node:perf_hooks";
 import { relative } from "node:path";
+import { performance } from "node:perf_hooks";
+import type {
+  CheckJobOptions,
+  ExtractJobOptions,
+  GenerateJobOptions,
+} from "./concurrency/jobs.js";
+import { createCommandPool } from "./concurrency/pool.js";
 import {
   artifactPathsForPropsFile,
   defaultActionReplayTestsDir,
@@ -20,11 +26,11 @@ import {
   inferExtractTargetsFromProps,
   inferSourceFilesFromProps,
 } from "./defaults.js";
-import {
-  renderHumanCheckTarget,
-  renderCheckSummary,
-} from "./features/check/index.js";
 import type { HumanCheckTargetResult } from "./features/check/index.js";
+import {
+  renderCheckSummary,
+  renderHumanCheckTarget,
+} from "./features/check/index.js";
 import { renderHumanCiResult, runCiCommand } from "./features/ci/index.js";
 import {
   renderHumanConformResult,
@@ -34,22 +40,16 @@ import {
   renderHumanExportResult,
   runExportTlaCommand,
 } from "./features/export/index.js";
+import type { HumanExtractTargetResult } from "./features/extract/index.js";
 import {
   renderExtractSummary,
   renderHumanExtractTarget,
 } from "./features/extract/index.js";
-import type { HumanExtractTargetResult } from "./features/extract/index.js";
+import type { HumanGenerateTargetResult } from "./features/generate/index.js";
 import {
   renderGenerateSummary,
   renderHumanGenerateTarget,
 } from "./features/generate/index.js";
-import type { HumanGenerateTargetResult } from "./features/generate/index.js";
-import { createCommandPool } from "./concurrency/pool.js";
-import type {
-  CheckJobOptions,
-  ExtractJobOptions,
-  GenerateJobOptions,
-} from "./concurrency/jobs.js";
 import {
   renderHumanInitResult,
   runInitCommand,
@@ -58,8 +58,8 @@ import {
   renderHumanReplayResult,
   runReplayCommand,
 } from "./features/replay/index.js";
-import { createReporter, runReport } from "./reporter/index.js";
 import type { ReporterTask } from "./reporter/index.js";
+import { createReporter, runReport } from "./reporter/index.js";
 
 function flagValue(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -598,7 +598,13 @@ async function main(): Promise<void> {
     });
     const sourcePaths = positionals(
       args.filter((arg) => arg !== "-A"),
-      ["--app-model", "--config", "--package-json", "--reporter", "--concurrency"],
+      [
+        "--app-model",
+        "--config",
+        "--package-json",
+        "--reporter",
+        "--concurrency",
+      ],
       ["--effect-api", "--disable-plugin"],
     );
     const appModelFlag = flagValue(args, "--app-model");
@@ -888,7 +894,8 @@ async function main(): Promise<void> {
           reportPath: reportPath ?? defaultReportPath,
           tracesDir: tracesFlag ?? defaultTracesDir,
           replayTestsDir: replayTestsFlag ?? defaultReplayTestsDir,
-          actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
+          actionReplayTestsDir:
+            actionReplayTestsFlag ?? defaultActionReplayTestsDir,
         },
       ];
     }
@@ -909,7 +916,8 @@ async function main(): Promise<void> {
         reportPath: reportPath ?? defaultReportPath,
         tracesDir: tracesFlag ?? defaultTracesDir,
         replayTestsDir: replayTestsFlag ?? defaultReplayTestsDir,
-        actionReplayTestsDir: actionReplayTestsFlag ?? defaultActionReplayTestsDir,
+        actionReplayTestsDir:
+          actionReplayTestsFlag ?? defaultActionReplayTestsDir,
       },
     ];
   }
@@ -952,9 +960,7 @@ async function main(): Promise<void> {
         const status =
           result.exitCode === 2
             ? "fail"
-            : entry.check.verdicts.some(
-                  (v) => v.status === "vacuous-warning",
-                )
+            : entry.check.verdicts.some((v) => v.status === "vacuous-warning")
               ? "warn"
               : "pass";
         return {

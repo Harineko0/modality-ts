@@ -1,9 +1,9 @@
 import type { ExprIR, Value } from "modality-ts/core";
-import type { SurfaceExpr, SymbolRef } from "../engine/spi/surface-ir.js";
 import type {
   CompileCtx,
   DataflowBinding,
 } from "../engine/spi/leaf-dispatch.js";
+import type { SurfaceExpr, SymbolRef } from "../lang/ts/surface-ir.js";
 
 export interface CompiledExpr {
   expr: ExprIR;
@@ -125,6 +125,21 @@ export function compileExpr(
     }
     case "member": {
       const object = compileExpr(expr.object, ctx);
+      if (
+        object?.expr.kind === "lit" &&
+        object.expr.value &&
+        typeof object.expr.value === "object" &&
+        !Array.isArray(object.expr.value) &&
+        expr.name in object.expr.value
+      ) {
+        return {
+          expr: {
+            kind: "lit",
+            value: (object.expr.value as Record<string, Value>)[expr.name],
+          },
+          reads: object.reads,
+        };
+      }
       if (object?.expr.kind !== "read") return undefined;
       return {
         expr: {

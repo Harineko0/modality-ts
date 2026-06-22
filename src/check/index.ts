@@ -10,17 +10,6 @@ import {
   targetedAlwaysStepTransitionIds,
 } from "./slicing/slice-model.js";
 
-export { checkModel };
-export { modelInitialStates, modelSuccessors };
-export {
-  canSliceAllProperties,
-  canSliceProperty,
-  propertySliceMode,
-  sliceModel,
-  sliceModelForCheckProperty,
-  sliceModelForProperty,
-  targetedAlwaysStepTransitionIds,
-};
 export type {
   CheckDiagnostics,
   CheckOptions,
@@ -31,6 +20,18 @@ export type {
   PropertyVerdict,
   SliceSummary,
 } from "./types.js";
+export {
+  canSliceAllProperties,
+  canSliceProperty,
+  checkModel,
+  modelInitialStates,
+  modelSuccessors,
+  propertySliceMode,
+  sliceModel,
+  sliceModelForCheckProperty,
+  sliceModelForProperty,
+  targetedAlwaysStepTransitionIds,
+};
 
 export const checkApi = {
   checkModel,

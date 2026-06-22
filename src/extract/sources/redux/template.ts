@@ -5,7 +5,7 @@ import type {
   Value,
 } from "modality-ts/core";
 import type { SourceDecl } from "modality-ts/extract/engine/spi";
-import { queryVarId, mutationVarId } from "./ids.js";
+import { mutationVarId, queryVarId } from "./ids.js";
 import {
   mutationMetadataFromRecord,
   queryMetadataFromRecord,
@@ -37,8 +37,18 @@ export function createReduxQueryTemplate(
     declOriginFile(metadata) !== undefined
       ? [{ file: declOriginFile(metadata)! }]
       : [];
-  const statusVar = queryVarId(metadata.apiName, metadata.endpoint, metadata.keyId, "status");
-  const dataVar = queryVarId(metadata.apiName, metadata.endpoint, metadata.keyId, "data");
+  const statusVar = queryVarId(
+    metadata.apiName,
+    metadata.endpoint,
+    metadata.keyId,
+    "status",
+  );
+  const dataVar = queryVarId(
+    metadata.apiName,
+    metadata.endpoint,
+    metadata.keyId,
+    "data",
+  );
   const fetchVar = queryVarId(
     metadata.apiName,
     metadata.endpoint,
@@ -55,7 +65,11 @@ export function createReduxQueryTemplate(
       effect: {
         kind: "seq",
         effects: [
-          { kind: "assign", var: statusVar, expr: { kind: "lit", value: "pending" } },
+          {
+            kind: "assign",
+            var: statusVar,
+            expr: { kind: "lit", value: "pending" },
+          },
           { kind: "assign", var: fetchVar, expr: { kind: "lit", value: true } },
         ],
       },
@@ -72,9 +86,21 @@ export function createReduxQueryTemplate(
       effect: {
         kind: "seq",
         effects: [
-          { kind: "assign", var: statusVar, expr: { kind: "lit", value: "fulfilled" } },
-          { kind: "assign", var: dataVar, expr: { kind: "freshToken", domainOf: dataVar } },
-          { kind: "assign", var: fetchVar, expr: { kind: "lit", value: false } },
+          {
+            kind: "assign",
+            var: statusVar,
+            expr: { kind: "lit", value: "fulfilled" },
+          },
+          {
+            kind: "assign",
+            var: dataVar,
+            expr: { kind: "freshToken", domainOf: dataVar },
+          },
+          {
+            kind: "assign",
+            var: fetchVar,
+            expr: { kind: "lit", value: false },
+          },
         ],
       },
       reads: [],
@@ -125,7 +151,12 @@ function queryVar(
   metadata: NonNullable<ReturnType<typeof queryMetadataFromRecord>>,
   initial: Value,
 ): StateVarDecl {
-  const id = queryVarId(metadata.apiName, metadata.endpoint, metadata.keyId, field);
+  const id = queryVarId(
+    metadata.apiName,
+    metadata.endpoint,
+    metadata.keyId,
+    field,
+  );
   return {
     id,
     domain:

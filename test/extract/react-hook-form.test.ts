@@ -1,8 +1,8 @@
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { reactHookFormSource } from "../../src/extract/sources/react-hook-form/index.js";
 import { callbackEffect } from "../../src/extract/engine/ts/transition/callback-effects.js";
-import * as ts from "typescript";
+import { unwrapReactHookFormHandler } from "../../src/extract/sources/react-hook-form/unwrap.js";
 
 // ---------------------------------------------------------------------------
 // Unit: adapter unwrap
@@ -18,7 +18,7 @@ function parseSource(text: string): ts.SourceFile {
   );
 }
 
-describe("reactHookFormSource adapter", () => {
+describe("reactHookForm unwrap", () => {
   it("unwraps form.handleSubmit(cb) to the inner callback", () => {
     const source = parseSource(`
       import { useForm } from "react-hook-form";
@@ -29,7 +29,7 @@ describe("reactHookFormSource adapter", () => {
         });
       }
     `);
-    const adapter = reactHookFormSource();
+    const adapter = { unwrapHandler: unwrapReactHookFormHandler };
     let result: ts.ArrowFunction | undefined;
     const visit = (node: ts.Node): void => {
       if (
@@ -58,7 +58,7 @@ describe("reactHookFormSource adapter", () => {
         const onSubmit = handleSubmit((values) => {});
       }
     `);
-    const adapter = reactHookFormSource();
+    const adapter = { unwrapHandler: unwrapReactHookFormHandler };
     let result: ts.ArrowFunction | undefined;
     const visit = (node: ts.Node): void => {
       if (
@@ -85,7 +85,7 @@ describe("reactHookFormSource adapter", () => {
         const handler = debounce(() => {});
       }
     `);
-    const adapter = reactHookFormSource();
+    const adapter = { unwrapHandler: unwrapReactHookFormHandler };
     let result: unknown;
     const visit = (node: ts.Node): void => {
       if (
@@ -157,7 +157,6 @@ describe("extractReactSourceTransitions with react-hook-form handleSubmit", () =
     const result = extractReactSourceTransitions(APPROVAL_FIXTURE, {
       fileName: "ApiAuthorization.Valid.tsx",
       effectApis: ["approveRequest", "declineRequest"],
-      handlerWrapperProviders: [reactHookFormSource()],
     });
 
     const unextractableWarnings = result.warnings.filter(
@@ -173,7 +172,6 @@ describe("extractReactSourceTransitions with react-hook-form handleSubmit", () =
     const result = extractReactSourceTransitions(APPROVAL_FIXTURE, {
       fileName: "ApiAuthorization.Valid.tsx",
       effectApis: ["approveRequest", "declineRequest"],
-      handlerWrapperProviders: [reactHookFormSource()],
     });
 
     const approvalStateVar = result.vars.find((v) =>
@@ -201,7 +199,6 @@ describe("extractReactSourceTransitions with react-hook-form handleSubmit", () =
     const result = extractReactSourceTransitions(APPROVAL_FIXTURE, {
       fileName: "ApiAuthorization.Valid.tsx",
       effectApis: ["approveRequest", "declineRequest"],
-      handlerWrapperProviders: [reactHookFormSource()],
     });
 
     const enqueue = result.transitions.find(
@@ -227,7 +224,6 @@ describe("extractReactSourceTransitions with react-hook-form handleSubmit", () =
     const result = extractReactSourceTransitions(APPROVAL_FIXTURE, {
       fileName: "ApiAuthorization.Valid.tsx",
       effectApis: ["approveRequest", "declineRequest"],
-      handlerWrapperProviders: [reactHookFormSource()],
     });
 
     const approvalStateVar = result.vars.find((v) =>

@@ -1,11 +1,12 @@
 import type { EffectIR, StateVarDecl } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
   WriteChannel,
 } from "modality-ts/extract/engine/spi";
 import { extractSharedReactTransitions } from "../shared/react-transition-extract.js";
 import type { ExtractedModelSkeleton } from "../use-state/types.js";
+import { reduxSource } from "./plugin.js";
 import { discoverReduxStoresDetailed } from "./store.js";
 import {
   discoverReduxSafetyWarnings,
@@ -13,7 +14,6 @@ import {
   discoverReduxWritesDetailed,
   primeReduxDiscovery,
 } from "./writes.js";
-import { reduxSource } from "./plugin.js";
 
 export interface ReduxExtractionOptions {
   route?: string;
@@ -22,8 +22,8 @@ export interface ReduxExtractionOptions {
   routePatterns?: readonly string[];
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly WriteChannel[];
-  sourcePlugins?: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
+  statePlugins?: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
 }
 
 export function extractReduxSkeleton(
@@ -45,7 +45,7 @@ export function extractReduxSkeleton(
     ...discoverReduxWriteChannels(sourceText, fileName),
     ...(options.writeChannels ?? []),
   ];
-  const sourcePlugins = [reduxSource(), ...(options.sourcePlugins ?? [])];
+  const statePlugins = [reduxSource(), ...(options.statePlugins ?? [])];
   const safetyWarnings = discoverReduxSafetyWarnings(sourceText, fileName).map(
     (warning) => ({
       message: warning.message,
@@ -80,9 +80,9 @@ export function extractReduxSkeleton(
     routePatterns: options.routePatterns ?? [],
     stateVars: vars,
     ...(writeChannels.length > 0 ? { writeChannels } : {}),
-    sourcePlugins,
+    statePlugins,
     setterFixedEffects: writeDiscovery.dispatchFixedEffects,
-    ...(options.routerPlugin ? { routerPlugin: options.routerPlugin } : {}),
+    ...(options.routePlugin ? { routePlugin: options.routePlugin } : {}),
   });
   return {
     vars,

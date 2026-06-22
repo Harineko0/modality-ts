@@ -1,8 +1,8 @@
-import * as ts from "typescript";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { describe, expect, it } from "vitest";
 import type { Model } from "modality-ts/core";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 import { emitAppModel } from "../../src/cli/codegen/model.js";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 
 describe("emitAppModel", () => {
   it("emits a type-checkable app.model.ts with typed vars and initial state", () => {

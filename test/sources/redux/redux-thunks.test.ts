@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import { reduxSource } from "modality-ts/extract/sources/redux";
-import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
+import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
 import { discoverReduxStoresDetailed } from "../../../src/extract/sources/redux/store.js";
 import { discoverStaticThunks } from "../../../src/extract/sources/redux/thunks.js";
-import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
-import * as ts from "typescript";
+import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
 
 describe("Redux thunks", () => {
   it("lowers static thunk dispatches sequentially", () => {
@@ -25,7 +25,12 @@ describe("Redux thunks", () => {
         dispatch(addTwo());
       };
     `;
-    const file = ts.createSourceFile("thunk.ts", source, ts.ScriptTarget.Latest, true);
+    const file = ts.createSourceFile(
+      "thunk.ts",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+    );
     const imports = resolveReduxImports(file);
     const discovery = discoverReduxStoresDetailed(source, "thunk.ts");
     const thunks = discoverStaticThunks(file, imports, discovery);

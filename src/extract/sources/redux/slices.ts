@@ -1,16 +1,16 @@
-import * as ts from "typescript";
 import type { EffectIR } from "modality-ts/core";
+import * as ts from "typescript";
+import { literalValue } from "../../engine/ts/ast.js";
+import { propertyNameFromMember } from "./domains.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import {
-  isCreateReducerCall,
-  isCreateSliceCall,
   isCreateActionCall,
   isCreateAsyncThunkCall,
+  isCreateReducerCall,
+  isCreateSliceCall,
 } from "./imports.js";
-import { propertyNameFromMember } from "./domains.js";
-import { lowerReducerCase, havocSliceVars } from "./reducers.js";
 import type { ReducerLoweringContext } from "./reducers.js";
-import { literalValue } from "../../engine/ts/ast.js";
+import { havocSliceVars, lowerReducerCase } from "./reducers.js";
 
 export interface ReduxSliceDefinition {
   varName: string;
@@ -85,8 +85,14 @@ export function collectActionCreators(
     ) {
       const typeArg = node.initializer.arguments[0];
       if (ts.isStringLiteral(typeArg)) {
-        actions.set(node.name.text, { type: typeArg.text, creatorName: node.name.text });
-        actions.set(typeArg.text, { type: typeArg.text, creatorName: node.name.text });
+        actions.set(node.name.text, {
+          type: typeArg.text,
+          creatorName: node.name.text,
+        });
+        actions.set(typeArg.text, {
+          type: typeArg.text,
+          creatorName: node.name.text,
+        });
       }
     }
     if (
@@ -126,7 +132,8 @@ export function lowerSliceActionEffects(
     warnings: [],
   };
   for (const [caseName, caseFn] of slice.reducerCases) {
-    const actionType = slice.actionTypes.get(caseName) ?? `${slice.sliceName}/${caseName}`;
+    const actionType =
+      slice.actionTypes.get(caseName) ?? `${slice.sliceName}/${caseName}`;
     const effect = lowerReducerCase(caseFn, ctx);
     if (effect !== "unsupported") {
       effects.set(actionType, effect);
@@ -157,10 +164,16 @@ function parseCreateSlice(
   if (!config || !ts.isObjectLiteralExpression(config)) return undefined;
   let sliceName = varName;
   let initialState: ts.ObjectLiteralExpression | undefined;
-  const reducerCases = new Map<string, ts.ArrowFunction | ts.FunctionExpression>();
+  const reducerCases = new Map<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >();
   const actionTypes = new Map<string, string>();
   const actionCreators = new Map<string, string>();
-  const extraReducerCases = new Map<string, ts.ArrowFunction | ts.FunctionExpression>();
+  const extraReducerCases = new Map<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >();
   const asyncThunkPrefixes: string[] = [];
 
   for (const prop of config.properties) {
@@ -170,11 +183,19 @@ function parseCreateSlice(
     if (name === "name" && ts.isStringLiteral(prop.initializer)) {
       sliceName = prop.initializer.text;
     }
-    if (name === "initialState" && ts.isObjectLiteralExpression(prop.initializer)) {
+    if (
+      name === "initialState" &&
+      ts.isObjectLiteralExpression(prop.initializer)
+    ) {
       initialState = prop.initializer;
     }
     if (name === "reducers") {
-      parseReducersObject(prop.initializer, sliceName, reducerCases, actionTypes);
+      parseReducersObject(
+        prop.initializer,
+        sliceName,
+        reducerCases,
+        actionTypes,
+      );
     }
     if (name === "extraReducers") {
       parseExtraReducers(prop.initializer, extraReducerCases);
@@ -200,8 +221,13 @@ function parseCreateReducer(
 ): ReduxSliceDefinition | undefined {
   const initial = call.arguments[0];
   const builder = call.arguments[1];
-  const initialState = ts.isObjectLiteralExpression(initial) ? initial : undefined;
-  const extraReducerCases = new Map<string, ts.ArrowFunction | ts.FunctionExpression>();
+  const initialState = ts.isObjectLiteralExpression(initial)
+    ? initial
+    : undefined;
+  const extraReducerCases = new Map<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression
+  >();
   if (builder) parseExtraReducers(builder, extraReducerCases);
   return {
     varName,
@@ -263,7 +289,8 @@ function parseReducersObject(
     ts.isIdentifier(expr.expression) &&
     expr.expression.text === "create" &&
     expr.arguments[0] &&
-    (ts.isArrowFunction(expr.arguments[0]) || ts.isFunctionExpression(expr.arguments[0]))
+    (ts.isArrowFunction(expr.arguments[0]) ||
+      ts.isFunctionExpression(expr.arguments[0]))
   ) {
     const callback = expr.arguments[0];
     const body = callback.body;
@@ -330,13 +357,12 @@ function parseBuilderChain(
   }
 }
 
-function resolveActionType(expr: ts.Expression | undefined): string | undefined {
+function resolveActionType(
+  expr: ts.Expression | undefined,
+): string | undefined {
   if (!expr) return undefined;
   if (ts.isStringLiteral(expr)) return expr.text;
-  if (
-    ts.isPropertyAccessExpression(expr) &&
-    ts.isIdentifier(expr.expression)
-  ) {
+  if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
     if (expr.name.text === "type") {
       return `${expr.expression.text}.type`;
     }

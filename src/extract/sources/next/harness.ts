@@ -1,9 +1,9 @@
+import type { Value } from "modality-ts/core";
 import type {
   HarnessCtx,
   HarnessHooks,
   ObservedRead,
 } from "modality-ts/extract/engine/spi";
-import type { Value } from "modality-ts/core";
 
 export interface NextHarnessHooks extends HarnessHooks {
   route: string;

@@ -1,6 +1,6 @@
+import type { RouteInventory } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
-import type { RouteInventory } from "modality-ts/extract/engine/spi";
 import { tanstackRouterAdapter } from "./index.js";
 import {
   classifyNavigationCall,
@@ -189,7 +189,7 @@ describe("tanstack navigation extraction", () => {
         route: "/posts",
         fileName: "src/routes/posts/index.tsx",
         routePatterns,
-        routerPlugin: adapter,
+        routePlugin: adapter,
         inventory: postsInventory,
       },
     );
@@ -210,7 +210,7 @@ describe("tanstack navigation extraction", () => {
         route: "/posts",
         fileName: "src/routes/posts/index.tsx",
         routePatterns,
-        routerPlugin: adapter,
+        routePlugin: adapter,
         inventory: postsInventory,
       },
     );

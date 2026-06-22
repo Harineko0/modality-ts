@@ -1,6 +1,6 @@
 import type { Locator, Transition } from "modality-ts/core";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "../../spi/index.js";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
 import { lineAndColumn } from "../ast.js";
 import { safeId, uniqueStrings } from "../ids.js";
 import type { BoundExpr, ExtractableHandler, SetterBinding } from "../types.js";
@@ -123,9 +123,11 @@ export function sequentialTransitionFromHandler(
   if (
     summaries.length === 1 &&
     onlySummary &&
-    onlySummary.effect.kind === "assign" &&
-    !onlySummary.effect.var.startsWith("sys:timer:") &&
-    valueSuffix === undefined
+    valueSuffix === undefined &&
+    (onlySummary.effect.kind === "assign" ||
+      onlySummary.effect.kind === "havoc") &&
+    (onlySummary.effect.kind !== "assign" ||
+      !onlySummary.effect.var.startsWith("sys:timer:"))
   ) {
     return undefined;
   }

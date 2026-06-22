@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { reachable } from "../helpers/property-builders.js";
-import { eq, lit, readVar, type Model } from "modality-ts/core";
+import { eq, lit, type Model, readVar } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { extractUseStateSkeleton } from "../../src/extract/sources/use-state/transitions.js";
+import { reachable } from "../helpers/property-builders.js";
 
 function skeletonModel(
   result: ReturnType<typeof extractUseStateSkeleton>,

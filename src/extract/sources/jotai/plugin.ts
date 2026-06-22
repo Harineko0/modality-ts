@@ -1,41 +1,60 @@
+import type { EffectIR } from "modality-ts/core";
 import type {
   CallSite,
   M0Ctx,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
-import type { EffectIR } from "modality-ts/core";
-import * as harness from "./harness.js";
+import { createStateSourcePlugin } from "modality-ts/extract/plugins";
+import type {
+  ChannelCtxWithTypes,
+  DiscoverCtxWithTypes,
+} from "../../engine/ts/plugin-context.js";
+import { decodeJotaiBinding } from "./decode-binding.js";
 import { discoverJotaiAtomsDetailed } from "./discover.js";
+import * as harness from "./harness.js";
 import {
   discoverJotaiSafetyWarnings,
   discoverJotaiWriteChannels,
 } from "./writes.js";
-import { decodeJotaiBinding } from "./decode-binding.js";
 
 export function jotaiSource(): StateSourcePlugin {
-  return {
+  return createStateSourcePlugin({
     id: "jotai",
     version: "0.1.0",
     packageNames: ["jotai"],
-    discover: (ctx) =>
-      discoverJotaiAtomsDetailed(
+    discover: (ctx) => {
+      const typed = ctx as DiscoverCtxWithTypes;
+      return discoverJotaiAtomsDetailed(
         ctx.sourceText,
         ctx.fileName,
-        ctx.types,
-        ctx.domainRefinements,
+        typed.types,
+        ctx.typePlugins,
         ctx.relatedFragments,
-      ).decls,
-    writeChannels: (ctx) =>
-      discoverJotaiWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
-    safetyWarnings: (ctx) =>
-      discoverJotaiSafetyWarnings(ctx.sourceText, ctx.fileName, ctx.types),
+      ).decls;
+    },
+    writeChannels: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverJotaiWriteChannels(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+      );
+    },
+    safetyWarnings: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverJotaiSafetyWarnings(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+      );
+    },
     decodeBinding: decodeJotaiBinding,
     summarizeWrite: summarizeJotaiWrite,
     harness,
     conformance: {
       testedVersions: "jotai>=2",
     },
-  };
+  });
 }
 
 function summarizeJotaiWrite(

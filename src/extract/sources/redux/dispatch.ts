@@ -1,10 +1,10 @@
-import * as ts from "typescript";
-import type { CallSite, M0Ctx } from "modality-ts/extract/engine/spi";
 import type { EffectIR } from "modality-ts/core";
+import type { CallSite, M0Ctx } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
+import { storeVarId } from "./ids.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import { isBindActionCreatorsCall } from "./imports.js";
 import { havocSliceVars, type ReducerLoweringContext } from "./reducers.js";
-import { storeVarId } from "./ids.js";
 import type { DiscoverReduxResult } from "./store.js";
 import { anchor } from "./store.js";
 
@@ -94,7 +94,7 @@ export function effectForDispatchedAction(
 
 export function discoverDispatchBindings(
   source: ts.SourceFile,
-  fileName: string,
+  _fileName: string,
   imports: ReduxResolvedImports,
   discovery: DiscoverReduxResult,
 ): Map<string, EffectIR> {

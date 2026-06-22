@@ -1,6 +1,6 @@
 import {
-  canonicalJson,
   type AbstractDomain,
+  canonicalJson,
   type Model,
   type StateVarDecl,
   type Value,

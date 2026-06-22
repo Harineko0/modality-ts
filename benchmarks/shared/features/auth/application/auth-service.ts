@@ -1,13 +1,13 @@
+import type { Role } from "../../fixtures/domain/fixtures.js";
+import { seedSessions } from "../../fixtures/domain/fixtures.js";
 import { permissionsForRole, roleHasPermission } from "../domain/rbac.js";
-import { loginFormSchema } from "../domain/session.schema.js";
 import type {
   LoginCredentials,
   PermissionCache,
   RoleAssignment,
   Session,
 } from "../domain/session.js";
-import type { Role } from "../../fixtures/domain/fixtures.js";
-import { seedSessions } from "../../fixtures/domain/fixtures.js";
+import { loginFormSchema } from "../domain/session.schema.js";
 
 export type AuthResult =
   | { ok: true; session: Session; permissions: PermissionCache }

@@ -1,13 +1,12 @@
 import { join } from "node:path";
-import * as ts from "typescript";
-import type { Transition, Value } from "modality-ts/core";
-import type { ExtractionCaveat } from "modality-ts/core";
+import type { ExtractionCaveat, Transition, Value } from "modality-ts/core";
 import type { RouteInventory } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
-import type { ExtractionWarning } from "../../engine/ts/types.js";
 import { safeId } from "../../engine/ts/ids.js";
 import { routeMountGuard } from "../../engine/ts/routes.js";
 import { locationEffect } from "../../engine/ts/transition/navigation.js";
+import type { ExtractionWarning } from "../../engine/ts/types.js";
 
 export interface NextConfigRedirect {
   source: string;

@@ -3,20 +3,20 @@ import {
   sliceModel,
   sliceModelForCheckProperty,
 } from "modality-ts/check";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { always, reachable } from "../helpers/property-builders.js";
 import {
   enabled,
   eq,
   lit,
+  type Model,
   mountGuardForScope,
   or,
   readVar,
   UNMOUNTED,
   validateModel,
-  type Model,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { always, reachable } from "../helpers/property-builders.js";
 
 const twoRoutes = { kind: "enum", values: ["/a", "/b"] } as const;
 const pendingOp = {

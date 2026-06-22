@@ -1,15 +1,15 @@
-import * as ts from "typescript";
 import type { EffectIR } from "modality-ts/core";
+import * as ts from "typescript";
+import { storeVarId } from "./ids.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import { isCreateAsyncThunkCall } from "./imports.js";
-import { havocSliceVars } from "./reducers.js";
 import type { ReducerLoweringContext } from "./reducers.js";
+import { havocSliceVars } from "./reducers.js";
 import type { DiscoverReduxResult } from "./store.js";
-import { storeVarId } from "./ids.js";
 
 export function discoverStaticThunks(
   source: ts.SourceFile,
-  imports: ReduxResolvedImports,
+  _imports: ReduxResolvedImports,
   discovery: DiscoverReduxResult,
 ): Map<string, EffectIR> {
   const thunks = new Map<string, EffectIR>();
@@ -49,7 +49,10 @@ function lowerStaticThunk(
     if (!ts.isExpressionStatement(statement)) continue;
     if (!ts.isCallExpression(statement.expression)) continue;
     const call = statement.expression;
-    if (!ts.isIdentifier(call.expression) || call.expression.text !== dispatchName) {
+    if (
+      !ts.isIdentifier(call.expression) ||
+      call.expression.text !== dispatchName
+    ) {
       return "unsupported";
     }
     const actionArg = call.arguments[0];
@@ -72,10 +75,7 @@ function unwrapThunkBody(
 ): ts.ArrowFunction | ts.FunctionExpression | undefined {
   const body = fn.body;
   if (ts.isBlock(body)) return fn;
-  if (
-    ts.isArrowFunction(body) ||
-    ts.isFunctionExpression(body)
-  ) {
+  if (ts.isArrowFunction(body) || ts.isFunctionExpression(body)) {
     return body;
   }
   if (ts.isParenthesizedExpression(body)) {
@@ -119,9 +119,13 @@ export function registerAsyncThunkLifecycle(
         for (const [sliceKey] of discovery.sliceKeysByStore.get(storeName) ??
           []) {
           const fieldVarIds = new Map<string, string>();
-          for (const field of discovery.storeFields.get(storeName)?.get(sliceKey) ??
-            []) {
-            fieldVarIds.set(field, storeVarId(storeName, `${sliceKey}.${field}`));
+          for (const field of discovery.storeFields
+            .get(storeName)
+            ?.get(sliceKey) ?? []) {
+            fieldVarIds.set(
+              field,
+              storeVarId(storeName, `${sliceKey}.${field}`),
+            );
           }
           const ctx: ReducerLoweringContext = {
             storeName,
@@ -161,7 +165,7 @@ export function thunkSafetyWarnings(
       if (!inner) return;
       const body = inner.body;
       if (!ts.isBlock(body)) return;
-      let hasDispatch = false;
+      let _hasDispatch = false;
       let hasUnsupported = false;
       for (const statement of body.statements) {
         if (
@@ -170,12 +174,9 @@ export function thunkSafetyWarnings(
           ts.isIdentifier(statement.expression.expression) &&
           statement.expression.expression.text === "dispatch"
         ) {
-          hasDispatch = true;
+          _hasDispatch = true;
           const actionArg = statement.expression.arguments[0];
-          if (
-            actionArg &&
-            !resolveThunkDispatchAction(actionArg, discovery)
-          ) {
+          if (actionArg && !resolveThunkDispatchAction(actionArg, discovery)) {
             hasUnsupported = true;
           }
         }

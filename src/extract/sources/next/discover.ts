@@ -7,14 +7,14 @@ import type {
   RouteNode,
 } from "modality-ts/extract/engine/spi";
 import {
-  nextRouteTreeToMetadata,
   type NextInterceptInfo,
   type NextPagesDataExport,
   type NextParam,
+  type NextRouterKind,
   type NextRouteStatus,
   type NextRouteTreeNode,
-  type NextRouterKind,
   type NextSegmentKind,
+  nextRouteTreeToMetadata,
 } from "./types.js";
 
 function isMetadataRecord(

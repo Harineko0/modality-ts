@@ -1,32 +1,50 @@
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import { createStateSourcePlugin } from "modality-ts/extract/plugins";
+import type {
+  ChannelCtxWithTypes,
+  DiscoverCtxWithTypes,
+} from "../../engine/ts/plugin-context.js";
 import * as harness from "./harness.js";
 import { discoverReduxStoresDetailed } from "./store.js";
+import { templateForReduxDecl } from "./template.js";
 import {
   discoverReduxSafetyWarnings,
   discoverReduxWriteChannels,
   primeReduxDiscovery,
   summarizeReduxWrite,
 } from "./writes.js";
-import { templateForReduxDecl } from "./template.js";
 
 export function reduxSource(): StateSourcePlugin {
-  return {
+  return createStateSourcePlugin({
     id: "redux",
     version: "0.1.0",
     packageNames: ["@reduxjs/toolkit", "react-redux", "redux"],
-    discover: (ctx) =>
-      discoverReduxStoresDetailed(
+    discover: (ctx) => {
+      const typed = ctx as DiscoverCtxWithTypes;
+      return discoverReduxStoresDetailed(
         ctx.sourceText,
         ctx.fileName,
-        ctx.types,
-        ctx.domainRefinements,
-      ).decls,
-    writeChannels: (ctx) => {
-      primeReduxDiscovery(ctx.sourceText, ctx.fileName, ctx.types);
-      return discoverReduxWriteChannels(ctx.sourceText, ctx.fileName, ctx.types);
+        typed.types,
+        ctx.typePlugins,
+      ).decls;
     },
-    safetyWarnings: (ctx) =>
-      discoverReduxSafetyWarnings(ctx.sourceText, ctx.fileName, ctx.types),
+    writeChannels: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      primeReduxDiscovery(ctx.sourceText, ctx.fileName, typed.types);
+      return discoverReduxWriteChannels(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+      );
+    },
+    safetyWarnings: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverReduxSafetyWarnings(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+      );
+    },
     summarizeWrite: summarizeReduxWrite,
     template: (decl) => templateForReduxDecl(decl),
     harness,
@@ -34,7 +52,7 @@ export function reduxSource(): StateSourcePlugin {
       templateProbes: [],
       testedVersions: "@reduxjs/toolkit>=2,react-redux>=9,redux>=5",
     },
-  };
+  });
 }
 
 export default reduxSource;

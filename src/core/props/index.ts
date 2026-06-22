@@ -1,3 +1,4 @@
+import { mountGuardForScope } from "../ir/domains.js";
 import type {
   ExprIR,
   Model,
@@ -9,18 +10,17 @@ import type {
   TemporalFormula,
   Value,
 } from "../ir/types.js";
-import { mountGuardForScope } from "../ir/domains.js";
 import { exprReads } from "../ir/validator.js";
 import { isVariable, lift, type Operand, type Variable } from "./operand.js";
 import {
-  alwaysStep as registerAlwaysStep,
-  leadsToWithin as registerLeadsToWithin,
   type PendingSpec,
+  always as registerAlways,
+  alwaysStep as registerAlwaysStep,
+  inevitably as registerInevitably,
+  leadsToWithin as registerLeadsToWithin,
   property as registerProperty,
   reachable as registerReachable,
   reachableFrom as registerReachableFrom,
-  always as registerAlways,
-  inevitably as registerInevitably,
 } from "./registry.js";
 
 export { evalStatePredicate, StatePredicateEvalError } from "../ir/eval.js";
@@ -38,29 +38,28 @@ export type {
   TemporalFormula,
   Value,
 } from "../ir/types.js";
+export type { FairnessConstraint as FormulaFairnessConstraint } from "./formula.js";
 
+export { ctl } from "./formula.js";
 export {
-  type Operand,
-  type Variable,
   isExprIR,
   isVariable,
   lift,
+  type Operand,
+  type Variable,
   variable,
 } from "./operand.js";
-
-export { ctl } from "./formula.js";
-export type { FairnessConstraint as FormulaFairnessConstraint } from "./formula.js";
 
 /** Branded transition id for generated `*.modals.ts` handles. Plain strings remain assignable. */
 export type TransitionRef<Id extends string = string> = Id & {
   readonly __transition?: Id;
 };
-export { s, type ComponentLike } from "./accessor.js";
+export { type ComponentLike, s } from "./accessor.js";
 export {
   group,
   harvest,
-  resetRegistry,
   type PendingSpec,
+  resetRegistry,
 } from "./registry.js";
 
 export interface StepFacts {

@@ -1,24 +1,24 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { modelInitialStates, modelSuccessors } from "modality-ts/check";
 import {
   createDomReplayActor,
+  type ModalityReplayHarness,
   ObservableActionReplayDriver,
+  type ObservationSource,
   observationSource,
+  type ReplayVerdict,
   replayTrace,
   StateSequenceDriver,
   statesFromTrace,
-  type ModalityReplayHarness,
-  type ObservationSource,
-  type ReplayVerdict,
 } from "modality-ts/cli/harness";
-import { modelInitialStates, modelSuccessors } from "modality-ts/check";
 import {
-  canonicalJson,
-  parseModelArtifact,
   type ConformReport,
+  canonicalJson,
   type Model,
   type ModelState,
+  parseModelArtifact,
   type Trace,
   type TraceStep,
   type Value,

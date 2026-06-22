@@ -3,6 +3,7 @@ import { DefaultReporter } from "./default.js";
 import { JsonReporter } from "./json.js";
 import type { Reporter } from "./types.js";
 
+export { runReport } from "./run-session.js";
 export type {
   FooterContext,
   Reporter,
@@ -12,7 +13,6 @@ export type {
   StatusKind,
   TargetOutcome,
 } from "./types.js";
-export { runReport } from "./run-session.js";
 
 export function createReporter(name: string): Reporter {
   switch (name) {

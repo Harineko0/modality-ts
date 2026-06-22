@@ -1,5 +1,5 @@
-import type * as ts from "typescript";
 import type { Transition } from "modality-ts/core";
+import type * as ts from "typescript";
 import type { InternalTransition } from "./types.js";
 
 export function withStableTransitionIds(

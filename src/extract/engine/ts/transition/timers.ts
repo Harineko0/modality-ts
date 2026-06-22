@@ -1,7 +1,3 @@
-import * as ts from "typescript";
-import { callName, isUseRefCall, lineAndColumn } from "../ast.js";
-import { handlerExpression } from "../components.js";
-import { safeId, uniqueStrings } from "../ids.js";
 import type {
   EffectIR,
   ExprIR,
@@ -9,9 +5,13 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
+import * as ts from "typescript";
+import { callName, isUseRefCall, lineAndColumn } from "../ast.js";
+import { handlerExpression } from "../components.js";
+import { safeId, uniqueStrings } from "../ids.js";
 import type {
-  ExtractableHandler,
   EffectSummary,
+  ExtractableHandler,
   SetterBinding,
 } from "../types.js";
 import { effectWriteVars, settersWrittenIn, uniqueSetters } from "./effects.js";

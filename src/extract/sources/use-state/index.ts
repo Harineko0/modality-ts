@@ -1,43 +1,56 @@
-import * as ts from "typescript";
+import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import type {
-  StateSourcePlugin,
   SourceDecl,
+  StateSourcePlugin,
+  TypePlugin,
   WriteChannel,
-  SemanticTypeContext,
-  DomainRefinementProvider,
 } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import { createStateSourcePlugin } from "modality-ts/extract/plugins";
+import * as ts from "typescript";
 import {
+  compilerBackedTypeAliases,
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
-  compilerBackedTypeAliases,
   useStateCallForSemanticInference,
-} from "modality-ts/extract/engine/spi";
-import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
+} from "../../engine/ts/domains.js";
+import type {
+  ChannelCtxWithTypes,
+  DiscoverCtxWithTypes,
+} from "../../engine/ts/plugin-context.js";
 import { routeMountScope } from "../../engine/ts/routes.js";
-import * as harness from "./harness.js";
 import { decodeUseStateBinding } from "./decode-binding.js";
+import * as harness from "./harness.js";
 
 export function useStateSource(): StateSourcePlugin {
-  return {
+  return createStateSourcePlugin({
     id: "use-state",
     version: "0.1.0",
     packageNames: ["react"],
-    discover: (ctx) =>
-      discoverUseState(
+    discover: (ctx) => {
+      const typed = ctx as DiscoverCtxWithTypes;
+      return discoverUseState(
         ctx.sourceText,
         ctx.fileName,
         ctx.route,
-        ctx.types,
-        ctx.domainRefinements,
-      ),
-    writeChannels: (ctx) =>
-      discoverUseStateWriteChannels(ctx.sourceText, ctx.fileName, ctx.types),
+        typed.types,
+        ctx.typePlugins,
+      );
+    },
+    writeChannels: (ctx) => {
+      const typed = ctx as ChannelCtxWithTypes;
+      return discoverUseStateWriteChannels(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+      );
+    },
     decodeBinding: decodeUseStateBinding,
     harness,
     conformance: {
       testedVersions: "react>=18",
     },
-  };
+  });
 }
 
 export default useStateSource;
@@ -68,7 +81,7 @@ function discoverUseState(
   fileName = "App.tsx",
   route = "/",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): SourceDecl[] {
   const source = sourceFileForDiscovery(sourceText, fileName, types);
   const typeAliases = compilerBackedTypeAliases(source, types);
@@ -99,7 +112,7 @@ function discoverUseState(
           source,
           varId,
           types,
-          domainRefinements ?? [],
+          typePlugins ?? [],
         ).domain;
         const origin = { file: fileName, ...lineAndColumn(source, node) };
         const variable: StateVarDecl = {

@@ -1,5 +1,5 @@
-import type { SupportEscalationInput } from "../domain/support.schema.js";
 import { getSupportCase } from "../application/support-service.js";
+import type { SupportEscalationInput } from "../domain/support.schema.js";
 
 export async function openSupportEscalation(
   input: SupportEscalationInput,

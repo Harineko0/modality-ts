@@ -1,6 +1,6 @@
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import type { SemanticTypeContext } from "modality-ts/extract/engine/spi";
-import { collectSemanticNamedImports } from "modality-ts/extract/engine/spi";
+import { collectSemanticNamedImports } from "../../engine/ts/semantic-imports.js";
 
 export const JOTAI_CORE_MODULES = new Set([
   "jotai",

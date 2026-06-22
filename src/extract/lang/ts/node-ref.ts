@@ -11,9 +11,10 @@ export function nodeRefFor(
   fileName: string,
   sourceFile?: ts.SourceFile,
 ): NodeRef {
+  const source = sourceFile ?? node.getSourceFile();
   return {
     file: fileName,
-    start: sourceFile ? node.getStart(sourceFile) : node.getStart(),
+    start: node.getStart(source),
     end: node.getEnd(),
   };
 }
@@ -23,16 +24,23 @@ export function findNodeAt(
   ref: NodeRef,
 ): ts.Node | undefined {
   let found: ts.Node | undefined;
+  let startMatch: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    const start = node.getStart();
+    const start = node.getStart(source);
     const end = node.getEnd();
     if (start === ref.start && end === ref.end) {
       found = node;
       return;
     }
+    if (
+      start === ref.start &&
+      (!startMatch ||
+        end - start < startMatch.getEnd() - startMatch.getStart(source))
+    )
+      startMatch = node;
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return found;
+  return found ?? startMatch;
 }

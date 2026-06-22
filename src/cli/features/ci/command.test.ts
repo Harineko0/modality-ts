@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import {
   flagAlwaysFalseProperty,
   flagFalseReachableProperty,

@@ -51,7 +51,7 @@ function jsxAttributes(
 
 function enclosingComponentName(
   node: ts.Node,
-  source: ts.SourceFile,
+  _source: ts.SourceFile,
 ): string | undefined {
   let current: ts.Node | undefined = node.parent;
   while (current) {

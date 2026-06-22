@@ -10,8 +10,8 @@ import {
   stepEnqueued,
 } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
-import { useManagementStore } from "../../features/management/state/management-store.modals";
 import { useManagementSummary } from "../../features/management/infra/management-queries.modals";
+import { useManagementStore } from "../../features/management/state/management-store.modals";
 
 const summaryStatus = useManagementStore.summaryStatus;
 const managementSummary = useManagementSummary.data;

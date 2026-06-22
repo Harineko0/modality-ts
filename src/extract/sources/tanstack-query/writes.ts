@@ -4,11 +4,11 @@ import type {
   ExtractionWarning,
   M0Ctx,
   WriteChannel,
-  SemanticTypeContext,
 } from "modality-ts/extract/engine/spi";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
-import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
+import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import { discoverTanstackQueryDetailed } from "./discover.js";
 import {
   mutationFiltersFromExpression,

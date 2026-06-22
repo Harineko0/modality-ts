@@ -1,6 +1,9 @@
+import type { Locator } from "modality-ts/core";
 import * as ts from "typescript";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
 import { isExtractableHandler, startsUppercase } from "../ast.js";
 import {
+  type ComponentRegistry,
   componentName,
   emptyComponentRegistry,
   handlerExpression,
@@ -9,10 +12,7 @@ import {
   jsxTagIdentifier,
   jsxTagName,
   resolveComponentEntry,
-  type ComponentRegistry,
 } from "../components.js";
-import type { SemanticTypeContext } from "../../spi/index.js";
-import type { Locator } from "modality-ts/core";
 import type {
   ComponentDecl,
   ExtractableHandler,

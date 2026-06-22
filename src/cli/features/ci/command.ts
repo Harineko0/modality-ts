@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type CheckReport,
   parseCheckReportArtifact,
   parseModelArtifact,
-  type CheckReport,
 } from "modality-ts/core";
 import { runCheckCommand } from "../../check.js";
 import { runConformCommand } from "../../conform.js";

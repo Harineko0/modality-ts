@@ -1,13 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import {
-  enumerateDomain,
-  initialValues,
-  mountGuardForScope,
-  parseModelArtifact,
-  UNMOUNTED,
-  validateModel,
-} from "modality-ts/core";
 import type {
   AbstractDomain,
   EffectIR,
@@ -17,6 +9,14 @@ import type {
   StateVarDecl,
   Transition,
   Value,
+} from "modality-ts/core";
+import {
+  enumerateDomain,
+  initialValues,
+  mountGuardForScope,
+  parseModelArtifact,
+  UNMOUNTED,
+  validateModel,
 } from "modality-ts/core";
 
 export interface ExportTlaCommandOptions {

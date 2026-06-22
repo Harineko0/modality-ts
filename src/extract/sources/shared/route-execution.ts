@@ -1,4 +1,3 @@
-import { enumerateDomain } from "modality-ts/core";
 import type {
   EffectIR,
   ExprIR,
@@ -7,6 +6,7 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
+import { enumerateDomain } from "modality-ts/core";
 import type {
   RouteActionDescriptor,
   RouteExecutionDescriptor,

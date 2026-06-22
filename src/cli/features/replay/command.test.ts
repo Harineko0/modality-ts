@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Trace, traceArtifact } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { traceArtifact, type Trace } from "modality-ts/core";
 import { runReplayCommand } from "./index.js";
 import { renderHumanReplayResult } from "./output.js";
 
@@ -325,16 +325,16 @@ describe("runReplayCommand", () => {
       harnessPath,
       mode: "action",
       registry: {
-        sourcePluginIds: [],
-        sourcePlugins: [],
-        domainRefinementProviders: [],
+        statePluginIds: [],
+        statePlugins: [],
+        typePlugins: [],
         plugins: [],
         adapters: {
           moduleRoles: [],
           effectApis: [],
           cacheStorage: [],
           stateSources: [],
-          domainRefinements: [],
+          typePlugins: [],
           observations: [],
         },
       },

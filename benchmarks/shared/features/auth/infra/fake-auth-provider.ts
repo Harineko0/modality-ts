@@ -1,10 +1,10 @@
+import { authenticate } from "../application/auth-service.js";
 import type {
   LoginCredentials,
+  PermissionCache,
   RoleAssignment,
   Session,
 } from "../domain/session.js";
-import { authenticate } from "../application/auth-service.js";
-import type { PermissionCache } from "../domain/session.js";
 
 export type LoginEffectResult =
   | { status: "success"; session: Session; permissions: PermissionCache }

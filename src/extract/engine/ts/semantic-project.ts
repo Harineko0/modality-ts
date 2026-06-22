@@ -327,7 +327,11 @@ export function createSemanticProject(
       // Cache any .d.ts file that isn't user-provided (lib files, node_modules
       // types, @types/*). These are read-only and identical across all programs.
       const isUserFile = lookupInMemoryText(fileName) !== undefined;
-      if (!shouldCreateNewSourceFile && !isUserFile && canonical.endsWith(".d.ts")) {
+      if (
+        !shouldCreateNewSourceFile &&
+        !isUserFile &&
+        canonical.endsWith(".d.ts")
+      ) {
         const versionKey =
           typeof languageVersion === "number"
             ? languageVersion

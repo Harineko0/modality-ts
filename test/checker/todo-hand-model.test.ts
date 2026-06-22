@@ -1,19 +1,19 @@
-import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 import {
+  type ExprIR,
   enabled,
+  type Model,
   not,
   or,
+  type Property,
   readPreVar,
   readVar,
   stepEnqueued,
   stepResolved,
-  type ExprIR,
-  type Model,
-  type Property,
   type Value,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {

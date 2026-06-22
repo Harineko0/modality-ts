@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { tanstackRouterRouteExecutionProvider } from "./route-execution.js";
+import { tanstackRouterRouteExecutionPlugin } from "./route-execution.js";
 
-describe("tanstackRouterRouteExecutionProvider", () => {
+describe("tanstackRouterRouteExecutionPlugin", () => {
   it("maps discovered loader ops to route loaders", () => {
     const descriptor =
-      tanstackRouterRouteExecutionProvider().describeRouteExecution({
+      tanstackRouterRouteExecutionPlugin().describeRouteExecution({
         inventory: {
           routes: [
             {

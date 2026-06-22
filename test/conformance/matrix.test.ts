@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
 import {
   parseCanaryRunReportArtifact,
   parseConformanceMatrixReportArtifact,
   parseConformReportArtifact,
 } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../src/cli/registry/index.js";
 import {
   parseConformanceMatrixManifest,
@@ -72,9 +72,9 @@ describe("conformance matrix manifest", () => {
     const manifest = await readConformanceMatrixManifest(matrixPath);
     const registry = createBuiltinModalityRegistry();
     const adapterIds = [
-      ...registry.sourcePluginIds,
-      ...(registry.routerPluginId ? [registry.routerPluginId] : []),
-      ...registry.domainRefinementProviders.map((provider) => provider.id),
+      ...registry.statePluginIds,
+      ...(registry.routePluginId ? [registry.routePluginId] : []),
+      ...registry.typePlugins.map((provider) => provider.id),
     ];
     const coveredAdapterIds = new Set(
       manifest.targets

@@ -1,12 +1,12 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sourceWithReachableImports } from "./project.js";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
+import { sourceWithReachableImports } from "./project.js";
 
 describe("compiler-backed project surface", () => {
   it("reuses parsed source files across reachability passes", async () => {

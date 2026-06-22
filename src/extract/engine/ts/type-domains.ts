@@ -1,13 +1,14 @@
-import * as ts from "typescript";
 import type { AbstractDomain } from "modality-ts/core";
+import * as ts from "typescript";
+import type { TypePlugin } from "../spi/index.js";
 import { unprovableNumericDomainCaveat } from "./caveats.js";
+import { resolveDomainRefinements } from "./domain-refinements.js";
 import {
-  inferDomainFromTypeNodeDetailed,
   type DomainInferenceContext,
   type DomainInferenceResult,
+  inferDomainFromTypeNodeDetailed,
 } from "./domains.js";
-import { resolveDomainRefinements } from "./domain-refinements.js";
-import type { DomainRefinementProvider } from "../spi/index.js";
+import { typeRefinementContextFromTs } from "./type-refinement-bridge.js";
 
 const MAX_RECORD_PROPERTIES = 64;
 
@@ -17,7 +18,7 @@ export interface TypeDomainInferenceContext {
   varId?: string;
   initializer?: ts.Expression;
   declaration?: ts.VariableDeclaration;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
 }
 
 export interface SemanticDomainInferenceContext {
@@ -26,7 +27,7 @@ export interface SemanticDomainInferenceContext {
   varId?: string;
   initializer?: ts.Expression;
   declaration?: ts.VariableDeclaration;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
   broadTypeNode?: ts.TypeNode;
   /** Syntax fallback only when checker or sourceFile is absent. */
   typeAliases?: ReadonlyMap<string, ts.TypeNode>;
@@ -43,7 +44,7 @@ export function inferDomainSemantic(
     declaration: ctx.declaration,
     sourceFile: ctx.sourceFile,
     varId: ctx.varId,
-    domainRefinements: ctx.domainRefinements,
+    typePlugins: ctx.typePlugins,
   };
   if (isTypeScriptType(input)) {
     if (!ctx.checker) {
@@ -55,7 +56,7 @@ export function inferDomainSemantic(
       varId: ctx.varId,
       initializer: ctx.initializer,
       declaration: ctx.declaration,
-      domainRefinements: ctx.domainRefinements,
+      typePlugins: ctx.typePlugins,
     });
   }
   if (ts.isTypeNode(input)) {
@@ -78,7 +79,7 @@ export function inferDomainSemantic(
         initializer: input,
         sourceFile: ctx.sourceFile,
         varId: ctx.varId,
-        domainRefinements: ctx.domainRefinements,
+        typePlugins: ctx.typePlugins,
       },
     );
   }
@@ -188,7 +189,7 @@ export function inferDomainFromTypeNodeSemanticDetailed(
       varId: ctx.varId,
       initializer: astContext.initializer ?? ctx.initializer,
       declaration: astContext.declaration ?? ctx.declaration,
-      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+      typePlugins: ctx.typePlugins ?? astContext.typePlugins,
       visited,
     });
   }
@@ -198,7 +199,7 @@ export function inferDomainFromTypeNodeSemanticDetailed(
     varId: ctx.varId ?? astContext.varId,
     initializer: astContext.initializer ?? ctx.initializer,
     declaration: astContext.declaration ?? ctx.declaration,
-    domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+    typePlugins: ctx.typePlugins ?? astContext.typePlugins,
     visited,
   });
 }
@@ -215,7 +216,7 @@ export function inferDomainFromExpressionSemanticDetailed(
     varId: ctx.varId,
     initializer: ctx.initializer,
     declaration: ctx.declaration,
-    domainRefinements: ctx.domainRefinements,
+    typePlugins: ctx.typePlugins,
     broadTypeNode,
     typeAliases,
   });
@@ -249,7 +250,7 @@ function inferTypeNodeSemanticDetailed(
   }
 
   const numeric = resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       typeNode: refinementTypeNode,
       initializer: astContext.initializer ?? ctx.initializer,
       declaration: astContext.declaration ?? ctx.declaration,
@@ -257,8 +258,8 @@ function inferTypeNodeSemanticDetailed(
       typeAliases: new Map(),
       visited,
       varId: ctx.varId ?? astContext.varId,
-    },
-    ctx.domainRefinements ?? astContext.domainRefinements ?? [],
+    }),
+    ctx.typePlugins ?? astContext.typePlugins ?? [],
   );
   if (numeric.domain) {
     return {
@@ -277,12 +278,12 @@ function inferTypeNodeSemanticDetailed(
     varId: ctx.varId ?? astContext.varId,
     initializer: astContext.initializer ?? ctx.initializer,
     declaration: astContext.declaration ?? ctx.declaration,
-    domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+    typePlugins: ctx.typePlugins ?? astContext.typePlugins,
   };
   const type = checker.getTypeFromTypeNode(typeNode);
   const semantic = inferDomainFromTypeDetailed(type, typeCtx);
   if (semantic.domain.kind === "tokens" && semantic.caveats.length === 0) {
-    if ((ctx.domainRefinements ?? astContext.domainRefinements)?.length) {
+    if ((ctx.typePlugins ?? astContext.typePlugins)?.length) {
       const declaredAlias = inferFromResolvedAliasDeclaration(
         typeNode,
         typeCtx,
@@ -312,7 +313,7 @@ function inferTypeNodeSemanticDetailed(
 function inferExpressionSemanticDetailed(
   expression: ts.Expression,
   ctx: SemanticDomainInferenceContext,
-  astContext: DomainInferenceContext,
+  _astContext: DomainInferenceContext,
 ): DomainInferenceResult {
   const checker = ctx.checker!;
   const sourceFile = ctx.sourceFile!;
@@ -322,18 +323,18 @@ function inferExpressionSemanticDetailed(
     varId: ctx.varId,
     initializer: ctx.initializer,
     declaration: ctx.declaration,
-    domainRefinements: ctx.domainRefinements,
+    typePlugins: ctx.typePlugins,
   };
 
   const numeric = resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       initializer: expression,
       sourceFile,
       typeAliases: new Map(),
       visited: new Set(),
       varId: ctx.varId,
-    },
-    ctx.domainRefinements ?? [],
+    }),
+    ctx.typePlugins ?? [],
   );
   if (numeric.domain) {
     return {
@@ -392,13 +393,13 @@ function inferFromResolvedAliasDeclaration(
       varId: ctx.varId ?? astContext.varId,
       initializer: astContext.initializer ?? ctx.initializer,
       declaration: astContext.declaration ?? ctx.declaration,
-      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+      typePlugins: ctx.typePlugins ?? astContext.typePlugins,
     },
     new Set([...visited, name]),
     {
       ...astContext,
       sourceFile,
-      domainRefinements: ctx.domainRefinements ?? astContext.domainRefinements,
+      typePlugins: ctx.typePlugins ?? astContext.typePlugins,
       varId: ctx.varId ?? astContext.varId,
     },
   );
@@ -500,7 +501,7 @@ function isBroadNumber(type: ts.Type): boolean {
   return (type.flags & ts.TypeFlags.Number) !== 0 && !type.isNumberLiteral();
 }
 
-function isBoxedPrimitive(type: ts.Type, checker: ts.TypeChecker): boolean {
+function isBoxedPrimitive(type: ts.Type, _checker: ts.TypeChecker): boolean {
   if (!(type.flags & ts.TypeFlags.Object)) return false;
   const symbol = type.getSymbol();
   if (!symbol) return false;
@@ -726,15 +727,16 @@ function tryTaggedUnion(
   const propertySets = objectMembers.map((member) =>
     ctx.checker.getPropertiesOfType(member),
   );
-  const commonNames = propertySets
-    .slice(1)
-    .reduce(
-      (common, props) =>
-        new Set(
-          [...common].filter((name) => props.some((p) => p.getName() === name)),
-        ),
-      new Set(propertySets[0]?.map((prop) => prop.getName()) ?? []),
-    );
+  const commonNames = propertySets.slice(1).reduce(
+    (common, props) => {
+      const propNames = new Set(props.map((prop) => prop.getName()));
+      for (const name of common) {
+        if (!propNames.has(name)) common.delete(name);
+      }
+      return common;
+    },
+    new Set(propertySets[0]?.map((prop) => prop.getName()) ?? []),
+  );
 
   for (const tagName of commonNames) {
     const tagValues: string[] = [];

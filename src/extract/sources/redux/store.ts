@@ -1,36 +1,38 @@
-import * as ts from "typescript";
 import type {
-  DomainRefinementProvider,
-  SemanticTypeContext,
-  SourceDecl,
-} from "modality-ts/extract/engine/spi";
-import type { ExtractionCaveat, SourceAnchor, StateVarDecl, Value } from "modality-ts/core";
-import { compilerBackedTypeAliases } from "modality-ts/extract/engine/spi";
+  EffectIR,
+  ExtractionCaveat,
+  SourceAnchor,
+  StateVarDecl,
+  Value,
+} from "modality-ts/core";
+import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
 import { modelSlackCaveat } from "../../engine/ts/caveats.js";
+import { compilerBackedTypeAliases } from "../../engine/ts/domains.js";
 import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   inferFieldDomain,
   isActionFunction,
   propertyNameFromMember,
 } from "./domains.js";
+import { storeVarId } from "./ids.js";
 import {
   isCombineReducersCall,
   isConfigureStoreCall,
   isCreateStoreCall,
   resolveReduxImports,
 } from "./imports.js";
-import { storeVarId } from "./ids.js";
-import { metadataToRecord } from "./types.js";
+import { discoverRtkQueryApis } from "./rtk-query.js";
 import {
   collectActionCreators,
   collectSliceDefinitions,
   lowerSliceActionEffects,
-  registerSliceActionExports,
   type ReduxSliceDefinition,
+  registerSliceActionExports,
 } from "./slices.js";
-import type { EffectIR } from "modality-ts/core";
-import { discoverRtkQueryApis } from "./rtk-query.js";
 import { registerAsyncThunkLifecycle } from "./thunks.js";
+import { metadataToRecord } from "./types.js";
 
 export interface ReduxDiscoveryWarning {
   message: string;
@@ -72,9 +74,14 @@ export function discoverReduxStoresDetailed(
   sourceText: string,
   fileName = "store.ts",
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): DiscoverReduxResult {
-  const source = semanticSourceFileFor(sourceText, fileName, types, ts.ScriptKind.TSX);
+  const source = semanticSourceFileFor(
+    sourceText,
+    fileName,
+    types,
+    ts.ScriptKind.TSX,
+  );
   const imports = resolveReduxImports(source, types);
   const hasReduxImports =
     imports.reactRedux.size > 0 ||
@@ -100,7 +107,7 @@ export function discoverReduxStoresDetailed(
     sourceText,
     fileName,
     types,
-    domainRefinements,
+    typePlugins,
   );
   decls.push(...queryDiscovery.decls);
   warnings.push(...queryDiscovery.warnings);
@@ -117,7 +124,12 @@ export function discoverReduxStoresDetailed(
       storeNames.add(storeName);
       storeHandles.add(storeName);
       const origin = anchor(source, fileName, node);
-      const reducerMap = resolveStoreReducerMap(node.initializer, imports, source, slices);
+      const reducerMap = resolveStoreReducerMap(
+        node.initializer,
+        imports,
+        source,
+        slices,
+      );
       const middleware = extractMiddlewareNames(node.initializer);
       const hasThunk =
         middleware.length === 0 ||
@@ -146,9 +158,14 @@ export function discoverReduxStoresDetailed(
         storeFieldInitials,
         warnings,
         types,
-        domainRefinements,
+        typePlugins,
       );
-      const fieldMaps = buildFieldMaps(storeName, sliceKeys, storeFields, storeFieldInitials);
+      const fieldMaps = buildFieldMaps(
+        storeName,
+        sliceKeys,
+        storeFields,
+        storeFieldInitials,
+      );
       for (const [sliceKey, sliceRef] of sliceKeys) {
         const slice = resolveSliceDefinition(sliceRef, slices, source);
         if (!slice) continue;
@@ -227,17 +244,17 @@ function emitStoreSliceVars(
   storeFieldInitials: Map<string, Map<string, Map<string, Value>>>,
   warnings: ReduxDiscoveryWarning[],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): void {
-  const perStoreFields = storeFields.get(storeName) ?? new Map<string, Set<string>>();
+  const perStoreFields =
+    storeFields.get(storeName) ?? new Map<string, Set<string>>();
   const perStoreInitials =
     storeFieldInitials.get(storeName) ?? new Map<string, Map<string, Value>>();
 
   for (const [sliceKey, sliceRef] of sliceKeys) {
     const slice = resolveSliceDefinition(sliceRef, slices, source);
     const initialState =
-      slice?.initialState ??
-      initialStateFromReducerRef(sliceRef, source);
+      slice?.initialState ?? initialStateFromReducerRef(sliceRef, source);
     if (!initialState) continue;
     const fields = perStoreFields.get(sliceKey) ?? new Set<string>();
     const initials = perStoreInitials.get(sliceKey) ?? new Map<string, Value>();
@@ -264,7 +281,7 @@ function emitStoreSliceVars(
       initials,
       warnings,
       types,
-      domainRefinements,
+      typePlugins,
     );
     perStoreFields.set(sliceKey, fields);
     perStoreInitials.set(sliceKey, initials);
@@ -286,7 +303,7 @@ function emitFieldsFromInitialState(
   initials: Map<string, Value>,
   warnings: ReduxDiscoveryWarning[],
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): void {
   for (const prop of initialState.properties) {
     if (ts.isSpreadAssignment(prop)) {
@@ -314,7 +331,7 @@ function emitFieldsFromInitialState(
       varId,
       source,
       types,
-      domainRefinements,
+      typePlugins,
     );
     fields.add(name);
     initials.set(name, fieldDomain.initial);
@@ -347,7 +364,10 @@ function buildFieldMaps(
   sliceKeys: Map<string, string>,
   storeFields: Map<string, Map<string, Set<string>>>,
   storeFieldInitials: Map<string, Map<string, Map<string, Value>>>,
-): Map<string, { fieldVarIds: Map<string, string>; fieldInitials: Map<string, Value> }> {
+): Map<
+  string,
+  { fieldVarIds: Map<string, string>; fieldInitials: Map<string, Value> }
+> {
   const result = new Map<
     string,
     { fieldVarIds: Map<string, string>; fieldInitials: Map<string, Value> }
@@ -374,10 +394,9 @@ function resolveStoreReducerMap(
   _slices: Map<string, ReduxSliceDefinition>,
 ): Map<string, string> {
   const map = new Map<string, string>();
-  const creator =
-    ts.isIdentifier(storeCall.expression)
-      ? imports.storeCreators.get(storeCall.expression.text)
-      : undefined;
+  const creator = ts.isIdentifier(storeCall.expression)
+    ? imports.storeCreators.get(storeCall.expression.text)
+    : undefined;
   if (creator === "configureStore") {
     const config = storeCall.arguments[0];
     if (!config || !ts.isObjectLiteralExpression(config)) return map;
@@ -421,7 +440,9 @@ function resolveStoreReducerMap(
   return map;
 }
 
-function defaultStateFromReducer(reducer: ts.Expression): ts.Expression | undefined {
+function defaultStateFromReducer(
+  reducer: ts.Expression,
+): ts.Expression | undefined {
   if (
     (ts.isArrowFunction(reducer) || ts.isFunctionExpression(reducer)) &&
     reducer.parameters[0]?.initializer

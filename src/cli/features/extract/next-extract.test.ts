@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { dirname, join } from "node:path";
 import { checkModel } from "modality-ts/check";
-import { always } from "../../../../test/helpers/property-builders.js";
 import { lit, neq, readVar, UNMOUNTED } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
+import { always } from "../../../../test/helpers/property-builders.js";
 import { createBuiltinModalityRegistry } from "../../registry/index.js";
 import { runExtractCommand } from "./index.js";
 
@@ -59,7 +59,7 @@ describe("runExtractCommand next.js", () => {
 
     expect(result.model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "navigation", id: "next" }),
+        expect.objectContaining({ kind: "route", id: "next" }),
       ]),
     );
     expect(
@@ -413,11 +413,11 @@ describe("builtin registry next selection", () => {
         dependencies: { next: "^15.0.0", react: "^19.0.0" },
       }),
     ).toMatchObject({
-      routerPluginId: "next",
+      routePluginId: "next",
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
-          kind: "navigation",
+          kind: "route",
           packageNames: ["next"],
         }),
       ]),
@@ -431,7 +431,7 @@ describe("builtin registry next selection", () => {
           next: "^15.0.0",
           "react-router-dom": "^7.0.0",
         },
-      }).routerPluginId,
+      }).routePluginId,
     ).toBe("next");
   });
 });

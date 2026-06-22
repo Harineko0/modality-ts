@@ -1,12 +1,9 @@
-import type { EnvironmentEventConfig } from "../environment-config.js";
-import type { SemanticTypeContext } from "../../spi/index.js";
-import type { WebSocketRegistration } from "./environment-callbacks.js";
-import type { TransitionBinding } from "./concurrent.js";
-import type {
-  ExtractableHandler,
-  ExtractionWarning,
-} from "../types.js";
 import type { Transition } from "modality-ts/core";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
+import type { ExtractableHandler, ExtractionWarning } from "../types.js";
+import type { TransitionBinding } from "./concurrent.js";
+import type { WebSocketRegistration } from "./environment-callbacks.js";
 import type { TimerRegistration } from "./timers.js";
 
 export interface StatementSummaryState {
@@ -30,5 +27,5 @@ export interface StatementSummaryState {
   fileName?: string;
   source?: import("typescript").SourceFile;
   types?: SemanticTypeContext;
-  effectModelProviders?: readonly import("../../spi/index.js").EffectModelProvider[];
+  effectPlugins?: readonly import("../../spi/index.js").EffectPlugin[];
 }

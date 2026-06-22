@@ -1,24 +1,25 @@
-import * as ts from "typescript";
 import {
-  validateValue,
   type AbstractDomain,
   type ExtractionCaveat,
   type NumericReduction,
   type Value,
+  validateValue,
 } from "modality-ts/core";
-import type { DomainRefinementProvider } from "../spi/index.js";
+import * as ts from "typescript";
+import type { TypePlugin } from "../spi/index.js";
+import { componentNameFor } from "./ast.js";
 import { modelSlackCaveat, unprovableNumericDomainCaveat } from "./caveats.js";
-import type { ExtractionWarning } from "./types.js";
 import { resolveDomainRefinements } from "./domain-refinements.js";
 import {
   exactFirstReduction,
   mergeNumericReductions,
 } from "./numeric/abstraction.js";
-import { componentNameFor } from "./ast.js";
 import {
   inferDomainSemantic,
   type SemanticDomainInferenceContext,
 } from "./type-domains.js";
+import { typeRefinementContextFromTs } from "./type-refinement-bridge.js";
+import type { ExtractionWarning } from "./types.js";
 
 export type { SemanticDomainInferenceContext };
 export { inferDomainSemantic };
@@ -34,7 +35,7 @@ export interface DomainInferenceContext {
   declaration?: ts.VariableDeclaration;
   sourceFile?: ts.SourceFile;
   varId?: string;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly TypePlugin[];
 }
 
 export function inferDomainFromTypeNode(
@@ -114,7 +115,7 @@ export function inferUseStateDomainDetailed(
   typeAliases: ReadonlyMap<string, ts.TypeNode> = new Map(),
   sourceFile?: ts.SourceFile,
   varId?: string,
-  domainRefinements: readonly DomainRefinementProvider[] = [],
+  typePlugins: readonly TypePlugin[] = [],
 ): DomainInferenceResult {
   const typeArg = call.typeArguments?.[0];
   const initializer = call.arguments[0];
@@ -123,19 +124,19 @@ export function inferUseStateDomainDetailed(
       initializer,
       sourceFile,
       varId,
-      domainRefinements,
+      typePlugins,
     });
   }
   if (initializer) {
     const schemaResolved = resolveDomainRefinements(
-      {
+      typeRefinementContextFromTs({
         initializer,
         sourceFile,
         typeAliases,
         visited: new Set(),
         varId,
-      },
-      domainRefinements,
+      }),
+      typePlugins,
     );
     if (schemaResolved.domain) {
       return {
@@ -198,7 +199,7 @@ export function inferUseStateDomainSemanticDetailed(
   sourceFile?: ts.SourceFile,
   varId?: string,
   types?: UseStateSemanticTypeContext,
-  domainRefinements: readonly DomainRefinementProvider[] = [],
+  typePlugins: readonly TypePlugin[] = [],
 ): DomainInferenceResult {
   const inferenceSourceFile = types?.sourceFile ?? sourceFile;
   const aliasSource =
@@ -213,7 +214,7 @@ export function inferUseStateDomainSemanticDetailed(
     sourceFile: inferenceSourceFile,
     varId,
     initializer,
-    domainRefinements,
+    typePlugins,
     typeAliases: semanticAliases,
   };
   if (typeArg && types?.checker) {
@@ -223,7 +224,7 @@ export function inferUseStateDomainSemanticDetailed(
       typeAliases,
       sourceFile,
       varId,
-      domainRefinements,
+      typePlugins,
     );
     if (
       ts.isTypeReferenceNode(typeArg) &&
@@ -241,14 +242,14 @@ export function inferUseStateDomainSemanticDetailed(
   }
   if (initializer && types?.checker) {
     const schemaResolved = resolveDomainRefinements(
-      {
+      typeRefinementContextFromTs({
         initializer,
         sourceFile: inferenceSourceFile,
         typeAliases: semanticAliases,
         visited: new Set(),
         varId,
-      },
-      domainRefinements,
+      }),
+      typePlugins,
     );
     if (schemaResolved.domain) {
       return {
@@ -269,7 +270,7 @@ export function inferUseStateDomainSemanticDetailed(
         typeAliases,
         sourceFile,
         varId,
-        domainRefinements,
+        typePlugins,
       );
       if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
         return ast;
@@ -285,7 +286,7 @@ export function inferUseStateDomainSemanticDetailed(
     typeAliases,
     sourceFile,
     varId,
-    domainRefinements,
+    typePlugins,
   );
 }
 
@@ -474,7 +475,7 @@ function inferNumericDomain(
   context: DomainInferenceContext,
 ): DomainInferenceResult {
   const resolved = resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       typeNode: node,
       initializer: context.initializer,
       declaration: context.declaration,
@@ -482,8 +483,8 @@ function inferNumericDomain(
       typeAliases,
       visited,
       varId: context.varId,
-    },
-    context.domainRefinements ?? [],
+    }),
+    context.typePlugins ?? [],
   );
   if (resolved.domain) {
     return withDomainReductions(
@@ -678,7 +679,7 @@ function resolveArrayConstructorLength(
   }
   if (ts.isNewExpression(expression) && isNewArrayCall(expression)) {
     const lengthArgs = expression.arguments;
-    if (!lengthArgs || lengthArgs.length !== 1) return undefined;
+    if (lengthArgs?.length !== 1) return undefined;
     return (
       resolveStaticNumeric(lengthArgs[0], context) ?? { kind: "unprovable" }
     );
@@ -1093,7 +1094,7 @@ function domainFromTypeReferenceDetailed(
   if (visited.has(name))
     return { domain: { kind: "tokens", count: 1 }, caveats: [] };
   const resolved = resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       typeNode: node,
       initializer: context.initializer,
       declaration: context.declaration,
@@ -1101,8 +1102,8 @@ function domainFromTypeReferenceDetailed(
       typeAliases,
       visited,
       varId: context.varId,
-    },
-    context.domainRefinements ?? [],
+    }),
+    context.typePlugins ?? [],
   );
   if (resolved.domain) {
     return withDomainReductions(
@@ -1143,7 +1144,7 @@ function domainFromTypeQueryDetailed(
   context: DomainInferenceContext,
 ): DomainInferenceResult {
   const resolved = resolveDomainRefinements(
-    {
+    typeRefinementContextFromTs({
       typeNode: node,
       initializer: context.initializer,
       declaration: context.declaration,
@@ -1151,8 +1152,8 @@ function domainFromTypeQueryDetailed(
       typeAliases,
       visited,
       varId: context.varId,
-    },
-    context.domainRefinements ?? [],
+    }),
+    context.typePlugins ?? [],
   );
   if (resolved.domain) {
     return withDomainReductions(

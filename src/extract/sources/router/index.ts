@@ -1,10 +1,11 @@
 import type {
   EffectApiProvider,
-  ModuleRoleAdapter,
-  NavigationAdapter,
+  ModuleRolePlugin,
   ResolvedOptions,
-  RouteExecutionProvider,
+  RouteExecutionPlugin,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
+import { createRoutePlugin } from "modality-ts/extract/plugins";
 import { discoverRoutes, routeForComponent } from "./discover.js";
 import {
   recognizeFormSubmit,
@@ -18,9 +19,9 @@ import {
   reactRouterModuleEntryExports,
 } from "./module-roles.js";
 import { classifyNavigationCall, classifyNavigationJsx } from "./navigation.js";
-import { reactRouterRouteExecutionProvider as createReactRouterRouteExecutionProvider } from "./route-execution.js";
-import { discoverReactRouterActionEffectApis } from "./server-effects.js";
+import { reactRouterRouteExecutionPlugin as createReactRouterRouteExecutionPlugin } from "./route-execution.js";
 import { locationVars } from "./routes.js";
+import { discoverReactRouterActionEffectApis } from "./server-effects.js";
 
 export interface RouterSourceOptions {
   id?: string;
@@ -28,9 +29,9 @@ export interface RouterSourceOptions {
   historyMaxLen?: number;
 }
 
-export function reactRouterModuleRoleAdapter(
+export function reactRouterModuleRolePlugin(
   options: Pick<RouterSourceOptions, "id" | "packageNames"> = {},
-): ModuleRoleAdapter {
+): ModuleRolePlugin {
   return {
     id: options.id ?? "router-module-roles",
     version: "0.1.0",
@@ -64,15 +65,15 @@ export function reactRouterEffectApiProvider(
   };
 }
 
-export function reactRouterRouteExecutionProvider(
+export function reactRouterRouteExecutionPlugin(
   options: Pick<RouterSourceOptions, "id" | "packageNames"> = {},
-): RouteExecutionProvider {
-  return createReactRouterRouteExecutionProvider(options);
+): RouteExecutionPlugin {
+  return createReactRouterRouteExecutionPlugin(options);
 }
 
 export function reactRouterAdapter(
   options: RouterSourceOptions = {},
-): NavigationAdapter {
+): RoutePlugin {
   const historyMaxLen = options.historyMaxLen ?? 4;
   const withHistoryBounds = (
     resolvedOptions: ResolvedOptions,
@@ -84,7 +85,7 @@ export function reactRouterAdapter(
     },
   });
 
-  return {
+  return createRoutePlugin({
     id: options.id ?? "router",
     version: "0.1.0",
     packageNames: options.packageNames ?? ["react-router", "react-router-dom"],
@@ -97,7 +98,7 @@ export function reactRouterAdapter(
     recognizeFormSubmit,
     recognizeUseSubmitHandler,
     harness,
-  };
+  });
 }
 
 export { parseReactRouterRoutes } from "./discover.js";

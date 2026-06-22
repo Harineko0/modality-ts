@@ -1,15 +1,11 @@
 import { performance } from "node:perf_hooks";
 import cliTruncate from "cli-truncate";
 import { createDynamicRegion } from "./dynamic-region.js";
-import type {
-  FooterContext,
-  Reporter,
-  ReporterSession,
-} from "./types.js";
+import type { FooterContext, Reporter, ReporterSession } from "./types.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-function statusIcon(status: "pass" | "fail" | "warn"): string {
+function _statusIcon(status: "pass" | "fail" | "warn"): string {
   switch (status) {
     case "pass":
       return "✓";

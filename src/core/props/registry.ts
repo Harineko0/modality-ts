@@ -5,8 +5,8 @@ import type {
   StepPredicateIR,
   TemporalFormula,
 } from "../ir/types.js";
+import { canReach, always as ctlAlways, holds, implies } from "./formula.js";
 import type { Operand } from "./operand.js";
-import { always as ctlAlways, canReach, holds, implies } from "./formula.js";
 
 // ---------------------------------------------------------------------------
 // Pending spec shapes (pre-finalization)

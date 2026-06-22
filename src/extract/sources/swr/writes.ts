@@ -1,13 +1,11 @@
-import type {
-  WriteChannel,
-  SemanticTypeContext,
-} from "modality-ts/extract/engine/spi";
-import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
+import type { WriteChannel } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
+import { semanticSourceFileFor } from "../../engine/ts/semantic-source-file.js";
 import {
   keyFromExpression,
-  swrInstanceNamingContext,
   swrInstanceId,
+  swrInstanceNamingContext,
   useSwrImportNames,
 } from "./discover.js";
 import { swrVarId } from "./template.js";

@@ -1,27 +1,27 @@
 import { checkModel } from "modality-ts/check";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { always, reachable } from "../helpers/property-builders.js";
 import {
   and,
+  type EffectIR,
   eq,
   lit,
-  type EffectIR,
   type Model,
   neq,
   readVar,
 } from "modality-ts/core";
 import type {
-  NavigationAdapter,
+  RoutePlugin,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
-import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
 import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
 import { useStateSource } from "../../src/extract/sources/use-state/index.js";
 import {
   extractUseStateSkeleton,
   extractUseStateVars,
 } from "../../src/extract/sources/use-state/transitions.js";
+import { always, reachable } from "../helpers/property-builders.js";
 
 const defaultSourcePlugins = [useStateSource()];
 
@@ -30,15 +30,14 @@ function extractReactSourceTransitions(
   options: Parameters<typeof extractReactSourceTransitionsBase>[1] = {},
 ) {
   return extractReactSourceTransitionsBase(source, {
-    sourcePlugins: defaultSourcePlugins,
     ...options,
-    sourcePlugins: options.sourcePlugins ?? defaultSourcePlugins,
+    statePlugins: options.statePlugins ?? defaultSourcePlugins,
   });
 }
 
 const routerExtraction = {
-  routerPlugin: reactRouterAdapter(),
-  sourcePlugins: defaultSourcePlugins,
+  routePlugin: reactRouterAdapter(),
+  statePlugins: defaultSourcePlugins,
 };
 
 function collectReadOpArgKeys(effect: EffectIR): string[] {
@@ -73,7 +72,7 @@ function enqueueArgKeysForOp(
   const start = transitions.find(
     (transition) => transition.id === `App.onClick.${op}.start`,
   );
-  if (!start || start.effect.kind !== "seq") return keys;
+  if (start?.effect.kind !== "seq") return keys;
   for (const effect of start.effect.effects) {
     if (effect.kind === "enqueue" && effect.op === op) {
       for (const key of Object.keys(effect.args)) keys.add(key);
@@ -4233,7 +4232,7 @@ describe("useState inventory", () => {
   });
 
   it("uses custom router plugins to summarize navigation calls", () => {
-    const routerPlugin: NavigationAdapter = {
+    const routePlugin: RoutePlugin = {
       id: "custom-router",
       packageNames: ["custom-router"],
       discoverRoutes: async () => ({ routes: [] }),
@@ -4254,7 +4253,7 @@ describe("useState inventory", () => {
         return <button onClick={() => go('/next')}>Go</button>;
       }
       `,
-      { route: "/", fileName: "App.tsx", routerPlugin },
+      { route: "/", fileName: "App.tsx", routePlugin },
     );
     expect(result.warnings).toEqual([]);
     expect(result.transitions[0]).toMatchObject({
@@ -4289,7 +4288,7 @@ describe("useState inventory", () => {
       {
         route: "/",
         fileName: "App.tsx",
-        sourcePlugins: [plugin],
+        statePlugins: [plugin],
         stateVars: [
           {
             id: "external",
@@ -4613,7 +4612,7 @@ describe("useState inventory", () => {
 });
 
 describe("React Router form action submits", () => {
-  const routerPlugin = reactRouterAdapter();
+  const routePlugin = reactRouterAdapter();
 
   it("models Form method post with hidden intent as ACTION route op", () => {
     const result = extractReactSourceTransitions(
@@ -4632,7 +4631,7 @@ describe("React Router form action submits", () => {
         route: "/",
         fileName: "home.tsx",
         effectApis: ["ACTION /"],
-        routerPlugin,
+        routePlugin,
       },
     );
     const ids = result.transitions.map((transition) => transition.id);
@@ -4668,7 +4667,7 @@ describe("React Router form action submits", () => {
         route: "/",
         fileName: "home.tsx",
         effectApis: ["ACTION /"],
-        routerPlugin,
+        routePlugin,
       },
     );
     const start = result.transitions.find(
@@ -4703,7 +4702,7 @@ describe("React Router form action submits", () => {
         route: "/customer",
         fileName: "customer.tsx",
         effectApis: ["ACTION /customer"],
-        routerPlugin,
+        routePlugin,
       },
     );
     expect(
@@ -4760,7 +4759,7 @@ describe("React Router form action submits", () => {
         route: "/customer",
         fileName: "customer.tsx",
         effectApis: ["ACTION /customer"],
-        routerPlugin,
+        routePlugin,
       },
     );
     expect(result.transitions.map((transition) => transition.id)).toEqual(
@@ -4802,7 +4801,7 @@ describe("React Router form action submits", () => {
         routePatterns: ["/", "/customer"],
         fileName: "routes/customer.tsx",
         effectApis: ["ACTION /", "ACTION /customer"],
-        routerPlugin,
+        routePlugin,
         inventory: multiRouteInventory,
       },
     );
@@ -4835,7 +4834,7 @@ describe("React Router form action submits", () => {
         route: "/",
         fileName: "home.tsx",
         effectApis: ["ACTION /"],
-        routerPlugin,
+        routePlugin,
       },
     );
     expect(
@@ -4859,7 +4858,7 @@ describe("React Router form action submits", () => {
         route: "/",
         fileName: "home.tsx",
         effectApis: ["ACTION /"],
-        routerPlugin,
+        routePlugin,
       },
     );
     expect(
@@ -4886,7 +4885,7 @@ describe("React Router form action submits", () => {
         route: "/",
         fileName: "home.tsx",
         effectApis: ["ACTION /"],
-        routerPlugin,
+        routePlugin,
       },
     );
     const start = result.transitions.find(

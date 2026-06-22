@@ -1,12 +1,12 @@
-import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
-import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
-import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
 import type { Value } from "modality-ts/core";
 import type {
   ExtractCtx,
   SourceExtractionResult,
   WriteChannel,
 } from "../../engine/spi/index.js";
+import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
+import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
+import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
 
 export type SharedReactTransitionCtx = Omit<
   ExtractCtx,
@@ -33,11 +33,11 @@ function reactSourceTransitionOptions(ctx: SharedReactTransitionCtx) {
     ...(isEffectOpAliasesPopulated(ctx.effectOpAliases)
       ? { effectOpAliases: ctx.effectOpAliases }
       : {}),
-    sourcePlugins: ctx.sourcePlugins,
+    statePlugins: ctx.statePlugins,
     ...(ctx.environment ? { environment: ctx.environment } : {}),
     ...(ctx.stateVars ? { stateVars: ctx.stateVars } : {}),
     ...(ctx.writeChannels ? { writeChannels: ctx.writeChannels } : {}),
-    ...(ctx.routerPlugin ? { routerPlugin: ctx.routerPlugin } : {}),
+    ...(ctx.routePlugin ? { routePlugin: ctx.routePlugin } : {}),
     ...(ctx.inventory ? { inventory: ctx.inventory } : {}),
     ...(ctx.resetSymbols ? { resetSymbols: ctx.resetSymbols } : {}),
     ...(ctx.setterFixedEffects

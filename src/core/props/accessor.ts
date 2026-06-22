@@ -1,4 +1,4 @@
-import { variable, type Variable } from "./operand.js";
+import { type Variable, variable } from "./operand.js";
 
 export type ComponentLike =
   | { name?: string }

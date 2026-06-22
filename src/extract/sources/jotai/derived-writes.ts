@@ -1,5 +1,5 @@
-import * as ts from "typescript";
 import type { EffectIR, ExprIR, Value } from "modality-ts/core";
+import * as ts from "typescript";
 import { literalValue } from "../../engine/ts/ast.js";
 import { atomVarId } from "./ids.js";
 

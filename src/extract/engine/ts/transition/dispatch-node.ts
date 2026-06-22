@@ -1,18 +1,18 @@
-import type * as ts from "typescript";
 import type { EffectIR, ExtractionCaveat } from "modality-ts/core";
+import type * as ts from "typescript";
 import { compileStatements } from "../../../compile/index.js";
-import type {
-  CompileCtx,
-  LeafDispatch,
-} from "../../spi/leaf-dispatch.js";
-import type { SurfaceStmt } from "../../spi/surface-ir.js";
+import type { SurfaceStmt } from "../../../lang/ts/surface-ir.js";
+import type { CompileCtx, LeafDispatch } from "../../spi/leaf-dispatch.js";
 import type { SymbolPort } from "../../spi/symbol-port.js";
 import type { EffectSummary } from "../types.js";
 
 export interface DispatchNodeOptions {
   symbols: SymbolPort;
   leaf: LeafDispatch;
-  locals?: Map<string, { expr: import("modality-ts/core").ExprIR; reads: string[] }>;
+  locals?: Map<
+    string,
+    { expr: import("modality-ts/core").ExprIR; reads: string[] }
+  >;
   snapshotReads?: boolean;
   loopVars?: readonly string[];
   taintVars?: readonly string[];
@@ -31,7 +31,12 @@ export interface DispatchNodeResult {
 function compileCtxFrom(
   options: Pick<
     DispatchNodeOptions,
-    "symbols" | "leaf" | "locals" | "snapshotReads" | "stateVarIds" | "snapshottedReads"
+    | "symbols"
+    | "leaf"
+    | "locals"
+    | "snapshotReads"
+    | "stateVarIds"
+    | "snapshottedReads"
   >,
 ): CompileCtx {
   return {
@@ -50,7 +55,14 @@ export function dispatchSurfaceStatements(
   stmts: readonly SurfaceStmt[],
   options: Pick<
     DispatchNodeOptions,
-    "symbols" | "leaf" | "locals" | "snapshotReads" | "loopVars" | "taintVars" | "stateVarIds" | "snapshottedReads"
+    | "symbols"
+    | "leaf"
+    | "locals"
+    | "snapshotReads"
+    | "loopVars"
+    | "taintVars"
+    | "stateVarIds"
+    | "snapshottedReads"
   >,
 ): DispatchNodeResult | undefined {
   const ctx = compileCtxFrom(options);
@@ -89,10 +101,7 @@ export function dispatchNode(
   return dispatchSurfaceStatements([surfaceStmt], options);
 }
 
-export function stabilizeEffectIds(
-  effect: EffectIR,
-  seed: string,
-): EffectIR {
+export function stabilizeEffectIds(effect: EffectIR, seed: string): EffectIR {
   void seed;
   return effect;
 }

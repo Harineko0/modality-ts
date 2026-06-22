@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { tanstackRouterModuleRolePlugin } from "./index.js";
 import {
   classifyTanstackModule,
   shouldDiscoverTanstackEffectApis,
   tanstackModuleEntryExports,
 } from "./module-roles.js";
-import { tanstackRouterModuleRoleAdapter } from "./index.js";
 
 const postsRoute = `
   import { createFileRoute } from '@tanstack/react-router'
@@ -20,8 +20,8 @@ const postsRoute = `
   }
 `;
 
-describe("tanstackRouterModuleRoleAdapter", () => {
-  const adapter = tanstackRouterModuleRoleAdapter();
+describe("tanstackRouterModuleRolePlugin", () => {
+  const adapter = tanstackRouterModuleRolePlugin();
 
   it("keeps component interaction surface and excludes loader-only imports", () => {
     expect(

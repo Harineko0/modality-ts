@@ -1,15 +1,14 @@
-import { buildStateContributors } from "../../../check/slicing/contributors.js";
 import {
   collectTokenDomainPaths,
   domainCardinality,
-  exceedsWideCardinalityThreshold,
-  exceedsWideNumericThreshold,
-  initialValues,
-  locationCurrentVar,
   type EffectIR,
   type ExtractionCaveat,
   type ExtractionDiagnostics,
   type ExtractionReport,
+  exceedsWideCardinalityThreshold,
+  exceedsWideNumericThreshold,
+  initialValues,
+  locationCurrentVar,
   type Model,
   type RouteCoverage,
   type RouteCoverageClassification,
@@ -20,6 +19,7 @@ import type {
   RouteInventory,
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
+import { buildStateContributors } from "../../../check/slicing/contributors.js";
 import {
   compareCaveats,
   modelSlackCaveat,
@@ -353,12 +353,12 @@ function dedupeUnextractableHandlers(
 }
 
 export function pluginConformanceWarnings(
-  sourcePlugins: readonly StateSourcePlugin[],
+  statePlugins: readonly StateSourcePlugin[],
   dependencies: Record<string, string> | undefined,
 ): string[] {
   if (!dependencies) return [];
   const warnings: string[] = [];
-  for (const plugin of sourcePlugins) {
+  for (const plugin of statePlugins) {
     const testedVersions = plugin.conformance?.testedVersions;
     if (!testedVersions) continue;
     const requirement = parseTestedVersionRange(testedVersions);

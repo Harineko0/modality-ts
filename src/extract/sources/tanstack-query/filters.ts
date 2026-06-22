@@ -1,5 +1,5 @@
-import { canonicalJson } from "modality-ts/core";
 import type { ExprIR } from "modality-ts/core";
+import { canonicalJson } from "modality-ts/core";
 import * as ts from "typescript";
 import { safeKeyId } from "./ids.js";
 import type {

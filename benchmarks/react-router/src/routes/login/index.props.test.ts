@@ -1,4 +1,4 @@
-import { always, eq, group, not, and } from "modality-ts/properties";
+import { always, and, eq, group, not } from "modality-ts/properties";
 import { route } from "modality-ts/vars";
 import {
   loginStatusAtom,

@@ -1,8 +1,8 @@
 import type {
   AbstractDomain,
   EffectIR,
-  ExtractionCaveat,
   ExprIR,
+  ExtractionCaveat,
   Locator,
   ModelState,
   NumericReduction,
@@ -13,23 +13,6 @@ import type {
   Transition,
   Value,
 } from "modality-ts/core";
-import type * as ts from "typescript";
-
-export interface DomainRefinementContext {
-  typeNode?: ts.TypeNode;
-  initializer?: ts.Expression;
-  declaration?: ts.VariableDeclaration;
-  sourceFile?: ts.SourceFile;
-  typeAliases: ReadonlyMap<string, ts.TypeNode>;
-  visited: ReadonlySet<string>;
-  varId?: string;
-}
-
-export interface DomainRefinementResolution {
-  domain?: AbstractDomain;
-  caveats: ExtractionCaveat[];
-  reductions?: NumericReduction[];
-}
 
 export interface ModalityAdapterBase {
   id: string;
@@ -37,53 +20,11 @@ export interface ModalityAdapterBase {
   packageNames: readonly string[];
 }
 
-export interface DomainRefinementProvider extends ModalityAdapterBase {
-  refineDomain(
-    ctx: DomainRefinementContext,
-  ): DomainRefinementResolution | undefined;
-}
-
-export interface ResolvedModuleName {
-  fileName: string;
-  sourceFile?: ts.SourceFile;
-  isExternal: boolean;
-}
-
-export interface SemanticTypeContext {
-  program: ts.Program;
-  checker: ts.TypeChecker;
-  sourceFile?: ts.SourceFile;
-  getSourceFile(fileName: string): ts.SourceFile | undefined;
-  canonicalFileName?(fileName: string): string;
-  resolveModuleName?(
-    specifier: string,
-    containingFile: string,
-  ): ResolvedModuleName | undefined;
-  symbolAt?(node: ts.Node): ts.Symbol | undefined;
-  aliasedSymbolAt?(node: ts.Node): ts.Symbol | undefined;
-  symbolKey?(symbol: ts.Symbol): string;
-  localSymbolKey?(node: ts.Node): string | undefined;
-}
-
-export {
-  compilerBackedTypeAliases,
-  firstValue,
-  inferDomainFromTypeNode,
-  inferDomainSemantic,
-  inferUseStateDomain,
-  inferUseStateDomainDetailed,
-  inferUseStateDomainSemanticDetailed,
-  initialValueForUseState,
-  typeAliasDeclarations,
-  useStateCallForSemanticInference,
-} from "../ts/domains.js";
-
-export {
-  collectSemanticNamedImports,
-  resolveSemanticNamedExport,
-  type ResolvedSemanticImport,
-  type SemanticImportContext,
-} from "../ts/semantic-imports.js";
+export type {
+  TypePlugin,
+  TypeRefinementContext,
+  TypeRefinementResolution,
+} from "./type-plugin.js";
 
 export interface SourceDecl {
   id: string;
@@ -121,23 +62,20 @@ export interface DiscoverCtx {
   sourceText: string;
   fileName: string;
   route: string;
-  types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly import("./type-plugin.js").TypePlugin[];
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
 }
 
 export interface TypeCtx {
   sourceText: string;
   fileName: string;
-  types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly import("./type-plugin.js").TypePlugin[];
 }
 
 export interface ChannelCtx {
   sourceText: string;
   fileName: string;
-  types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  typePlugins?: readonly import("./type-plugin.js").TypePlugin[];
 }
 
 export interface ExtractCtx {
@@ -148,10 +86,9 @@ export interface ExtractCtx {
   effectApis: readonly string[];
   stateVars: readonly StateVarDecl[];
   writeChannels: readonly WriteChannel[];
-  sourcePlugins: readonly StateSourcePlugin[];
-  routerPlugin?: NavigationAdapter;
-  types?: SemanticTypeContext;
-  domainRefinements?: readonly DomainRefinementProvider[];
+  statePlugins: readonly StateSourcePlugin[];
+  routePlugin?: RoutePlugin;
+  typePlugins?: readonly import("./type-plugin.js").TypePlugin[];
 }
 
 export interface SourceExtractionResult {
@@ -240,6 +177,7 @@ export interface DecodedSetterBinding {
 }
 
 export interface StateSourcePlugin extends ModalityAdapterBase {
+  kind: "state-source";
   discover(ctx: DiscoverCtx): readonly SourceDecl[];
   domainHints?(decl: SourceDecl, ctx: TypeCtx): AbstractDomain | undefined;
   /** Owns this source's var-id shape; returns the same fields the engine regex produced. */
@@ -337,7 +275,7 @@ export interface DiscoveredEffectApi {
   producer?: { kind: PluginProvenance["kind"]; id: string };
 }
 
-export interface ModuleRoleAdapter extends ModalityAdapterBase {
+export interface ModuleRolePlugin extends ModalityAdapterBase {
   kind: "module-roles";
   classifyModule(ctx: ModuleRoleCtx): ModuleClassification;
   moduleEntryExports(ctx: ModuleRoleCtx): readonly ModuleEntryExport[];
@@ -385,7 +323,7 @@ export interface RouteExecutionDescriptor {
   actions: readonly RouteActionDescriptor[];
 }
 
-export interface RouteExecutionProvider extends ModalityAdapterBase {
+export interface RouteExecutionPlugin extends ModalityAdapterBase {
   kind: "route-execution";
   describeRouteExecution(
     ctx: RouteExecutionDiscoveryCtx,
@@ -412,19 +350,20 @@ export interface CacheStorageProvider extends ModalityAdapterBase {
   discoverCacheStorage(ctx: CacheStorageDiscoveryCtx): CacheStorageFragment;
 }
 
-export interface NavigationLoweringCtx {
+export interface RouteLoweringCtx {
   inventory: RouteInventory;
   routePatterns: readonly string[];
 }
 
-export interface NavigationLoweringResult {
+export interface RouteLoweringResult {
   effect: EffectIR;
   reads: readonly string[];
   writes: readonly string[];
   confidence: Transition["confidence"];
 }
 
-export interface NavigationAdapter extends ModalityAdapterBase {
+export interface RoutePlugin extends ModalityAdapterBase {
+  kind: "route";
   discoverRoutes(ctx: RouteDiscoveryCtx): Promise<RouteInventory>;
   classifyNavigationCall(
     callee: string,
@@ -449,21 +388,20 @@ export interface NavigationAdapter extends ModalityAdapterBase {
   ): readonly StateVarDecl[];
   lowerNavigation?(
     intent: NavIntent,
-    ctx: NavigationLoweringCtx,
-  ): NavigationLoweringResult;
+    ctx: RouteLoweringCtx,
+  ): RouteLoweringResult;
   mountScopeForComponent?(
     componentName: string,
     inventory: RouteInventory,
   ): StateVarDecl["scope"] | undefined;
   recognizeFormSubmit?(
-    node: import("./form-submit.js").SurfaceNode,
-    ctx: import("./form-submit.js").NavFormSubmitCtx,
+    node: import("../../lang/ts/surface-ir.js").SurfaceNode,
+    ctx: import("./form-submit.js").RouteFormSubmitCtx,
   ): import("./form-submit.js").FormSubmitRecognition | undefined;
   recognizeUseSubmitHandler?(
-    node: ts.JsxAttribute,
-    attr: string,
-    handler: import("../ts/types.js").ExtractableHandler,
-    ctx: import("./form-submit.js").NavUseSubmitHandlerCtx,
+    attribute: import("../../lang/ts/node-ref.js").NodeRef,
+    handler: import("./form-submit.js").RouteHandlerRef,
+    ctx: import("./form-submit.js").RouteUseSubmitHandlerCtx,
   ): import("./form-submit.js").UseSubmitHandlerRecognition | undefined;
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;
@@ -476,90 +414,16 @@ export interface NavigationAdapter extends ModalityAdapterBase {
   };
 }
 
-export interface ObservationProvider extends ModalityAdapterBase {
+export interface ObservationPlugin extends ModalityAdapterBase {
   kind: "observation";
   setup(ctx: HarnessCtx): HarnessHooks;
   observe(varId: string, handles: HarnessHooks): ObservedRead | "unobservable";
   witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
 }
 
-export interface HandlerWrapperCtx {
-  sourceFile: ts.SourceFile;
-  fileName: string;
-  types?: SemanticTypeContext;
-}
-
-export type HandlerWrapperProviderExtractableHandler =
-  | ts.ArrowFunction
-  | ts.FunctionExpression
-  | (ts.FunctionDeclaration & { body: ts.Block });
-
-export interface HandlerWrapperProvider extends ModalityAdapterBase {
-  kind: "handler-wrapper";
-  /**
-   * Given a variable initializer or inline JSX expression, if it is a recognized
-   * handler-wrapper call (e.g. form.handleSubmit(cb)), returns the inner callback
-   * to be extracted as the handler; otherwise returns undefined.
-   */
-  unwrapHandler(
-    node: ts.Expression,
-    ctx: HandlerWrapperCtx,
-  ): HandlerWrapperProviderExtractableHandler | undefined;
-}
-
-export type {
-  ComponentRole,
-  EngineFrameworkContext,
-  FrameworkCtx,
-  FrameworkPlugin,
-  HookCall,
-  RenderBoundary,
-  SurfaceCall,
-  SurfaceDecl,
-  SurfaceNode,
-} from "./framework.js";
-export {
-  createEngineFrameworkContext,
-  resolveImportedName,
-} from "./framework.js";
-export {
-  registerFrameworkPlugin,
-  resolveFrameworkPlugin,
-} from "./framework-runtime.js";
-export type {
-  EffectCtx,
-  EffectModel,
-  EffectModelAssignmentRecognition,
-  EffectModelProvider,
-  EffectModelRecognition,
-  EffectSurfaceCall,
-} from "./effect-model.js";
-export {
-  registerEffectModelProviders,
-  resolveEffectModelProviders,
-} from "./effect-model-runtime.js";
-export type {
-  FormSubmit,
-  FormSubmitRecognition,
-  NavFormSubmitCtx,
-  NavUseSubmitHandlerCtx,
-  SurfaceNode as FormSubmitSurfaceNode,
-  UseSubmitHandlerRecognition,
-} from "./form-submit.js";
-export type {
-  CompileCtx,
-  DataflowBinding,
-  LeafBoundary,
-  LeafDispatch,
-  LeafEffect,
-  LeafPrecedence,
-  LeafValue,
-  RankedLeafEffect,
-} from "./leaf-dispatch.js";
-export { LEAF_PRECEDENCE, mergeLeafEffects } from "./leaf-dispatch.js";
+export type { NodeRef } from "../../lang/ts/node-ref.js";
 export type {
   AssignOp,
-  NodeRef,
   SurfaceBinding,
   SurfaceCall as SurfaceIrCall,
   SurfaceDecl as SurfaceIrDecl,
@@ -571,7 +435,60 @@ export type {
   SurfaceParam,
   SurfaceStmt,
   SymbolRef,
-} from "./surface-ir.js";
+} from "../../lang/ts/surface-ir.js";
+export type {
+  EffectAssignmentRecognition,
+  EffectCtx,
+  EffectModel,
+  EffectPlugin,
+  EffectRecognition,
+  EffectSurfaceCall,
+} from "./effect-model.js";
+export {
+  registerEffectPlugins,
+  resolveEffectPlugins,
+} from "./effect-model-runtime.js";
+export type {
+  FormSubmit,
+  FormSubmitRecognition,
+  RouteFormSubmitCtx,
+  RouteHandlerRef,
+  RouteUseSubmitHandlerCtx,
+  UseSubmitHandlerRecognition,
+} from "./form-submit.js";
+export type {
+  ComponentRole,
+  EngineFrameworkContext,
+  FrameworkCtx,
+  FrameworkPlugin,
+  HookCall,
+  RenderBoundary,
+  SurfaceCall,
+  SurfaceDecl,
+  SurfaceNode,
+  UnwrapHandlerCtx,
+} from "./framework.js";
+export {
+  calleeNameFromCall,
+  createEngineFrameworkContext,
+  resolveImportedName,
+  sourceAnchorFromNodeRef,
+} from "./framework.js";
+export {
+  registerFrameworkPlugin,
+  resolveFrameworkPlugin,
+} from "./framework-runtime.js";
+export type {
+  CompileCtx,
+  DataflowBinding,
+  LeafBoundary,
+  LeafDispatch,
+  LeafEffect,
+  LeafPrecedence,
+  LeafValue,
+  RankedLeafEffect,
+} from "./leaf-dispatch.js";
+export { LEAF_PRECEDENCE, mergeLeafEffects } from "./leaf-dispatch.js";
 export type {
   ImportBinding,
   ResolvedSymbol,

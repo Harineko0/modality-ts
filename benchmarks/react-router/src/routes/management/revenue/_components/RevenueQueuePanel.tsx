@@ -1,7 +1,7 @@
-import { useManagementStore } from "../../../../features/management/state/management-store.js";
-import { useRevenueQueue } from "../../../../features/management/infra/management-queries.js";
-import { revenueHealthSchema } from "../../../../shared/features/management/domain/dashboard.ark.js";
 import { DashboardCard } from "../../../../features/dashboard/_components/DashboardCard.js";
+import { useRevenueQueue } from "../../../../features/management/infra/management-queries.js";
+import { useManagementStore } from "../../../../features/management/state/management-store.js";
+import { revenueHealthSchema } from "../../../../shared/features/management/domain/dashboard.ark.js";
 
 export function RevenueQueuePanel() {
   const revenueHealth = useManagementStore((state) => state.revenueHealth);

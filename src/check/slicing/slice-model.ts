@@ -1,8 +1,8 @@
 import {
   applySliceRecordDomainProjection,
-  exprReads,
   type EffectIR,
   type ExprIR,
+  exprReads,
   type Model,
   type Property,
   type StatePredicateIR,
@@ -560,7 +560,7 @@ function exprOpaqueReason(expr: ExprIR): string | undefined {
   }
 }
 
-function collectStatePredicateReads(
+function _collectStatePredicateReads(
   explicitReads: readonly string[] | undefined,
   predicate: StatePredicateIR,
 ): readonly string[] {

@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Provider as JotaiProvider } from "jotai";
+import type { ReactNode } from "react";
 import { SWRConfig } from "swr";
 import { AppShell } from "./shell/AppShell.js";
 

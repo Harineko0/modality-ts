@@ -1,7 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { checkModel } from "modality-ts/check";
-import { always, reachable } from "../../helpers/property-builders.js";
-import { and, eq, lit, neq, or, readVar, type Model } from "modality-ts/core";
+import { and, eq, lit, type Model, neq, or, readVar } from "modality-ts/core";
 import {
   createSwrKeyWindowTemplate,
   createSwrTemplate,
@@ -11,8 +9,10 @@ import {
   swrWindowEvictedSummaryId,
   swrWindowView,
 } from "modality-ts/extract/sources/swr";
-import { observe, setup } from "../../../src/extract/sources/swr/harness.js";
+import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
+import { observe, setup } from "../../../src/extract/sources/swr/harness.js";
+import { always, reachable } from "../../helpers/property-builders.js";
 
 const route = { kind: "enum", values: ["/"] } as const;
 const pendingOp = {

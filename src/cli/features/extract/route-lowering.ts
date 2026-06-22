@@ -2,13 +2,13 @@ import type { EffectIR, Transition } from "modality-ts/core";
 import type {
   LocationLowering,
   NavIntent,
-  NavigationAdapter,
   RouteInventory,
+  RoutePlugin,
 } from "modality-ts/extract/engine/spi";
 
 export function buildLocationLowering(
   transitions: readonly Transition[],
-  adapter: NavigationAdapter,
+  adapter: RoutePlugin,
   inventory: RouteInventory,
 ): LocationLowering {
   const pushTargets = new Set<string>();

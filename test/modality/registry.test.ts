@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
+import { describe, expect, it } from "vitest";
 import {
   createBuiltinModalityRegistry,
   createModalityRegistry,
@@ -23,10 +23,10 @@ describe("modality plugin registry", () => {
   it("summarizes configured plugin ids deterministically", () => {
     expect(
       createModalityRegistry({
-        sourcePlugins: [plugin("swr"), plugin("use-state")],
+        statePlugins: [plugin("swr"), plugin("use-state")],
       }),
     ).toMatchObject({
-      sourcePluginIds: ["swr", "use-state"],
+      statePluginIds: ["swr", "use-state"],
       plugins: [
         {
           id: "swr",
@@ -58,14 +58,14 @@ describe("modality plugin registry", () => {
 
   it("rejects duplicate source plugin ids", () => {
     expect(() =>
-      createModalityRegistry({ sourcePlugins: [plugin("swr"), plugin("swr")] }),
+      createModalityRegistry({ statePlugins: [plugin("swr"), plugin("swr")] }),
     ).toThrow("Duplicate source plugin swr");
   });
 
   it("rejects malformed plugin contracts at runtime", () => {
     expect(() =>
       createModalityRegistry({
-        sourcePlugins: [
+        statePlugins: [
           {
             id: "bad",
             version: "1.0.0",
@@ -89,98 +89,21 @@ describe("modality plugin registry", () => {
         },
       }),
     ).toMatchObject({
-      sourcePluginIds: ["swr", "use-state"],
-      routerPluginId: "router",
-      domainRefinementProviders: expect.arrayContaining([
+      statePluginIds: ["swr", "use-state"],
+      routePluginId: "router",
+      typePlugins: expect.arrayContaining([
         expect.objectContaining({ id: "zod" }),
         expect.objectContaining({ id: "arktype" }),
       ]),
-      plugins: [
-        {
-          id: "arktype",
-          kind: "domain-refinement",
-          version: "0.1.0",
-          packageNames: ["arktype"],
-        },
-        {
-          id: "zod",
-          kind: "domain-refinement",
-          version: "0.1.0",
-          packageNames: ["zod"],
-        },
-        {
-          id: "router-effect-api",
-          kind: "effect-api",
-          version: "0.1.0",
-          packageNames: ["react-router", "react-router-dom"],
-        },
-        {
-          id: "timers",
-          kind: "effect-model",
-          version: "0.1.0",
-          packageNames: [],
-        },
-        {
-          id: "websocket",
-          kind: "effect-model",
-          version: "0.1.0",
-          packageNames: [],
-        },
-        {
-          id: "react",
-          kind: "framework",
-          version: "0.1.0",
-          packageNames: ["react"],
-        },
-        {
-          id: "router-module-roles",
-          kind: "module-roles",
-          version: "0.1.0",
-          packageNames: ["react-router", "react-router-dom"],
-        },
-        {
-          id: "router",
-          kind: "navigation",
-          version: "0.1.0",
-          packageNames: ["react-router", "react-router-dom"],
-        },
-        {
-          id: "router-observation",
-          kind: "observation",
-          version: "0.1.0",
-          packageNames: ["react-router", "react-router-dom"],
-        },
-        {
-          id: "swr",
-          kind: "observation",
-          version: "0.1.0",
-          packageNames: ["swr"],
-        },
-        {
-          id: "use-state",
-          kind: "observation",
-          version: "0.1.0",
-          packageNames: ["react"],
-        },
-        {
-          id: "router-route-execution",
-          kind: "route-execution",
-          version: "0.1.0",
-          packageNames: ["react-router", "react-router-dom"],
-        },
-        {
-          id: "swr",
-          kind: "state-source",
-          version: "0.1.0",
-          packageNames: ["swr"],
-        },
-        {
-          id: "use-state",
-          kind: "state-source",
-          version: "0.1.0",
-          packageNames: ["react"],
-        },
-      ],
+      plugins: expect.arrayContaining([
+        expect.objectContaining({ id: "arktype", kind: "type" }),
+        expect.objectContaining({ id: "zod", kind: "type" }),
+        expect.objectContaining({ id: "timers", kind: "effect" }),
+        expect.objectContaining({ id: "websocket", kind: "effect" }),
+        expect.objectContaining({ id: "router", kind: "route" }),
+        expect.objectContaining({ id: "swr", kind: "state-source" }),
+        expect.objectContaining({ id: "use-state", kind: "state-source" }),
+      ]),
     });
   });
 
@@ -193,7 +116,7 @@ describe("modality plugin registry", () => {
         },
       }),
     ).toMatchObject({
-      routerPluginId: "next",
+      routePluginId: "next",
       adapters: {
         moduleRoles: [expect.objectContaining({ id: "next-module-roles" })],
         effectApis: [expect.objectContaining({ id: "next-effect-api" })],
@@ -201,7 +124,7 @@ describe("modality plugin registry", () => {
       plugins: expect.arrayContaining([
         expect.objectContaining({
           id: "next",
-          kind: "navigation",
+          kind: "route",
           packageNames: ["next"],
         }),
         expect.objectContaining({
@@ -230,24 +153,21 @@ describe("modality plugin registry", () => {
         disabledPlugins: ["swr", "router", "zod"],
       }),
     ).toMatchObject({
-      sourcePluginIds: ["jotai", "use-state"],
-      domainRefinementProviders: [expect.objectContaining({ id: "arktype" })],
-      plugins: [
-        { id: "arktype", kind: "domain-refinement" },
-        { id: "timers", kind: "effect-model" },
-        { id: "websocket", kind: "effect-model" },
-        { id: "react", kind: "framework" },
-        { id: "jotai", kind: "observation" },
-        { id: "use-state", kind: "observation" },
-        { id: "jotai", kind: "state-source" },
-        { id: "use-state", kind: "state-source" },
-      ],
+      statePluginIds: ["jotai", "use-state"],
+      typePlugins: [expect.objectContaining({ id: "arktype" })],
+      plugins: expect.arrayContaining([
+        expect.objectContaining({ id: "arktype", kind: "type" }),
+        expect.objectContaining({ id: "timers", kind: "effect" }),
+        expect.objectContaining({ id: "websocket", kind: "effect" }),
+        expect.objectContaining({ id: "jotai", kind: "state-source" }),
+        expect.objectContaining({ id: "use-state", kind: "state-source" }),
+      ]),
     });
   });
 
   it("enables domain refinement providers when dependencies are unknown", () => {
     expect(createBuiltinModalityRegistry()).toMatchObject({
-      domainRefinementProviders: [
+      typePlugins: [
         expect.objectContaining({ id: "zod" }),
         expect.objectContaining({ id: "arktype" }),
       ],

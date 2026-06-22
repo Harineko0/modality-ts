@@ -1,9 +1,9 @@
 import {
   buildFieldPruningMetadata,
   collectExprReadFieldPaths,
+  type Model,
   projectRecordDomainForSlice,
   readVar,
-  type Model,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 

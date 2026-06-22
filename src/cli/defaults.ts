@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 export const defaultArtifactDir = ".modality";

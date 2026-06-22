@@ -1,6 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 
 export const REQUIRED_NATIVE_ARTIFACTS = [
   "modality-checker.linux-x64-gnu.node",

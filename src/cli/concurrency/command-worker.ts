@@ -1,7 +1,7 @@
 import { parentPort } from "node:worker_threads";
-import { runGenerateCommand } from "../features/generate/command.js";
-import { runExtractCommand } from "../features/extract/command.js";
 import { runCheckCommand } from "../features/check/command.js";
+import { runExtractCommand } from "../features/extract/command.js";
+import { runGenerateCommand } from "../features/generate/command.js";
 import type { CommandJob, WorkerResponse } from "./jobs.js";
 
 if (!parentPort) throw new Error("command-worker must run in a worker thread");

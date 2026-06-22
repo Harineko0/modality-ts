@@ -1,17 +1,15 @@
-import * as ts from "typescript";
 import type { AbstractDomain, Value } from "modality-ts/core";
-import type {
-  SemanticTypeContext,
-  DomainRefinementProvider,
-} from "modality-ts/extract/engine/spi";
-import { firstValue } from "modality-ts/extract/engine/spi";
-import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
-import {
-  inferDomainFromTypeNodeDetailed,
-  type DomainInferenceResult,
-} from "../../engine/ts/domains.js";
-import { literalValue, propertyName } from "../../engine/ts/ast.js";
 import { validateValue } from "modality-ts/core";
+import type { TypePlugin } from "modality-ts/extract/engine/spi";
+import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
+import * as ts from "typescript";
+import { literalValue, propertyName } from "../../engine/ts/ast.js";
+import {
+  type DomainInferenceResult,
+  firstValue,
+  inferDomainFromTypeNodeDetailed,
+} from "../../engine/ts/domains.js";
+import { inferDomainSemantic } from "../../engine/ts/type-domains.js";
 
 export interface FieldDomainResult extends DomainInferenceResult {
   initial: Value;
@@ -24,7 +22,7 @@ export function inferFieldDomain(
   varId?: string,
   sourceFile?: ts.SourceFile,
   types?: SemanticTypeContext,
-  domainRefinements?: readonly DomainRefinementProvider[],
+  typePlugins?: readonly TypePlugin[],
 ): FieldDomainResult {
   const unwrappedInitializer = unwrapExpression(initializer);
   const semanticSource = types?.sourceFile ?? sourceFile;
@@ -34,7 +32,7 @@ export function inferFieldDomain(
       sourceFile: semanticSource,
       varId,
       initializer: unwrappedInitializer,
-      domainRefinements,
+      typePlugins,
       typeAliases,
     });
     const initial = unwrappedInitializer
@@ -51,7 +49,7 @@ export function inferFieldDomain(
         initializer: unwrappedInitializer,
         sourceFile,
         varId,
-        domainRefinements,
+        typePlugins,
       },
     );
     const initial = unwrappedInitializer
@@ -66,7 +64,7 @@ export function inferFieldDomain(
         sourceFile: semanticSource,
         varId,
         initializer: unwrappedInitializer,
-        domainRefinements,
+        typePlugins,
         typeAliases,
         broadTypeNode: typeNode,
       });

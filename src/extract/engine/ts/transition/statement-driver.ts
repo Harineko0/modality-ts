@@ -1,25 +1,27 @@
 import type { EffectIR, Transition } from "modality-ts/core";
 import * as ts from "typescript";
 import { uniqueSummariesByEffect } from "../../../compile/index.js";
+import {
+  findGuardedRest,
+  guardedRestEffect,
+} from "../../../lang/ts/guarded-rest.js";
 import { lowerStatement } from "../../../lang/ts/lower.js";
+import type { SemanticTypeContext } from "../../../lang/ts/semantic-type-context.js";
 import { createTsSymbolPort } from "../../../lang/ts/symbol-port.js";
 import { syntaxOnlyTypeContext } from "../../../lang/ts/syntax-context.js";
+import type { EffectPlugin } from "../../spi/index.js";
+import {
+  currentEngineFramework,
+  literalValue,
+  recognizeHookFromTs,
+} from "../ast.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
 import {
   escapedSettersInStatement,
   loopVarsForStatements,
   settersWrittenIn,
   uniqueSetters,
-} from "../../../lang/ts/setter-analysis.js";
-import {
-  findGuardedRest,
-  guardedRestEffect,
-} from "../../../lang/ts/guarded-rest.js";
-import type {
-  EffectModelProvider,
-  SemanticTypeContext,
-} from "../../spi/index.js";
-import { currentEngineFramework, literalValue } from "../ast.js";
-import type { EnvironmentEventConfig } from "../environment-config.js";
+} from "../setter-analysis.js";
 import type {
   BoundExpr,
   EffectSummary,
@@ -30,22 +32,15 @@ import type {
 import type { TransitionBinding } from "./concurrent.js";
 import { startTransitionScheduleFromCall } from "./concurrent.js";
 import { dispatchTsStatements } from "./dispatch-node.js";
-import type { WebSocketRegistration } from "./environment-callbacks.js";
-import { createEngineLeafDispatch } from "./engine-leaf-dispatch.js";
 import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
+import { createEngineLeafDispatch } from "./engine-leaf-dispatch.js";
+import type { WebSocketRegistration } from "./environment-callbacks.js";
 import { valueExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
-import type { StatementSummaryState } from "./statement-summary-state.js";
 import { summarizeSetterCall } from "./setter-write.js";
+import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
 
-export type { StatementSummaryState } from "./statement-summary-state.js";
-export {
-  summarizeSetterCall,
-  summarizeSetterWrite,
-  setterCallFrom,
-  type StatementSummaryResetOptions,
-} from "./setter-write.js";
 export {
   effectFromSummaries,
   effectWriteVars,
@@ -60,7 +55,14 @@ export {
   isLoopStatement,
   settersWrittenIn,
   uniqueSetters,
-} from "../../../lang/ts/setter-analysis.js";
+} from "../setter-analysis.js";
+export {
+  type StatementSummaryResetOptions,
+  setterCallFrom,
+  summarizeSetterCall,
+  summarizeSetterWrite,
+} from "./setter-write.js";
+export type { StatementSummaryState } from "./statement-summary-state.js";
 
 export interface StatementSummaryOptions {
   handlers?: Map<string, ExtractableHandler>;
@@ -83,7 +85,7 @@ export interface StatementSummaryOptions {
   fileName?: string;
   source?: ts.SourceFile;
   types?: SemanticTypeContext;
-  effectModelProviders?: readonly EffectModelProvider[];
+  effectPlugins?: readonly EffectPlugin[];
 }
 
 interface StatementSummaryResult {
@@ -115,7 +117,7 @@ function handlerSummaryState(
     fileName: options.fileName,
     source: options.source,
     types: options.types,
-    effectModelProviders: options.effectModelProviders,
+    effectPlugins: options.effectPlugins,
   };
 }
 
@@ -148,16 +150,15 @@ function compileStatementList(
 ): StatementSummaryResult | undefined {
   if (!state.source || !state.fileName) return undefined;
   const syntaxContext = syntaxOnlyTypeContext(state.source);
-  const typeContext: import("../../spi/index.js").SemanticTypeContext =
-    state.types ?? {
-      program: syntaxContext.program,
-      checker: syntaxContext.checker,
-      sourceFile: state.source,
-      getSourceFile: (fileName: string) =>
-        syntaxContext.getSourceFile?.(fileName) ??
-        syntaxContext.program.getSourceFile(fileName) ??
-        undefined,
-    };
+  const typeContext: SemanticTypeContext = state.types ?? {
+    program: syntaxContext.program,
+    checker: syntaxContext.checker,
+    sourceFile: state.source,
+    getSourceFile: (fileName: string) =>
+      syntaxContext.getSourceFile?.(fileName) ??
+      syntaxContext.program.getSourceFile(fileName) ??
+      undefined,
+  };
   const guarded = findGuardedRest(statements);
   if (guarded) {
     const condition = parseGuardExpression(
@@ -194,14 +195,18 @@ function compileStatementList(
       symbolAt: typeContext.symbolAt,
       aliasedSymbolAt: typeContext.aliasedSymbolAt,
     });
-    const originNode = (ref: import("../../spi/surface-ir.js").NodeRef) =>
+    const originNode = (ref: import("../../../lang/ts/node-ref.js").NodeRef) =>
       symbols.nodeAt?.(ref);
     if (!originNode) return undefined;
     const leaf = createEngineLeafDispatch({ setters, state, originNode });
     const locals = new Map(
       [...state.locals.entries()].map(([name, binding]) => [
         name,
-        { expr: binding.expr, reads: binding.reads },
+        {
+          expr: binding.expr,
+          reads: binding.reads,
+          ...(binding.setter ? { setter: binding.setter } : {}),
+        },
       ]),
     );
     const taintVars = uniqueSetters(
@@ -325,9 +330,10 @@ export function summarizeHandlerStatements(
 ): EffectSummary[] | undefined {
   if (ts.isCallExpression(handler.body)) {
     const state = handlerSummaryState(options);
-    const hook = currentEngineFramework().framework.recognizeHook(
+    const hook = recognizeHookFromTs(
       handler.body,
-      currentEngineFramework().ctx,
+      currentEngineFramework(),
+      options.fileName ?? handler.getSourceFile().fileName,
     );
     if (hook?.hook.kind === "start-transition") {
       const scheduled = summarizeStartTransitionCall(
@@ -341,7 +347,7 @@ export function summarizeHandlerStatements(
       handler.body,
       setters,
       state,
-      state.effectModelProviders,
+      state.effectPlugins,
     );
     if (effectSummary) return [effectSummary];
     const helper = helperSummariesFromCall(handler.body, state, setters);
@@ -382,7 +388,7 @@ export function summarizeStatements(
     fileName: options.fileName,
     source: options.source,
     types: options.types,
-    effectModelProviders: options.effectModelProviders,
+    effectPlugins: options.effectPlugins,
   });
   return result.summaries;
 }
@@ -393,10 +399,12 @@ export function summarizeAsyncSegment(
   snapshottedReads?: ReadonlySet<string>,
   initialLocals?: Map<string, BoundExpr>,
 ): EffectSummary[] {
+  const source = statements[0]?.getSourceFile();
   return uniqueSummariesByEffect(
     summarizeStatements(statements, setters, {
       snapshottedReads,
       ...(initialLocals?.size ? { initialLocals } : {}),
+      ...(source ? { source, fileName: source.fileName } : {}),
     }) ?? fallbackSummaries(statements, setters),
   );
 }

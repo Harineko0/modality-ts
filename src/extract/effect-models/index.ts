@@ -1,2 +1,2 @@
-export { timerEffectModelProvider } from "./timers/index.js";
-export { websocketEffectModelProvider } from "./websocket/index.js";
+export { timerEffectPlugin } from "./timers/index.js";
+export { websocketEffectPlugin } from "./websocket/index.js";

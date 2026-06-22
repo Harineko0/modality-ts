@@ -1,5 +1,4 @@
 import type {
-  ComponentRole,
   FrameworkCtx,
   FrameworkPlugin,
   HookCall,
@@ -9,26 +8,25 @@ import type {
   SurfaceNode,
 } from "modality-ts/extract/engine/spi";
 import { registerFrameworkPlugin } from "modality-ts/extract/engine/spi";
-import { componentNameFor, startsUppercase } from "../../engine/ts/ast.js";
-import { isCustomHookDeclaration } from "../../engine/ts/components.js";
+import { createFrameworkPlugin } from "modality-ts/extract/plugins";
 import {
   isReactEffectHookName,
-  isReactFlushSyncCall,
   isReactHookNamed,
-  isReactStartTransitionCall,
-  isReactUseTransitionCall,
-  reactEffectPhase,
   recognizeReactHook,
 } from "./hooks.js";
 import {
+  isReactFlushSyncCall,
   isReactLazyCall,
+  isReactStartTransitionCall,
   isReactSuspenseElement,
   isReactUseCall,
+  isReactUseTransitionCall,
   recognizeReactRenderBoundary,
   SUSPENSE_DOMAIN,
 } from "./render-boundaries.js";
+import { classifySurfaceComponent } from "./surface-components.js";
 
-export { SUSPENSE_DOMAIN };
+export type { ReactEffectHookName } from "./hooks.js";
 export {
   isReactEffectHookName,
   isReactFlushSyncCall,
@@ -38,14 +36,13 @@ export {
   isReactSuspenseElement,
   isReactUseCall,
   isReactUseTransitionCall,
-  reactEffectPhase,
   recognizeReactHook,
   recognizeReactRenderBoundary,
+  SUSPENSE_DOMAIN,
 };
-export type { ReactEffectHookName } from "./hooks.js";
 
 export function reactFramework(): FrameworkPlugin {
-  return {
+  return createFrameworkPlugin({
     id: "react",
     version: "0.1.0",
     packageNames: ["react"],
@@ -58,19 +55,12 @@ export function reactFramework(): FrameworkPlugin {
     ): RenderBoundary | undefined {
       return recognizeReactRenderBoundary(node, ctx);
     },
-    classifyComponent(
-      decl: SurfaceDecl,
-      _ctx: FrameworkCtx,
-    ): ComponentRole | undefined {
-      if (isCustomHookDeclaration(decl)) return "custom-hook";
-      const name = componentNameFor(decl);
-      if (name && startsUppercase(name)) return "component";
-      return undefined;
+    classifyComponent(decl: SurfaceDecl, _ctx: FrameworkCtx) {
+      return classifySurfaceComponent(decl);
     },
-  };
+  });
 }
 
 registerFrameworkPlugin(reactFramework());
-import "./source-extraction.js";
 
 export default reactFramework;

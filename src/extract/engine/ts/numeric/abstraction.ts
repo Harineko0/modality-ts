@@ -1,8 +1,8 @@
 import {
-  domainCardinality,
-  exceedsWideNumericThreshold,
   type AbstractDomain,
+  domainCardinality,
   type ExprIR,
+  exceedsWideNumericThreshold,
   type Model,
   type NumericReduction,
   type NumericReductionClaim,

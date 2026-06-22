@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { s } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 function App() {
   return null;

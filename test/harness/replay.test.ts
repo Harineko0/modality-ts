@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-import type { Trace } from "modality-ts/core";
 import {
   ActionReplayDriver,
   createDomReplayActor,
@@ -17,8 +15,10 @@ import {
 import {
   createBuiltinModalityRegistry,
   observationSourcesFromProviders,
-  setupObservationProviders,
+  setupObservationPlugins,
 } from "modality-ts/cli/registry";
+import type { Trace } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 const trace: Trace = {
   steps: [
@@ -192,7 +192,7 @@ describe("replayTrace", () => {
   it("combines registry observation providers into a model state", () => {
     const atom = {};
     const registry = createBuiltinModalityRegistry();
-    const runtime = setupObservationProviders(registry.adapters.observations, {
+    const runtime = setupObservationPlugins(registry.adapters.observations, {
       initialState: { "sys:route": "/admin", "sys:history": ["/"] },
       atoms: { "atom:authAtom": atom },
       store: { get: () => "user" },
@@ -412,10 +412,7 @@ describe("replayTrace", () => {
 
   it("classifies missing observation providers as a replay-blocking reason", async () => {
     const registry = createBuiltinModalityRegistry();
-    const runtime = setupObservationProviders(
-      registry.adapters.observations,
-      {},
-    );
+    const runtime = setupObservationPlugins(registry.adapters.observations, {});
     const sources = observationSourcesFromProviders(
       registry.adapters.observations,
       runtime,

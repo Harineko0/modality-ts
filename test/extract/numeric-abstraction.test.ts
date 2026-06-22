@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import type { Model } from "modality-ts/core";
 import {
   applyInputClassAbstraction,
   applyIntervalAbstraction,
@@ -11,7 +11,7 @@ import {
   numericCoiDroppedReductions,
   worstNumericClaim,
 } from "modality-ts/extract/engine";
-import type { Model } from "modality-ts/core";
+import { describe, expect, it } from "vitest";
 
 describe("numeric abstraction", () => {
   it("keeps sparse intSet exact-first", () => {
