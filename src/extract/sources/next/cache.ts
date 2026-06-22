@@ -9,7 +9,7 @@ import type {
 } from "modality-ts/core";
 import type { RouteInventory, RouteNode } from "modality-ts/extract/engine/spi";
 import { cacheDynamicRequestCaveat } from "../../engine/ts/caveats.js";
-import { PENDING_QUEUE_VAR } from "../../engine/ts/transition/statement-summary.js";
+import { PENDING_QUEUE_VAR } from "../../compile/index.js";
 import { NEXT_CACHE_DOMAIN, nextCacheVarId, nextTreeNodes } from "./routes.js";
 
 export type NextCacheKeyKind =

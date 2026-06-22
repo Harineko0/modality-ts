@@ -1,10 +1,8 @@
 import type { EffectIR, ExtractionCaveat } from "modality-ts/core";
-import type {
-  CompileCtx,
-  LeafDispatch,
-} from "../engine/spi/leaf-dispatch.js";
-import type { SurfaceStmt } from "../engine/spi/surface-ir.js";
+import type { CompileCtx, LeafDispatch } from "../engine/spi/leaf-dispatch.js";
+import type { SurfaceCall, SurfaceStmt } from "../engine/spi/surface-ir.js";
 import { compileExpr, compileGuard } from "./compile-expr.js";
+import { effectFromSummaries, identityEffect } from "./effects.js";
 
 export interface CompileSummary {
   effect: EffectIR;
@@ -17,36 +15,81 @@ export interface CompileStmtOptions {
   leaf: LeafDispatch;
   ctx: CompileCtx;
   loopVars?: readonly string[];
-}
-
-function identityEffect(): Extract<EffectIR, { kind: "seq" }> {
-  return { kind: "seq", effects: [] };
+  taintVars?: readonly string[];
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-function effectFromSummaries(
-  summaries: readonly { effect: EffectIR; reads: string[] }[],
-): EffectIR {
-  const effects = summaries.map((summary) => summary.effect);
-  if (effects.length === 0) return identityEffect();
-  const effect = effects[0];
-  return effects.length === 1 && effect
-    ? effect
-    : { kind: "seq", effects };
+function taintEffect(varIds: readonly string[]): EffectIR {
+  if (varIds.length === 0) return identityEffect();
+  if (varIds.length === 1) {
+    return { kind: "havoc", var: varIds[0]! };
+  }
+  return {
+    kind: "seq",
+    effects: varIds.map((varId) => ({ kind: "havoc" as const, var: varId })),
+  };
+}
+
+function taintSummary(
+  varIds: readonly string[],
+  id: string,
+  reason: string,
+): CompileSummary {
+  return {
+    effect: taintEffect(varIds),
+    reads: [],
+    caveats:
+      varIds.length > 0
+        ? [
+            {
+              kind: "model-slack",
+              id,
+              reason,
+              severity: "over-approx",
+            },
+          ]
+        : [],
+    terminated: false,
+  };
+}
+
+function readsFromExpr(expr: import("modality-ts/core").ExprIR): string[] {
+  if (expr.kind === "read" || expr.kind === "readPre") return [expr.var];
+  if (expr.kind === "readOpArg") return [];
+  if ("args" in expr && Array.isArray(expr.args)) {
+    return uniqueStrings(expr.args.flatMap((arg) => readsFromExpr(arg)));
+  }
+  return [];
+}
+
+function readsFromEffect(
+  effect: import("modality-ts/core").EffectIR,
+): string[] {
+  if (effect.kind === "assign") return readsFromExpr(effect.expr);
+  if (effect.kind === "seq") {
+    return uniqueStrings(effect.effects.flatMap(readsFromEffect));
+  }
+  if (effect.kind === "if") {
+    return uniqueStrings([
+      ...readsFromEffect(effect.then),
+      ...readsFromEffect(effect.else),
+    ]);
+  }
+  return [];
 }
 
 function compileLeafCall(
-  call: Extract<import("../engine/spi/surface-ir.js").SurfaceExpr, { kind: "call" }>,
+  call: SurfaceCall,
   options: CompileStmtOptions,
 ): CompileSummary | undefined {
   const leaf = options.leaf.interpretCall(call, options.ctx);
   if (!leaf) return undefined;
   return {
     effect: leaf.effect,
-    reads: [],
+    reads: readsFromEffect(leaf.effect),
     caveats: leaf.caveats ?? [],
     terminated: false,
   };
@@ -59,11 +102,19 @@ function compileStmt(
   switch (stmt.kind) {
     case "block": {
       const summaries: { effect: EffectIR; reads: string[] }[] = [];
-      const caveats: import("modality-ts/core").ExtractionCaveat[] = [];
+      const caveats: ExtractionCaveat[] = [];
       let terminated = false;
       for (const child of stmt.stmts) {
         const result = compileStmt(child, options);
         if (!result) return undefined;
+        if (
+          result.effect.kind === "seq" &&
+          result.effect.effects.length === 0 &&
+          result.reads.length === 0 &&
+          result.caveats.length === 0
+        ) {
+          continue;
+        }
         summaries.push({ effect: result.effect, reads: result.reads });
         caveats.push(...result.caveats);
         if (result.terminated) {
@@ -179,8 +230,18 @@ function compileStmt(
       };
     }
     case "declare": {
+      const summaries: { effect: EffectIR; reads: string[] }[] = [];
+      const caveats: ExtractionCaveat[] = [];
       for (const binding of stmt.bindings) {
         if (!binding.init) continue;
+        if (binding.init.kind === "call") {
+          const leaf = compileLeafCall(binding.init, options);
+          if (leaf) {
+            summaries.push({ effect: leaf.effect, reads: leaf.reads });
+            caveats.push(...leaf.caveats);
+            continue;
+          }
+        }
         const value = compileExpr(binding.init, options.ctx);
         if (value) {
           options.ctx.locals.set(binding.name, {
@@ -190,9 +251,9 @@ function compileStmt(
         }
       }
       return {
-        effect: identityEffect(),
-        reads: [],
-        caveats: [],
+        effect: effectFromSummaries(summaries),
+        reads: uniqueStrings(summaries.flatMap((s) => s.reads)),
+        caveats,
         terminated: false,
       };
     }
@@ -200,6 +261,11 @@ function compileStmt(
       if (stmt.expr.kind === "call") {
         const leaf = compileLeafCall(stmt.expr, options);
         if (leaf) return leaf;
+        return taintSummary(
+          options.taintVars ?? [],
+          "unknown-call-taint",
+          "Unknown call expression",
+        );
       }
       return {
         effect: identityEffect(),
@@ -220,20 +286,17 @@ function compileStmt(
     case "throw":
     case "tryish":
     case "opaque":
+      return taintSummary(
+        options.taintVars ?? [],
+        `unsupported-surface-${stmt.kind}`,
+        `Unsupported surface statement kind: ${stmt.kind}`,
+      );
     case "assign":
-      return {
-        effect: identityEffect(),
-        reads: [],
-        caveats: [
-          {
-            kind: "model-slack",
-            id: `unsupported-surface-${stmt.kind}`,
-            reason: `Unsupported surface statement kind: ${stmt.kind}`,
-            severity: "over-approx",
-          },
-        ],
-        terminated: false,
-      };
+      return taintSummary(
+        options.taintVars ?? [],
+        "unsupported-surface-assign",
+        "Direct assignment not lowered to setter write",
+      );
     default:
       return undefined;
   }

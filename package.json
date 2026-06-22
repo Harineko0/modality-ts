@@ -123,10 +123,6 @@
       "types": "./dist/extract/compile/index.d.ts",
       "default": "./dist/extract/compile/index.js"
     },
-    "./extract/wiring/install": {
-      "types": "./dist/extract/wiring/install.d.ts",
-      "default": "./dist/extract/wiring/install.js"
-    },
     "./extract/frameworks/react": {
       "types": "./dist/extract/frameworks/react/index.d.ts",
       "default": "./dist/extract/frameworks/react/index.js"

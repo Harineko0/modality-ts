@@ -16,7 +16,7 @@ import type {
 } from "../types.js";
 import { effectWriteVars, settersWrittenIn, uniqueSetters } from "./effects.js";
 import { stateNameForVar } from "./handlers.js";
-import { summarizeHandlerStatements } from "./statement-summary.js";
+import { summarizeHandlerStatements } from "./statement-driver.js";
 import { labelForEvent } from "./ui.js";
 
 const TIMER_DOMAIN = { kind: "enum" as const, values: ["idle", "scheduled"] };
@@ -117,7 +117,14 @@ export function registerTimerFromScheduleCall(
   ) {
     return undefined;
   }
-  const summaries = timerCallbackSummaries(callback, setters);
+  const summaries = timerCallbackSummaries(callback, setters, {
+    component,
+    fileName,
+    source,
+    timerContext: context,
+    timerIndex: { value: timerIndex },
+    timerBindings: bindings,
+  });
   if (!summaries || summaries.length === 0) return undefined;
   const effects = summaries.map((summary) => summary.effect);
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
@@ -312,8 +319,9 @@ export function timerSetterTaints(
 export function timerCallbackSummaries(
   callback: ExtractableHandler,
   setters: Map<string, SetterBinding>,
+  options: Parameters<typeof summarizeHandlerStatements>[2] = {},
 ): EffectSummary[] | undefined {
-  return summarizeHandlerStatements(callback, setters);
+  return summarizeHandlerStatements(callback, setters, options);
 }
 
 export function handlerSchedulesModeledTimer(

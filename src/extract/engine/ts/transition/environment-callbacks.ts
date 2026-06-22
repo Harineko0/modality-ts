@@ -28,8 +28,8 @@ import {
   simplifyEffect,
   summarizeHandlerStatements,
   summarizeStatements,
-} from "./statement-summary.js";
-import type { StatementSummaryOptions } from "./statement-summary.js";
+} from "./statement-driver.js";
+import type { StatementSummaryOptions } from "./statement-driver.js";
 
 const WEBSOCKET_DOMAIN = {
   kind: "enum" as const,

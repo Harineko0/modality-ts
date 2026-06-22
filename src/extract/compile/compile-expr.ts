@@ -1,24 +1,43 @@
 import type { ExprIR, Value } from "modality-ts/core";
 import type { SurfaceExpr, SymbolRef } from "../engine/spi/surface-ir.js";
-import type { CompileCtx, DataflowBinding } from "../engine/spi/leaf-dispatch.js";
+import type {
+  CompileCtx,
+  DataflowBinding,
+} from "../engine/spi/leaf-dispatch.js";
 
 export interface CompiledExpr {
   expr: ExprIR;
   reads: string[];
 }
 
-export function readLocal(name: string, ctx: CompileCtx): CompiledExpr | undefined {
+export function readLocal(
+  name: string,
+  ctx: CompileCtx,
+): CompiledExpr | undefined {
   const binding = ctx.locals.get(name);
   if (!binding) return undefined;
   return { expr: binding.expr, reads: [...binding.reads] };
 }
 
-export function readSymbol(
-  symbol: SymbolRef,
-  ctx: CompileCtx,
-): CompiledExpr {
+export function readSymbol(symbol: SymbolRef, ctx: CompileCtx): CompiledExpr {
   const local = readLocal(symbol.name, ctx);
   if (local) return local;
+  const stateVar = ctx.stateVarIds?.get(symbol.name);
+  if (stateVar) {
+    if (ctx.snapshottedReads?.has(stateVar)) {
+      return {
+        expr: { kind: "readOpArg", key: `snap:${stateVar}` },
+        reads: [],
+      };
+    }
+    return {
+      expr: {
+        kind: ctx.snapshotReads ? "readPre" : "read",
+        var: stateVar,
+      },
+      reads: [stateVar],
+    };
+  }
   const key = ctx.symbols.localSymbolKey(symbol);
   const varName = key ? `sym:${key}` : symbol.name;
   return {
@@ -101,11 +120,7 @@ export function compileExpr(
           kind: "cond",
           args: [test.expr, whenTrue.expr, whenFalse.expr],
         },
-        reads: combineReads([
-          test.reads,
-          whenTrue.reads,
-          whenFalse.reads,
-        ]),
+        reads: combineReads([test.reads, whenTrue.reads, whenFalse.reads]),
       };
     }
     case "member": {

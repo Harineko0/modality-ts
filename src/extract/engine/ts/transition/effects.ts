@@ -16,9 +16,9 @@ import { dispatchEffectRecognition } from "./effect-model-dispatch.js";
 import { stateVarForName } from "./expressions.js";
 import { andGuard } from "./guards.js";
 import { dependencyNameSegment } from "./semantic-ids.js";
-import type { StatementSummaryOptions } from "./statement-summary.js";
+import type { StatementSummaryOptions } from "./statement-driver.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
-import { effectWriteVars, summarizeStatements } from "./statement-summary.js";
+import { effectWriteVars, summarizeStatements } from "./statement-driver.js";
 import type { TimerRegistration } from "./timers.js";
 import { labelForEvent } from "./ui.js";
 
@@ -38,7 +38,7 @@ export {
   summarizeSetterStatement,
   uniqueSetters,
   uniqueSummariesByEffect,
-} from "./statement-summary.js";
+} from "./statement-driver.js";
 
 export function havocSetterTransition(
   source: ts.SourceFile,

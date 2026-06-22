@@ -15,6 +15,9 @@ export interface DispatchNodeOptions {
   locals?: Map<string, { expr: import("modality-ts/core").ExprIR; reads: string[] }>;
   snapshotReads?: boolean;
   loopVars?: readonly string[];
+  taintVars?: readonly string[];
+  stateVarIds?: ReadonlyMap<string, string>;
+  snapshottedReads?: ReadonlySet<string>;
   lowerStatement: (statement: ts.Statement, fileName: string) => SurfaceStmt;
   fileName: string;
 }
@@ -28,7 +31,7 @@ export interface DispatchNodeResult {
 function compileCtxFrom(
   options: Pick<
     DispatchNodeOptions,
-    "symbols" | "leaf" | "locals" | "snapshotReads"
+    "symbols" | "leaf" | "locals" | "snapshotReads" | "stateVarIds" | "snapshottedReads"
   >,
 ): CompileCtx {
   return {
@@ -36,6 +39,10 @@ function compileCtxFrom(
     locals: new Map(options.locals),
     snapshotReads: options.snapshotReads ?? true,
     caveats: [],
+    ...(options.stateVarIds ? { stateVarIds: options.stateVarIds } : {}),
+    ...(options.snapshottedReads
+      ? { snapshottedReads: options.snapshottedReads }
+      : {}),
   };
 }
 
@@ -43,7 +50,7 @@ export function dispatchSurfaceStatements(
   stmts: readonly SurfaceStmt[],
   options: Pick<
     DispatchNodeOptions,
-    "symbols" | "leaf" | "locals" | "snapshotReads" | "loopVars"
+    "symbols" | "leaf" | "locals" | "snapshotReads" | "loopVars" | "taintVars" | "stateVarIds" | "snapshottedReads"
   >,
 ): DispatchNodeResult | undefined {
   const ctx = compileCtxFrom(options);
@@ -51,6 +58,7 @@ export function dispatchSurfaceStatements(
     leaf: options.leaf,
     ctx,
     loopVars: options.loopVars,
+    taintVars: options.taintVars,
   });
   if (!compiled) return undefined;
   return {
@@ -85,8 +93,6 @@ export function stabilizeEffectIds(
   effect: EffectIR,
   seed: string,
 ): EffectIR {
-  // Id stabilization applied after merge — placeholder keeps overlay keys stable
-  // when the same structural effect is emitted with fresh object identities.
   void seed;
   return effect;
 }

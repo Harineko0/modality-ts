@@ -19,10 +19,7 @@ export const SUSPENSE_DOMAIN: AbstractDomain = {
   values: ["ready", "suspended"],
 };
 
-function sourceAnchorFor(
-  node: ts.Node,
-  ctx: FrameworkCtx,
-): SourceAnchor {
+function sourceAnchorFor(node: ts.Node, ctx: FrameworkCtx): SourceAnchor {
   const source = ctx.sourceFile;
   const fileName = ctx.fileName ?? source?.fileName ?? "unknown";
   if (source) {

@@ -10,7 +10,7 @@ import type {
   RouteInventory,
 } from "modality-ts/extract/engine/spi";
 import { modelSlackCaveat, staleReadCaveat } from "../../engine/ts/caveats.js";
-import { PENDING_QUEUE_VAR } from "../../engine/ts/transition/statement-summary.js";
+import { PENDING_QUEUE_VAR } from "../../compile/index.js";
 import { parseTanstackRouteModule } from "./route-options.js";
 import { tanstackLoaderOpId } from "./server-effects.js";
 

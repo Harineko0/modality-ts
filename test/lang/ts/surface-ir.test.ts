@@ -1,4 +1,3 @@
-import "modality-ts/extract/wiring/install.js";
 import {
   createTsSymbolPort,
   lowerBlock,

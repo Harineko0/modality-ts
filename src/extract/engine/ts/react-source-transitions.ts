@@ -1,41 +1,11 @@
 import * as ts from "typescript";
 import {
   bindEngineFrameworkFromPlugin,
-  componentNameFor,
-  currentEngineFramework,
-  isExtractableHandler,
-  isRecognizedUseStateCall,
-  isUseReducerCall,
-  lineAndColumn,
   providerComponentNames,
-  unwrapHandlerInitializer,
   withEngineFramework,
 } from "./ast.js";
-import {
-  globalTaintCaveat,
-  unextractableEffectCaveat,
-  unextractableHandlerCaveat,
-} from "./caveats.js";
 import type { EffectOpAliases } from "./effect-op-aliases.js";
-
-function unextractableHandlerAlreadyReported(
-  warnings: readonly ExtractionWarning[],
-  handlerId: string,
-): boolean {
-  return warnings.some(
-    (warning) =>
-      warning.caveat?.kind === "unextractable" &&
-      warning.caveat.id === handlerId,
-  );
-}
-
-import { resolve } from "node:path";
-import type {
-  EffectIR,
-  StateVarDecl,
-  Transition,
-  Value,
-} from "modality-ts/core";
+import type { StateVarDecl, Transition, Value } from "modality-ts/core";
 import type {
   DomainRefinementProvider,
   EffectModelProvider,
@@ -47,103 +17,39 @@ import type {
   StateSourcePlugin,
   WriteChannel,
 } from "../spi/index.js";
-import { resolveFrameworkPlugin, resolveImportedName } from "../spi/index.js";
+import { resolveFrameworkPlugin } from "../spi/index.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
-  calledCustomHook,
   componentRegistryDisplayMap,
   detectStatefulListComponents,
-  inlineCustomHookState,
-  isCustomHookDeclaration,
-  isForwardablePropName,
-  isIntrinsicJsxAttribute,
-  jsxTagIdentifier,
-  jsxTagName,
-  listRenderedHandlerInfo,
-  literalListRenderedHandlerInfo,
-  resolveComponentEntry,
 } from "./components.js";
 import {
-  bindContextHookObjectDeclaration,
   bindSetter,
   type DiscoverContextBindingsOptions,
   decodeSetterBinding,
   discoverContextBindings,
-  settersForComponent,
 } from "./context.js";
-import {
-  domainInferenceWarnings,
-  firstValue,
-  inferUseStateDomainSemanticDetailed,
-  initialValueForUseStateDetailed,
-  typeAliasDeclarations,
-  useStateCallForSemanticInference,
-} from "./domains.js";
-import { safeId, tagStableIdKey, withStableTransitionIds } from "./ids.js";
+import { withStableTransitionIds } from "./ids.js";
 import {
   componentRegistryForPrimary,
   customHookRegistryForPrimary,
   type ReactExtractionProjectSummary,
 } from "./react-extraction-project-summary.js";
-import { routeMountScope } from "./routes.js";
-import { staticNavigationTransitions } from "./static-navigation.js";
 import { collectMutationAliases } from "./transition/callback-effects.js";
 import {
-  componentPropDeferredToChildTrigger,
-  forwardsComponentProp,
-} from "./transition/component-props.js";
-import {
-  deferredSyncTransition,
-  extractUseDeferredValueBinding,
-  extractUseTransitionBinding,
-  type TransitionBinding,
-} from "./transition/concurrent.js";
-import {
-  reactEffectWritesModeledState,
-  transitionsFromUseEffect,
-} from "./transition/effects.js";
-import {
-  environmentStateVarDecl,
-  type WebSocketRegistration,
-} from "./transition/environment-callbacks.js";
-import { stateVarForName } from "./transition/expressions.js";
-import {
-  combineParsedGuards,
-  disabledGuardFor,
-  renderGuardFor,
-} from "./transition/guards.js";
-import {
-  transitionsFromBoundedListAttribute,
-  transitionsFromBoundedListComponentPropAttribute,
-  transitionsFromComponentPropAttribute,
-  transitionsFromJsxAttribute,
-  transitionsFromLiteralListAttribute,
-} from "./transition/handlers.js";
-import { componentGuardLocalsFor } from "./transition/locals.js";
-import { navigationJsxTransition } from "./transition/navigation.js";
-import type { NavFormSubmitCtx } from "../spi/index.js";
-import {
-  boundaryIdForComponent,
   discoverComponentRenderBoundaries,
-  suspenseInitialForBoundary,
-  suspenseStateVarDecl,
-  transitionsFromSuspendingUse,
 } from "./transition/suspense.js";
+import { discoverReactSourceTransitions } from "./react-source-discovery.js";
 import {
-  handlerSchedulesModeledTimer,
-  refSetterTaint,
-  type TimerRegistration,
-  timerSetterTaints,
-  timerStateVarDecl,
-} from "./transition/timers.js";
-import { isEventAttribute } from "./transition/ui.js";
-import type {
-  ContextBindings,
-  ExtractableHandler,
-  ExtractionWarning,
-  SetterBinding,
-} from "./types.js";
+  cloneContextBindings,
+  collectProjectTypeAliases,
+  mergeContextBindings,
+  relatedDiscoverySourceFiles,
+  supplementalSourcesForRegistry,
+} from "./react-source-project.js";
+import { staticNavigationTransitions } from "./static-navigation.js";
+import type { ExtractableHandler, ExtractionWarning, SetterBinding } from "./types.js";
 
 export interface ReactSourceTransitionOptions {
   route?: string;
@@ -160,7 +66,7 @@ export interface ReactSourceTransitionOptions {
   routerPlugin?: NavigationAdapter;
   inventory?: RouteInventory;
   resetSymbols?: ReadonlySet<string>;
-  setterFixedEffects?: ReadonlyMap<string, EffectIR>;
+  setterFixedEffects?: ReadonlyMap<string, import("modality-ts/core").EffectIR>;
   resettableVarIds?: ReadonlySet<string>;
   relatedFragments?: readonly { sourceText: string; fileName: string }[];
   types?: SemanticTypeContext;
@@ -219,9 +125,6 @@ function extractReactSourceTransitionsImpl(
   const routePatterns = options.routePatterns ?? [];
   const baseEffectOpAliases = options.effectOpAliases ?? new Map();
   const effectApis = new Set(options.effectApis ?? []);
-  // Collect local mutation aliases (const { mutate: x } = useXMutation()) and
-  // merge them into a per-file alias map so callback-effect extraction can
-  // canonicalize callee names to configured effect-api op IDs.
   const localMutationAliases = collectMutationAliases(
     source,
     fileName,
@@ -280,26 +183,10 @@ function extractReactSourceTransitionsImpl(
     }
   }
   const globalTaints = new Set<string>();
-  let timerCounter = 0;
-  let webSocketCounter = 0;
-  let transitionBindingCounter = 0;
-  let suspenseBoundaryCounter = 0;
-  const transitionBindings = new Map<string, TransitionBinding>();
+  const transitionBindings = new Map();
   const submitBindings = new Map<string, boolean>();
   const modeledSubmitHandlers = new Set<string>();
   const actionDataVarByComponent = new Map<string, string>();
-  const routerSubmitContext = (component: string): NavFormSubmitCtx => ({
-    source,
-    fileName,
-    component,
-    route:
-      resolveComponentRoutePattern(routerPlugin, inventory, component) ?? route,
-    setters: settersForComponent(setters, component),
-    actionDataVarId: actionDataVarByComponent.get(component),
-    submitBindings,
-    modeledSubmitHandlers,
-    warnings,
-  });
   const relatedSourceFiles = options.projectSummary
     ? options.projectSummary.relatedSourceFiles
     : relatedDiscoverySourceFiles(source, options);
@@ -363,869 +250,62 @@ function extractReactSourceTransitionsImpl(
     source,
     componentDisplayMap,
   );
-  const registerTimerVars = (
-    registrations: readonly TimerRegistration[],
-  ): void => {
-    for (const registration of registrations) {
-      if (!vars.some((decl) => decl.id === registration.varId)) {
-        vars.push(timerStateVarDecl(registration.varId));
-      }
-    }
-  };
-  const registerWebSocketVars = (
-    registrations: readonly WebSocketRegistration[],
-  ): void => {
-    for (const registration of registrations) {
-      if (!vars.some((decl) => decl.id === registration.varId)) {
-        vars.push(environmentStateVarDecl(registration.varId));
-      }
-    }
-  };
-  const finalizeHandlerTimerContext = (handlerContext: {
-    timerRegistrations: TimerRegistration[];
-    envTransitions: Transition[];
-  }): Transition[] => {
-    registerTimerVars(handlerContext.timerRegistrations);
-    timerCounter += handlerContext.timerRegistrations.length;
-    return handlerContext.envTransitions;
-  };
-  const visit = (
-    node: ts.Node,
-    componentName: string | undefined,
-    activeBoundary: string | undefined,
-  ): void => {
-    if (!componentName && isCustomHookDeclaration(node)) return;
-    const nextComponent = componentNameFor(node) ?? componentName;
-    const effectiveBoundary =
-      activeBoundary ??
-      (nextComponent ? renderBoundaries.get(nextComponent) : undefined);
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer
-    ) {
-      const handler = unwrapHandlerInitializer(
-        node.initializer,
-        handlerWrapperProviders,
-        {
-          sourceFile: source,
-          fileName,
-          ...(options.types ? { types: options.types } : {}),
-        },
-      );
-      if (handler) handlers.set(node.name.text, handler);
-    }
-    if (
-      ts.isFunctionDeclaration(node) &&
-      node.name &&
-      isExtractableHandler(node)
-    ) {
-      handlers.set(node.name.text, node);
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.initializer &&
-      isUseReducerCall(node.initializer)
-    ) {
-      warnings.push({
-        message: `Unsupported useReducer ${nextComponent ?? "Anonymous"}.useReducer`,
-        ...lineAndColumn(source, node),
-      });
-    }
-    bindContextHookObjectDeclaration(
-      node,
-      contextBindings,
-      setters,
-      customHooks,
-      options.types,
-    );
-    if (
-      ts.isVariableDeclaration(node) &&
-      nextComponent &&
-      inlineCustomHookState(
-        source,
-        fileName,
-        node,
-        customHooks,
-        vars,
-        setters,
-        nextComponent,
-        route,
-        typeAliases,
-        warnings,
-        scopeForLocalState(
-          nextComponent,
-          route,
-          routerPlugin,
-          inventory,
-          providerComponents.has(nextComponent),
-        ),
-        options.types,
-        options.domainRefinements,
-      )
-    ) {
-      return;
-    }
-    const customHook = calledCustomHook(node, customHooks, options.types);
-    if (customHook && nextComponent) {
-      const key = `${nextComponent}.${customHook.displayName}`;
-      if (
-        !contextBindings.hookReturns.has(customHook.displayName) &&
-        !reportedCustomHooks.has(key)
-      ) {
-        reportedCustomHooks.add(key);
-        warnings.push({
-          message: `Unextractable custom hook ${key}`,
-          ...lineAndColumn(source, node),
-        });
-      }
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isArrayBindingPattern(node.name) &&
-      node.initializer &&
-      isRecognizedUseStateCall(node.initializer)
-    ) {
-      if (nextComponent && statefulListComponents.has(nextComponent)) {
-        if (!reportedStatefulListComponents.has(nextComponent)) {
-          reportedStatefulListComponents.add(nextComponent);
-          warnings.push({
-            message: `Unextractable stateful list item ${nextComponent}`,
-            ...lineAndColumn(source, node),
-          });
-        }
-        ts.forEachChild(node, (child) =>
-          visit(child, nextComponent, effectiveBoundary),
-        );
-        return;
-      }
-      const stateName = node.name.elements[0];
-      const setterName = node.name.elements[1];
-      if (ts.isBindingElement(stateName) && ts.isIdentifier(stateName.name)) {
-        const component = nextComponent ?? "Anonymous";
-        const varId = `local:${component}.${stateName.name.text}`;
-        const discovered = options.stateVars?.find(
-          (candidate) => candidate.id === varId,
-        );
-        const anchor = lineAndColumn(source, node);
-        const callForInference = useStateCallForSemanticInference(
-          node.initializer,
-          source,
-          options.types,
-          varId,
-        );
-        const inferred = inferUseStateDomainSemanticDetailed(
-          callForInference,
-          typeAliases,
-          source,
-          varId,
-          options.types,
-          options.domainRefinements ?? [],
-        );
-        const domain = discovered?.domain ?? inferred.domain;
-        warnings.push(...domainInferenceWarnings(inferred, anchor));
-        const initialResult = initialValueForUseStateDetailed(
-          callForInference,
-          domain,
-          source,
-          varId,
-        );
-        warnings.push(...domainInferenceWarnings(initialResult, anchor));
-        if (!options.stateVars) {
-          vars.push({
-            id: varId,
-            domain,
-            origin: { file: fileName, ...lineAndColumn(source, node) },
-            scope: scopeForLocalState(
-              component,
-              route,
-              routerPlugin,
-              inventory,
-              providerComponents.has(component),
-            ),
-            initial: initialResult.value,
-          });
-        }
-        if (
-          setterName &&
-          ts.isBindingElement(setterName) &&
-          ts.isIdentifier(setterName.name)
-        ) {
-          if (!options.writeChannels) {
-            const decl: StateVarDecl =
-              discovered ??
-              ({
-                id: varId,
-                domain,
-                origin: { file: fileName, ...anchor },
-                scope: scopeForLocalState(
-                  component,
-                  route,
-                  routerPlugin,
-                  inventory,
-                  providerComponents.has(component),
-                ),
-                initial: initialResult.value,
-              } satisfies StateVarDecl);
-            const binding = decodeSetterBinding(decl, sourcePlugins);
-            if (options.types?.localSymbolKey?.(setterName.name)) {
-              binding.symbolKey = options.types.localSymbolKey(setterName.name);
-            }
-            bindSetter(setters, setterName.name.text, binding);
-          }
-        }
-      } else {
-        warnings.push({
-          message: "Unsupported useState binding pattern",
-          ...lineAndColumn(source, node),
-        });
-      }
-    }
-    const activeComponent = nextComponent ?? "Anonymous";
-    const engineFw = currentEngineFramework();
-    const renderBoundary = engineFw.framework.recognizeRenderBoundary(
-      node,
-      engineFw.ctx,
-    );
-    if (renderBoundary?.kind === "suspense") {
-      const boundaryId = boundaryIdForComponent(
-        nextComponent ?? "Anonymous",
-        suspenseBoundaryCounter,
-      );
-      suspenseBoundaryCounter += 1;
-      const suspenseBody = ts.isJsxElement(node)
-        ? node
-        : ts.isJsxSelfClosingElement(node)
-          ? node
-          : undefined;
-      const initial = suspenseBody
-        ? suspenseInitialForBoundary(suspenseBody)
-        : "suspended";
-      if (!vars.some((decl) => decl.id === `sys:suspense:${boundaryId}`)) {
-        vars.push(
-          suspenseStateVarDecl(boundaryId, initial, renderBoundary.domain),
-        );
-      }
-      ts.forEachChild(node, (child) => visit(child, nextComponent, boundaryId));
-      return;
-    }
-    const routePattern = resolveComponentRoutePattern(
-      routerPlugin,
-      inventory,
-      activeComponent,
-    );
-    const link = navigationJsxTransition(
-      source,
-      fileName,
-      node,
-      activeComponent,
-      routePatterns,
-      routerPlugin,
-      routePattern,
-      inventory,
-    );
-    if (link) transitions.push(link);
-    const scopedSetters = settersForComponent(setters, nextComponent);
-    const formRecognition = routerPlugin?.recognizeFormSubmit?.(
-      node,
-      routerSubmitContext(activeComponent),
-    );
-    if (formRecognition?.kind === "submit") {
-      transitions.push(
-        ...tagStableIdKey(formRecognition.transitions, node),
-      );
-    }
-    const refTaint = refSetterTaint(node, scopedSetters);
-    if (refTaint) {
-      const anchor = lineAndColumn(source, refTaint.node);
-      const caveat = globalTaintCaveat(refTaint.varId, {
-        file: fileName,
-        ...anchor,
-      });
-      if (!globalTaints.has(caveat.id)) {
-        globalTaints.add(caveat.id);
-        warnings.push({ message: caveat.reason, ...anchor, caveat });
-      }
-    }
-    for (const timerTaint of timerSetterTaints(node, scopedSetters)) {
-      const anchor = lineAndColumn(source, timerTaint.node);
-      const caveat = globalTaintCaveat(timerTaint.varId, {
-        file: fileName,
-        ...anchor,
-      });
-      if (!globalTaints.has(caveat.id)) {
-        globalTaints.add(caveat.id);
-        warnings.push({ message: caveat.reason, ...anchor, caveat });
-      }
-    }
-    if (
-      ts.isJsxAttribute(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isForwardablePropName(node.name.text) &&
-      !isIntrinsicJsxAttribute(node)
-    ) {
-      const componentPropHandlerContext = {
-        activeBoundary: effectiveBoundary,
-        transitionBindings,
-        timerRegistrations: [] as TimerRegistration[],
-        envTransitions: [] as Transition[],
-        timerIndex: { value: timerCounter },
-        routerSubmitContext: routerSubmitContext(nextComponent ?? "Anonymous"),
-        effectOpAliases,
-        effectModelProviders: options.effectModelProviders,
-      };
-      const literalListInfo = literalListRenderedHandlerInfo(node);
-      if (literalListInfo) {
-        const extracted = literalListInfo.values.flatMap((value) =>
-          transitionsFromComponentPropAttribute(
-            source,
-            fileName,
-            node,
-            scopedSetters,
-            handlers,
-            components,
-            nextComponent ?? "Anonymous",
-            effectApis,
-            options.asyncOutcomes ?? {},
-            sourcePlugins,
-            routerPlugin,
-            warnings,
-            routePatterns,
-            contextBindings,
-            resetSymbols,
-            {
-              ...componentPropHandlerContext,
-              initialLocals: new Map([
-                [
-                  literalListInfo.itemName,
-                  { expr: { kind: "lit", value }, reads: [] },
-                ],
-              ]),
-              valueSuffix: safeId(String(value)),
-            },
-            options.types,
-          ),
-        );
-        if (extracted.length > 0) {
-          transitions.push(
-            ...tagStableIdKey(extracted, node),
-            ...finalizeHandlerTimerContext(componentPropHandlerContext),
-          );
-          ts.forEachChild(node, (child) =>
-            visit(child, nextComponent, effectiveBoundary),
-          );
-          return;
-        }
-      }
-      const listInfo = listRenderedHandlerInfo(
-        node,
-        vars,
-        nextComponent ?? "Anonymous",
-      );
-      if (listInfo) {
-        if (listInfo.domain.kind === "boundedList") {
-          const extracted = transitionsFromBoundedListComponentPropAttribute(
-            source,
-            fileName,
-            node,
-            scopedSetters,
-            handlers,
-            components,
-            nextComponent ?? "Anonymous",
-            {
-              varId: listInfo.varId,
-              domain: listInfo.domain,
-              itemName: listInfo.itemName,
-            },
-            effectApis,
-            options.asyncOutcomes ?? {},
-            sourcePlugins,
-            routerPlugin,
-            warnings,
-            routePatterns,
-            contextBindings,
-            resetSymbols,
-            componentPropHandlerContext,
-            options.types,
-          );
-          if (extracted.length > 0) {
-            transitions.push(
-              ...tagStableIdKey(extracted, node),
-              ...finalizeHandlerTimerContext(componentPropHandlerContext),
-            );
-            ts.forEachChild(node, (child) =>
-              visit(child, nextComponent, effectiveBoundary),
-            );
-            return;
-          }
-        }
-        warnings.push({
-          message: `Unextractable list-rendered component prop handler ${nextComponent ?? "Anonymous"}.${node.name.text} over ${listInfo.domain.kind} ${listInfo.varId}`,
-          ...lineAndColumn(source, node),
-        });
-        ts.forEachChild(node, (child) =>
-          visit(child, nextComponent, effectiveBoundary),
-        );
-        return;
-      }
-      const extracted = transitionsFromComponentPropAttribute(
-        source,
-        fileName,
-        node,
-        scopedSetters,
-        handlers,
-        components,
-        nextComponent ?? "Anonymous",
-        effectApis,
-        options.asyncOutcomes ?? {},
-        sourcePlugins,
-        routerPlugin,
-        warnings,
-        routePatterns,
-        contextBindings,
-        resetSymbols,
-        componentPropHandlerContext,
-        options.types,
-      );
-      transitions.push(
-        ...extracted,
-        ...finalizeHandlerTimerContext(componentPropHandlerContext),
-      );
-      const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
-      const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
-      const localComponent = tag
-        ? resolveComponentEntry(components, tag, options.types)?.decl
-        : undefined;
-      if (
-        extracted.length === 0 &&
-        !componentPropDeferredToChildTrigger(
-          source,
-          node,
-          components,
-          scopedSetters,
-          warnings,
-          options.types,
-        ) &&
-        !unextractableHandlerAlreadyReported(warnings, handlerId)
-      ) {
-        // Fallback: if the handler is registered (e.g. via handleSubmit unwrap),
-        // extract transitions directly from the handler body using the prop name
-        // as the event attribute. This handles handlers passed to external (non-local)
-        // child components, where the trigger chain cannot be resolved.
-        const fallbackExtracted = localComponent
-          ? []
-          : transitionsFromJsxAttribute(
-              source,
-              fileName,
-              node,
-              scopedSetters,
-              handlers,
-              nextComponent ?? "Anonymous",
-              effectApis,
-              options.asyncOutcomes ?? {},
-              sourcePlugins,
-              routerPlugin,
-              undefined,
-              routePatterns,
-              contextBindings,
-              warnings,
-              resetSymbols,
-              {
-                ...componentPropHandlerContext,
-                effectOpAliases,
-              },
-            );
-        if (fallbackExtracted.length > 0) {
-          transitions.push(
-            ...fallbackExtracted,
-            ...finalizeHandlerTimerContext(componentPropHandlerContext),
-          );
-        } else {
-          const anchor = lineAndColumn(source, node);
-          warnings.push({
-            message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
-            ...anchor,
-            caveat: unextractableHandlerCaveat(
-              handlerId,
-              "no-extractable-effect",
-              { file: fileName, ...anchor },
-            ),
-          });
-        }
-      }
-    }
-    if (
-      ts.isJsxAttribute(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isEventAttribute(node.name.text) &&
-      isIntrinsicJsxAttribute(node)
-    ) {
-      const literalListInfo = literalListRenderedHandlerInfo(node);
-      if (literalListInfo) {
-        const guardLocals = componentGuardLocalsFor(node, scopedSetters);
-        const guard = combineParsedGuards([
-          renderGuardFor(
-            node,
-            scopedSetters,
-            warnings,
-            source,
-            nextComponent ?? "Anonymous",
-            guardLocals,
-          ),
-          disabledGuardFor(
-            node,
-            scopedSetters,
-            warnings,
-            source,
-            nextComponent ?? "Anonymous",
-            guardLocals,
-          ),
-        ]);
-        const timerRegistrations: TimerRegistration[] = [];
-        const envTransitions: Transition[] = [];
-        const extracted = transitionsFromLiteralListAttribute(
-          source,
-          fileName,
-          node,
-          scopedSetters,
-          handlers,
-          nextComponent ?? "Anonymous",
-          literalListInfo,
-          effectApis,
-          options.asyncOutcomes ?? {},
-          sourcePlugins,
-          routerPlugin,
-          guard,
-          routePatterns,
-          contextBindings,
-          warnings,
-          resetSymbols,
-          {
-            activeBoundary: effectiveBoundary,
-            transitionBindings,
-            timerRegistrations,
-            envTransitions,
-            timerIndex: { value: timerCounter },
-          },
-        );
-        registerTimerVars(timerRegistrations);
-        timerCounter += timerRegistrations.length;
-        if (extracted.length > 0) {
-          transitions.push(
-            ...tagStableIdKey(extracted, node),
-            ...envTransitions,
-          );
-          ts.forEachChild(node, (child) =>
-            visit(child, nextComponent, effectiveBoundary),
-          );
-          return;
-        }
-      }
-      const listInfo = listRenderedHandlerInfo(
-        node,
-        vars,
-        nextComponent ?? "Anonymous",
-      );
-      if (listInfo) {
-        if (listInfo.domain.kind === "boundedList") {
-          const extracted = transitionsFromBoundedListAttribute(
-            source,
-            fileName,
-            node,
-            scopedSetters,
-            handlers,
-            nextComponent ?? "Anonymous",
-            {
-              varId: listInfo.varId,
-              domain: listInfo.domain,
-              itemName: listInfo.itemName,
-            },
-            options.types,
-          );
-          if (extracted.length > 0) {
-            transitions.push(...tagStableIdKey(extracted, node));
-            ts.forEachChild(node, (child) =>
-              visit(child, nextComponent, effectiveBoundary),
-            );
-            return;
-          }
-        }
-        warnings.push({
-          message: `Unextractable list-rendered handler ${nextComponent ?? "Anonymous"}.${node.name.text} over ${listInfo.domain.kind} ${listInfo.varId}`,
-          ...lineAndColumn(source, node),
-        });
-        ts.forEachChild(node, (child) =>
-          visit(child, nextComponent, effectiveBoundary),
-        );
-        return;
-      }
-      const guardLocals = componentGuardLocalsFor(node, scopedSetters);
-      const guard = combineParsedGuards([
-        renderGuardFor(
-          node,
-          scopedSetters,
-          warnings,
-          source,
-          nextComponent ?? "Anonymous",
-          guardLocals,
-        ),
-        disabledGuardFor(
-          node,
-          scopedSetters,
-          warnings,
-          source,
-          nextComponent ?? "Anonymous",
-          guardLocals,
-        ),
-      ]);
-      const timerRegistrations: TimerRegistration[] = [];
-      const envTransitions: Transition[] = [];
-      const extracted = transitionsFromJsxAttribute(
-        source,
-        fileName,
-        node,
-        scopedSetters,
-        handlers,
-        nextComponent ?? "Anonymous",
-        effectApis,
-        options.asyncOutcomes ?? {},
-        sourcePlugins,
-        routerPlugin,
-        guard,
-        routePatterns,
-        contextBindings,
-        warnings,
-        resetSymbols,
-        {
-          activeBoundary: effectiveBoundary,
-          transitionBindings,
-          timerRegistrations,
-          envTransitions,
-          timerIndex: { value: timerCounter },
-          routerSubmitContext: routerSubmitContext(
-            nextComponent ?? "Anonymous",
-          ),
-          effectOpAliases,
-          types: options.types,
-          effectModelProviders: options.effectModelProviders,
-        },
-      );
-      registerTimerVars(timerRegistrations);
-      timerCounter += timerRegistrations.length;
-      transitions.push(...extracted);
-      const handlerId = `${nextComponent ?? "Anonymous"}.${node.name.text}`;
-      if (
-        extracted.length === 0 &&
-        !forwardsComponentProp(
-          node,
-          handlers,
-          componentDisplayMap.get(nextComponent ?? ""),
-          components,
-          scopedSetters,
-          source,
-          warnings,
-          options.types,
-        ) &&
-        !handlerSchedulesModeledTimer(node, handlers, scopedSetters) &&
-        !modeledSubmitHandlers.has(handlerId) &&
-        !unextractableHandlerAlreadyReported(warnings, handlerId)
-      ) {
-        const anchor = lineAndColumn(source, node);
-        warnings.push({
-          message: `Unextractable handler ${handlerId} [no-extractable-effect] (${fileName}:${anchor.line}:${anchor.column})`,
-          ...anchor,
-          caveat: unextractableHandlerCaveat(
-            handlerId,
-            "no-extractable-effect",
-            { file: fileName, ...anchor },
-          ),
-        });
-      }
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.initializer &&
-      ts.isCallExpression(node.initializer) &&
-      nextComponent &&
-      ts.isIdentifier(node.name)
-    ) {
-      const deferredHook = engineFw.framework.recognizeHook(
-        node.initializer,
-        engineFw.ctx,
-      );
-      if (deferredHook?.hook.kind === "deferred") {
-        const arg = node.initializer.arguments[0];
-        const srcVarId =
-          arg && ts.isIdentifier(arg)
-            ? stateVarForName(arg.text, scopedSetters)
-            : undefined;
-        if (srcVarId) {
-          const srcDecl = vars.find((decl) => decl.id === srcVarId);
-          const srcDomain = srcDecl?.domain ?? { kind: "tokens", count: 1 };
-          const deferred = extractUseDeferredValueBinding(
-            node,
-            nextComponent,
-            srcVarId,
-            srcDomain,
-            srcDecl?.initial ?? firstValue(srcDomain),
-            route,
-            fileName,
-            source,
-            scopeForLocalState(
-              nextComponent,
-              route,
-              routerPlugin,
-              inventory,
-              providerComponents.has(nextComponent),
-            ),
-          );
-          if (deferred && !vars.some((decl) => decl.id === deferred.id)) {
-            vars.push(deferred);
-            transitions.push(
-              deferredSyncTransition(
-                nextComponent,
-                deferred.id,
-                srcVarId,
-                fileName,
-                source,
-                node,
-              ),
-            );
-          }
-        }
-      }
-    }
-    if (ts.isVariableDeclaration(node) && nextComponent) {
-      const hookRecognition = routerPlugin?.recognizeFormSubmit?.(
-        node,
-        {
-          ...routerSubmitContext(nextComponent),
-          route:
-            resolveComponentRoutePattern(routerPlugin, inventory, nextComponent) ??
-            route,
-        },
-      );
-      if (hookRecognition?.kind === "use-submit-binding") {
-        submitBindings.set(hookRecognition.name, true);
-      }
-      if (hookRecognition?.kind === "action-data") {
-        if (!vars.some((candidate) => candidate.id === hookRecognition.varDecl.id))
-          vars.push(hookRecognition.varDecl);
-        actionDataVarByComponent.set(nextComponent, hookRecognition.varDecl.id);
-        setters.set(
-          hookRecognition.localName,
-          hookRecognition.setterBinding,
-        );
-      }
-    }
-    if (ts.isVariableDeclaration(node) && nextComponent) {
-      const transitionBinding = extractUseTransitionBinding(
-        node,
-        nextComponent,
-        transitionBindingCounter,
-        route,
-        fileName,
-        source,
-        scopeForLocalState(
-          nextComponent,
-          route,
-          routerPlugin,
-          inventory,
-          providerComponents.has(nextComponent),
-        ),
-      );
-      if (transitionBinding) {
-        transitionBindingCounter += 1;
-        if (!vars.some((decl) => decl.id === transitionBinding.varDecl.id)) {
-          vars.push(transitionBinding.varDecl);
-        }
-        transitionBindings.set(
-          transitionBinding.binding.startTransitionName,
-          transitionBinding.binding,
-        );
-      }
-    }
-    if (
-      ts.isCallExpression(node) &&
-      renderBoundary?.kind === "use" &&
-      effectiveBoundary
-    ) {
-      transitions.push(
-        ...transitionsFromSuspendingUse(
-          source,
-          fileName,
-          node,
-          activeComponent,
-          effectiveBoundary,
-        ),
-      );
-    }
-    const effectHook =
-      ts.isCallExpression(node) && ts.isIdentifier(node.expression)
-        ? engineFw.framework.recognizeHook(node, engineFw.ctx)
-        : undefined;
-    if (
-      effectHook?.hook.kind === "effect" &&
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression)
-    ) {
-      const hookLabel = resolveImportedName(node.expression, engineFw.ctx);
-      const effectPhase = effectHook.hook.phase;
-      const timerRegistrations: TimerRegistration[] = [];
-      const webSocketRegistrations: WebSocketRegistration[] = [];
-      const envTransitions: Transition[] = [];
-      const effectWarnings: ExtractionWarning[] = [];
-      const extracted = transitionsFromUseEffect(
-        source,
-        fileName,
-        node,
-        scopedSetters,
-        activeComponent,
-        hookLabel,
-        effectPhase,
-        {
-          timerRegistrations,
-          webSocketRegistrations,
-          envTransitions,
-          warnings: effectWarnings,
-          timerIndex: { value: timerCounter },
-          webSocketIndex: { value: webSocketCounter },
-          environment: options.environment,
-          transitionBindings,
-          types: options.types,
-          effectModelProviders: options.effectModelProviders,
-        },
-      );
-      registerTimerVars(timerRegistrations);
-      registerWebSocketVars(webSocketRegistrations);
-      timerCounter += timerRegistrations.length;
-      webSocketCounter += webSocketRegistrations.length;
-      warnings.push(...effectWarnings);
-      transitions.push(...extracted, ...envTransitions);
-      if (
-        extracted.length === 0 &&
-        reactEffectWritesModeledState(node, scopedSetters) &&
-        !providerComponents.has(activeComponent)
-      ) {
-        const anchor = lineAndColumn(source, node);
-        const id = `${activeComponent}.${hookLabel}`;
-        warnings.push({
-          message: `Unextractable effect ${id}`,
-          ...anchor,
-          caveat: unextractableEffectCaveat(activeComponent, hookLabel, {
-            file: fileName,
-            ...anchor,
-          }),
-        });
-      }
-    }
-    ts.forEachChild(node, (child) =>
-      visit(child, nextComponent, effectiveBoundary),
-    );
-  };
-  visit(source, undefined, undefined);
+  discoverReactSourceTransitions({
+    options: {
+      ...(options.stateVars ? { stateVars: options.stateVars } : {}),
+      ...(options.writeChannels ? { writeChannels: options.writeChannels } : {}),
+      ...(options.types ? { types: options.types } : {}),
+      ...(options.domainRefinements
+        ? { domainRefinements: options.domainRefinements }
+        : {}),
+      ...(options.asyncOutcomes ? { asyncOutcomes: options.asyncOutcomes } : {}),
+      ...(options.effectModelProviders
+        ? { effectModelProviders: options.effectModelProviders }
+        : {}),
+      ...(options.environment ? { environment: options.environment } : {}),
+      ...(options.setterFixedEffects
+        ? { setterFixedEffects: options.setterFixedEffects }
+        : {}),
+      ...(options.resettableVarIds
+        ? { resettableVarIds: options.resettableVarIds }
+        : {}),
+    },
+    source,
+    fileName,
+    route,
+    routePatterns,
+    typeAliases,
+    vars,
+    transitions,
+    warnings,
+    effectApis,
+    effectOpAliases,
+    sourcePlugins,
+    handlerWrapperProviders,
+    routerPlugin,
+    inventory,
+    setters,
+    contextBindings,
+    globalTaints,
+    timerCounter: 0,
+    webSocketCounter: 0,
+    transitionBindingCounter: 0,
+    suspenseBoundaryCounter: 0,
+    transitionBindings,
+    submitBindings,
+    modeledSubmitHandlers,
+    actionDataVarByComponent,
+    components,
+    componentDisplayMap,
+    customHooks,
+    statefulListComponents,
+    reportedStatefulListComponents,
+    providerComponents,
+    reportedCustomHooks,
+    resetSymbols,
+    handlers,
+    renderBoundaries,
+  });
   transitions.push(
     ...staticNavigationTransitions(
       source,
@@ -1241,166 +321,4 @@ function extractReactSourceTransitionsImpl(
     transitions: withStableTransitionIds(transitions),
     warnings,
   };
-}
-
-function relatedDiscoverySourceFiles(
-  primary: ts.SourceFile,
-  options: ReactSourceTransitionOptions,
-): ts.SourceFile[] {
-  if (!options.types?.getSourceFile) {
-    const seen = new Set<string>();
-    const files: ts.SourceFile[] = [];
-    for (const fragment of options.relatedFragments ?? []) {
-      const key = resolve(fragment.fileName);
-      if (seen.has(key) || fragment.fileName === primary.fileName) continue;
-      seen.add(key);
-      files.push(
-        ts.createSourceFile(
-          fragment.fileName,
-          fragment.sourceText,
-          ts.ScriptTarget.Latest,
-          true,
-          ts.ScriptKind.TSX,
-        ),
-      );
-    }
-    return files;
-  }
-  const seen = new Set<string>();
-  const files: ts.SourceFile[] = [];
-  const addFile = (fileName: string): void => {
-    const key =
-      options.types?.canonicalFileName?.(fileName) ?? resolve(fileName);
-    if (seen.has(key)) return;
-    seen.add(key);
-    const sourceFile = options.types?.getSourceFile(fileName);
-    if (!sourceFile || sourceFile === primary) return;
-    files.push(sourceFile);
-  };
-  for (const fragment of options.relatedFragments ?? []) {
-    addFile(fragment.fileName);
-  }
-  return files;
-}
-
-function collectProjectTypeAliases(
-  primary: ts.SourceFile,
-  options: ReactSourceTransitionOptions,
-): Map<string, ts.TypeNode> {
-  const aliases = typeAliasDeclarations(primary);
-  if (options.types?.getSourceFile) {
-    const seen = new Set<string>();
-    const mergeFrom = (fragment: {
-      sourceText: string;
-      fileName: string;
-    }): void => {
-      const key =
-        options.types?.canonicalFileName?.(fragment.fileName) ??
-        resolve(fragment.fileName);
-      if (seen.has(key)) return;
-      seen.add(key);
-      const sourceFile =
-        options.types?.getSourceFile(fragment.fileName) ??
-        ts.createSourceFile(
-          fragment.fileName,
-          fragment.sourceText,
-          ts.ScriptTarget.Latest,
-          true,
-          ts.ScriptKind.TS,
-        );
-      for (const [name, node] of typeAliasDeclarations(sourceFile)) {
-        if (!aliases.has(name)) aliases.set(name, node);
-      }
-    };
-    mergeFrom({ sourceText: primary.text, fileName: primary.fileName });
-    for (const fragment of options.relatedFragments ?? []) {
-      mergeFrom(fragment);
-    }
-    return aliases;
-  }
-  for (const fragment of options.relatedFragments ?? []) {
-    if (fragment.fileName === primary.fileName) continue;
-    const sourceFile = ts.createSourceFile(
-      fragment.fileName,
-      fragment.sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
-    for (const [name, node] of typeAliasDeclarations(sourceFile)) {
-      if (!aliases.has(name)) aliases.set(name, node);
-    }
-  }
-  return aliases;
-}
-
-function supplementalSourcesForRegistry(
-  relatedFragments: readonly { sourceText: string; fileName: string }[],
-  primaryFileName: string,
-  types?: SemanticTypeContext,
-): { sourceText: string; fileName: string }[] {
-  return relatedFragments
-    .filter((fragment) => fragment.fileName !== primaryFileName)
-    .map((fragment) => ({
-      sourceText: fragment.sourceText,
-      fileName: fragment.fileName,
-    }));
-}
-
-function cloneContextBindings(bindings: ContextBindings): ContextBindings {
-  const hookReturns = new Map<string, Map<string, SetterBinding>>();
-  for (const [hook, fields] of bindings.hookReturns) {
-    hookReturns.set(hook, new Map(fields));
-  }
-  return {
-    vars: [...bindings.vars],
-    setters: new Map(bindings.setters),
-    hookReturns,
-  };
-}
-
-function mergeContextBindings(
-  target: ContextBindings,
-  source: ContextBindings,
-): void {
-  for (const decl of source.vars) {
-    if (!target.vars.some((candidate) => candidate.id === decl.id)) {
-      target.vars.push(decl);
-    }
-  }
-  for (const [name, setter] of source.setters) {
-    target.setters.set(name, setter);
-  }
-  for (const [hook, fields] of source.hookReturns) {
-    const merged = target.hookReturns.get(hook) ?? new Map();
-    for (const [field, setter] of fields) {
-      merged.set(field, setter);
-    }
-    target.hookReturns.set(hook, merged);
-  }
-}
-
-function resolveComponentRoutePattern(
-  adapter: NavigationAdapter | undefined,
-  inventory: RouteInventory | undefined,
-  componentName: string,
-): string | undefined {
-  if (!adapter?.routeForComponent || !inventory) return undefined;
-  return adapter.routeForComponent(componentName, inventory);
-}
-
-function scopeForLocalState(
-  component: string,
-  route: string,
-  routerPlugin: NavigationAdapter | undefined,
-  inventory: RouteInventory | undefined,
-  providerGlobal: boolean,
-): StateVarDecl["scope"] {
-  if (providerGlobal) return { kind: "global" };
-  const mountScope = routerPlugin?.mountScopeForComponent?.(
-    component,
-    inventory ?? { routes: [] },
-  );
-  if (mountScope) return mountScope;
-  return routeMountScope(route);
 }

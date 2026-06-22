@@ -37,6 +37,9 @@ export interface CompileCtx {
   locals: Map<string, DataflowBinding>;
   snapshotReads: boolean;
   caveats: ExtractionCaveat[];
+  /** Maps state variable display names (e.g. draft) to var ids for readPre. */
+  stateVarIds?: ReadonlyMap<string, string>;
+  snapshottedReads?: ReadonlySet<string>;
 }
 
 export interface LeafDispatch {

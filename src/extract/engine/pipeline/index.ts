@@ -19,9 +19,6 @@ import type {
   HandlerWrapperProvider,
   FrameworkPlugin,
 } from "../spi/index.js";
-import { resolveFrameworkPlugin } from "../spi/index.js";
-import { extractReactSourceTransitions } from "../ts/react-source-transitions.js";
-import type { ReactExtractionProjectSummary } from "../ts/react-extraction-project-summary.js";
 import {
   isEffectOpAliasesPopulated,
   type EffectOpAliases,
@@ -30,6 +27,10 @@ import type { ExtractionWarning } from "../ts/types.js";
 import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
 import type { SemanticProject } from "../ts/semantic-project.js";
+import {
+  type ExtractionProjectSummary,
+  runSourceExtraction,
+} from "./source-extraction.js";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -75,7 +76,7 @@ export interface ExtractionPipelineOptions {
   semanticProject?: SemanticProject;
   effectOpAliases?: EffectOpAliases;
   sharedDiscovery?: SharedPluginDiscovery;
-  projectSummary?: ReactExtractionProjectSummary;
+  projectSummary?: ExtractionProjectSummary;
 }
 
 export interface ExtractionPipelineResult {
@@ -274,7 +275,7 @@ export function runExtractionPipeline(
     ...(fragmentTypes ? { types: fragmentTypes } : {}),
     ...(domainRefinements.length > 0 ? { domainRefinements } : {}),
   };
-  const genericExtraction = extractReactSourceTransitions(options.sourceText, {
+  const genericExtraction = runSourceExtraction(options.sourceText, {
     route: options.route,
     fileName: options.fileName,
     effectApis: options.effectApis ?? [],
@@ -282,7 +283,7 @@ export function runExtractionPipeline(
     stateVars: extractionCtx.stateVars,
     writeChannels,
     sourcePlugins,
-    framework: resolveFrameworkPlugin(options.framework),
+    framework: options.framework,
     ...(options.effectModelProviders
       ? { effectModelProviders: options.effectModelProviders }
       : {}),

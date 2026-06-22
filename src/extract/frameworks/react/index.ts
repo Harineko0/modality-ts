@@ -1,4 +1,3 @@
-
 import type {
   ComponentRole,
   FrameworkCtx,
@@ -72,5 +71,6 @@ export function reactFramework(): FrameworkPlugin {
 }
 
 registerFrameworkPlugin(reactFramework());
+import "./source-extraction.js";
 
 export default reactFramework;

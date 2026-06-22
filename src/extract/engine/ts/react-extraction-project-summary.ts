@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import * as ts from "typescript";
 import type { SemanticTypeContext, StateSourcePlugin } from "../spi/index.js";
+import type { ExtractionProjectSummary } from "../pipeline/source-extraction.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
@@ -13,8 +14,7 @@ import { discoverContextBindings } from "./context.js";
 import { typeAliasDeclarations } from "./domains.js";
 import type { ContextBindings } from "./types.js";
 
-export interface ReactExtractionProjectSummary {
-  canonicalFileNames: readonly string[];
+export interface ReactExtractionProjectSummary extends ExtractionProjectSummary {
   relatedSourceFiles: readonly ts.SourceFile[];
   typeAliases: ReadonlyMap<string, ts.TypeNode>;
   contextBindings: ContextBindings;

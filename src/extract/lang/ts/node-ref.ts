@@ -25,8 +25,9 @@ export function findNodeAt(
   let found: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    const start = node.getStart(source);
-    if (start === ref.start && node.getEnd() === ref.end) {
+    const start = node.getStart();
+    const end = node.getEnd();
+    if (start === ref.start && end === ref.end) {
       found = node;
       return;
     }

@@ -142,14 +142,6 @@ export default defineConfig({
         "./src/extract/compile/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/wiring/install": new URL(
-        "./src/extract/wiring/install.ts",
-        import.meta.url,
-      ).pathname,
-      "modality-ts/extract/wiring/install.js": new URL(
-        "./src/extract/wiring/install.ts",
-        import.meta.url,
-      ).pathname,
       "modality-ts/extract/frameworks/react": new URL(
         "./src/extract/frameworks/react/index.ts",
         import.meta.url,

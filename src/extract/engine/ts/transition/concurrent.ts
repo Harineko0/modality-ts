@@ -9,7 +9,7 @@ import { currentEngineFramework, lineAndColumn } from "../ast.js";
 import { uniqueStrings } from "../ids.js";
 import type { EffectSummary, SetterBinding } from "../types.js";
 import { pendingIs } from "./async.js";
-import { summarizeHandlerStatements } from "./statement-summary.js";
+import { summarizeHandlerStatements } from "./statement-driver.js";
 
 export interface TransitionBinding {
   varId: string;

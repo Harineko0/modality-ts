@@ -28,17 +28,17 @@ function literalValue(node: ts.Expression): Value | undefined {
   return undefined;
 }
 
-function lowerExpr(
-  node: ts.Expression,
-  fileName: string,
-): SurfaceExpr {
+function lowerExpr(node: ts.Expression, fileName: string): SurfaceExpr {
   const origin = nodeRefFor(node, fileName);
   const literal = literalValue(node);
   if (literal !== undefined) return { kind: "literal", value: literal };
   if (ts.isIdentifier(node)) {
     return { kind: "ref", symbol: symbolRef(node, fileName) };
   }
-  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+  if (
+    ts.isPropertyAccessExpression(node) ||
+    ts.isElementAccessExpression(node)
+  ) {
     const name = ts.isPropertyAccessExpression(node)
       ? node.name.text
       : ts.isStringLiteral(node.argumentExpression)
@@ -203,7 +203,10 @@ function lowerJsxAttributes(
       continue;
     }
     if (ts.isStringLiteral(attr.initializer)) {
-      out.push({ name, value: { kind: "literal", value: attr.initializer.text } });
+      out.push({
+        name,
+        value: { kind: "literal", value: attr.initializer.text },
+      });
       continue;
     }
     if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
@@ -267,7 +270,11 @@ export function lowerStatement(
         });
       }
     }
-    return { kind: "switch", disc: lowerExpr(statement.expression, fileName), cases };
+    return {
+      kind: "switch",
+      disc: lowerExpr(statement.expression, fileName),
+      cases,
+    };
   }
   if (ts.isForStatement(statement)) {
     return {
@@ -283,7 +290,10 @@ export function lowerStatement(
                 }
               : {
                   kind: "expr" as const,
-                  expr: lowerExpr(statement.initializer as ts.Expression, fileName),
+                  expr: lowerExpr(
+                    statement.initializer as ts.Expression,
+                    fileName,
+                  ),
                 },
           }
         : {}),
@@ -298,12 +308,11 @@ export function lowerStatement(
     };
   }
   if (ts.isForOfStatement(statement) || ts.isForInStatement(statement)) {
-    const initBindings =
-      ts.isVariableDeclarationList(statement.initializer)
-        ? statement.initializer.declarations
-            .map((d) => lowerBinding(d, fileName))
-            .filter((b): b is SurfaceBinding => Boolean(b))
-        : [];
+    const initBindings = ts.isVariableDeclarationList(statement.initializer)
+      ? statement.initializer.declarations
+          .map((d) => lowerBinding(d, fileName))
+          .filter((b): b is SurfaceBinding => Boolean(b))
+      : [];
     return {
       kind: "for",
       ...(initBindings.length
@@ -395,11 +404,12 @@ export function lowerFunction(
       origin: nodeRefFor(param.name, fileName),
     });
   }
-  const name = ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)
-    ? node.name && ts.isIdentifier(node.name)
-      ? node.name.text
-      : undefined
-    : undefined;
+  const name =
+    ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)
+      ? node.name && ts.isIdentifier(node.name)
+        ? node.name.text
+        : undefined
+      : undefined;
   if (!node.body) return undefined;
   return {
     ...(name ? { name } : {}),
@@ -415,10 +425,7 @@ export function lowerModule(
 ): SurfaceModule {
   const decls: SurfaceModule["decls"] = [];
   for (const statement of source.statements) {
-    if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.body
-    ) {
+    if (ts.isFunctionDeclaration(statement) && statement.body) {
       const fn = lowerFunction(statement, fileName);
       if (fn) {
         decls.push({ kind: "function", fn });
@@ -438,10 +445,7 @@ export function lowerModule(
   return { decls };
 }
 
-export function lowerBlock(
-  block: ts.Block,
-  fileName: string,
-): SurfaceBlock {
+export function lowerBlock(block: ts.Block, fileName: string): SurfaceBlock {
   const stmt = lowerStatement(block, fileName);
   if (stmt.kind === "block") return stmt;
   return { kind: "block", stmts: [stmt] };

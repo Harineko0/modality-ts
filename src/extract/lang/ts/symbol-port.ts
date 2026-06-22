@@ -103,7 +103,9 @@ function moduleNameFromDeclarations(symbol: ts.Symbol): string | undefined {
   return undefined;
 }
 
-function findImportDeclaration(decl: ts.Node): ts.ImportDeclaration | undefined {
+function findImportDeclaration(
+  decl: ts.Node,
+): ts.ImportDeclaration | undefined {
   let current: ts.Node | undefined = decl;
   while (current) {
     if (ts.isImportDeclaration(current)) return current;
@@ -133,16 +135,23 @@ function resolvedKind(symbol: ts.Symbol): ResolvedSymbol["kind"] {
 }
 
 function primitiveTypeView(type: ts.Type): TypeView {
-  if (type.flags & ts.TypeFlags.String) return { kind: "primitive", name: "string" };
-  if (type.flags & ts.TypeFlags.Number) return { kind: "primitive", name: "number" };
-  if (type.flags & ts.TypeFlags.Boolean) return { kind: "primitive", name: "boolean" };
-  if (type.flags & ts.TypeFlags.Undefined) return { kind: "primitive", name: "undefined" };
-  if (type.flags & ts.TypeFlags.Null) return { kind: "primitive", name: "null" };
+  if (type.flags & ts.TypeFlags.String)
+    return { kind: "primitive", name: "string" };
+  if (type.flags & ts.TypeFlags.Number)
+    return { kind: "primitive", name: "number" };
+  if (type.flags & ts.TypeFlags.Boolean)
+    return { kind: "primitive", name: "boolean" };
+  if (type.flags & ts.TypeFlags.Undefined)
+    return { kind: "primitive", name: "undefined" };
+  if (type.flags & ts.TypeFlags.Null)
+    return { kind: "primitive", name: "null" };
   return { kind: "primitive", name: "unknown" };
 }
 
 function sameSourceFile(left: string, right: string): boolean {
-  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+  return (
+    left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
+  );
 }
 
 function importBindingFromSource(
@@ -278,13 +287,17 @@ export function createTsSymbolPort(ctx: SymbolPortContext): SymbolPort {
           if (module) {
             return {
               module,
-              exportedName: exportedNameFromBinding(binding, symbol) ?? ref.name,
+              exportedName:
+                exportedNameFromBinding(binding, symbol) ?? ref.name,
               isNamespace: false,
             };
           }
         }
       }
-      if (ctx.sourceFile && sameSourceFile(ctx.sourceFile.fileName, ref.origin.file)) {
+      if (
+        ctx.sourceFile &&
+        sameSourceFile(ctx.sourceFile.fileName, ref.origin.file)
+      ) {
         return importBindingFromSource(ref, ctx.sourceFile);
       }
       return undefined;
