@@ -2,6 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import * as ts from "typescript";
 
+// Keyed by `${canonicalFileName}:${languageVersion}`. Lib files are immutable
+// across programs with the same language target, so sharing already-bound
+// SourceFiles is safe and mirrors how DocumentRegistry works internally.
+const libSourceFileCache = new Map<string, ts.SourceFile>();
+
 /** Structural match for `TsConfigResolution` in cli/features/extract/project.ts */
 export interface SemanticProjectTsConfig {
   baseUrl?: string;
@@ -233,6 +238,7 @@ export function tsConfigResolutionFromSemanticConfig(
 export function createSemanticProject(
   entries: readonly SemanticSourceEntry[],
   config: SemanticProjectConfig | SemanticProjectTsConfig,
+  oldProgram?: ts.Program,
 ): SemanticProject {
   const semanticConfig = isSemanticProjectConfig(config) ? config : undefined;
   const compilerOptions = compilerOptionsFromConfig(config);
@@ -291,6 +297,16 @@ export function createSemanticProject(
       ? defaultHost.getCanonicalFileName(resolvedName)
       : resolvedName;
   };
+
+  const defaultLibDir = resolve(
+    defaultHost.getDefaultLibLocation?.() ??
+      dirname(defaultHost.getDefaultLibFileName(compilerOptions)),
+  );
+
+  const isDefaultLibFile = (canonical: string): boolean =>
+    canonical.startsWith(defaultLibDir) &&
+    /[\\/]lib\.[^/\\]*\.d\.ts$/.test(canonical);
+
   const host: ts.CompilerHost = {
     ...defaultHost,
     directoryExists: (directoryName) => {
@@ -316,6 +332,22 @@ export function createSemanticProject(
       const canonical = canonicalFileName(fileName);
       const cached = sourceFilesByPath.get(canonical);
       if (cached && !shouldCreateNewSourceFile) return cached;
+
+      if (!shouldCreateNewSourceFile && isDefaultLibFile(canonical)) {
+        const versionKey =
+          typeof languageVersion === "number"
+            ? languageVersion
+            : ts.ScriptTarget.ES2022;
+        const libKey = `${canonical}:${versionKey}`;
+        const libCached = libSourceFileCache.get(libKey);
+        if (libCached) return libCached;
+        const text = defaultHost.readFile(canonical);
+        if (text === undefined) return undefined;
+        const libFile = createSourceFile(canonical, text, languageVersion);
+        libSourceFileCache.set(libKey, libFile);
+        return libFile;
+      }
+
       const text =
         lookupInMemoryText(fileName) ?? defaultHost.readFile(canonical);
       if (text === undefined) return undefined;
@@ -326,7 +358,12 @@ export function createSemanticProject(
     writeFile: () => {},
   };
 
-  const program = ts.createProgram(rootNames, compilerOptions, host);
+  const program = ts.createProgram(
+    rootNames,
+    compilerOptions,
+    host,
+    oldProgram,
+  );
   const checker = program.getTypeChecker();
 
   for (const sourceFile of program.getSourceFiles()) {
