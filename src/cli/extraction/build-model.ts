@@ -76,6 +76,8 @@ export interface ModalityConfig {
   packageJsonPath?: string;
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
+  // framework?: FrameworkPlugin;           // Part 2
+  // effectModels?: readonly EffectModelProvider[]; // Part 5
   domainRefinements?: readonly DomainRefinementProvider[];
   routerPlugin?: NavigationAdapter | false;
 }
@@ -148,10 +150,10 @@ export async function buildExtractionModel(
             ...(config.disabledPlugins ?? []),
             ...(options.disabledPlugins ?? []),
           ],
-          extraSourcePlugins: [
-            ...(config.plugins ?? []),
-            ...(options.sourcePlugins ?? []),
-          ],
+          sourcePluginsOverride: config.plugins?.length
+            ? config.plugins
+            : undefined,
+          extraSourcePlugins: [...(options.sourcePlugins ?? [])],
           extraDomainRefinementProviders: [
             ...(config.domainRefinements ?? []),
             ...(options.domainRefinements ?? []),
