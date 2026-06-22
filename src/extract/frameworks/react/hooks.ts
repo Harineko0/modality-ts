@@ -1,10 +1,7 @@
-import * as ts from "typescript";
 import type { SourceAnchor } from "modality-ts/core";
-import type {
-  FrameworkCtx,
-  HookCall,
-} from "modality-ts/extract/engine/spi";
+import type { FrameworkCtx, HookCall } from "modality-ts/extract/engine/spi";
 import { resolveImportedName } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
 
 function lineAndColumn(
   source: ts.SourceFile,
@@ -29,13 +26,14 @@ export function reactEffectPhase(hookName: ReactEffectHookName): number {
   return hookName === "useEffect" ? 1 : 0;
 }
 
-function calleeIdentifier(
-  call: ts.CallExpression,
-): ts.Identifier | undefined {
+function calleeIdentifier(call: ts.CallExpression): ts.Identifier | undefined {
   return ts.isIdentifier(call.expression) ? call.expression : undefined;
 }
 
-function calleeName(call: ts.CallExpression, ctx: FrameworkCtx): string | undefined {
+function calleeName(
+  call: ts.CallExpression,
+  ctx: FrameworkCtx,
+): string | undefined {
   const identifier = calleeIdentifier(call);
   return identifier ? resolveImportedName(identifier, ctx) : undefined;
 }
@@ -72,8 +70,14 @@ export function recognizeReactHook(
       origin,
     };
   }
-  if (name === "useTransition" || name === "startTransition") {
+  if (name === "useTransition") {
     return { hook: { kind: "transition" }, origin };
+  }
+  if (name === "startTransition") {
+    return { hook: { kind: "start-transition" }, origin };
+  }
+  if (name === "flushSync") {
+    return { hook: { kind: "flush-sync" }, origin };
   }
   if (name === "useDeferredValue") {
     return { hook: { kind: "deferred" }, origin };

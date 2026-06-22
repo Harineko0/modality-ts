@@ -1,10 +1,10 @@
-import * as ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { resolveImportedName } from "modality-ts/extract/engine/spi";
 import {
   reactFramework,
   SUSPENSE_DOMAIN,
 } from "modality-ts/extract/frameworks/react";
-import { resolveImportedName } from "modality-ts/extract/engine/spi";
+import * as ts from "typescript";
+import { describe, expect, it } from "vitest";
 
 function parseCall(source: string): ts.CallExpression {
   const file = ts.createSourceFile(
@@ -73,20 +73,23 @@ describe("reactFramework", () => {
   });
 
   it("recognizeHook assigns useEffect phase 1", () => {
-    const hookCall = framework.recognizeHook(parseCall("useEffect(() => {})"), ctx);
+    const hookCall = framework.recognizeHook(
+      parseCall("useEffect(() => {})"),
+      ctx,
+    );
     expect(hookCall?.hook).toEqual({ kind: "effect", phase: 1 });
   });
 
-  it.each(["useLayoutEffect", "useInsertionEffect"] as const)(
-    "recognizeHook assigns %s phase 0",
-    (hook) => {
-      const hookCall = framework.recognizeHook(
-        parseCall(`${hook}(() => {})`),
-        ctx,
-      );
-      expect(hookCall?.hook).toEqual({ kind: "effect", phase: 0 });
-    },
-  );
+  it.each([
+    "useLayoutEffect",
+    "useInsertionEffect",
+  ] as const)("recognizeHook assigns %s phase 0", (hook) => {
+    const hookCall = framework.recognizeHook(
+      parseCall(`${hook}(() => {})`),
+      ctx,
+    );
+    expect(hookCall?.hook).toEqual({ kind: "effect", phase: 0 });
+  });
 
   it("recognizeHook unwraps useCallback handler target", () => {
     const hookCall = framework.recognizeHook(
@@ -130,6 +133,17 @@ describe("reactFramework", () => {
       ctx,
     );
     expect(boundary?.kind).toBe("use");
+  });
+
+  it.each([
+    ["startTransition", "start-transition"],
+    ["flushSync", "flush-sync"],
+  ] as const)("recognizeHook classifies %s as %s", (call, kind) => {
+    const hookCall = framework.recognizeHook(
+      parseCall(`${call}(() => {})`),
+      ctx,
+    );
+    expect(hookCall?.hook.kind).toBe(kind);
   });
 
   it.todo("recognizes import-aliased hooks once Part 6 importBinding lands", () => {

@@ -1,13 +1,14 @@
 import type { EffectIR, ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import type { SemanticTypeContext } from "../../spi/index.js";
-import { resolveSetterBinding } from "../context.js";
 import {
   callName,
-  isFlushSyncCall,
-  isStartTransitionCall,
+  currentEngineFramework,
+  isExtractableHandler,
   literalValue,
 } from "../ast.js";
+import { resolveSetterBinding } from "../context.js";
+import type { EnvironmentEventConfig } from "../environment-config.js";
 import { uniqueStrings } from "../ids.js";
 import type {
   BoundExpr,
@@ -17,19 +18,8 @@ import type {
   SetterBinding,
   SetterCall,
 } from "../types.js";
-import { isExtractableHandler } from "../ast.js";
-import { setterArgumentExpr, valueExpr } from "./expressions.js";
-import { parseGuardExpression } from "./guards.js";
-import { bindConstStatement } from "./locals.js";
 import type { TransitionBinding } from "./concurrent.js";
-import type { TimerRegistration } from "./timers.js";
-import {
-  bindTimerHandle,
-  isTimerClearCall,
-  isTimerScheduleCall,
-  registerTimerFromScheduleCall,
-  timerClearSummaryFromCall,
-} from "./timers.js";
+import { startTransitionScheduleFromCall } from "./concurrent.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
 import {
   bindWebSocketHandle,
@@ -39,8 +29,17 @@ import {
   registerWebSocketConstructor,
   webSocketCleanupSummaryFromCall,
 } from "./environment-callbacks.js";
-import type { EnvironmentEventConfig } from "../environment-config.js";
-import { startTransitionScheduleFromCall } from "./concurrent.js";
+import { setterArgumentExpr, valueExpr } from "./expressions.js";
+import { parseGuardExpression } from "./guards.js";
+import { bindConstStatement } from "./locals.js";
+import type { TimerRegistration } from "./timers.js";
+import {
+  bindTimerHandle,
+  isTimerClearCall,
+  isTimerScheduleCall,
+  registerTimerFromScheduleCall,
+  timerClearSummaryFromCall,
+} from "./timers.js";
 
 export interface StatementSummaryOptions {
   handlers?: Map<string, ExtractableHandler>;
@@ -110,7 +109,11 @@ export function summarizeHandlerStatements(
 ): EffectSummary[] | undefined {
   if (ts.isCallExpression(handler.body)) {
     const state = handlerSummaryState(options);
-    if (isStartTransitionCall(handler.body)) {
+    const hook = currentEngineFramework().framework.recognizeHook(
+      handler.body,
+      currentEngineFramework().ctx,
+    );
+    if (hook?.hook.kind === "start-transition") {
       const scheduled = summarizeStartTransitionCall(
         handler.body,
         setters,
@@ -657,7 +660,11 @@ function summarizeStatement(
     }
     const call = expressionCall(statement.expression);
     if (call) {
-      if (isFlushSyncCall(call)) {
+      const hook = currentEngineFramework().framework.recognizeHook(
+        call,
+        currentEngineFramework().ctx,
+      );
+      if (hook?.hook.kind === "flush-sync") {
         const callback = call.arguments[0];
         if (
           callback &&
@@ -671,7 +678,7 @@ function summarizeStatement(
           });
         }
       }
-      if (isStartTransitionCall(call)) {
+      if (hook?.hook.kind === "start-transition") {
         const scheduled = summarizeStartTransitionCall(call, setters, state);
         if (scheduled) {
           return { summaries: [scheduled], terminated: false };
