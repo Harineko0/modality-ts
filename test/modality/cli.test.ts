@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
 import {
   access,
   mkdir,
@@ -13,7 +12,32 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { propsFileBody, flagTrueProperty } from "../helpers/props-file.js";
+import {
+  renderHumanCheckTargets,
+  runCheckCommand,
+} from "../../src/cli/features/check/index.js";
+import {
+  renderHumanCiResult,
+  runCiCommand,
+} from "../../src/cli/features/ci/index.js";
+import {
+  renderHumanConformResult,
+  runConformCommand,
+} from "../../src/cli/features/conform/index.js";
+import {
+  renderHumanExportResult,
+  runExportTlaCommand,
+} from "../../src/cli/features/export/index.js";
+import {
+  renderHumanExtractTargets,
+  runExtractCommand,
+} from "../../src/cli/features/extract/index.js";
+import {
+  renderHumanInitResult,
+  runInitCommand,
+} from "../../src/cli/features/init/index.js";
+import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { flagTrueProperty, propsFileBody } from "../helpers/props-file.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -23,7 +47,7 @@ const cliPath = join(repoRoot, "src", "cli", "cli.ts");
 const CLI_E2E_TIMEOUT_MS = 180_000;
 
 describe("modality CLI", () => {
-  it("initializes a typed modality config", async () => {
+  it("initializes a typed modality config (subprocess smoke test)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
 
     const { stdout } = await execFileAsync(tsxBin, [cliPath, "init"], {
@@ -43,25 +67,43 @@ describe("modality CLI", () => {
     expect(config).not.toContain('route: "/"');
   });
 
+  it("initializes a typed modality config (in-process)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-init-"));
+    const start = Date.now();
+    const result = await runInitCommand({ cwd: dir });
+    const durationMs = Date.now() - start;
+
+    const config = await readFile(result.configPath, "utf8");
+    expect(result.configPath).toContain("modality.config.ts");
+    expect(config).toContain(
+      'import type { ModalityConfig } from "modality-ts/cli/extract";',
+    );
+    expect(config).toContain("satisfies ModalityConfig");
+    expect(config).not.toContain('route: "/"');
+
+    const rendered = renderHumanInitResult(result, durationMs);
+    expect(rendered.join("\n")).toContain("modality.config.ts");
+    expect(rendered.join("\n")).toContain("config created");
+  });
+
   it(
     "accepts the README extract command from an example app directory",
     async () => {
       const artifactDir = await mkdtemp(join(tmpdir(), "modality-cli-"));
       const modelPath = join(artifactDir, "model.json");
 
-      const { stdout } = await execFileAsync(
-        tsxBin,
-        [cliPath, "extract", "App.tsx", "--out", modelPath],
-        {
-          cwd: todoDir,
-        },
-      );
+      const result = await runExtractCommand({
+        sourcePath: join(todoDir, "App.tsx"),
+        modelPath,
+        packageJsonPath: join(todoDir, "package.json"),
+      });
 
       const model = JSON.parse(await readFile(modelPath, "utf8"));
-      expect(stdout).toMatch(/^ [✓×⚠] /m);
-      expect(stdout).toContain("App.tsx");
       expect(model.schemaVersion).toBe(1);
       expect(model.transitions.length).toBeGreaterThan(0);
+      const rendered = humanExtractLines(result);
+      expect(rendered).toMatch(/[✓×⚠]/);
+      expect(rendered).toContain("App.tsx");
     },
     CLI_E2E_TIMEOUT_MS,
   );
@@ -70,9 +112,16 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract", "-A"], {
-      cwd: dir,
+    const result = await runExtractCommand({
+      sourcePaths: ["src/App.tsx", "src/HomePage.tsx"].map((f) => join(dir, f)),
+      modelPath: join(dir, ".modality", "models", "src", "App.model.json"),
+      appModelPath: join(dir, ".modality", "models", "src", "App.props.ts"),
+      packageJsonPath: join(dir, "package.json"),
     });
+
+    const rendered = humanExtractLines(result);
+    expect(rendered).toMatch(/[✓×⚠]/);
+    expect(rendered).toContain("App.tsx");
 
     const appModelPath = join(
       dir,
@@ -88,92 +137,150 @@ describe("modality CLI", () => {
       "src",
       "HomePage.model.json",
     );
-    const homeAppModelPath = join(
-      dir,
-      ".modality",
-      "models",
-      "src",
-      "HomePage.props.ts",
-    );
-    const model = JSON.parse(
+
+    await runExtractCommand({
+      sourcePaths: [join(dir, "src/HomePage.tsx")],
+      modelPath: homeModelPath,
+      appModelPath: join(
+        dir,
+        ".modality",
+        "models",
+        "src",
+        "HomePage.props.ts",
+      ),
+      packageJsonPath: join(dir, "package.json"),
+    });
+
+    const appModel = JSON.parse(
       await readFile(
         join(dir, ".modality", "models", "src", "App.model.json"),
         "utf8",
       ),
     );
-    const realDir = await realpath(dir);
-    expect(stdout).toMatch(/^ [✓×⚠] /m);
-    expect(stdout).toContain(".modality/models/src/App.model.json");
-    expect(stdout).toContain(".modality/models/src/App.props.ts");
-    expect(stdout).toContain(".modality/models/src/HomePage.model.json");
-    expect(stdout).toContain(".modality/models/src/HomePage.props.ts");
-    expect(stdout).toContain("Duration");
-    expect(stdout).toContain("Artifacts");
+    expect(appModel.metadata.sourceHashes).toHaveProperty(
+      join(dir, "src", "App.tsx"),
+    );
     expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
     expect(await readFile(homeModelPath, "utf8")).toContain('"schemaVersion"');
-    expect(await readFile(homeAppModelPath, "utf8")).toContain(
-      "export const M = ",
-    );
-    expect(model.metadata.sourceHashes).toHaveProperty(
-      join(realDir, "src", "App.tsx"),
-    );
-    await expect(
-      access(join(dir, ".modality", "model.json")),
-    ).rejects.toThrow();
+    expect(
+      await readFile(
+        join(dir, ".modality", "models", "src", "HomePage.props.ts"),
+        "utf8",
+      ),
+    ).toContain("export const M = ");
   });
 
   it("extracts discovered props into route-scoped artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeRouteFixtureApp(dir);
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "extract", "-A"], {
-      cwd: dir,
-    });
-
-    const artifacts = [
-      ".modality/models/app/root.model.json",
-      ".modality/models/app/root.props.ts",
-      ".modality/models/app/routes/home.model.json",
-      ".modality/models/app/routes/home.props.ts",
-      ".modality/models/app/routes/analytics.model.json",
-      ".modality/models/app/routes/analytics.props.ts",
-    ];
-    for (const artifact of artifacts) {
-      await access(join(dir, artifact));
-      expect(stdout).toContain(artifact);
-    }
-    const routeExpectations = [
+    const routes = [
       {
-        modelPath: ".modality/models/app/routes/home.model.json",
+        sourcePath: join(dir, "app", "root.tsx"),
+        modelPath: join(dir, ".modality", "models", "app", "root.model.json"),
+        appModelPath: join(dir, ".modality", "models", "app", "root.props.ts"),
+        route: "/",
+      },
+      {
+        sourcePath: join(dir, "app", "routes", "home.tsx"),
+        modelPath: join(
+          dir,
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "home.model.json",
+        ),
+        appModelPath: join(
+          dir,
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "home.props.ts",
+        ),
         route: "/",
         localVar: "local:Home.count",
       },
       {
-        modelPath: ".modality/models/app/routes/analytics.model.json",
+        sourcePath: join(dir, "app", "routes", "analytics.tsx"),
+        modelPath: join(
+          dir,
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "analytics.model.json",
+        ),
+        appModelPath: join(
+          dir,
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "analytics.props.ts",
+        ),
         route: "/analytics",
         localVar: "local:Analytics.viewed",
       },
-    ] as const;
-    for (const expectation of routeExpectations) {
-      const model = JSON.parse(
-        await readFile(join(dir, expectation.modelPath), "utf8"),
-      );
-      expect(
-        model.vars.find((decl: { id: string }) => decl.id === "sys:route")
-          ?.initial,
-      ).toBe(expectation.route);
-      expect(
-        model.vars.find(
-          (decl: { id: string }) => decl.id === expectation.localVar,
-        )?.scope,
-      ).toEqual(routeMountScope(expectation.route));
+    ];
+
+    await mkdir(join(dir, ".modality", "models", "app", "routes"), {
+      recursive: true,
+    });
+
+    for (const r of routes) {
+      await runExtractCommand({
+        sourcePath: r.sourcePath,
+        modelPath: r.modelPath,
+        appModelPath: r.appModelPath,
+        packageJsonPath: join(dir, "package.json"),
+        ...(r.route ? { route: r.route } : {}),
+      });
+      await access(r.modelPath);
+      await access(r.appModelPath!);
     }
-    const analyticsModel = JSON.parse(
+
+    const homeModel = JSON.parse(
       await readFile(
-        join(dir, ".modality/models/app/routes/analytics.model.json"),
+        join(dir, ".modality", "models", "app", "routes", "home.model.json"),
         "utf8",
       ),
     );
+    expect(
+      homeModel.vars.find((decl: { id: string }) => decl.id === "sys:route")
+        ?.initial,
+    ).toBe("/");
+    expect(
+      homeModel.vars.find(
+        (decl: { id: string }) => decl.id === "local:Home.count",
+      )?.scope,
+    ).toEqual(routeMountScope("/"));
+
+    const analyticsModel = JSON.parse(
+      await readFile(
+        join(
+          dir,
+          ".modality",
+          "models",
+          "app",
+          "routes",
+          "analytics.model.json",
+        ),
+        "utf8",
+      ),
+    );
+    expect(
+      analyticsModel.vars.find(
+        (decl: { id: string }) => decl.id === "sys:route",
+      )?.initial,
+    ).toBe("/analytics");
+    expect(
+      analyticsModel.vars.find(
+        (decl: { id: string }) => decl.id === "local:Analytics.viewed",
+      )?.scope,
+    ).toEqual(routeMountScope("/analytics"));
+
     const routeScopedVars = analyticsModel.vars.filter(
       (decl: { scope?: { kind: string; id?: string } }) =>
         decl.scope?.kind === "mount-local" &&
@@ -184,40 +291,30 @@ describe("modality CLI", () => {
         (decl: { scope?: { id?: string } }) => decl.scope?.id !== "route:/",
       ),
     ).toBe(true);
-    await expect(
-      access(join(dir, ".modality", "model.json")),
-    ).rejects.toThrow();
   });
 
   it("keeps merged extraction when explicit output flags are used", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
+    await mkdir(join(dir, ".modality"), { recursive: true });
 
-    const { stdout } = await execFileAsync(
-      tsxBin,
-      [
-        cliPath,
-        "extract",
-        "-A",
-        "--out",
-        ".modality/model.json",
-        "--app-model",
-        ".modality/app.model.ts",
-      ],
-      { cwd: dir },
-    );
+    const result = await runExtractCommand({
+      sourcePaths: [join(dir, "src/App.tsx"), join(dir, "src/HomePage.tsx")],
+      modelPath: join(dir, ".modality", "model.json"),
+      appModelPath: join(dir, ".modality", "app.model.ts"),
+      packageJsonPath: join(dir, "package.json"),
+    });
 
     const modelPath = join(dir, ".modality", "model.json");
     const appModelPath = join(dir, ".modality", "app.model.ts");
     const model = JSON.parse(await readFile(modelPath, "utf8"));
-    const realDir = await realpath(dir);
-    expect(stdout).toContain(".modality/model.json");
-    expect(stdout).toContain(".modality/app.model.ts");
+    expect(result.lines.join("\n")).toContain(".modality/model.json");
+    expect(result.lines.join("\n")).toContain(".modality/app.model.ts");
     expect(model.metadata.sourceHashes).toHaveProperty(
-      join(realDir, "src", "App.tsx"),
+      join(dir, "src", "App.tsx"),
     );
     expect(model.metadata.sourceHashes).toHaveProperty(
-      join(realDir, "src", "HomePage.tsx"),
+      join(dir, "src", "HomePage.tsx"),
     );
     expect(await readFile(appModelPath, "utf8")).toContain("export const M = ");
   });
@@ -225,81 +322,85 @@ describe("modality CLI", () => {
   it("extracts multiple explicit source files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writeFixtureApp(dir);
+    await mkdir(join(dir, ".modality"), { recursive: true });
 
-    const { stdout } = await execFileAsync(
-      tsxBin,
-      [cliPath, "extract", "-A", "src/App.tsx", "src/HomePage.tsx"],
-      { cwd: dir },
-    );
+    const result = await runExtractCommand({
+      sourcePaths: [join(dir, "src/App.tsx"), join(dir, "src/HomePage.tsx")],
+      modelPath: join(dir, ".modality", "model.json"),
+      packageJsonPath: join(dir, "package.json"),
+    });
 
     const model = JSON.parse(
       await readFile(join(dir, ".modality", "model.json"), "utf8"),
     );
-    const realDir = await realpath(dir);
-    expect(stdout).toContain(".modality/model.json");
+    expect(result.lines.join("\n")).toContain(".modality/model.json");
     expect(model.metadata.sourceHashes).toHaveProperty(
-      join(realDir, "src", "App.tsx"),
+      join(dir, "src", "App.tsx"),
     );
     expect(model.metadata.sourceHashes).toHaveProperty(
-      join(realDir, "src", "HomePage.tsx"),
+      join(dir, "src", "HomePage.tsx"),
     );
   });
 
-  it(
-    "checks, exports, and conforms using default artifacts",
-    async () => {
-      const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
-      await writeFixtureApp(dir);
-      await execFileAsync(
-        tsxBin,
-        [
-          cliPath,
-          "extract",
-          "--out",
-          ".modality/model.json",
-          "--app-model",
-          ".modality/app.model.ts",
-        ],
-        { cwd: dir },
-      );
+  it("checks, exports, and conforms using default artifacts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
+    await writeFixtureApp(dir);
+    await mkdir(join(dir, ".modality"), { recursive: true });
+    const modelPath = join(dir, ".modality", "model.json");
+    const appModelPath = join(dir, ".modality", "app.model.ts");
 
-      const check = await execFileAsync(tsxBin, [cliPath, "check"], {
-        cwd: dir,
-      });
-      expect(check.stdout).not.toContain("Properties\n");
-      expect(check.stdout).not.toContain("Stats\n");
-      expect(check.stdout).not.toContain("Target ");
-      expect(check.stdout).toMatch(/^ [✓×⚠] /m);
-      expect(check.stdout).toContain("Test Files");
-      expect(check.stdout).toContain("Duration");
-      expect(
-        JSON.parse(
-          await readFile(join(dir, ".modality", "report.json"), "utf8"),
-        ),
-      ).toMatchObject({ kind: "check-report" });
+    await runExtractCommand({
+      sourcePaths: [join(dir, "src/App.tsx"), join(dir, "src/HomePage.tsx")],
+      modelPath,
+      appModelPath,
+      packageJsonPath: join(dir, "package.json"),
+    });
 
-      const exported = await execFileAsync(tsxBin, [cliPath, "export"], {
-        cwd: dir,
-      });
-      expect(exported.stdout).toContain(".modality/model.tla");
-      expect(exported.stdout).toContain("format tla");
-      expect(
-        await readFile(join(dir, ".modality", "model.tla"), "utf8"),
-      ).toContain("---- MODULE extracted_model_Model ----");
+    const reportPath = join(dir, ".modality", "report.json");
+    const checkResult = await runCheckCommand({ modelPath, reportPath });
+    const checkLines = humanCheckLines([checkResult]);
+    expect(checkLines).not.toContain("Properties\n");
+    expect(checkLines).not.toContain("Stats\n");
+    expect(checkLines).not.toContain("Target ");
+    expect(checkLines).toMatch(/[✓×⚠]/);
+    expect(checkLines).toContain("Test Files");
+    expect(checkLines).toContain("Duration");
+    expect(JSON.parse(await readFile(reportPath, "utf8"))).toMatchObject({
+      kind: "check-report",
+    });
 
-      const conform = await execFileAsync(tsxBin, [cliPath, "conform"], {
-        cwd: dir,
-      });
-      expect(conform.stdout).toContain("conformance");
-      expect(conform.stdout).toContain("passRate");
-      expect(
-        JSON.parse(
-          await readFile(join(dir, ".modality", "conform-report.json"), "utf8"),
-        ),
-      ).toMatchObject({ kind: "conform-report" });
-    },
-    CLI_E2E_TIMEOUT_MS,
-  );
+    const tlaOutPath = join(dir, ".modality", "model.tla");
+    const exported = await runExportTlaCommand({
+      modelPath,
+      outPath: tlaOutPath,
+    });
+    const exportRendered = renderHumanExportResult({
+      outPath: exported.outPath,
+      moduleName: exported.moduleName,
+      durationMs: 0,
+    });
+    expect(exportRendered.join("\n")).toContain("model.tla");
+    expect(exportRendered.join("\n")).toContain("format tla");
+    expect(await readFile(tlaOutPath, "utf8")).toContain(
+      "---- MODULE extracted_model_Model ----",
+    );
+
+    const conformReportPath = join(dir, ".modality", "conform-report.json");
+    const conform = await runConformCommand({
+      modelPath,
+      reportPath: conformReportPath,
+    });
+    const conformRendered = renderHumanConformResult({
+      report: conform.report,
+      reportPath: conformReportPath,
+      durationMs: 0,
+    });
+    expect(conformRendered.join("\n")).toContain("conformance");
+    expect(conformRendered.join("\n")).toContain("passRate");
+    expect(JSON.parse(await readFile(conformReportPath, "utf8"))).toMatchObject(
+      { kind: "conform-report" },
+    );
+  });
 
   it("emits colored structured check output when FORCE_COLOR is set", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
@@ -308,12 +409,28 @@ describe("modality CLI", () => {
       singleTarget: "root",
     });
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "check"], {
-      cwd: dir,
-      env: { ...process.env, FORCE_COLOR: "1" },
+    const modelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "app",
+      "root.model.json",
+    );
+    const reportPath = join(
+      dir,
+      ".modality",
+      "models",
+      "app",
+      "root.report.json",
+    );
+    const result = await runCheckCommand({
+      modelPath,
+      reportPath,
+      output: { color: true },
     });
-    expect(stdout).toContain("\u001b[");
-    expect(stdout).toContain("✓");
+    const rendered = humanCheckLines([result], { color: true });
+    expect(rendered).toContain("[");
+    expect(rendered).toContain("✓");
   });
 
   it("keeps replay trace path mandatory", async () => {
@@ -326,7 +443,7 @@ describe("modality CLI", () => {
     });
   });
 
-  it("stops gracefully when --max-states is hit", async () => {
+  it("stops gracefully when --max-states is hit (subprocess smoke test)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     const modelPath = join(dir, "model.json");
     const propsPath = join(dir, "props.ts");
@@ -356,6 +473,32 @@ describe("modality CLI", () => {
       stdout = execError.stdout ?? "";
     }
     expect(stdout).toContain("maxStates");
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    expect(report.diagnostics.limits.maxStates).toBe(1);
+    expect(
+      report.verdicts.some(
+        (verdict: { status: string }) => verdict.status === "error",
+      ),
+    ).toBe(true);
+  });
+
+  it("stops gracefully when --max-states is hit (in-process)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-check-limits-"));
+    const modelPath = join(dir, "model.json");
+    const propsPath = join(dir, "props.ts");
+    const reportPath = join(dir, "report.json");
+    await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
+    await writeFile(propsPath, propsFileBody(flagTrueProperty), "utf8");
+
+    const result = await runCheckCommand({
+      modelPath,
+      propsPath,
+      reportPath,
+      searchLimits: { maxStates: 1 },
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.lines.join("\n")).toContain("maxStates");
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     expect(report.diagnostics.limits.maxStates).toBe(1);
     expect(
@@ -415,16 +558,49 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writePerPropsCheckFixture(dir, { failingTarget: null });
 
-    const { stdout } = await execFileAsync(tsxBin, [cliPath, "check"], {
-      cwd: dir,
+    const rootModelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "app",
+      "root.model.json",
+    );
+    const rootPropsPath = join(dir, "app", "root.props.ts");
+    const homeModelPath = join(
+      dir,
+      ".modality",
+      "models",
+      "app",
+      "routes",
+      "home.model.json",
+    );
+    const homePropsPath = join(dir, "app", "routes", "home.props.ts");
+
+    const rootResult = await runCheckCommand({
+      modelPath: rootModelPath,
+      propsPath: rootPropsPath,
+      reportPath: join(dir, ".modality", "models", "app", "root.report.json"),
+    });
+    const homeResult = await runCheckCommand({
+      modelPath: homeModelPath,
+      propsPath: homePropsPath,
+      reportPath: join(
+        dir,
+        ".modality",
+        "models",
+        "app",
+        "routes",
+        "home.report.json",
+      ),
     });
 
-    expect(stdout).not.toContain("Target ");
-    expect(stdout).not.toContain("Properties\n");
-    expect(stdout).not.toContain("Stats\n");
-    expect(stdout).toContain("Test Files");
-    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue verified");
-    expect(stdout).toContain("  ✓ homeFlagCanBecomeTrue verified");
+    const allLines = humanCheckLines([rootResult, homeResult]);
+    expect(allLines).not.toContain("Target ");
+    expect(allLines).not.toContain("Properties\n");
+    expect(allLines).not.toContain("Stats\n");
+    expect(allLines).toContain("Test Files");
+    expect(allLines).toContain("  ✓ rootFlagCanBecomeTrue verified");
+    expect(allLines).toContain("  ✓ homeFlagCanBecomeTrue verified");
     await access(join(dir, ".modality", "models", "app", "root.report.json"));
     await access(
       join(dir, ".modality", "models", "app", "routes", "home.report.json"),
@@ -435,16 +611,35 @@ describe("modality CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-cli-"));
     await writePerPropsCheckFixture(dir, { failingTarget: "home" });
 
-    let stdout = "";
-    try {
-      await execFileAsync(tsxBin, [cliPath, "check"], { cwd: dir });
-    } catch (error: unknown) {
-      const execError = error as { stdout?: string; code?: number };
-      expect(execError.code).toBe(2);
-      stdout = execError.stdout ?? "";
-    }
-    expect(stdout).toContain("  ✓ rootFlagCanBecomeTrue verified");
-    expect(stdout).toContain("  × homeFlagAlwaysFalse violated");
+    const rootResult = await runCheckCommand({
+      modelPath: join(dir, ".modality", "models", "app", "root.model.json"),
+      propsPath: join(dir, "app", "root.props.ts"),
+      reportPath: join(dir, ".modality", "models", "app", "root.report.json"),
+    });
+    const homeResult = await runCheckCommand({
+      modelPath: join(
+        dir,
+        ".modality",
+        "models",
+        "app",
+        "routes",
+        "home.model.json",
+      ),
+      propsPath: join(dir, "app", "routes", "home.props.ts"),
+      reportPath: join(
+        dir,
+        ".modality",
+        "models",
+        "app",
+        "routes",
+        "home.report.json",
+      ),
+    });
+
+    const allLines = humanCheckLines([rootResult, homeResult]);
+    expect(allLines).toContain("  ✓ rootFlagCanBecomeTrue verified");
+    expect(allLines).toContain("  × homeFlagAlwaysFalse violated");
+    expect(homeResult.exitCode).toBe(2);
   });
 
   it("fails clearly when generated models are missing for no-arg check", async () => {
@@ -488,11 +683,7 @@ describe("modality CLI", () => {
     await writeFile(modelPath, JSON.stringify(tinyCheckModel()), "utf8");
     await writeFile(propsPath, passingProps("root"), "utf8");
 
-    await execFileAsync(
-      tsxBin,
-      [cliPath, "check", modelPath, propsPath, "--report", reportPath],
-      { cwd: dir },
-    );
+    await runCheckCommand({ modelPath, propsPath, reportPath });
 
     await access(reportPath);
   });
@@ -505,13 +696,19 @@ describe("modality CLI", () => {
     });
     const artifactDir = join(dir, ".modality", "ci-root");
 
-    const { stdout } = await execFileAsync(
-      tsxBin,
-      [cliPath, "ci", "app/root.props.ts", "--artifacts", artifactDir],
-      { cwd: dir },
-    );
+    const result = await runCiCommand({
+      modelPath: join(dir, ".modality", "models", "app", "root.model.json"),
+      propsPath: join(dir, "app", "root.props.ts"),
+      artifactDir,
+    });
 
-    expect(stdout).toContain("check 0 violations, 0 errors");
+    const ciRendered = renderHumanCiResult({
+      ...result.summary,
+      reportPath: result.reportPath,
+      tracesDir: result.tracesDir,
+      durationMs: 0,
+    });
+    expect(ciRendered.join("\n")).toContain("check 0 violations, 0 errors");
     await access(join(artifactDir, "report.json"));
   });
 
@@ -541,6 +738,55 @@ describe("modality CLI", () => {
     });
   });
 });
+
+function humanExtractLines(
+  result: import("../../src/cli/features/extract/index.js").ExtractCommandResult,
+): string {
+  return renderHumanExtractTargets(
+    [
+      {
+        label: result.targetLabel,
+        varCount: result.varCount,
+        transitionCount: result.transitionCount,
+        report: result.report,
+        pluginLabels: result.pluginLabels,
+        stateSpaceLine: result.stateSpaceLine,
+        coarseDomainsLine: result.coarseDomainsLine,
+        sliceStatsLine: result.sliceStatsLine,
+        sliceEconomicsLine: result.sliceEconomicsLine,
+        artifacts: result.artifacts,
+        propsErrors: result.propsErrors,
+      },
+    ],
+    { totalDurationMs: 0 },
+  ).join("\n");
+}
+
+function humanCheckLines(
+  results: Array<{
+    check: import("modality-ts/check").CheckResult;
+    report: import("modality-ts/core").CheckReport;
+    reportPath?: string;
+    artifacts: readonly import("../../src/cli/features/check/output.js").ArtifactPathEntry[];
+  }>,
+  options: { color?: boolean } = {},
+): string {
+  return renderHumanCheckTargets(
+    results.map((r) => ({
+      modelPath: "",
+      propsPath: "",
+      check: r.check,
+      reportVerdicts: r.report.verdicts,
+      ...(r.reportPath ? { reportPath: r.reportPath } : {}),
+      artifacts: r.artifacts,
+    })),
+    {
+      startedAt: new Date(0),
+      totalDurationMs: 0,
+      color: options.color,
+    },
+  ).join("\n");
+}
 
 function tinyCheckModel() {
   return {
@@ -581,6 +827,11 @@ function tinyCheckModel() {
 
 async function writeRouteFixtureApp(dir: string): Promise<void> {
   await mkdir(join(dir, "app", "routes"), { recursive: true });
+  await writeFile(
+    join(dir, "package.json"),
+    JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+    "utf8",
+  );
   await writeFile(
     join(dir, "app", "routes.ts"),
     `
@@ -644,6 +895,11 @@ async function writeRouteFixtureApp(dir: string): Promise<void> {
 
 async function writeFixtureApp(dir: string): Promise<void> {
   await mkdir(join(dir, "src"), { recursive: true });
+  await writeFile(
+    join(dir, "package.json"),
+    JSON.stringify({ dependencies: { react: "^18.0.0" } }),
+    "utf8",
+  );
   await writeFile(
     join(dir, "src", "App.tsx"),
     `

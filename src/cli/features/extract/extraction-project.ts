@@ -1,14 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, parse, relative, resolve } from "node:path";
-import {
-  runExtractionPipeline,
-  runPluginDiscoveryPhase,
-  discoveryRelatedFragments,
-  semanticTypeContextForFile,
-  type ExtractionPipelineResult,
-} from "modality-ts/extract";
-import type { Bounds } from "modality-ts/core";
 import type {
+  Bounds,
   ExtractionCaveat,
   ExtractionPipelineDiagnostics,
   ExtractionSurfaceDiagnostics,
@@ -16,44 +9,51 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
+import {
+  discoveryRelatedFragments,
+  type ExtractionPipelineResult,
+  runExtractionPipeline,
+  runPluginDiscoveryPhase,
+  semanticTypeContextForFile,
+} from "modality-ts/extract";
 import type {
+  CacheStorageFragment,
+  DomainRefinementProvider,
   EffectApiProvider,
   FrameworkPlugin,
   HandlerWrapperProvider,
   ModuleRoleAdapter,
   NavigationAdapter,
-  StateSourcePlugin,
-  RouteInventory,
-  DomainRefinementProvider,
-  CacheStorageFragment,
   RouteExecutionDescriptor,
   RouteExecutionProvider,
+  RouteInventory,
   RouteNode,
+  StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { parseReactRouterRoutes } from "modality-ts/extract/sources/router";
-import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
 import type { EffectOpAliases } from "../../../extract/engine/ts/effect-op-aliases.js";
-import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
+import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
+import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
-  tsConfigResolutionFromSemanticConfig,
   type SemanticProject,
   type SemanticProjectConfig,
+  tsConfigResolutionFromSemanticConfig,
 } from "../../../extract/engine/ts/semantic-project.js";
-import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
 import {
   bindEngineFrameworkFromPlugin,
   withEngineFramework,
 } from "../../../extract/engine/ts/ast.js";
 import { resolveFrameworkPlugin } from "modality-ts/extract/engine/spi";
+import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
 import type { RegistrySummary } from "../../registry/index.js";
+import type { ExtractCommandOptions, ModalityConfig } from "./command.js";
 import {
   type EffectApiProvenanceEntry,
-  type TsConfigResolution,
   sourceWithReachableImports,
+  type TsConfigResolution,
 } from "./project.js";
-import type { ExtractCommandOptions, ModalityConfig } from "./command.js";
 
 export interface ExtractionProject {
   entryFile: string;
@@ -222,6 +222,7 @@ export async function buildClientProjectSurface(
   const semanticProject = createSemanticProject(
     includedSources.map((entry) => ({ path: entry.path, text: entry.text })),
     project.semanticConfig,
+    moduleResolver.program,
   );
   const routeExecution = describeRouteExecution(
     options.routeExecutionProviders ?? [],
