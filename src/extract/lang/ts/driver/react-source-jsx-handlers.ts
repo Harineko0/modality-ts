@@ -11,11 +11,8 @@ import { lineAndColumn } from "./ast.js";
 import { unextractableHandlerCaveat } from "./caveats.js";
 import type { ComponentRegistry } from "./components.js";
 import {
-  jsxTagIdentifier,
-  jsxTagName,
   listRenderedHandlerInfo,
   literalListRenderedHandlerInfo,
-  resolveComponentEntry,
 } from "./components.js";
 import { safeId, tagStableIdKey } from "./ids.js";
 import {
@@ -230,10 +227,6 @@ export function visitComponentPropJsxAttribute(
     ...ctx.finalizeHandlerTimerContext(componentPropHandlerContext),
   );
   const handlerId = `${nextComponent ?? "Anonymous"}.${attrName}`;
-  const tag = jsxTagIdentifier(node) ?? jsxTagName(node);
-  const localComponent = tag
-    ? resolveComponentEntry(ctx.components, tag, ctx.types)?.decl
-    : undefined;
   if (
     extracted.length === 0 &&
     !componentPropDeferredToChildTrigger(
@@ -248,31 +241,30 @@ export function visitComponentPropJsxAttribute(
   ) {
     // Fallback: if the handler is registered (e.g. via handleSubmit unwrap),
     // extract ctx.transitions directly from the handler body using the prop name
-    // as the event attribute. This handles ctx.handlers passed to external (non-local)
-    // child ctx.components, where the trigger chain cannot be resolved.
-    const fallbackExtracted = localComponent
-      ? []
-      : transitionsFromJsxAttribute(
-          ctx.source,
-          ctx.fileName,
-          node,
-          scopedSetters,
-          ctx.handlers,
-          nextComponent ?? "Anonymous",
-          ctx.effectApis,
-          ctx.asyncOutcomes,
-          ctx.statePlugins,
-          ctx.routePlugin,
-          undefined,
-          ctx.routePatterns,
-          ctx.contextBindings,
-          ctx.warnings,
-          ctx.resetSymbols,
-          {
-            ...componentPropHandlerContext,
-            effectOpAliases: ctx.effectOpAliases,
-          },
-        );
+    // as the event attribute. This handles ctx.handlers passed to opaque custom
+    // components, where the trigger chain cannot be resolved.
+    const fallbackExtracted = transitionsFromJsxAttribute(
+      ctx.source,
+      ctx.fileName,
+      node,
+      scopedSetters,
+      ctx.handlers,
+      nextComponent ?? "Anonymous",
+      ctx.effectApis,
+      ctx.asyncOutcomes,
+      ctx.statePlugins,
+      ctx.routePlugin,
+      undefined,
+      ctx.routePatterns,
+      ctx.contextBindings,
+      ctx.warnings,
+      ctx.resetSymbols,
+      {
+        ...componentPropHandlerContext,
+        effectOpAliases: ctx.effectOpAliases,
+        types: ctx.types,
+      },
+    );
     if (fallbackExtracted.length > 0) {
       ctx.transitions.push(
         ...fallbackExtracted,

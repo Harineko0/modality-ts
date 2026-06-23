@@ -80,4 +80,36 @@ describe("binding consolidation", () => {
       expect(claimants).toHaveLength(1);
     }
   });
+
+  it("deduplicates templated source declarations discovered through multiple fragments", () => {
+    const hookSource = `
+      import useSWR from 'swr';
+      export function useAccountDetail(accountId: string) {
+        return useSWR(["account", accountId], fetchAccount);
+      }
+    `;
+    const discovery = runPluginDiscoveryPhase({
+      sourceText: "export function App() { return null; }",
+      fileName: "App.tsx",
+      route: "/",
+      statePlugins: [swrSource()],
+      discoverFragments: [
+        { sourceText: hookSource, fileName: "account-queries.ts" },
+        { sourceText: hookSource, fileName: "account-queries.ts" },
+      ],
+    });
+
+    expect(
+      discovery.templateFragments.flatMap((fragment) => fragment.vars),
+    ).toHaveLength(3);
+    expect(
+      discovery.templateFragments
+        .flatMap((fragment) => fragment.vars)
+        .map((decl) => decl.id),
+    ).toEqual([
+      "swr:useAccountDetail:data",
+      "swr:useAccountDetail:isValidating",
+      "swr:useAccountDetail:error",
+    ]);
+  });
 });

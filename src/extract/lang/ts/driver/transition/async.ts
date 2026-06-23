@@ -43,6 +43,7 @@ import {
   firstNavigationInStatements,
   navigationEffect,
 } from "./navigation.js";
+import { bindConstStatement } from "./locals.js";
 import { labelForEvent } from "./ui.js";
 
 export interface AwaitedEffect {
@@ -143,12 +144,13 @@ export function transitionsFromAsyncStatements(
   );
   const op = awaited?.op;
   if (!op) return [];
-  const opArgs = awaited
-    ? effectCallArgs(awaited.call, setters, new Map())
-    : { args: {}, reads: [] };
   const preStatements = tryStatement
     ? statements.slice(0, statements.indexOf(tryStatement))
     : statements.slice(0, statements.indexOf(awaitStatement));
+  const preLocals = localsFromConstStatements(preStatements, setters);
+  const opArgs = awaited
+    ? effectCallArgs(awaited.call, setters, preLocals)
+    : { args: {}, reads: [] };
   const peeled = peelPreAwaitGuards(
     preStatements,
     setters,
@@ -533,6 +535,18 @@ function outcomeLocalsForAwaitedEffect(
   return locals;
 }
 
+function localsFromConstStatements(
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
+): Map<string, BoundExpr> {
+  const locals = new Map(initialLocals);
+  for (const statement of statements) {
+    bindConstStatement(statement, setters, locals, true);
+  }
+  return locals;
+}
+
 export function confirmVarId(
   component: string,
   attr: string,
@@ -733,11 +747,16 @@ export function transitionsFromSequentialAwait(
     undefined,
     outcomeLocals,
   );
+  const tailLocals = localsFromConstStatements(
+    betweenStatements,
+    setters,
+    outcomeLocals,
+  );
   const tailSummaries = summarizeAsyncSegment(
     tailStatements,
     setters,
     undefined,
-    outcomeLocals,
+    tailLocals,
   );
   const preEffects = preSummaries.map((summary) => summary.effect);
   const betweenEffects = betweenSummaries.map((summary) => summary.effect);

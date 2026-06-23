@@ -294,6 +294,33 @@ describe("Zustand source plugin", () => {
     );
   });
 
+  it("discovers selector and getState channels for imported store hooks", () => {
+    const source = `
+      import { useSubscriptionStore } from './subscription-store';
+      const applyApproval = useSubscriptionStore((s) => s.applyApproval);
+      const request = useSubscriptionStore.getState().requestSnapshot;
+    `;
+    expect(
+      zustandSource().writeChannels({
+        sourceText: source,
+        fileName: "SubscriptionEditor.tsx",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "zustand:useSubscriptionStore.applyApproval.read",
+          varId: "zustand:useSubscriptionStore.applyApproval",
+          symbolName: "applyApproval",
+        }),
+        expect.objectContaining({
+          id: "zustand:useSubscriptionStore.requestSnapshot.getState-read",
+          varId: "zustand:useSubscriptionStore.requestSnapshot",
+          symbolName: "request",
+        }),
+      ]),
+    );
+  });
+
   it("lowers set(s => ({count: s.count + 1})) to add arithmetic", () => {
     const source = `
       import { create } from 'zustand';

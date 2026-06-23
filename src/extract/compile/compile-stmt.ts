@@ -245,6 +245,17 @@ function compileStmt(
       const summaries: { effect: EffectIR; reads: string[] }[] = [];
       const caveats: ExtractionCaveat[] = [];
       for (const binding of stmt.bindings) {
+        const stateVar = options.ctx.stateVarIds?.get(binding.name);
+        if (stateVar) {
+          options.ctx.locals.set(binding.name, {
+            expr: {
+              kind: options.ctx.snapshotReads ? "readPre" : "read",
+              var: stateVar,
+            },
+            reads: [stateVar],
+          });
+          continue;
+        }
         if (!binding.init) continue;
         if (binding.init.kind === "call") {
           const leaf = compileLeafCall(binding.init, options);

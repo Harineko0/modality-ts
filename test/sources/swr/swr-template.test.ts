@@ -211,6 +211,30 @@ describe("SWR template", () => {
     );
   });
 
+  it("discovers read channels from custom SWR hook destructuring", () => {
+    const source = `
+      import { useApprovals } from './subscription-queries';
+      export function ApprovalQueue() {
+        const { data } = useApprovals();
+        return data;
+      }
+    `;
+    expect(
+      swrSource().writeChannels({
+        sourceText: source,
+        fileName: "ApprovalQueue.tsx",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "swr:useApprovals.data.read",
+          varId: "swr:useApprovals:data",
+          symbolName: "data",
+        }),
+      ]),
+    );
+  });
+
   it("keeps key-derived ids for direct component useSWR calls", () => {
     const source = `
       import useSWR from 'swr';

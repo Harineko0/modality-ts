@@ -66,6 +66,47 @@ describe("handler effect indirection", () => {
     ).toBe(true);
   });
 
+  it("extracts opaque custom wrapper handlers as triggerable callbacks", () => {
+    const result = extractReactSourceTransitions(
+      `
+        function ConfirmationModal(props: { onConfirm: () => void }) {
+          return <div />;
+        }
+
+        function RestartServerButton() {
+          const projectRef = "project";
+          const { mutate: restartProject } = useProjectRestartMutation();
+          const requestProjectRestart = () => {
+            restartProject({ ref: projectRef });
+          };
+          return (
+            <ConfirmationModal
+              onConfirm={async () => {
+                await requestProjectRestart();
+              }}
+            />
+          );
+        }
+      `,
+      {
+        fileName: "RestartServerButton.tsx",
+        effectApis: ["useProjectRestartMutation"],
+        asyncOutcomes: {
+          useProjectRestartMutation: { success: true, error: false },
+        },
+      },
+    );
+
+    expect(hasEnqueueFor(result, "useProjectRestartMutation")).toBe(true);
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes(
+          "Unextractable handler RestartServerButton.onConfirm",
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it("extracts a callback-style local helper wrapping a mutation alias", () => {
     const result = extractReactSourceTransitions(
       `

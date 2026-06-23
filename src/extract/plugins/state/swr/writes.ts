@@ -31,11 +31,16 @@ export function discoverSwrReadChannels(
       node.initializer &&
       ts.isCallExpression(node.initializer) &&
       ts.isIdentifier(node.initializer.expression) &&
-      useSwrNames.has(node.initializer.expression.text)
+      (useSwrNames.has(node.initializer.expression.text) ||
+        isCustomSwrHookName(node.initializer.expression.text))
     ) {
       const key = keyFromExpression(node.initializer.arguments[0]);
-      if (key) {
-        const id = swrInstanceId(node.initializer, swrNamingContext, key.id);
+      const id = useSwrNames.has(node.initializer.expression.text)
+        ? key
+          ? swrInstanceId(node.initializer, swrNamingContext, key.id)
+          : undefined
+        : node.initializer.expression.text;
+      if (id) {
         for (const element of node.name.elements) {
           if (!ts.isIdentifier(element.name)) continue;
           const property =
@@ -69,6 +74,10 @@ export function discoverSwrReadChannels(
   };
   visit(source);
   return channels;
+}
+
+function isCustomSwrHookName(name: string): boolean {
+  return /^use[A-Z0-9]/u.test(name);
 }
 
 function lineAndColumn(
