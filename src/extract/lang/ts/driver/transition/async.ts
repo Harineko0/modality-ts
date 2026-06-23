@@ -68,8 +68,42 @@ export function transitionsFromAsyncHandler(
   effectOpAliases: EffectOpAliases = new Map(),
 ): Transition[] {
   if (!ts.isBlock(expression.body)) return [];
-  if (containsAwaitInLoop(expression.body)) {
-    const { line, column } = lineAndColumn(source, expression);
+  return transitionsFromAsyncStatements(
+    source,
+    fileName,
+    attr,
+    expression,
+    expression.body.statements,
+    setters,
+    component,
+    effectApis,
+    asyncOutcomes,
+    locator,
+    adapter,
+    routePatterns,
+    warnings,
+    effectOpAliases,
+  );
+}
+
+export function transitionsFromAsyncStatements(
+  source: ts.SourceFile,
+  fileName: string,
+  attr: string,
+  anchor: ts.Node,
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  locator: Locator | undefined,
+  adapter: RoutePlugin | undefined,
+  routePatterns: readonly string[],
+  warnings: ExtractionWarning[],
+  effectOpAliases: EffectOpAliases = new Map(),
+): Transition[] {
+  if (statements.some(containsAwaitInLoop)) {
+    const { line, column } = lineAndColumn(source, anchor);
     warnings.push({
       message: `Unextractable handler ${component}.${attr} [await-in-loop] (${fileName}:${line}:${column})`,
       line,
@@ -82,7 +116,6 @@ export function transitionsFromAsyncHandler(
     });
     return [];
   }
-  const statements = expression.body.statements;
   const tryStatement = statements.find(ts.isTryStatement);
   const awaitStatement = tryStatement
     ? tryStatement.tryBlock.statements.find((statement) =>
@@ -123,7 +156,7 @@ export function transitionsFromAsyncHandler(
     attr,
     op,
     locator,
-    [{ file: fileName, ...lineAndColumn(source, expression) }],
+    [{ file: fileName, ...lineAndColumn(source, anchor) }],
   );
   const preSummaries = summarizeAsyncSegment(peeled.statements, setters);
   const outcomeLocals = outcomeLocalsForAwaitedEffect(awaited, asyncOutcomes);
@@ -137,7 +170,7 @@ export function transitionsFromAsyncHandler(
       source,
       fileName,
       attr,
-      expression,
+      anchor,
       awaitStatement,
       op,
       preSummaries,
@@ -281,9 +314,7 @@ export function transitionsFromAsyncHandler(
         [`snap:${varId}`, { kind: "read", var: varId }] as [string, ExprIR],
     ),
   );
-  const sourceAnchor = [
-    { file: fileName, ...lineAndColumn(source, expression) },
-  ];
+  const sourceAnchor = [{ file: fileName, ...lineAndColumn(source, anchor) }];
   const confirmAcceptedEffect = peeled.confirm
     ? confirmChoiceAssign(peeled.confirm.varId, "accepted")
     : undefined;
@@ -661,7 +692,7 @@ export function transitionsFromSequentialAwait(
   source: ts.SourceFile,
   fileName: string,
   attr: string,
-  expression: ExtractableHandler,
+  anchor: ts.Node,
   firstAwait: ts.Statement,
   firstOp: string,
   preSummaries: readonly EffectSummary[],
@@ -740,9 +771,7 @@ export function transitionsFromSequentialAwait(
       ...lineAndColumn(source, secondAwait),
     });
   }
-  const sourceAnchor = [
-    { file: fileName, ...lineAndColumn(source, expression) },
-  ];
+  const sourceAnchor = [{ file: fileName, ...lineAndColumn(source, anchor) }];
   const secondEnqueueEffects: EffectIR[] = promiseAllOps
     ? promiseAllOps.map((op) => ({
         kind: "enqueue",

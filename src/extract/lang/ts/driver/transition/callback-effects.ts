@@ -7,7 +7,13 @@
  * and plain mutation helpers used inside react-hook-form handleSubmit callbacks.
  */
 
-import type { EffectIR, ExprIR, Locator, Transition } from "modality-ts/core";
+import type {
+  EffectIR,
+  ExprIR,
+  Locator,
+  Transition,
+  Value,
+} from "modality-ts/core";
 import * as ts from "typescript";
 import { callName, isExtractableHandler, lineAndColumn } from "../ast.js";
 import {
@@ -185,15 +191,44 @@ export function transitionsFromCallbackEffectHandler(
   setters: Map<string, SetterBinding>,
   component: string,
   effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
   locator: Locator | undefined,
   _warnings: ExtractionWarning[],
   effectOpAliases: EffectOpAliases = new Map(),
 ): Transition[] {
   if (!ts.isBlock(handler.body)) return [];
-  const allStatements = Array.from(handler.body.statements);
+  return transitionsFromCallbackEffectStatements(
+    source,
+    fileName,
+    attr,
+    handler,
+    handler.body.statements,
+    setters,
+    component,
+    effectApis,
+    asyncOutcomes,
+    locator,
+    _warnings,
+    effectOpAliases,
+  );
+}
 
+export function transitionsFromCallbackEffectStatements(
+  source: ts.SourceFile,
+  fileName: string,
+  attr: string,
+  anchor: ts.Node,
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  locator: Locator | undefined,
+  _warnings: ExtractionWarning[],
+  effectOpAliases: EffectOpAliases = new Map(),
+): Transition[] {
   // Peel leading early-return guards
-  const peeled = peelCallbackPreGuards(allStatements, setters);
+  const peeled = peelCallbackPreGuards(statements, setters);
   const remaining = peeled.statements;
 
   // Find the callback-effect call statement
@@ -236,7 +271,7 @@ export function transitionsFromCallbackEffectHandler(
 
   const baseId = `${component}.${attr}.${op}`;
   const sourceAnchor: Transition["source"] = [
-    { file: fileName, ...lineAndColumn(source, handler) },
+    { file: fileName, ...lineAndColumn(source, anchor) },
   ];
 
   const startGuard: Transition["guard"] = peeled.guard
@@ -273,7 +308,7 @@ export function transitionsFromCallbackEffectHandler(
 
   const transitions: Transition[] = [enqueue];
 
-  if (successEffects.length > 0) {
+  if (successEffects.length > 0 || asyncOutcomes[op]?.success !== undefined) {
     const success: Transition = {
       id: `${baseId}.success`,
       cls: "env",
@@ -296,7 +331,7 @@ export function transitionsFromCallbackEffectHandler(
     transitions.push(success);
   }
 
-  if (errorEffects.length > 0) {
+  if (errorEffects.length > 0 || asyncOutcomes[op]?.error !== undefined) {
     const error: Transition = {
       id: `${baseId}.error`,
       cls: "env",
