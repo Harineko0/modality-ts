@@ -6,10 +6,10 @@ import {
   inferUseStateDomainDetailed,
   initialValueForUseStateDetailed,
   typeAliasDeclarations,
-} from "modality-ts/extract/engine";
+} from "../../src/extract/lang/ts/driver/domains.js";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
+import { createSemanticProjectForTest } from "../../src/extract/lang/ts/driver/semantic-project.js";
 
 function typeNode(source: string): ts.TypeNode {
   const file = ts.createSourceFile(

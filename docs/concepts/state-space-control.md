@@ -97,7 +97,7 @@ about** pruning — the IR domain already reflects the pruned shape. Per-slice
 ### Numeric reductions
 
 Wide finite numeric domains are tamed with explicit, **claim-tagged** reductions
-(`exact` / `property-preserving` / `heuristic`) — lazy ranges, intervals, saturation,
+(`exact` / `property-preserving` / `heuristic`) — deferred ranges, intervals, saturation,
 predicate or input-class partitions. Each is recorded in the
 [trust ledger](../soundness/trust-ledger.md) with its soundness claim, so a
 `property-preserving` reduction reads differently from a `heuristic` one.

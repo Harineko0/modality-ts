@@ -1,9 +1,9 @@
 import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { literalValue } from "../../../engine/ts/ast.js";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
-import { semanticSourceFileFor } from "../../../engine/ts/semantic-source-file.js";
+import { literalValue } from "../../../lang/ts/driver/ast.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
+import { semanticSourceFileFor } from "../../../lang/ts/driver/semantic-source-file.js";
 import { propertyNameFromMember } from "./domains.js";
 import { mutationVarId, queryVarId, safeKeyId } from "./ids.js";
 import { isCreateApiCall, resolveReduxImports } from "./imports.js";

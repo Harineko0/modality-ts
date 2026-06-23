@@ -13,40 +13,40 @@ import {
   callName,
   isExtractableHandler,
   lineAndColumn,
-} from "../../../engine/ts/ast.js";
-import { unextractableHandlerCaveat } from "../../../engine/ts/caveats.js";
-import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
-import { routeMountScope } from "../../../engine/ts/routes.js";
+} from "../../../lang/ts/driver/ast.js";
+import { unextractableHandlerCaveat } from "../../../lang/ts/driver/caveats.js";
+import { safeId, uniqueStrings } from "../../../lang/ts/driver/ids.js";
+import { routeMountScope } from "../../../lang/ts/driver/routes.js";
 import {
   confidenceForEffects,
   containsAwaitedEffect,
   pendingIs,
-} from "../../../engine/ts/transition/async.js";
+} from "../../../lang/ts/driver/transition/async.js";
 import {
   effectWriteVars,
   PENDING_QUEUE_VAR,
   summarizeAsyncSegment,
-} from "../../../engine/ts/transition/effects.js";
-import { valueExpr } from "../../../engine/ts/transition/expressions.js";
+} from "../../../lang/ts/driver/transition/effects.js";
+import { valueExpr } from "../../../lang/ts/driver/transition/expressions.js";
 import {
   applyParsedGuard,
   jsxAttributeBoolean,
   jsxElementForAttribute,
   type ParsedGuard,
   submitButtonDisabledAttribute,
-} from "../../../engine/ts/transition/guards.js";
+} from "../../../lang/ts/driver/transition/guards.js";
 import {
   labelForEvent,
   locatorForEventAttribute,
   locatorForJsxElement,
   stringAttribute,
-} from "../../../engine/ts/transition/ui.js";
+} from "../../../lang/ts/driver/transition/ui.js";
 import type {
   BoundExpr,
   ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
-} from "../../../engine/ts/types.js";
+} from "../../../lang/ts/driver/types.js";
 
 export function isReactRouterFormElement(
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
@@ -699,7 +699,7 @@ export function recognizeUseSubmitHandler(
     ctx.warnings,
     submitContextFromNav(ctx),
     ctx.disabledGuard as
-      | import("../../../engine/ts/transition/guards.js").ParsedGuard
+      | import("../../../lang/ts/driver/transition/guards.js").ParsedGuard
       | undefined,
     ctx.effectApis,
   );

@@ -4,9 +4,9 @@ import type {
   SourceExtractionResult,
   WriteChannel,
 } from "../../engine/spi/index.js";
-import type { EffectOpAliases } from "../../engine/ts/effect-op-aliases.js";
-import { isEffectOpAliasesPopulated } from "../../engine/ts/effect-op-aliases.js";
-import { extractReactSourceTransitions } from "../../engine/ts/react-source-transitions.js";
+import type { EffectOpAliases } from "../../compile/effect-op-aliases.js";
+import { isEffectOpAliasesPopulated } from "../../compile/effect-op-aliases.js";
+import { extractReactSourceTransitions } from "../../lang/ts/driver/react-source-transitions.js";
 
 export type SharedReactTransitionCtx = Omit<
   ExtractCtx,
@@ -16,7 +16,7 @@ export type SharedReactTransitionCtx = Omit<
   writeChannels?: readonly WriteChannel[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
   effectOpAliases?: EffectOpAliases;
-  environment?: import("../../engine/ts/environment-config.js").EnvironmentEventConfig;
+  environment?: import("../../compile/environment-config.js").EnvironmentEventConfig;
   inventory?: import("../../engine/spi/index.js").RouteInventory;
   resetSymbols?: ReadonlySet<string>;
   setterFixedEffects?: ReadonlyMap<string, import("modality-ts/core").EffectIR>;

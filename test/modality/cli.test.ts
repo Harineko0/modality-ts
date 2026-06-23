@@ -36,7 +36,7 @@ import {
   renderHumanInitResult,
   runInitCommand,
 } from "../../src/cli/features/init/index.js";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 import { flagTrueProperty, propsFileBody } from "../helpers/props-file.js";
 
 const execFileAsync = promisify(execFile);

@@ -1,8 +1,8 @@
 import type { Transition } from "modality-ts/core";
 import type { RouteInventory } from "../spi/index.js";
-import { safeId } from "../ts/ids.js";
-import { routeMountGuard } from "../ts/routes.js";
-import { locationEffect } from "../ts/transition/navigation.js";
+import { safeId } from "../../compile/ids.js";
+import { routeMountGuard } from "../../compile/routes.js";
+import { locationEffect } from "../../compile/navigation.js";
 
 export function synthesizeRedirectTransitions(
   inventory: RouteInventory,

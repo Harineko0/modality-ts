@@ -10,7 +10,7 @@ import type {
   SurfaceParam,
   SurfaceStmt,
   SymbolRef,
-} from "./surface-ir.js";
+} from "../surface-ir.js";
 
 type SurfaceBlock = Extract<SurfaceStmt, { kind: "block" }>;
 

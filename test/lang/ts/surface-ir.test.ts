@@ -124,13 +124,14 @@ describe("surface IR lowering", () => {
     }
   });
 
-  it("imports canonical Surface IR from lang/ts in compile", async () => {
+  it("imports canonical Surface IR from neutral lang contract in compile", async () => {
     const { readFile } = await import("node:fs/promises");
     const { resolve } = await import("node:path");
     const compileStmt = await readFile(
       resolve("src/extract/compile/compile-stmt.ts"),
       "utf8",
     );
-    expect(compileStmt).toMatch(/lang\/ts\/surface-ir/);
+    expect(compileStmt).toMatch(/lang\/surface-ir/);
+    expect(compileStmt).not.toMatch(/lang\/ts\/surface-ir/);
   });
 });

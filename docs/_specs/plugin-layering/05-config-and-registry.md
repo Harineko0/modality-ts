@@ -11,19 +11,19 @@ canonical, hand-editable wiring; auto-detection remains as the zero-config fallb
 ## 2. `ModalityConfig` receives plugins
 
 `ModalityConfig` (`src/cli/extraction/build-model.ts:68-81`) already accepts `plugins?`,
-`domainRefinements?`, `routerPlugin?`, and `disabledPlugins?`. This series extends it with the new
+`domainRefinements?`, `routePlugin?`, and `disabledPlugins?`. This series extends it with the new
 layered fields **as each lands** in its phase:
 
 ```ts
 export interface ModalityConfig {
   // …existing: navigation?, effectApis?, environment?, bounds?, packageJsonPath?,
-  //            disabledPlugins?, plugins?, domainRefinements?, routerPlugin?
+  //            disabledPlugins?, plugins?, domainRefinements?, routePlugin?
   framework?: FrameworkPlugin;                          // L4 framework (Phase 1)
-  effectModels?: readonly EffectModelProvider[];        // L4 effect models (Phase 6)
+  effectPlugins?: readonly EffectPlugin[];        // L4 effect models (Phase 6)
 }
 ```
 
-`framework` is singular (exactly one framework is active per app, like the router); `effectModels`
+`framework` is singular (exactly one framework is active per app, like the router); `effectPlugins`
 compose. Both thread through `BuildExtractionModelOptions`
 (`build-model.ts:83-100`) and into `createBuiltinModalityRegistry`
 (`src/cli/registry/index.ts`).
@@ -46,7 +46,7 @@ The change:
   change), auto-detection runs exactly as before.
 - CLI `--plugin` extras still append in both modes.
 
-The same explicit-vs-fallback rule applies to `framework` (Phase 1) and `effectModels` (Phase 6):
+The same explicit-vs-fallback rule applies to `framework` (Phase 1) and `effectPlugins` (Phase 6):
 an explicit value in config wins; absence falls back to dependency-detection
 (`shouldEnableBuiltin`, `registry/index.ts:381-389`). The registry registers, validates
 (`validate*`), and stamps each into `PluginProvenance`.
@@ -94,11 +94,11 @@ Rules:
 ## 6. Dependency-cruiser boundaries
 
 `tools/depcruise.config.cjs` gains rules for the three new locations, mirroring the existing
-`extract/sources/*` rules (`depcruise.config.cjs:43-65`):
+`extract/plugins/state/*` rules (`depcruise.config.cjs:43-65`):
 
-- **`extract/frameworks/*`** — a *sibling* to `sources/*`. May import `core`, `extract/engine/spi`,
-  and the shared `extract/engine/ts` utilities; may **not** import `check`, `cli/*` product slices,
-  or `extract/sources/*` (except via `shared`). Being a sibling keeps `next → react-framework` legal
+- **`extract/plugins/framework/*`** — a *sibling* to `sources/*`. May import `core`, `extract/engine/spi`,
+  and the shared `extract/lang/ts/driver` utilities; may **not** import `check`, `cli/*` product slices,
+  or `extract/plugins/state/*` (except via `shared`). Being a sibling keeps `next → react-framework` legal
   without weakening source independence.
 - **`extract/lang/*`** — imports `core` only (plus `typescript` for the TS impl). Not `compile`,
   `frameworks`, `sources`, or `engine` internals.

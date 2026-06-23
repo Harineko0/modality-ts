@@ -2,9 +2,9 @@ import type { SourceAnchor, StateVarDecl } from "modality-ts/core";
 import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
-import { compilerBackedTypeAliases } from "../../../engine/ts/domains.js";
-import { semanticSourceFileFor } from "../../../engine/ts/semantic-source-file.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
+import { compilerBackedTypeAliases } from "../../../lang/ts/driver/domains.js";
+import { semanticSourceFileFor } from "../../../lang/ts/driver/semantic-source-file.js";
 import {
   classifyAtomCall,
   classifyFamilyInstance,

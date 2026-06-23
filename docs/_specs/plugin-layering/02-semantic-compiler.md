@@ -11,7 +11,7 @@ L2 is the layer that turns **Surface IR** (L1) into **`EffectIR` / `ExprIR`** (L
 that knows how an `if` becomes a guarded effect, how a block becomes a sequence, how `a + 1`
 becomes arithmetic over an abstract domain, and how a loop is over-approximated.
 
-L2 is embodied by `src/extract/engine/ts/transition/statement-driver.ts` and the expression
+L2 is embodied by `src/extract/lang/ts/driver/transition/statement-driver.ts` and the expression
 compiler it calls. These files already do this job — the library-specific string recognition
 (timer/websocket/`startTransition`/`flushSync`) has been extracted into L4 plugins and is
 accessed through the L3 dispatch interfaces.

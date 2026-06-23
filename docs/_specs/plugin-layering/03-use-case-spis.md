@@ -60,7 +60,7 @@ interface RenderBoundary {
 
 TS-AST-specific facets (e.g. `unwrapCallbackExpr`, `isMemoValueCall`, `isContextReadCall`)
 are added via the `EngineFrameworkPlugin` extension interface in
-`src/extract/engine/ts/framework-ts-bridge.ts`. React Hook Form is wired by calling
+`src/extract/lang/ts/driver/framework-ts-bridge.ts`. React Hook Form is wired by calling
 `extendFrameworkWithTsUnwrap(plugin, unwrapReactHookFormHandler)` — there is no separate
 `FrameworkPlugin` subkind for handler libraries.
 
@@ -133,7 +133,7 @@ interface EffectRecognition {
 
 TS-AST-specific facets for effect plugins (e.g. `getSetterTaints`,
 `handlerSchedulesModeledEffect`) are exposed via `EngineEffectPlugin` in
-`src/extract/engine/ts/effect-ts-bridge.ts`.
+`src/extract/lang/ts/driver/effect-ts-bridge.ts`.
 
 ## 6. The L3 → L4 fan-out and precedence
 

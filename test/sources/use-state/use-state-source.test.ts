@@ -1,8 +1,8 @@
-import { inferDomainFromTypeNode } from "modality-ts/extract/engine";
+import { inferDomainFromTypeNode } from "../../../src/extract/lang/ts/driver/domains.js";
 import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../../src/extract/lang/ts/driver/routes.js";
 import {
   observe,
   setup,

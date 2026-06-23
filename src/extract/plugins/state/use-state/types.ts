@@ -7,8 +7,8 @@ import type {
   Value,
 } from "modality-ts/core";
 import type * as ts from "typescript";
-import type { ExtractableHandler } from "../../../engine/ts/ast.js";
-import type { EffectOpAliases } from "../../../engine/ts/effect-op-aliases.js";
+import type { ExtractableHandler } from "../../../lang/ts/driver/ast.js";
+import type { EffectOpAliases } from "../../../compile/effect-op-aliases.js";
 
 export interface UseStateExtractionOptions {
   route?: string;
@@ -17,7 +17,7 @@ export interface UseStateExtractionOptions {
   routePatterns?: readonly string[];
   asyncOutcomes?: Record<string, { success: Value; error?: Value }>;
   effectOpAliases?: EffectOpAliases;
-  environment?: import("../../../engine/ts/environment-config.js").EnvironmentEventConfig;
+  environment?: import("../../../compile/environment-config.js").EnvironmentEventConfig;
   stateVars?: readonly StateVarDecl[];
   writeChannels?: readonly import("../../../engine/spi/index.js").WriteChannel[];
   statePlugins?: readonly import("../../../engine/spi/index.js").StateSourcePlugin[];

@@ -13,8 +13,8 @@ import type {
   StateSourcePlugin,
 } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
-import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 import { reactRouterAdapter } from "../../src/extract/plugins/route/router/index.js";
 import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 import {

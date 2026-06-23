@@ -2,9 +2,9 @@ import type { ExprIR, Value } from "modality-ts/core";
 import type { SourceDecl, TypePlugin } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { compilerBackedTypeAliases } from "../../../engine/ts/domains.js";
-import { collectSemanticNamedImports } from "../../../engine/ts/semantic-imports.js";
-import { semanticSourceFileFor } from "../../../engine/ts/semantic-source-file.js";
+import { compilerBackedTypeAliases } from "../../../lang/ts/driver/domains.js";
+import { collectSemanticNamedImports } from "../../../lang/ts/driver/semantic-imports.js";
+import { semanticSourceFileFor } from "../../../lang/ts/driver/semantic-source-file.js";
 import { inferPayloadDomain } from "./domains.js";
 
 function sourceFileForDiscovery(

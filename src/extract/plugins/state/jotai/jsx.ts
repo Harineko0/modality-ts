@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { componentNameFor } from "../../../engine/ts/ast.js";
+import { componentNameFor } from "../../../lang/ts/driver/ast.js";
 import { providerStoreScope } from "./ids.js";
 import type { resolveJotaiImports } from "./imports.js";
 

@@ -6,12 +6,12 @@ import {
 import type { TypePlugin } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { literalValue, propertyName } from "../../../engine/ts/ast.js";
+import { literalValue, propertyName } from "../../../lang/ts/driver/ast.js";
 import {
   firstValue,
   inferDomainFromTypeNode,
-} from "../../../engine/ts/domains.js";
-import { inferDomainSemantic } from "../../../engine/ts/type-domains.js";
+} from "../../../lang/ts/driver/domains.js";
+import { inferDomainSemantic } from "../../../lang/ts/driver/type-domains.js";
 import {
   getCallsInReadFunction,
   isAsyncReadFunction,

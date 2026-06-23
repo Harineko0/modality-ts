@@ -6,12 +6,12 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import { createEffectPlugin } from "modality-ts/extract/plugins";
 import * as ts from "typescript";
-import type { EngineEffectPlugin } from "../../../engine/ts/effect-ts-bridge.js";
+import type { EngineEffectPlugin } from "../../../lang/ts/driver/effect-ts-bridge.js";
 import type {
   ExtractableHandler,
   SetterBinding,
-} from "../../../engine/ts/types.js";
-import { timerStateVarDecl } from "../../../engine/ts/transition/timers.js";
+} from "../../../lang/ts/driver/types.js";
+import { timerStateVarDecl } from "../../../lang/ts/driver/transition/timers.js";
 import {
   bindTimerHandle,
   handlerSchedulesModeledTimer,

@@ -1,7 +1,8 @@
 import type { StateVarDecl, Transition } from "modality-ts/core";
-import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type { SemanticTypeContext } from "../../lang/type-context.js";
 import type {
   EffectPlugin,
+  ExtractionWarning,
   FrameworkPlugin,
   RouteInventory,
   RoutePlugin,
@@ -10,9 +11,8 @@ import type {
   WriteChannel,
 } from "../spi/index.js";
 import { resolveFrameworkPlugin } from "../spi/index.js";
-import type { EffectOpAliases } from "../ts/effect-op-aliases.js";
-import type { EnvironmentEventConfig } from "../ts/environment-config.js";
-import type { ExtractionWarning } from "../ts/types.js";
+import type { EffectOpAliases } from "../../compile/effect-op-aliases.js";
+import type { EnvironmentEventConfig } from "../../compile/environment-config.js";
 
 export interface ExtractionProjectSummary {
   readonly canonicalFileNames: readonly string[];

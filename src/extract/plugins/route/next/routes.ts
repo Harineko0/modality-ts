@@ -15,8 +15,8 @@ import type {
 import {
   normalizeRouteTarget,
   routeMountScope,
-} from "../../../engine/ts/routes.js";
-import { locationEffect } from "../../../engine/ts/transition/navigation.js";
+} from "../../../lang/ts/driver/routes.js";
+import { locationEffect } from "../../../lang/ts/driver/transition/navigation.js";
 import {
   type NextInterceptInfo,
   type NextParam,

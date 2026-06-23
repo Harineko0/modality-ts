@@ -1,6 +1,6 @@
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { collectSemanticNamedImports } from "../../../engine/ts/semantic-imports.js";
+import { collectSemanticNamedImports } from "../../../lang/ts/driver/semantic-imports.js";
 
 export const ZUSTAND_CORE_MODULES = new Set([
   "zustand",

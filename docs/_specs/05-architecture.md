@@ -41,7 +41,7 @@ modality-ts/
 │   │   │   ├── pipeline/        #   P0–P7 orchestration; owns phase ordering & fixpoints
 │   │   │   ├── ts/              #   shared TS-analysis utilities (symbol resolution, JSX walk,
 │   │   │   │                    #   call-graph, M0 expression compiler, escape analysis core)
-│   │   │   ├── spi/             #   ★ StateSourcePlugin + NavigationAdapter interfaces (§4)
+│   │   │   ├── spi/             #   ★ StateSourcePlugin + RoutePlugin interfaces (§4)
 │   │   │   └── report/          #   extraction report assembly
 │   │   └── sources/             # ★ vertical slices, axis 1: one module per state library (§5)
 │   │       ├── use-state/       # modality-ts/extract/plugins/state/use-state
@@ -110,7 +110,7 @@ interface StateSourcePlugin {
   template?(decl: SourceDecl, options: ResolvedOptions): TemplateFragment;
                                                // library-behavior model (Spec 01 §9); vars +
                                                //     transitions in plain IR. SWR: yes; Jotai: no
-  // ── replay side (jsdom; exported from 'modality-ts/extract/sources/*/harness') ───
+  // ── replay side (jsdom; exported from 'modality-ts/extract/plugins/state/*/harness') ───
   harness: {
     setup(ctx: HarnessCtx): HarnessHooks;      // providers/store creation, handles for observation
     observe(varId: string, handles: HarnessHooks): ObservedRead | 'unobservable';
@@ -128,7 +128,7 @@ Design notes on why this shape:
 
 - **The E1 invariant survives plugin authorship errors in only one direction.** `writeChannels` omissions make the escape analysis treat writes as unknown calls → taint → loud over-approximation (Spec 02 §5). A plugin *cannot* cause a silent missed write by under-declaring; it can only cause noise. The one place a plugin can lie dangerously is `summarizeWrite` returning wrong IR — which is exactly what the conformance probes and `modality conform` per-transition pass-rates exist to catch (Spec 04 §5). The contract's safety story is stated in its doc comments, because plugin authors are part of the trusted base and should know it.
 - **Extraction/harness split inside one package.** Each source package has two entry points via `exports`: `"."` (Node, may import ts-morph types) and `"./harness"` (jsdom, may import the library itself as a peer dependency). The pipeline loads `"."`; generated tests import `"./harness"`. This keeps heavy static-analysis deps out of test bundles and app-facing deps out of the CLI — enforced by the dependency rules (§7), not convention.
-- **Routers are a sibling contract** (`NavigationAdapter`): they discover routes, classify navigation calls, lower navigation into role-bearing location vars and ordinary effects, and supply replay harness navigation. Module roles (`ModuleRoleAdapter`), effect APIs (`EffectApiProvider`), cache/storage (`CacheStorageProvider`), and replay observation (`ObservationProvider`) are separate registry capabilities — not methods on `NavigationAdapter`. Kept separate from `StateSourcePlugin` because exactly one router is active per app, while state sources compose. Trusted checker/core code discovers location and pending vars by `StateVarDecl.role`, not by `sys:*` id prefixes.
+- **Routers are a sibling contract** (`RoutePlugin`): they discover routes, classify navigation calls, lower navigation into role-bearing location vars and ordinary effects, and supply replay harness navigation. Module roles (`ModuleRoleAdapter`), effect APIs (`EffectApiProvider`), cache/storage (`CacheStorageProvider`), and replay observation (`ObservationProvider`) are separate registry capabilities — not methods on `RoutePlugin`. Kept separate from `StateSourcePlugin` because exactly one router is active per app, while state sources compose. Trusted checker/core code discovers location and pending vars by `StateVarDecl.role`, not by `sys:*` id prefixes.
 - **Registration**: `modality.config.ts` lists plugins (`plugins: [jotai(), swr(), zustand()]`); built-ins are auto-registered when `packageNames` match the app's dependencies, with config able to disable. Third-party plugins are ordinary npm packages exporting a `StateSourcePlugin`; the registry validates the contract shape at load and stamps plugin id + version into the trust ledger (a plugin is trusted code — the report must say which ones produced the model).
 
 > **Deepening this contract.** The `StateSourcePlugin` SPI covers discovery, domain hints, and write
@@ -136,7 +136,7 @@ Design notes on why this shape:
 > in the extraction engine. The **`docs/_specs/plugin-layering/` series** specifies the L0–L5 layering
 > that pushes those semantics out behind SPIs — a universal semantic compiler (L2) owns control flow,
 > plugins (L4) supply only leaf meaning. It adds sibling L4 categories (`FrameworkPlugin`,
-> `EffectModelProvider`), deepens the SPI into the statement compiler, and makes the generated config
+> `EffectPlugin`), deepens the SPI into the statement compiler, and makes the generated config
 > explicitly *receive* the layered plugins. The IR-instances-never-node-kinds rule below (§3) is the
 > series' load-bearing invariant, not an exception to it.
 
@@ -161,7 +161,7 @@ src/extract/plugins/state/jotai/
 └── index.ts                 # assembles and exports the plugin object
 ```
 
-The litmus test the architecture must keep passing: **supporting a new library = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Zustand has since been added exactly this way — a new `src/extract/plugins/state/zustand/` slice with no changes to the SPI, pipeline, shared React extractor, or other plugins — which is the contract's first out-of-the-gate confirmation. Projected mapping for the remaining likely sources, as a design check that the contract is sufficient:
+The litmus test the architecture must keep passing: **supporting a new library = writing one new package in `src/extract/plugins/state/`, zero diffs elsewhere.** Zustand has since been added exactly this way — a new `src/extract/plugins/state/zustand/` slice with no changes to the SPI, pipeline, shared React extractor, or other plugins — which is the contract's first out-of-the-gate confirmation. Projected mapping for the remaining likely sources, as a design check that the contract is sufficient:
 
 | Source | discover | writeChannels / summarize | template | harness.observe | Verdict |
 |---|---|---|---|---|---|
@@ -198,14 +198,14 @@ Rules that keep these vertical rather than layered:
 core                 → (nothing)
 check                → core (+ the native Rust checker addon in native/)
 extract/engine       → core
-extract/sources/*    → core, extract/engine(spi only); never each other; never cli features
+extract/plugins/state/*    → core, extract/engine(spi only); never each other; never cli features
 cli/harness          → core
 cli/runtime          → core/props subpath only
 cli/features         → everything above (features/* additionally: never each other)
 examples/*           → cli, runtime, harness (as a real app would)
 ```
 
-Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`extract/sources/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/cli/types/`, the "features don't import features" rule, and conformance/canary runner import boundaries (§7.1). Violations fail the build — architecture that is only documented decays in months.
+Enforced by dependency-cruiser in CI (`tools/depcruise.config.cjs`) and focused architecture tests, including the subpath rules (`extract/plugins/state/*` main entry must not import RTL/MSW; `/harness` entries must not import ts-morph), source plugins only importing the public extraction SPI, ambient-only `src/cli/types/`, the "features don't import features" rule, and conformance/canary runner import boundaries (§7.1). Violations fail the build — architecture that is only documented decays in months.
 
 ### 7.1 Conformance and canary runner boundary
 
@@ -217,7 +217,7 @@ Rules:
 
 - Runners call public CLI command wrappers (`src/cli/check.ts`, `extract.ts`,
   `conform.ts`, `ci.ts`, `replay.ts`) and read structured report artifacts.
-- Runners must **not** import private adapter internals (`src/extract/sources/*`
+- Runners must **not** import private adapter internals (`src/extract/plugins/state/*`
   implementation modules) or feature-slice internals (`src/cli/features/*`).
 - Threshold, budget, caveat, and classification logic is shared through
   `tools/shared-gates/` so `ci:conformance`, `ci:canaries`, and `ci:examples` do not
@@ -231,7 +231,7 @@ matrix and canary manifests are repo-internal configuration.
 
 Two asymmetries worth stating explicitly:
 
-- `extract/sources/*` depend on extraction's **SPI module only**, not its pipeline — the pipeline calls plugins, never the reverse (standard inversion; keeps plugins implementable out-of-tree against a small, stable surface).
+- `extract/plugins/state/*` depend on extraction's **SPI module only**, not its pipeline — the pipeline calls plugins, never the reverse (standard inversion; keeps plugins implementable out-of-tree against a small, stable surface).
 - `runtime` (in the app's dev bundle) must stay dependency-free and kernel-light; it gets the property-combinator types through a dedicated subpath export so bundlers tree-shake everything else. A bloated runtime package is an adoption killer (Spec 04 §6 is the on-ramp feature).
 
 ## 8. Testing strategy per slice kind

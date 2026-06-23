@@ -1,10 +1,7 @@
 import * as ts from "typescript";
+import type { NodeRef } from "../node-ref.js";
 
-export interface NodeRef {
-  readonly file: string;
-  readonly start: number;
-  readonly end: number;
-}
+export type { NodeRef } from "../node-ref.js";
 
 export function nodeRefFor(
   node: ts.Node,

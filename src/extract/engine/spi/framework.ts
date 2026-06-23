@@ -1,5 +1,5 @@
 import type { AbstractDomain, SourceAnchor } from "modality-ts/core";
-import type { NodeRef } from "../../lang/ts/node-ref.js";
+import type { NodeRef } from "../../lang/node-ref.js";
 import type {
   SurfaceCall,
   SurfaceDecl,
@@ -7,7 +7,7 @@ import type {
   SurfaceFunction,
   SurfaceNode,
   SymbolRef,
-} from "../../lang/ts/surface-ir.js";
+} from "../../lang/surface-ir.js";
 import type { ModalityAdapterBase } from "./index.js";
 import type { SymbolPort } from "./symbol-port.js";
 

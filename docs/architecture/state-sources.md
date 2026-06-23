@@ -6,7 +6,7 @@ sidebar_label: State sources & SPI
 
 Supporting a new state library is the most common way `modality-ts` grows. The
 architecture makes it a **vertical slice**: one new package under
-`src/extract/sources/`, with *zero* diffs elsewhere. The built-in sources
+`src/extract/plugins/state/`, with *zero* diffs elsewhere. The built-in sources
 (`use-state`, `jotai`, `swr`, `zustand`, `tanstack-query`, `redux`, `router`) use **exactly** the public contract —
 they are its permanent conformance suite.
 
@@ -31,7 +31,7 @@ interface StateSourcePlugin {
                                                       // confidence, and producer metadata
   template?(decl, options): TemplateFragment;        // library-behaviour model (SWR: yes)
 
-  // ── replay (jsdom; from 'modality-ts/extract/sources/*/harness') ────
+  // ── replay (jsdom; from 'modality-ts/extract/plugins/state/*/harness') ────
   harness: {
     setup(ctx): HarnessHooks;                        // providers/stores; observation handles
     observe(varId, handles): ObservedRead | "unobservable";
@@ -98,15 +98,15 @@ the CLI registry bundle (`RegistryAdaptersBundle`):
 
 | Capability | Interface | Responsibility |
 | --- | --- | --- |
-| Navigation | `NavigationAdapter` | route discovery, navigation classification/lowering, location vars, mount scopes, navigation harness |
+| Navigation | `RoutePlugin` | route discovery, navigation classification/lowering, location vars, mount scopes, navigation harness |
 | Module roles | `ModuleRoleAdapter` | server/client/shared classification, entry exports, import-edge context, server-only exclusion |
 | Effect APIs | `EffectApiProvider` | discover server actions, route handlers, and other nondeterministic async surfaces |
 | Cache/storage | `CacheStorageProvider` | framework cache vars and invalidation transitions (Next.js, TanStack Router loader cache) |
 | Observation | `ObservationProvider` | replay `setup` / `observe` / optional `witness` for state sources and navigation |
-| Domain refinement | `DomainRefinementProvider` | schema-driven finite domains (Zod, ArkType) |
-| Handler wrapper | `HandlerWrapperProvider` | unwrap form-library submit wrappers (e.g. `handleSubmit(cb)`) so that the inner callback body is extractable; contributes no state variables |
+| Domain refinement | `TypePlugin` | schema-driven finite domains (Zod, ArkType) |
+| Handler wrapper | `FrameworkPlugin unwrapHandler facet` | unwrap form-library submit wrappers (e.g. `handleSubmit(cb)`) so that the inner callback body is extractable; contributes no state variables |
 
-Exactly one `NavigationAdapter` is active per app. Module-role, effect-API, and
+Exactly one `RoutePlugin` is active per app. Module-role, effect-API, and
 cache/storage providers may register in parallel when their `packageNames`
 match app dependencies. Observation providers are synthesized from active state
 sources and navigation. See [Navigation](./navigation.md) and

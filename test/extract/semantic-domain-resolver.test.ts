@@ -3,10 +3,10 @@ import {
   inferDomainFromExpressionSemanticDetailed,
   inferDomainFromTypeDetailed,
   inferDomainFromTypeNodeSemanticDetailed,
-} from "modality-ts/extract/engine";
+} from "../../src/extract/lang/ts/driver/type-domains.js";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
+import { createSemanticProjectForTest } from "../../src/extract/lang/ts/driver/semantic-project.js";
 
 const projectRoot = resolve("/project");
 

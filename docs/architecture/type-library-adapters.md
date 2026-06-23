@@ -11,17 +11,17 @@ initializer chains when TypeScript erases those constraints from inferred types.
 ## Where they live
 
 ```text
-src/extract/type-libraries/<library>/
+src/extract/plugins/type/<library>/
   domains.ts   — library-specific AST recognition
-  index.ts     — public factory (e.g. zodDomainRefinementProvider)
+  index.ts     — public factory (e.g. zodTypePlugin)
 ```
 
-The extraction engine defines the `DomainRefinementProvider` SPI and orchestrates
+The extraction engine defines the `TypePlugin` SPI and orchestrates
 resolution (`resolveDomainRefinements`). Built-in providers are wired through the
 [CLI registry](../reference/package-entry-points.md) when the app's `package.json`
 lists the library (or when dependencies are unknown, matching state-source defaults).
 
-`src/extract/sources/` remains reserved for **state providers** (`useState`, Jotai,
+`src/extract/plugins/state/` remains reserved for **state providers** (`useState`, Jotai,
 Zustand, SWR). Do not place schema adapters there.
 
 ## What providers do
@@ -71,7 +71,7 @@ observation providers. See [Adapter capabilities beyond state sources](../archit
 
 | Entry point | Purpose |
 | --- | --- |
-| `modality-ts/extract/plugins/type/zod` | `zodDomainRefinementProvider()` |
-| `modality-ts/extract/plugins/type/arktype` | `arktypeDomainRefinementProvider()` |
+| `modality-ts/extract/plugins/type/zod` | `zodTypePlugin()` |
+| `modality-ts/extract/plugins/type/arktype` | `arktypeTypePlugin()` |
 
 There is no `/harness` export for type-library adapters (unlike state sources).

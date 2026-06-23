@@ -54,7 +54,7 @@ Relevant code:
 - `src/cli/features/extract/project.ts`: `sourceWithReachableImports()`
 - `src/cli/features/extract/extraction-project.ts`: `runProjectExtractionPipeline()`
 - `src/extract/engine/pipeline/index.ts`: `runPluginDiscoveryPhase()`
-- `src/extract/engine/ts/react-extraction-project-summary.ts`: `buildReactExtractionProjectSummary()`
+- `src/extract/lang/ts/driver/react-extraction-project-summary.ts`: `buildReactExtractionProjectSummary()`
 
 ## Possible Fix Directions
 

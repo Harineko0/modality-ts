@@ -5,7 +5,7 @@ import {
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
-import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
+import { createSemanticProjectForTest } from "../../../src/extract/lang/ts/driver/semantic-project.js";
 import { discoverZustandStoresDetailed } from "../../../src/extract/plugins/state/zustand/discover.js";
 import { lowerActionBody } from "../../../src/extract/plugins/state/zustand/effects.js";
 import {

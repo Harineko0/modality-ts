@@ -50,7 +50,7 @@ import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
 import { zustandSource } from "modality-ts/extract/plugins/state/zustand";
 import { arktypeTypePlugin } from "modality-ts/extract/plugins/type/arktype";
 import { zodTypePlugin } from "modality-ts/extract/plugins/type/zod";
-import { extendFrameworkWithTsUnwrap } from "../../extract/engine/ts/framework-ts-bridge.js";
+import { extendFrameworkWithTsUnwrap } from "../../extract/lang/ts/driver/framework-ts-bridge.js";
 import { extendReactFrameworkWithTsFacets } from "../../extract/plugins/framework/react/ts-facets.js";
 import { unwrapReactHookFormHandler } from "../../extract/plugins/framework/react-hook-form/unwrap.js";
 

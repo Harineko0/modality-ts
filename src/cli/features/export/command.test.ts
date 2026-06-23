@@ -15,7 +15,7 @@ import {
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 import { reachable } from "../../../../test/helpers/property-builders.js";
-import { locationEffect } from "../../../extract/engine/ts/transition/navigation.js";
+import { locationEffect } from "../../../extract/lang/ts/driver/transition/navigation.js";
 import {
   generateTlaModule,
   generateTlaStructuredModel,

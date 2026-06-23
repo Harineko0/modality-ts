@@ -9,36 +9,36 @@ import {
   isExtractableHandler,
   lineAndColumn,
   literalValue,
-} from "../../../engine/ts/ast.js";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
+} from "../../../lang/ts/driver/ast.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
 import type {
   EnvironmentEventConfig,
   WebSocketEnvironmentConfig,
   WebSocketMessageVariant,
-} from "../../../engine/ts/environment-config.js";
-import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
+} from "../../../compile/environment-config.js";
+import { safeId, uniqueStrings } from "../../../lang/ts/driver/ids.js";
 import type {
   BoundExpr,
   EffectSummary,
   ExtractableHandler,
   ExtractionWarning,
   SetterBinding,
-} from "../../../engine/ts/types.js";
-import { stateNameForVar } from "../../../engine/ts/transition/handlers.js";
-import type { StatementSummaryOptions } from "../../../engine/ts/transition/statement-driver.js";
+} from "../../../lang/ts/driver/types.js";
+import { stateNameForVar } from "../../../lang/ts/driver/transition/handlers.js";
+import type { StatementSummaryOptions } from "../../../lang/ts/driver/transition/statement-driver.js";
 import {
   effectWriteVars,
   simplifyEffect,
   summarizeHandlerStatements,
   summarizeStatements,
-} from "../../../engine/ts/transition/statement-driver.js";
+} from "../../../lang/ts/driver/transition/statement-driver.js";
 import {
   type WebSocketCallbackAssignment,
   type WebSocketConstructorResult,
   type WebSocketRegistration,
   webSocketConnectingAssign,
   webSocketVarId,
-} from "../../../engine/ts/transition/environment-callbacks.js";
+} from "../../../lang/ts/driver/transition/environment-callbacks.js";
 
 type WebSocketLifecycleEvent = "open" | "close" | "error" | "message";
 

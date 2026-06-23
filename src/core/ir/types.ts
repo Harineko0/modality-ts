@@ -184,7 +184,7 @@ export type NumericReductionClaim =
 
 export type NumericReductionKind =
   | "exact"
-  | "lazy-range"
+  | "deferred-range"
   | "saturation"
   | "interval"
   | "predicate"

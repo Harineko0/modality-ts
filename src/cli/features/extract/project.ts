@@ -20,11 +20,11 @@ import {
   allEffectOpAliasCanonicalIds,
   type EffectOpAliases,
   normalizeSourcePath,
-} from "../../../extract/engine/ts/effect-op-aliases.js";
+} from "../../../extract/compile/effect-op-aliases.js";
 import type {
   SemanticModuleResolver,
   SemanticProjectTsConfig,
-} from "../../../extract/engine/ts/semantic-project.js";
+} from "../../../extract/lang/ts/driver/semantic-project.js";
 
 export type { SemanticModuleResolver };
 

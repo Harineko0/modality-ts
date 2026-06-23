@@ -1,9 +1,9 @@
 import type { EffectIR, Model, StateVarDecl } from "modality-ts/core";
-import type { EffectOpAliases } from "../../../extract/engine/ts/effect-op-aliases.js";
-import { confirmStateVarDecl } from "../../../extract/engine/ts/transition/async.js";
-import { environmentStateVarDecl } from "../../../extract/engine/ts/transition/environment-callbacks.js";
-import { suspenseStateVarDecl } from "../../../extract/engine/ts/transition/suspense.js";
-import { timerStateVarDecl } from "../../../extract/engine/ts/transition/timers.js";
+import type { EffectOpAliases } from "../../../extract/compile/effect-op-aliases.js";
+import { confirmStateVarDecl } from "../../../extract/lang/ts/driver/transition/async.js";
+import { environmentStateVarDecl } from "../../../extract/lang/ts/driver/transition/environment-callbacks.js";
+import { suspenseStateVarDecl } from "../../../extract/lang/ts/driver/transition/suspense.js";
+import { timerStateVarDecl } from "../../../extract/lang/ts/driver/transition/timers.js";
 
 export function synthesizeSystemVars(
   transitions: readonly Model["transitions"][number][],

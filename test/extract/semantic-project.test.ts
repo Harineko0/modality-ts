@@ -5,14 +5,14 @@ import { runExtractionPipeline } from "modality-ts/extract";
 import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as components from "../../src/extract/engine/ts/components.js";
+import * as components from "../../src/extract/lang/ts/driver/components.js";
 import {
   buildComponentRegistry,
   buildCustomHookRegistry,
-} from "../../src/extract/engine/ts/components.js";
-import { buildReactExtractionProjectSummary } from "../../src/extract/engine/ts/react-extraction-project-summary.js";
-import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
+} from "../../src/extract/lang/ts/driver/components.js";
+import { buildReactExtractionProjectSummary } from "../../src/extract/lang/ts/driver/react-extraction-project-summary.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
+import { inferDomainSemantic } from "../../src/extract/lang/ts/driver/type-domains.js";
 import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 const defaultSourcePlugins = [useStateSource()];
@@ -30,13 +30,13 @@ function extractReactSourceTransitions(
 import {
   collectSemanticNamedImports,
   resolveSemanticNamedExport,
-} from "../../src/extract/engine/ts/semantic-imports.js";
+} from "../../src/extract/lang/ts/driver/semantic-imports.js";
 import {
   createSemanticProject,
   createSemanticProjectForTest,
   loadSemanticProjectConfig,
   writeSemanticProjectFixture,
-} from "../../src/extract/engine/ts/semantic-project.js";
+} from "../../src/extract/lang/ts/driver/semantic-project.js";
 
 const projectRoot = resolve("/project");
 const tempDirs: string[] = [];

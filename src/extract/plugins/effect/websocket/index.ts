@@ -11,8 +11,8 @@ import * as ts from "typescript";
 import {
   environmentStateVarDecl,
   type WebSocketRegistration,
-} from "../../../engine/ts/transition/environment-callbacks.js";
-import type { SetterBinding } from "../../../engine/ts/types.js";
+} from "../../../lang/ts/driver/transition/environment-callbacks.js";
+import type { SetterBinding } from "../../../lang/ts/driver/types.js";
 import {
   bindWebSocketHandle,
   isWebSocketCallbackAssignment,
@@ -38,25 +38,25 @@ export function websocketEffectPlugin(): EffectPlugin {
         webSocketIndex?: { value: number };
         webSocketBindings?: Map<string, string>;
         webSocketRegistrations?: WebSocketRegistration[];
-        environment?: import("../../../engine/ts/environment-config.js").EnvironmentEventConfig;
+        environment?: import("../../../compile/environment-config.js").EnvironmentEventConfig;
         setters:
           | Map<string, SetterBinding>
           | ReadonlyMap<string, SetterBinding>;
         handlers?: Map<
           string,
-          import("../../../engine/ts/types.js").ExtractableHandler
+          import("../../../lang/ts/driver/types.js").ExtractableHandler
         >;
         resetSymbols?: ReadonlySet<string>;
         snapshotReads?: boolean;
         snapshottedReads?: ReadonlySet<string>;
         timerBindings?: Map<string, string>;
-        timerRegistrations?: import("../../../engine/ts/transition/timers.js").TimerRegistration[];
+        timerRegistrations?: import("../../../lang/ts/driver/transition/timers.js").TimerRegistration[];
         transitionBindings?: Map<
           string,
-          import("../../../engine/ts/transition/concurrent.js").TransitionBinding
+          import("../../../lang/ts/driver/transition/concurrent.js").TransitionBinding
         >;
         envTransitions?: import("modality-ts/core").Transition[];
-        warnings?: import("../../../engine/ts/types.js").ExtractionWarning[];
+        warnings?: import("../../../lang/ts/driver/types.js").ExtractionWarning[];
       };
       if (!runtime.component || !runtime.source || !runtime.fileName)
         return undefined;
@@ -133,7 +133,7 @@ export function websocketEffectPlugin(): EffectPlugin {
         webSocketRegistrations?: WebSocketRegistration[];
         handlers?: Map<
           string,
-          import("../../../engine/ts/types.js").ExtractableHandler
+          import("../../../lang/ts/driver/types.js").ExtractableHandler
         >;
         resetSymbols?: ReadonlySet<string>;
         snapshotReads?: boolean;
@@ -141,15 +141,15 @@ export function websocketEffectPlugin(): EffectPlugin {
         timerContext?: string;
         timerIndex?: { value: number };
         timerBindings?: Map<string, string>;
-        timerRegistrations?: import("../../../engine/ts/transition/timers.js").TimerRegistration[];
+        timerRegistrations?: import("../../../lang/ts/driver/transition/timers.js").TimerRegistration[];
         webSocketIndex?: { value: number };
-        environment?: import("../../../engine/ts/environment-config.js").EnvironmentEventConfig;
+        environment?: import("../../../compile/environment-config.js").EnvironmentEventConfig;
         transitionBindings?: Map<
           string,
-          import("../../../engine/ts/transition/concurrent.js").TransitionBinding
+          import("../../../lang/ts/driver/transition/concurrent.js").TransitionBinding
         >;
         envTransitions?: import("modality-ts/core").Transition[];
-        warnings?: import("../../../engine/ts/types.js").ExtractionWarning[];
+        warnings?: import("../../../lang/ts/driver/types.js").ExtractionWarning[];
       };
       if (!runtime.component || !runtime.source || !runtime.fileName)
         return undefined;
@@ -215,7 +215,7 @@ function registerWebSocketCallbackFromStatement(
     webSocketRegistrations?: WebSocketRegistration[];
     handlers?: Map<
       string,
-      import("../../../engine/ts/types.js").ExtractableHandler
+      import("../../../lang/ts/driver/types.js").ExtractableHandler
     >;
     resetSymbols?: ReadonlySet<string>;
     snapshotReads?: boolean;
@@ -223,15 +223,15 @@ function registerWebSocketCallbackFromStatement(
     timerContext?: string;
     timerIndex?: { value: number };
     timerBindings?: Map<string, string>;
-    timerRegistrations?: import("../../../engine/ts/transition/timers.js").TimerRegistration[];
+    timerRegistrations?: import("../../../lang/ts/driver/transition/timers.js").TimerRegistration[];
     webSocketIndex?: { value: number };
-    environment?: import("../../../engine/ts/environment-config.js").EnvironmentEventConfig;
+    environment?: import("../../../compile/environment-config.js").EnvironmentEventConfig;
     transitionBindings?: Map<
       string,
-      import("../../../engine/ts/transition/concurrent.js").TransitionBinding
+      import("../../../lang/ts/driver/transition/concurrent.js").TransitionBinding
     >;
     envTransitions?: import("modality-ts/core").Transition[];
-    warnings?: import("../../../engine/ts/types.js").ExtractionWarning[];
+    warnings?: import("../../../lang/ts/driver/types.js").ExtractionWarning[];
   },
 ): EffectRecognition | undefined {
   if (!runtime.component || !runtime.source || !runtime.fileName) {

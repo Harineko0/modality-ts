@@ -2,7 +2,7 @@ import { timerEffectPlugin } from "modality-ts/extract/plugins/effect/timers";
 import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
 
 describe("timer effect model provider", () => {
   const provider = timerEffectPlugin();
@@ -34,7 +34,7 @@ describe("timer effect model provider", () => {
         },
       ],
     ]);
-    const timerRegistrations: import("modality-ts/extract/engine/ts/transition/timers.js").TimerRegistration[] =
+    const timerRegistrations: import("../../src/extract/lang/ts/driver/transition/timers.js").TimerRegistration[] =
       [];
     const envTransitions: import("modality-ts/core").Transition[] = [];
     const recognized = provider.recognizeEffect(call, {

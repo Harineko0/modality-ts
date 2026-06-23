@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { routeMountScope } from "../../../extract/engine/ts/routes.js";
+import { routeMountScope } from "../../../extract/lang/ts/driver/routes.js";
 import { runExtractCommand } from "./index.js";
 import { mkSchemaExtractTemp } from "./test-helpers.js";
 

@@ -3,7 +3,7 @@ import { createStateSourcePlugin } from "modality-ts/extract/plugins";
 import type {
   ChannelCtxWithTypes,
   DiscoverCtxWithTypes,
-} from "../../../engine/ts/plugin-context.js";
+} from "../../../lang/ts/driver/plugin-context.js";
 import * as harness from "./harness.js";
 import { discoverReduxStoresDetailed } from "./store.js";
 import { templateForReduxDecl } from "./template.js";

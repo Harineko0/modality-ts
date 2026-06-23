@@ -1,5 +1,5 @@
 import type { ExprIR, Model, Value } from "modality-ts/core";
-import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../../src/extract/lang/ts/driver/routes.js";
 
 const lit = (value: Value): ExprIR => ({ kind: "lit", value });
 const read = (id: string, path?: string[]): ExprIR => ({

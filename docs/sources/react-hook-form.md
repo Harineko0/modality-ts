@@ -86,7 +86,7 @@ the child component is not available.
 import { reactHookFormSource } from "modality-ts/extract/plugins/framework/react-hook-form";
 ```
 
-This is a `HandlerWrapperProvider` — it implements the
+This is a `FrameworkPlugin unwrapHandler facet` — it implements the
 `modality-ts/extract/engine/spi` contract's `handler-wrapper` kind rather than the
 `StateSourcePlugin` state-source kind, because it contributes no state variables of its
 own.

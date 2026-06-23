@@ -52,7 +52,7 @@ loudly.** No phase of the migration may weaken this; the verification gate for e
 A library whose semantics genuinely don't fit any existing IR construct — Spec 05 §3's example is
 websocket subscription *streams* — requires a **kernel RFC**: a coordinated change across
 `core/ir`, the Rust checker, the exporter, and the replay generator, shipped as a deliberate minor
-version. It is never a plugin patch. The `EffectModelProvider` SPI (Spec 03 §5) deliberately models
+version. It is never a plugin patch. The `EffectPlugin` SPI (Spec 03 §5) deliberately models
 websockets within *existing* CPS constructs precisely so that the common case does **not** need an
 RFC; the RFC path remains for the genuinely novel.
 

@@ -174,7 +174,7 @@ export interface DecodedSetterBinding {
   initial?: Value;
   resettable?: boolean;
   fixedEffect?: EffectIR;
-  /** True when the binding is scoped to a single component (e.g., useState). */
+  /** True when the binding is scoped to a single component. */
   isComponentScoped?: boolean;
 }
 
@@ -401,11 +401,11 @@ export interface RoutePlugin extends ModalityAdapterBase {
     inventory: RouteInventory,
   ): StateVarDecl["scope"] | undefined;
   recognizeFormSubmit?(
-    node: import("../../lang/ts/surface-ir.js").SurfaceNode,
+    node: import("../../lang/surface-ir.js").SurfaceNode,
     ctx: import("./form-submit.js").RouteFormSubmitCtx,
   ): import("./form-submit.js").FormSubmitRecognition | undefined;
   recognizeUseSubmitHandler?(
-    attribute: import("../../lang/ts/node-ref.js").NodeRef,
+    attribute: import("../../lang/node-ref.js").NodeRef,
     handler: import("./form-submit.js").RouteHandlerRef,
     ctx: import("./form-submit.js").RouteUseSubmitHandlerCtx,
   ): import("./form-submit.js").UseSubmitHandlerRecognition | undefined;
@@ -427,7 +427,7 @@ export interface ObservationPlugin extends ModalityAdapterBase {
   witness?(domain: AbstractDomain, varId: string): WitnessFactory | undefined;
 }
 
-export type { NodeRef } from "../../lang/ts/node-ref.js";
+export type { NodeRef } from "../../lang/node-ref.js";
 export type {
   AssignOp,
   SurfaceBinding,
@@ -441,7 +441,7 @@ export type {
   SurfaceParam,
   SurfaceStmt,
   SymbolRef,
-} from "../../lang/ts/surface-ir.js";
+} from "../../lang/surface-ir.js";
 export type {
   EffectAssignmentRecognition,
   EffectCtx,

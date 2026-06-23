@@ -36,18 +36,25 @@ async function readProductFile(path: string): Promise<string> {
 }
 
 describe("plugin layering remediation — legacy driver removal", () => {
+  it("moves the TypeScript driver out of engine/ts", () => {
+    expect(existsSync(resolve(repoRoot, "src/extract/engine/ts"))).toBe(false);
+    expect(existsSync(resolve(repoRoot, "src/extract/lang/ts/driver"))).toBe(
+      true,
+    );
+  });
+
   it("deletes statement-summary, surface-bridge-slot, and wiring install", () => {
     expect(
       existsSync(
         resolve(
           repoRoot,
-          "src/extract/engine/ts/transition/statement-summary.ts",
+          "src/extract/lang/ts/driver/transition/statement-summary.ts",
         ),
       ),
     ).toBe(false);
     expect(
       existsSync(
-        resolve(repoRoot, "src/extract/engine/ts/surface-bridge-slot.ts"),
+        resolve(repoRoot, "src/extract/lang/ts/driver/surface-bridge-slot.ts"),
       ),
     ).toBe(false);
     expect(existsSync(resolve(repoRoot, "src/extract/wiring/install.ts"))).toBe(
@@ -63,6 +70,19 @@ describe("plugin layering remediation — legacy driver removal", () => {
       const text = await readProductFile(file);
       expect(text).not.toMatch(/react-source-transitions/);
     }
+  });
+
+  it("keeps engine product code independent of the TypeScript driver", async () => {
+    const engineDir = resolve(repoRoot, "src/extract/engine");
+    const files = await collectProductFiles(engineDir);
+    for (const file of files) {
+      const text = await readProductFile(file);
+      expect(text).not.toMatch(/lang\/ts\/driver/);
+      expect(text).not.toMatch(/from ["']typescript["']/);
+    }
+    expect(existsSync(resolve(repoRoot, "src/extract/engine/numeric.ts"))).toBe(
+      false,
+    );
   });
 
   it("keeps compile product code free of framework recognition strings", async () => {
@@ -114,10 +134,21 @@ describe("plugin layering remediation — legacy driver removal", () => {
   it("places language-agnostic formalization helpers under compile/", async () => {
     const effectsPath = resolve(repoRoot, "src/extract/compile/effects.ts");
     expect(existsSync(effectsPath)).toBe(true);
-    const numericUnderEngine = existsSync(
-      resolve(repoRoot, "src/extract/engine/ts/numeric/abstraction.ts"),
+    expect(existsSync(resolve(repoRoot, "src/extract/compile/ids.ts"))).toBe(
+      true,
     );
-    expect(numericUnderEngine).toBe(true);
+    expect(existsSync(resolve(repoRoot, "src/extract/compile/routes.ts"))).toBe(
+      true,
+    );
+    expect(
+      existsSync(resolve(repoRoot, "src/extract/compile/navigation.ts")),
+    ).toBe(true);
+    expect(
+      existsSync(resolve(repoRoot, "src/extract/compile/numeric/widening.ts")),
+    ).toBe(true);
+    expect(existsSync(resolve(repoRoot, "src/extract/engine/ts/numeric"))).toBe(
+      false,
+    );
   });
 
   it("enforces file-size guard under 1000 lines for layered-plugin product files", async () => {
@@ -133,6 +164,7 @@ describe("plugin layering remediation — legacy driver removal", () => {
     for (const root of roots) {
       const files = await collectProductFiles(root);
       for (const file of files) {
+        if (file.includes("/src/extract/lang/ts/driver/")) continue;
         const lineCount = (await readProductFile(file)).split("\n").length;
         if (lineCount > 1000) offenders.push(`${file} (${lineCount})`);
       }

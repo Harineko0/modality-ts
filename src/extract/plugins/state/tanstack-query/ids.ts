@@ -1,4 +1,4 @@
-import { safeId } from "../../../engine/ts/ids.js";
+import { safeId } from "../../../lang/ts/driver/ids.js";
 
 export function safeKeyId(key: string): string {
   return (

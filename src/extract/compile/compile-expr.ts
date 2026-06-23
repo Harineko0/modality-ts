@@ -3,7 +3,7 @@ import type {
   CompileCtx,
   DataflowBinding,
 } from "../engine/spi/leaf-dispatch.js";
-import type { SurfaceExpr, SymbolRef } from "../lang/ts/surface-ir.js";
+import type { SurfaceExpr, SymbolRef } from "../lang/surface-ir.js";
 
 export interface CompiledExpr {
   expr: ExprIR;

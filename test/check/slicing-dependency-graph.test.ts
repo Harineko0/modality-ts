@@ -5,7 +5,7 @@ import {
   computeStateSliceClosure,
   computeTargetedStepSliceClosure,
 } from "../../src/check/slicing/dependency-graph.js";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 
 const bool = { kind: "bool" } as const;
 const twoRoutes = {

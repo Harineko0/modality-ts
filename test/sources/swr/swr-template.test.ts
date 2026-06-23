@@ -10,7 +10,7 @@ import {
   swrWindowView,
 } from "modality-ts/extract/plugins/state/swr";
 import { describe, expect, it } from "vitest";
-import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
+import { createSemanticProjectForTest } from "../../../src/extract/lang/ts/driver/semantic-project.js";
 import {
   observe,
   setup,

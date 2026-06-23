@@ -1,5 +1,5 @@
 import type { NavIntent } from "modality-ts/extract/engine/spi";
-import { normalizeRouteTarget } from "../../../engine/ts/routes.js";
+import { normalizeRouteTarget } from "../../../lang/ts/driver/routes.js";
 
 export type NextNavigationWarning = {
   kind: "model-slack" | "security-caveat";

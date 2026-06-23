@@ -4,21 +4,21 @@ import {
   callName,
   isUseRefCall,
   lineAndColumn,
-} from "../../../engine/ts/ast.js";
-import { handlerExpression } from "../../../engine/ts/components.js";
-import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
+} from "../../../lang/ts/driver/ast.js";
+import { handlerExpression } from "../../../lang/ts/driver/components.js";
+import { safeId, uniqueStrings } from "../../../lang/ts/driver/ids.js";
 import type {
   EffectSummary,
   ExtractableHandler,
   SetterBinding,
-} from "../../../engine/ts/types.js";
+} from "../../../lang/ts/driver/types.js";
 import {
   effectWriteVars,
   settersWrittenIn,
   uniqueSetters,
-} from "../../../engine/ts/transition/effects.js";
-import { stateNameForVar } from "../../../engine/ts/transition/handlers.js";
-import { summarizeHandlerStatements } from "../../../engine/ts/transition/statement-driver.js";
+} from "../../../lang/ts/driver/transition/effects.js";
+import { stateNameForVar } from "../../../lang/ts/driver/transition/handlers.js";
+import { summarizeHandlerStatements } from "../../../lang/ts/driver/transition/statement-driver.js";
 import {
   timerIdleAssign,
   timerScheduledAssign,
@@ -27,7 +27,7 @@ import {
   timerVarId,
   type TimerRegistration,
   type TimerScheduleResult,
-} from "../../../engine/ts/transition/timers.js";
+} from "../../../lang/ts/driver/transition/timers.js";
 
 const SCHEDULE_NAMES = new Set(["setTimeout", "setInterval"]);
 const CLEAR_NAMES = new Set(["clearTimeout", "clearInterval"]);

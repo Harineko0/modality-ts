@@ -1,7 +1,7 @@
 import type { SourceAnchor, Value } from "modality-ts/core";
 import * as ts from "typescript";
-import { literalValue, propertyName } from "../../../engine/ts/ast.js";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
+import { literalValue, propertyName } from "../../../lang/ts/driver/ast.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
 import { atomVarId } from "./ids.js";
 import { isHookCall, resolveJotaiImports } from "./imports.js";
 import { providerScopeFromJsx } from "./jsx.js";

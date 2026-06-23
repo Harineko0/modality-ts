@@ -5,7 +5,7 @@ import type {
   RouteNode,
 } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
 import {
   parseTanstackRouteModule,
   TANSTACK_ROUTER_PKG,

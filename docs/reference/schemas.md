@@ -45,13 +45,13 @@ interface FieldPruningMetadata {
 
 | Kind | Provider |
 | --- | --- |
-| `navigation` | active `NavigationAdapter` |
+| `navigation` | active `RoutePlugin` |
 | `module-roles` | `ModuleRoleAdapter` |
 | `effect-api` | `EffectApiProvider` |
 | `cache-storage` | `CacheStorageProvider` |
 | `observation` | synthesized `ObservationProvider` |
 | `state-source` | `StateSourcePlugin` |
-| `domain-refinement` | `DomainRefinementProvider` |
+| `domain-refinement` | `TypePlugin` |
 
 A `Transition` is `{ id, cls, label, source, guard, effect, reads, writes, confidence,
 triggeredBy?, phase? }`. See the [IR](../architecture/ir.md) and

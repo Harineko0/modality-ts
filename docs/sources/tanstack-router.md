@@ -70,5 +70,5 @@ when `redirect({ to: "..." })` is statically visible in loader/beforeLoad.
 modality extract --disable-plugin tanstack-router …
 ```
 
-Or pass an explicit `routerPlugin` (`NavigationAdapter`) in `modality.config.ts` to force
+Or pass an explicit `routePlugin` (`RoutePlugin`) in `modality.config.ts` to force
 React Router, Next, or a custom adapter.

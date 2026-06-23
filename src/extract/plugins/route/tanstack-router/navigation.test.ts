@@ -1,6 +1,6 @@
 import type { RouteInventory } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
-import { extractReactSourceTransitions } from "../../../engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions } from "../../../lang/ts/driver/react-source-transitions.js";
 import { tanstackRouterAdapter } from "./index.js";
 import {
   classifyNavigationCall,

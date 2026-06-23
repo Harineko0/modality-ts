@@ -25,14 +25,14 @@ import {
   canSliceAllProperties,
   sliceModelForProperty,
 } from "../../../check/slicing/slice-model.js";
-import { partitionCaveats } from "../../../extract/engine/ts/caveats.js";
+import { partitionCaveats } from "../../../extract/lang/ts/driver/caveats.js";
 import {
   downgradeVerdictForReductions,
   mergeNumericReductions,
   numericCoiDroppedReductions,
   reductionsAffectingProperty,
   worstNumericClaim,
-} from "../../../extract/engine/ts/numeric/abstraction.js";
+} from "../../../extract/compile/numeric/abstraction.js";
 import {
   generateAbstractReplayTest,
   generateActionReplayTest,

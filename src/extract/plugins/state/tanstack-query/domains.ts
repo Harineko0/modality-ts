@@ -5,8 +5,8 @@ import * as ts from "typescript";
 import {
   compilerBackedTypeAliases,
   inferDomainFromTypeNode,
-} from "../../../engine/ts/domains.js";
-import { inferDomainSemantic } from "../../../engine/ts/type-domains.js";
+} from "../../../lang/ts/driver/domains.js";
+import { inferDomainSemantic } from "../../../lang/ts/driver/type-domains.js";
 
 export function inferQueryPayloadDomain(
   typeArg: ts.TypeNode | undefined,

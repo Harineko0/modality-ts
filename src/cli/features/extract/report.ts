@@ -24,8 +24,8 @@ import {
   compareCaveats,
   modelSlackCaveat,
   partitionCaveats,
-} from "../../../extract/engine/ts/caveats.js";
-import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
+} from "../../../extract/lang/ts/driver/caveats.js";
+import type { ExtractionWarning } from "../../../extract/lang/ts/driver/types.js";
 import type { RegistrySummary } from "../../registry/index.js";
 import type { EffectApiProvenanceEntry } from "./project.js";
 

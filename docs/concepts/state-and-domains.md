@@ -74,7 +74,7 @@ flowchart TD
   (`enum`), inclusive integer ranges (`boundedInt`), and bounded `number.integer % n`
   intersections (`intSet` or `boundedInt`). String length, array length, and unbounded
   divisors are recognized but caveated. Providers live under
-  `src/extract/type-libraries/` and are wired through the CLI registry — they are not
+  `src/extract/plugins/type/` and are wired through the CLI registry — they are not
   part of the extraction engine's numeric module. Runtime-only predicates
   (`z.refine`, custom validators) are not interpreted unless represented in the
   inferred type or an adapter.
@@ -92,7 +92,7 @@ them, with each reduction recorded with a soundness claim
 ## Domain inference and field pruning
 
 Extraction computes a domain `D(τ)` from the TypeScript type `τ` via `ts.TypeChecker`
-semantic mapping (`src/extract/engine/ts/type-domains.ts`), with AST fallback when the
+semantic mapping (`src/extract/lang/ts/driver/type-domains.ts`), with AST fallback when the
 checker is unavailable. Schema libraries contribute numeric refinements only where
 TypeScript erases bounds; structural shapes come from inferred types. Two rules keep it
 sound and small:

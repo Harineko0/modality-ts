@@ -9,13 +9,13 @@ import type {
 import {
   modelSlackCaveat,
   unprovableNumericDomainCaveat,
-} from "../../../engine/ts/caveats.js";
-import { sourceAnchorFromNode } from "../../../engine/ts/domain-refinements.js";
+} from "../../../lang/ts/driver/caveats.js";
+import { sourceAnchorFromNode } from "../../../lang/ts/driver/domain-refinements.js";
 import {
   sourceFileFromRefinementContext,
   tsExpressionFromRefinementContext,
   tsTypeNodeFromRefinementContext,
-} from "../../../engine/ts/type-refinement-bridge.js";
+} from "../../../lang/ts/driver/type-refinement-bridge.js";
 
 const ARKTYPE_INTEGER_RANGE = /^(-?\d+)\s*<=\s*number\.integer\s*<=\s*(-?\d+)$/;
 const ARKTYPE_BOUNDED_DIVISOR =

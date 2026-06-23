@@ -10,8 +10,8 @@ import {
 } from "modality-ts/extract";
 import type { RoutePlugin } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
+import { extractReactSourceTransitions } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
+import { locationEffect } from "../../src/extract/lang/ts/driver/transition/navigation.js";
 import { locationVars } from "../../src/extract/plugins/route/router/routes.js";
 import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
@@ -805,7 +805,7 @@ function isForbiddenRunnerImport(
 
 describe("plugin-layering coupling guardrails", () => {
   const repoRoot = resolve(testDir, "../..");
-  const engineRoot = resolve(repoRoot, "src/extract/engine/ts");
+  const engineRoot = resolve(repoRoot, "src/extract/lang/ts/driver");
 
   it("engine/ts does not contain timer API string literals", async () => {
     const files = await sourceFiles(engineRoot);

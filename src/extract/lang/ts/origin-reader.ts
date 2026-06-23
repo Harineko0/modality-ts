@@ -1,9 +1,9 @@
 import type * as ts from "typescript";
-import { findNodeAt, type NodeRef } from "./node-ref.js";
+import type { NodeRef } from "../node-ref.js";
+import type { OriginReader } from "../origin-reader.js";
+import { findNodeAt } from "./node-ref.js";
 
-export interface OriginReader {
-  nodeAt(ref: NodeRef): unknown | undefined;
-}
+export type { OriginReader } from "../origin-reader.js";
 
 export interface TsOriginReader extends OriginReader {
   nodeAt(ref: NodeRef): ts.Node | undefined;

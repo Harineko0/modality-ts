@@ -15,7 +15,7 @@ second language is added; L1 is the part that gets rewritten.
 
 ## 2. Where it comes from
 
-Today the TS frontend is fused into the engine: `src/extract/engine/ts/` mixes raw AST traversal
+Today the TS frontend is fused into the engine: `src/extract/lang/ts/driver/` mixes raw AST traversal
 (`traversal.ts`, `semantic-source-file.ts`, `ast.ts`'s structural predicates) with library
 semantics (`ast.ts`'s hook tables) and control-flow compilation (`transition/statement-summary.ts`).
 L1 extracts the *structural, language-only* part: predicates like `isExtractableHandler`
@@ -98,7 +98,7 @@ property names) — never a live `ts.Type`. This keeps L2/L4 language-agnostic a
 - the `typescript` dependency (the only layer below L5 that may import it);
 - the AST → Surface IR lowering;
 - the `SymbolPort` implementation over `ts.TypeChecker` (reusing today's `SemanticTypeContext`
-  plumbing in `src/extract/engine/ts/semantic-*.ts`).
+  plumbing in `src/extract/lang/ts/driver/semantic-*.ts`).
 
 It does **not** own: hook recognition, JSX-tag meaning, var-id shapes, or any string from the
 coupling inventory in `00-overview.md §2`. Those are L4.
@@ -122,5 +122,5 @@ litmus test, applied to the language axis.
 ## 7. Dependency rules
 
 `extract/lang/*` imports **`core` only** (and `typescript` for the TS impl). It must not import
-`extract/compile`, `extract/frameworks/*`, `extract/sources/*`, or `extract/engine` internals.
+`extract/compile`, `extract/plugins/framework/*`, `extract/plugins/state/*`, or `extract/engine` internals.
 Enforced by dependency-cruiser (Spec `05-config-and-registry.md §4`).

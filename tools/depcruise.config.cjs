@@ -17,13 +17,16 @@ module.exports = {
       severity: "error",
       from: { path: "^src/extract/engine", pathNot: "^src/.*/test/" },
       to: {
-        path: "^src/(check|cli)|^src/extract/plugins",
+        path: "^src/(check|cli)|^src/extract/plugins|^src/extract/lang/ts",
       },
     },
     {
       name: "extract-lang-imports-core-only",
       severity: "error",
-      from: { path: "^src/extract/lang", pathNot: "^src/.*/test/" },
+      from: {
+        path: "^src/extract/lang",
+        pathNot: ["^src/.*/test/", "^src/extract/lang/ts/driver"],
+      },
       to: {
         path: "^src/",
         pathNot: ["^src/core", "^src/extract/lang"],

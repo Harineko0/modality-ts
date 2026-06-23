@@ -3,7 +3,7 @@ import type {
   EffectIR,
   ExtractionCaveat,
 } from "modality-ts/core";
-import type { SurfaceCall, SurfaceStmt } from "../../lang/ts/surface-ir.js";
+import type { SurfaceCall, SurfaceStmt } from "../../lang/surface-ir.js";
 import type { DecodedSetterBinding, ModalityAdapterBase } from "./index.js";
 import type { SymbolPort } from "./symbol-port.js";
 

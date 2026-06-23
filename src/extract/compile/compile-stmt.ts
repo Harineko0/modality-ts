@@ -1,6 +1,6 @@
 import type { EffectIR, ExtractionCaveat } from "modality-ts/core";
 import type { CompileCtx, LeafDispatch } from "../engine/spi/leaf-dispatch.js";
-import type { SurfaceCall, SurfaceStmt } from "../lang/ts/surface-ir.js";
+import type { SurfaceCall, SurfaceStmt } from "../lang/surface-ir.js";
 import { compileExpr, compileGuard } from "./compile-expr.js";
 import { effectFromSummaries, identityEffect } from "./effects.js";
 

@@ -1,7 +1,7 @@
 import type { Value } from "modality-ts/core";
 import * as ts from "typescript";
 import { findNodeAt, type NodeRef } from "./node-ref.js";
-import type { SurfaceExpr, SymbolRef } from "./surface-ir.js";
+import type { SurfaceExpr, SymbolRef } from "../surface-ir.js";
 
 export interface ResolvedSymbol {
   name: string;

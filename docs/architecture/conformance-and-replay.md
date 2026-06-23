@@ -188,6 +188,6 @@ bits, and bound hits.
 ## Runner boundary
 
 Conformance and canary runners under `tools/` must not import private adapter
-internals (`src/extract/sources/*` implementation modules). They orchestrate through
+internals (`src/extract/plugins/state/*` implementation modules). They orchestrate through
 `src/cli/*.ts` command wrappers and read structured report artifacts. Architecture
 tests enforce this boundary.

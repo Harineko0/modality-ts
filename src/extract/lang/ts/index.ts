@@ -29,7 +29,7 @@ export type {
   SurfaceParam,
   SurfaceStmt,
   SymbolRef,
-} from "./surface-ir.js";
+} from "../surface-ir.js";
 export {
   createTsSymbolPort,
   type ImportBinding,

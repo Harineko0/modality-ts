@@ -6,9 +6,9 @@ import {
   bindSetter,
   resolveSetterBinding,
   settersForComponent,
-} from "../../src/extract/engine/ts/context.js";
-import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
-import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
+} from "../../src/extract/lang/ts/driver/context.js";
+import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
+import { createSemanticProjectForTest } from "../../src/extract/lang/ts/driver/semantic-project.js";
 import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 const defaultSourcePlugins = [useStateSource()];

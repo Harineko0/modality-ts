@@ -3,7 +3,7 @@ import type {
   SurfaceCall,
   SurfaceExpr,
   SurfaceNode,
-} from "../../lang/ts/surface-ir.js";
+} from "../../lang/surface-ir.js";
 import type { SymbolPort } from "./symbol-port.js";
 
 export interface LeafEffect {
@@ -44,7 +44,7 @@ export interface LeafDispatch {
   interpretCall(call: SurfaceCall, ctx: CompileCtx): LeafEffect | undefined;
   interpretAssignment?(
     stmt: Extract<
-      import("../../lang/ts/surface-ir.js").SurfaceStmt,
+      import("../../lang/surface-ir.js").SurfaceStmt,
       { kind: "assign" }
     >,
     ctx: CompileCtx,

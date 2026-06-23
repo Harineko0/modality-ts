@@ -3,8 +3,8 @@ import {
   callName,
   type ExtractableHandler,
   isExtractableHandler,
-} from "../../../engine/ts/ast.js";
-import type { TsUnwrapHandlerCtx } from "../../../engine/ts/framework-ts-bridge.js";
+} from "../../../lang/ts/driver/ast.js";
+import type { TsUnwrapHandlerCtx } from "../../../lang/ts/driver/framework-ts-bridge.js";
 
 /**
  * Returns the set of local names that are bound to a handleSubmit function

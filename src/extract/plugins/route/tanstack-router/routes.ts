@@ -16,8 +16,8 @@ import type {
 import {
   normalizeRouteTarget,
   routeMountScope,
-} from "../../../engine/ts/routes.js";
-import { locationEffect } from "../../../engine/ts/transition/navigation.js";
+} from "../../../lang/ts/driver/routes.js";
+import { locationEffect } from "../../../lang/ts/driver/transition/navigation.js";
 import { routeForComponent } from "./discover.js";
 
 export const TANSTACK_BRANCH_NONE = "__none";

@@ -1,4 +1,4 @@
-import { extendFrameworkWithTsUnwrap } from "../../src/extract/engine/ts/framework-ts-bridge.js";
+import { extendFrameworkWithTsUnwrap } from "../../src/extract/lang/ts/driver/framework-ts-bridge.js";
 import { extendReactFrameworkWithTsFacets } from "../../src/extract/plugins/framework/react/ts-facets.js";
 import { registerFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import "modality-ts/extract/engine/pipeline";

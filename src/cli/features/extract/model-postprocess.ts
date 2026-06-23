@@ -6,7 +6,7 @@ import type {
 import {
   buildFieldPruningMetadata,
   fieldPruningCollapseCaveats,
-} from "../../../extract/engine/ts/field-pruning.js";
+} from "../../../extract/lang/ts/driver/field-pruning.js";
 import { emptyExtractionCaveats, mergeExtractionCaveats } from "./report.js";
 
 export function applyMountScopesFromRouter(

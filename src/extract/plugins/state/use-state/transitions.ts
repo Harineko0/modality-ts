@@ -1,8 +1,6 @@
-import { isEffectOpAliasesPopulated } from "../../../engine/ts/effect-op-aliases.js";
-import {
-  collectNumericSeedVarIds,
-  widenNumericDomainsFromTransitions,
-} from "../../../engine/ts/numeric/use-state-updaters.js";
+import { isEffectOpAliasesPopulated } from "../../../compile/effect-op-aliases.js";
+import { widenNumericDomainsFromTransitions } from "../../../compile/numeric/widening.js";
+import { collectNumericSeedVarIds } from "../../../lang/ts/driver/numeric/use-state-updaters.js";
 import { extractSharedReactTransitionInventory } from "../../shared/react-transition-extract.js";
 import useStateSource from "./index.js";
 import type {

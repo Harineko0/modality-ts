@@ -26,8 +26,8 @@ import {
   UNMOUNTED,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
+import { locationEffect } from "../../src/extract/lang/ts/driver/transition/navigation.js";
 import {
   always,
   alwaysStep,

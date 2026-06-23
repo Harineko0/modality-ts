@@ -123,12 +123,15 @@ describe("plugin factory foundation", () => {
 });
 
 describe("SPI contract hardening", () => {
-  it("uses a single canonical Surface IR under lang/ts", () => {
+  it("uses a single canonical Surface IR under lang", () => {
     expect(
       existsSync(resolve(repoRoot, "src/extract/engine/spi/surface-ir.ts")),
     ).toBe(false);
     expect(
       existsSync(resolve(repoRoot, "src/extract/lang/ts/surface-ir.ts")),
+    ).toBe(false);
+    expect(
+      existsSync(resolve(repoRoot, "src/extract/lang/surface-ir.ts")),
     ).toBe(true);
   });
 

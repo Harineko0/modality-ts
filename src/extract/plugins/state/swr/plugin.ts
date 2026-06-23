@@ -3,7 +3,7 @@ import { createStateSourcePlugin } from "modality-ts/extract/plugins";
 import type {
   ChannelCtxWithTypes,
   DiscoverCtxWithTypes,
-} from "../../../engine/ts/plugin-context.js";
+} from "../../../lang/ts/driver/plugin-context.js";
 import { decodeSwrBinding } from "./decode-binding.js";
 import { discoverSwrHooks } from "./discover.js";
 import * as harness from "./harness.js";

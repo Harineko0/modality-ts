@@ -1,8 +1,8 @@
 import { zodTypePlugin } from "modality-ts/extract/plugins/type/zod";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { resolveDomainRefinements } from "../../../src/extract/engine/ts/domain-refinements.js";
-import { typeRefinementContextFromTs } from "../../../src/extract/engine/ts/type-refinement-bridge.js";
+import { resolveDomainRefinements } from "../../../src/extract/lang/ts/driver/domain-refinements.js";
+import { typeRefinementContextFromTs } from "../../../src/extract/lang/ts/driver/type-refinement-bridge.js";
 
 function refinementContext(source: string): {
   initializer: ts.Expression;

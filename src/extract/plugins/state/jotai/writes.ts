@@ -5,14 +5,14 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { componentNameFor, propertyName } from "../../../engine/ts/ast.js";
+import { componentNameFor, propertyName } from "../../../lang/ts/driver/ast.js";
 import {
   caveatMessage,
   globalTaintCaveat,
   modelSlackCaveat,
-} from "../../../engine/ts/caveats.js";
-import { typeAliasDeclarations } from "../../../engine/ts/domains.js";
-import { semanticSourceFileFor } from "../../../engine/ts/semantic-source-file.js";
+} from "../../../lang/ts/driver/caveats.js";
+import { typeAliasDeclarations } from "../../../lang/ts/driver/domains.js";
+import { semanticSourceFileFor } from "../../../lang/ts/driver/semantic-source-file.js";
 import { isReadFunction, summarizeDerivedWriteBody } from "./derived-writes.js";
 import {
   discoverJotaiAtomsDetailed,

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
-} from "../../../extract/engine/ts/semantic-project.js";
+} from "../../../extract/lang/ts/driver/semantic-project.js";
 import { sourceWithReachableImports } from "./project.js";
 
 describe("compiler-backed project surface", () => {

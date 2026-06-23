@@ -7,9 +7,9 @@ import type {
 } from "modality-ts/extract/engine/spi";
 import type { SemanticTypeContext } from "modality-ts/extract/lang/ts";
 import * as ts from "typescript";
-import { propertyName } from "../../../engine/ts/ast.js";
-import { modelSlackCaveat } from "../../../engine/ts/caveats.js";
-import { semanticSourceFileFor } from "../../../engine/ts/semantic-source-file.js";
+import { propertyName } from "../../../lang/ts/driver/ast.js";
+import { modelSlackCaveat } from "../../../lang/ts/driver/caveats.js";
+import { semanticSourceFileFor } from "../../../lang/ts/driver/semantic-source-file.js";
 import { anchor, discoverZustandStoresDetailed } from "./discover.js";
 import { lowerActionBody, lowerSetCall } from "./effects.js";
 import { storeVarId } from "./ids.js";

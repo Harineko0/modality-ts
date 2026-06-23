@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { compareModelEconomics } from "../../src/check/slicing/contributors.js";
 import { propertySlicingSkipReason } from "../../src/check/slicing/slice-model.js";
 import { buildPropertySlicePlan } from "../../src/cli/features/extract/command.js";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 import { always, alwaysStep, reachable } from "../helpers/property-builders.js";
 
 const bool = { kind: "bool" } as const;

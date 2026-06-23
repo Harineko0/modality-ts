@@ -1,6 +1,6 @@
 import type { Value } from "modality-ts/core";
-import type { NodeRef } from "../../lang/ts/node-ref.js";
-import type { SurfaceExpr, SymbolRef } from "../../lang/ts/surface-ir.js";
+import type { NodeRef } from "../../lang/node-ref.js";
+import type { SurfaceExpr, SymbolRef } from "../../lang/surface-ir.js";
 
 export type { NodeRef, SymbolRef };
 

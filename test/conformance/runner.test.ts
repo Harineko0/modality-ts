@@ -9,7 +9,7 @@ import type {
   Model,
 } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 import {
   assertConformPassRate,
   assertCoverageThreshold,

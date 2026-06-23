@@ -1,6 +1,6 @@
 import type { WriteChannel } from "modality-ts/extract/engine/spi";
 import * as ts from "typescript";
-import { propertyName } from "../../../engine/ts/ast.js";
+import { propertyName } from "../../../lang/ts/driver/ast.js";
 import { storeVarId } from "./ids.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import { isUseSelectorCall } from "./imports.js";

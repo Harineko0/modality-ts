@@ -6,7 +6,7 @@ import {
   createSemanticProject,
   loadSemanticProjectConfig,
   type SemanticSourceEntry,
-} from "../../extract/engine/ts/semantic-project.js";
+} from "../../extract/lang/ts/driver/semantic-project.js";
 import {
   emitComponentModalModules,
   varHandleNaming,

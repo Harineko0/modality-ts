@@ -7,7 +7,8 @@ import type {
   TemplateFragment,
   Transition,
 } from "modality-ts/core";
-import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
+import type { LanguageProject } from "../../lang/project.js";
+import type { SemanticTypeContext } from "../../lang/type-context.js";
 import type {
   EffectPlugin,
   FrameworkPlugin,
@@ -21,16 +22,14 @@ import type {
 import {
   type EffectOpAliases,
   isEffectOpAliasesPopulated,
-} from "../ts/effect-op-aliases.js";
-import { widenNumericDomainsFromTransitions } from "../ts/numeric/use-state-updaters.js";
-import type { SemanticProject } from "../ts/semantic-project.js";
-import type { ExtractionWarning } from "../ts/types.js";
+} from "../../compile/effect-op-aliases.js";
+import { widenNumericDomainsFromTransitions } from "../../compile/numeric/widening.js";
+import type { ExtractionWarning } from "../spi/index.js";
 import { synthesizeRedirectTransitions } from "./redirects.js";
 import {
   type ExtractionProjectSummary,
   runSourceExtraction,
 } from "./source-extraction.js";
-import "./register-react-extractor.js";
 
 export interface HandlerExtractionResult {
   transitions: readonly Transition[];
@@ -62,7 +61,7 @@ export interface ExtractionPipelineOptions {
   route: string;
   routePatterns?: readonly string[];
   effectApis?: readonly string[];
-  environment?: import("../ts/environment-config.js").EnvironmentEventConfig;
+  environment?: import("../../compile/environment-config.js").EnvironmentEventConfig;
   statePlugins?: readonly StateSourcePlugin[];
   routePlugin?: RoutePlugin;
   framework?: FrameworkPlugin;
@@ -72,7 +71,7 @@ export interface ExtractionPipelineOptions {
   lowering?: LocationLowering;
   discoverFragments?: readonly { sourceText: string; fileName: string }[];
   bounds?: Pick<Bounds, "maxDepth">;
-  semanticProject?: SemanticProject;
+  semanticProject?: LanguageProject;
   effectOpAliases?: EffectOpAliases;
   sharedDiscovery?: SharedPluginDiscovery;
   projectSummary?: ExtractionProjectSummary;
@@ -373,24 +372,10 @@ export function discoveryRelatedFragments(
 }
 
 export function semanticTypeContextForFile(
-  semanticProject: SemanticProject | undefined,
+  semanticProject: LanguageProject | undefined,
   fileName: string,
 ): SemanticTypeContext | undefined {
-  if (!semanticProject) return undefined;
-  const sourceFile = semanticProject.getSourceFile(fileName);
-  return {
-    program: semanticProject.program,
-    checker: semanticProject.checker,
-    ...(sourceFile ? { sourceFile } : {}),
-    getSourceFile: (name) => semanticProject.getSourceFile(name),
-    canonicalFileName: (name) => semanticProject.canonicalFileName(name),
-    resolveModuleName: (specifier, containingFile) =>
-      semanticProject.resolveModuleName(specifier, containingFile),
-    symbolAt: (node) => semanticProject.symbolAt(node),
-    aliasedSymbolAt: (node) => semanticProject.aliasedSymbolAt(node),
-    symbolKey: (symbol) => semanticProject.symbolKey(symbol),
-    localSymbolKey: (node) => semanticProject.localSymbolKey(node),
-  };
+  return semanticProject?.typeContextForFile?.(fileName);
 }
 
 function provenanceForSource(plugin: StateSourcePlugin): PluginProvenance {

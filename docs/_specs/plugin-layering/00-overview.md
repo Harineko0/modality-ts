@@ -12,7 +12,7 @@ Spec 05 §4 promised that "supporting a new library = writing one new package in
 and write channels* — the surface the `StateSourcePlugin` SPI already covers
 (`src/extract/engine/spi/index.ts`). It does **not** hold for library *semantics*: the meaning of
 a recognized call or JSX node is still hardcoded inside the extraction engine under
-`src/extract/engine/ts/`. Adding or updating React, Next.js, a router, or a timer model means
+`src/extract/lang/ts/driver/`. Adding or updating React, Next.js, a router, or a timer model means
 editing engine core, not just authoring a plugin.
 
 The work in this series is **separation, not invention**. The layer the user wants —
@@ -25,12 +25,12 @@ library-specific part out behind SPIs.
 
 | Coupling | Location | What is hardcoded |
 |---|---|---|
-| React hook name tables | `src/extract/engine/ts/ast.ts` | `useState`, `useReducer`, `useRef`, `useEffect`/`useLayoutEffect`/`useInsertionEffect`, `useTransition`, `useDeferredValue`, `startTransition`, `flushSync`, `Suspense`, `React.lazy`, `use`, `useCallback` |
-| Library var-id shapes | `src/extract/engine/ts/context.ts` | regex match of `local:`, `atom:`, `atom-family:`, `swr:` inside `decodeSetterBinding` (now delegated to plugins via `decodeBinding`) |
-| React context/helper semantics | `src/extract/engine/ts/context.ts` | `useCallback`, `useMemo`, `useContext` recognized by name (now delegated to `FrameworkPlugin` TS facets) |
-| Timer API names | `src/extract/engine/ts/transition/timers.ts` | `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` (now owned by `plugins/effect/timers/recognition.ts`) |
-| WebSocket API name | `src/extract/engine/ts/transition/environment-callbacks.ts` | `WebSocket` constructor recognition (now owned by `plugins/effect/websocket/recognition.ts`) |
-| Effect phase ordinals | `src/extract/engine/ts/transition/effects.ts` | `reactEffectPhase` maps React hook names to ordinals |
+| React hook name tables | `src/extract/lang/ts/driver/ast.ts` | `useState`, `useReducer`, `useRef`, `useEffect`/`useLayoutEffect`/`useInsertionEffect`, `useTransition`, `useDeferredValue`, `startTransition`, `flushSync`, `Suspense`, `React.lazy`, `use`, `useCallback` |
+| Library var-id shapes | `src/extract/lang/ts/driver/context.ts` | regex match of `local:`, `atom:`, `atom-family:`, `swr:` inside `decodeSetterBinding` (now delegated to plugins via `decodeBinding`) |
+| React context/helper semantics | `src/extract/lang/ts/driver/context.ts` | `useCallback`, `useMemo`, `useContext` recognized by name (now delegated to `FrameworkPlugin` TS facets) |
+| Timer API names | `src/extract/lang/ts/driver/transition/timers.ts` | `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` (now owned by `plugins/effect/timers/recognition.ts`) |
+| WebSocket API name | `src/extract/lang/ts/driver/transition/environment-callbacks.ts` | `WebSocket` constructor recognition (now owned by `plugins/effect/websocket/recognition.ts`) |
+| Effect phase ordinals | `src/extract/lang/ts/driver/transition/effects.ts` | `reactEffectPhase` maps React hook names to ordinals |
 
 The pattern: large *universal* compiler modules (`statement-driver.ts`, `effects.ts`) and a
 *React-specific* walker (`react-source-transitions.ts`) reach directly for library strings.

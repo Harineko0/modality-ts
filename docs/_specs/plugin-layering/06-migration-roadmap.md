@@ -62,10 +62,10 @@ Move the `Form` / `useSubmit` / `useActionData` recognition behind
 Timer API names (`setTimeout`/`setInterval`/`clearTimeout`/`clearInterval`) moved to
 `plugins/effect/timers/recognition.ts`; WebSocket API name (`WebSocket`) moved to
 `plugins/effect/websocket/recognition.ts`. Engine modules `timers.ts` and
-`environment-callbacks.ts` are now API-name-free. `EngineEffectPlugin` bridge interface in
-`engine/ts/effect-ts-bridge.ts` connects plugins to the engine without inverting the import
-direction. Architecture guardrail tests in `test/extraction/architecture.test.ts` enforce that
-engine/ts contains no timer or WebSocket string literals.
+`environment-callbacks.ts` moved out of `src/extract/engine` with the TypeScript driver. The
+`EngineEffectPlugin` bridge interface in `src/extract/lang/ts/driver/effect-ts-bridge.ts` connects
+plugins to the TypeScript driver without reintroducing engine ownership. Architecture guardrail tests
+enforce that `src/extract/engine/ts` is absent.
 
 ### Phase 7 — L1/L2 split + thin-driver inversion (capstone)
 Extract `src/extract/lang/ts` (Surface IR + symbol port, Spec 01) and `src/extract/compile`

@@ -13,12 +13,12 @@ import {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseState,
   useStateCallForSemanticInference,
-} from "../../../engine/ts/domains.js";
+} from "../../../lang/ts/driver/domains.js";
 import type {
   ChannelCtxWithTypes,
   DiscoverCtxWithTypes,
-} from "../../../engine/ts/plugin-context.js";
-import { routeMountScope } from "../../../engine/ts/routes.js";
+} from "../../../lang/ts/driver/plugin-context.js";
+import { routeMountScope } from "../../../lang/ts/driver/routes.js";
 import { decodeUseStateBinding } from "./decode-binding.js";
 import * as harness from "./harness.js";
 

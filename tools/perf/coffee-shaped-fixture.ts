@@ -9,7 +9,7 @@ import {
   type Property,
   readVar,
 } from "modality-ts/core";
-import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
+import { routeMountScope } from "../../src/extract/lang/ts/driver/routes.js";
 import { always as buildAlways } from "../../test/helpers/property-builders.js";
 
 export const COFFEE_SHAPED_DENSITY_ONE_PROPERTY =

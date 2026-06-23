@@ -1,4 +1,4 @@
-export { safeId } from "../../../engine/ts/ids.js";
+export { safeId } from "../../../lang/ts/driver/ids.js";
 
 export function storeVarId(storeName: string, field: string): string {
   return `zustand:${storeName}.${field}`;

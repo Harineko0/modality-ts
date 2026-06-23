@@ -2,8 +2,8 @@ import * as ts from "typescript";
 import type {
   EngineFrameworkPlugin,
   TsExtractableHandler,
-} from "../../../engine/ts/framework-ts-bridge.js";
-import { isExtractableHandler } from "../../../engine/ts/ast.js";
+} from "../../../lang/ts/driver/framework-ts-bridge.js";
+import { isExtractableHandler } from "../../../lang/ts/driver/ast.js";
 import type { FrameworkPlugin } from "modality-ts/extract/engine/spi";
 
 export function unwrapCallbackExpr(

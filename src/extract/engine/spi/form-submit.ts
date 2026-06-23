@@ -5,8 +5,8 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
-import type { NodeRef } from "../../lang/ts/node-ref.js";
-import type { SurfaceExpr } from "../../lang/ts/surface-ir.js";
+import type { NodeRef } from "../../lang/node-ref.js";
+import type { SurfaceExpr } from "../../lang/surface-ir.js";
 import type { DecodedSetterBinding, ExtractionWarning } from "./index.js";
 
 export interface RouteFormSubmitCtx {

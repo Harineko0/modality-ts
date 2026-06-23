@@ -10,7 +10,7 @@ import {
   mergeNumericReductions,
   numericCoiDroppedReductions,
   worstNumericClaim,
-} from "modality-ts/extract/engine";
+} from "../../src/extract/compile/numeric/abstraction.js";
 import { describe, expect, it } from "vitest";
 
 describe("numeric abstraction", () => {
@@ -27,14 +27,14 @@ describe("numeric abstraction", () => {
     });
   });
 
-  it("records lazy-range for wide boundedInt", () => {
+  it("records deferred-range for wide boundedInt", () => {
     const reduction = exactFirstReduction("count", {
       kind: "boundedInt",
       min: 0,
       max: 65535,
       overflow: "wrap",
     });
-    expect(reduction?.kind).toBe("lazy-range");
+    expect(reduction?.kind).toBe("deferred-range");
     expect(reduction?.claim).toBe("property-preserving");
   });
 
@@ -148,7 +148,7 @@ describe("numeric abstraction", () => {
       [
         {
           varId: "count",
-          kind: "lazy-range",
+          kind: "deferred-range",
           claim: "property-preserving",
           reason: "lazy",
         },
@@ -156,7 +156,7 @@ describe("numeric abstraction", () => {
       [
         {
           varId: "count",
-          kind: "lazy-range",
+          kind: "deferred-range",
           claim: "heuristic",
           reason: "heuristic",
         },

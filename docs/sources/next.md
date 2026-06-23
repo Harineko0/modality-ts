@@ -46,5 +46,5 @@ enter the `sys:route` enum.
 modality extract --disable-plugin next …
 ```
 
-Or pass an explicit `routerPlugin` (`NavigationAdapter`) in `modality.config.ts` to force
+Or pass an explicit `routePlugin` (`RoutePlugin`) in `modality.config.ts` to force
 React Router or a custom adapter.

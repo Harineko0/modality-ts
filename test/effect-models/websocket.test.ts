@@ -2,7 +2,7 @@ import { websocketEffectPlugin } from "modality-ts/extract/plugins/effect/websoc
 import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
+import { extractReactSourceTransitions } from "../../src/extract/lang/ts/driver/react-source-transitions.js";
 
 describe("websocket effect model provider", () => {
   const provider = websocketEffectPlugin();
@@ -24,7 +24,7 @@ describe("websocket effect model provider", () => {
     const decl = fn.body!.statements[0] as ts.VariableStatement;
     const ctor = decl.declarationList.declarations[0]!
       .initializer as ts.NewExpression;
-    const webSocketRegistrations: import("modality-ts/extract/engine/ts/transition/environment-callbacks.js").WebSocketRegistration[] =
+    const webSocketRegistrations: import("../../src/extract/lang/ts/driver/transition/environment-callbacks.js").WebSocketRegistration[] =
       [];
     const recognized = provider.recognizeEffect(ctor, {
       component: "Feed",

@@ -1,6 +1,6 @@
 import type { EffectIR } from "modality-ts/core";
 import * as ts from "typescript";
-import { literalValue } from "../../../engine/ts/ast.js";
+import { literalValue } from "../../../lang/ts/driver/ast.js";
 import { propertyNameFromMember } from "./domains.js";
 import type { ReduxResolvedImports } from "./imports.js";
 import {

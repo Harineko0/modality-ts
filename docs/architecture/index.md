@@ -28,7 +28,7 @@ flowchart TD
   check["check/ — Rust-backed checker adapter"]
   crate["crates/checker (Rust) → native/*.node"]
   engine["extract/engine/ — Spec 02 pipeline (Node)"]
-  sources["extract/sources/* — state-source slices"]
+  sources["extract/plugins/state/* — state-source slices"]
   cli["cli/ — features, codegen, harness, runtime, registry"]
 
   check --> core
@@ -49,7 +49,7 @@ merely documented:
 core               → (nothing but TypeScript)
 check              → core            (+ the native Rust addon)
 extract/engine     → core
-extract/sources/*  → core, extract/engine (SPI only); never each other; never cli
+extract/plugins/state/*  → core, extract/engine (SPI only); never each other; never cli
 cli/harness        → core
 cli/runtime        → core/props subpath only
 cli/features        → everything above (features never import each other)

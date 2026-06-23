@@ -6,13 +6,13 @@ import type {
   TypeRefinementContext,
   TypeRefinementResolution,
 } from "../../../engine/spi/type-plugin.js";
-import { unprovableNumericDomainCaveat } from "../../../engine/ts/caveats.js";
-import { sourceAnchorFromNode } from "../../../engine/ts/domain-refinements.js";
+import { unprovableNumericDomainCaveat } from "../../../lang/ts/driver/caveats.js";
+import { sourceAnchorFromNode } from "../../../lang/ts/driver/domain-refinements.js";
 import {
   sourceFileFromRefinementContext,
   tsExpressionFromRefinementContext,
   tsTypeNodeFromRefinementContext,
-} from "../../../engine/ts/type-refinement-bridge.js";
+} from "../../../lang/ts/driver/type-refinement-bridge.js";
 
 export function zodTypePlugin(): TypePlugin {
   return createTypePlugin({

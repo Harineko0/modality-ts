@@ -3,9 +3,9 @@ import type {
   ExtractionCaveat,
   NumericReduction,
 } from "modality-ts/core";
-import type { NodeRef } from "../../lang/ts/node-ref.js";
-import type { OriginReader } from "../../lang/ts/origin-reader.js";
-import type { SurfaceExpr } from "../../lang/ts/surface-ir.js";
+import type { NodeRef } from "../../lang/node-ref.js";
+import type { OriginReader } from "../../lang/origin-reader.js";
+import type { SurfaceExpr } from "../../lang/surface-ir.js";
 import type { SymbolPort, TypeView } from "./symbol-port.js";
 
 export interface TypeRefinementContext {

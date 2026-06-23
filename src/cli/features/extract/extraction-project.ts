@@ -14,7 +14,6 @@ import {
   type ExtractionPipelineResult,
   runExtractionPipeline,
   runPluginDiscoveryPhase,
-  semanticTypeContextForFile,
 } from "modality-ts/extract";
 import type {
   CacheStorageFragment,
@@ -35,18 +34,18 @@ import { parseReactRouterRoutes } from "modality-ts/extract/plugins/route/router
 import {
   bindEngineFrameworkFromPlugin,
   withEngineFramework,
-} from "../../../extract/engine/ts/ast.js";
-import type { EffectOpAliases } from "../../../extract/engine/ts/effect-op-aliases.js";
-import type { EnvironmentEventConfig } from "../../../extract/engine/ts/environment-config.js";
-import { buildReactExtractionProjectSummary } from "../../../extract/engine/ts/react-extraction-project-summary.js";
+} from "../../../extract/lang/ts/driver/ast.js";
+import type { EffectOpAliases } from "../../../extract/compile/effect-op-aliases.js";
+import type { EnvironmentEventConfig } from "../../../extract/compile/environment-config.js";
+import { buildReactExtractionProjectSummary } from "../../../extract/lang/ts/driver/react-extraction-project-summary.js";
 import {
   createSemanticProject,
   loadSemanticProjectConfig,
   type SemanticProject,
   type SemanticProjectConfig,
   tsConfigResolutionFromSemanticConfig,
-} from "../../../extract/engine/ts/semantic-project.js";
-import type { ExtractionWarning } from "../../../extract/engine/ts/types.js";
+} from "../../../extract/lang/ts/driver/semantic-project.js";
+import type { ExtractionWarning } from "../../../extract/lang/ts/driver/types.js";
 import type { RegistrySummary } from "../../registry/index.js";
 import type { ExtractCommandOptions, ModalityConfig } from "./command.js";
 import {
@@ -365,10 +364,11 @@ export function runProjectExtractionPipeline(
     pipelineOptions,
     discoverFragments,
   );
-  const fragmentTypes = semanticTypeContextForFile(
-    project.semanticProject,
+  const fragmentTypes = project.semanticProject?.typeContextForFile?.(
     discoverFragments[0]!.fileName,
-  );
+  ) as
+    | import("../../../extract/lang/ts/semantic-type-context.js").SemanticTypeContext
+    | undefined;
   const engineFramework = bindEngineFrameworkFromPlugin(
     resolveFrameworkPlugin(options.framework),
     {

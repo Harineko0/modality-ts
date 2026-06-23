@@ -5,7 +5,7 @@ import { checkModel } from "modality-ts/check";
 import { eq, lit, type Model, readVar } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 import { reachable } from "../../../../test/helpers/property-builders.js";
-import { routeMountScope } from "../../../extract/engine/ts/routes.js";
+import { routeMountScope } from "../../../extract/lang/ts/driver/routes.js";
 import { runExtractCommand } from "./index.js";
 
 describe("runExtractCommand", () => {

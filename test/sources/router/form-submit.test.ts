@@ -38,7 +38,7 @@ describe("router recognizeFormSubmit", () => {
     const returnStmt = (opening.body!.statements[0] as ts.ReturnStatement)
       .expression as ts.ParenthesizedExpression;
     const formElement = (returnStmt.expression as ts.JsxElement).openingElement;
-    const warnings: import("modality-ts/extract/engine/ts/types.js").ExtractionWarning[] =
+    const warnings: import("../../../src/extract/lang/ts/driver/types.js").ExtractionWarning[] =
       [];
     const recognized = router.recognizeFormSubmit?.(
       surfaceNodeFor(formElement, "Form.tsx"),
