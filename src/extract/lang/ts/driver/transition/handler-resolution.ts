@@ -20,9 +20,11 @@ import {
   containsAwaitedEffect,
   containsAwaitInLoop,
   confidenceForEffects,
+  statementHasAwaitedEffect,
   transitionsFromAsyncHandler,
   transitionsFromAsyncStatements,
 } from "./async.js";
+import { enumerateGuardedPaths } from "./branch-paths.js";
 import {
   statementHasCallbackEffect,
   transitionsFromCallbackEffectHandler,
@@ -36,7 +38,11 @@ import {
   summarizeAsyncSegment,
 } from "./effects.js";
 import { setterArgumentExpr } from "./expressions.js";
-import { applyParsedGuard, type ParsedGuard } from "./guards.js";
+import {
+  applyParsedGuard,
+  combineParsedGuards,
+  type ParsedGuard,
+} from "./guards.js";
 import {
   booleanCallbackParameterBindings,
   booleanCallbackValueSuffix,
@@ -139,11 +145,20 @@ export function transitionsFromResolvedHandler(
     if (recognized && recognized.transitions.length > 0)
       return recognized.transitions;
   }
-  if (ts.isBlock(handler.body)) {
-    const flat = flattenHandlerHelpers(handler.body.statements, {
+  const flattenableStatements = statementsForHelperFlattening(handler);
+  if (flattenableStatements.length > 0) {
+    const helperInlineOptions = {
       handlers: resolutionHandlers,
       setters,
-    });
+    };
+    const flatInitial = flattenHandlerHelpers(
+      flattenableStatements,
+      helperInlineOptions,
+    );
+    const flat =
+      flatInitial.inlinedHelpers.length > 0
+        ? flatInitial
+        : (flattenConciseHelper(handler, helperInlineOptions) ?? flatInitial);
     if (flat.inlinedHelpers.length > 0) {
       const flatAsyncTransitions = transitionsFromAsyncStatements(
         source,
@@ -179,6 +194,37 @@ export function transitionsFromResolvedHandler(
       );
       if (flatCallbackTransitions.length > 0)
         return applyParsedGuard(flatCallbackTransitions, disabledGuard);
+      if (
+        branchEnclosesModeledEffect(
+          flat.statements,
+          effectApis,
+          setters,
+          resolutionHandlers,
+          fileName,
+          handlerContext.effectOpAliases ?? new Map(),
+        )
+      ) {
+        const flatBranchTransitions = transitionsFromBranchPaths(
+          source,
+          fileName,
+          attr,
+          node,
+          flat.statements,
+          setters,
+          resolutionHandlers,
+          component,
+          effectApis,
+          asyncOutcomes,
+          locator,
+          routePlugin,
+          routePatterns,
+          warnings,
+          disabledGuard,
+          contextBindings,
+          handlerContext,
+        );
+        if (flatBranchTransitions.length > 0) return flatBranchTransitions;
+      }
       const flatSetterTransition = transitionFromFlattenedSetterStatements(
         source,
         fileName,
@@ -211,6 +257,38 @@ export function transitionsFromResolvedHandler(
   );
   if (asyncTransitions.length > 0)
     return applyParsedGuard(asyncTransitions, disabledGuard);
+  if (
+    ts.isBlock(handler.body) &&
+    branchEnclosesModeledEffect(
+      handler.body.statements,
+      effectApis,
+      setters,
+      resolutionHandlers,
+      fileName,
+      handlerContext.effectOpAliases ?? new Map(),
+    )
+  ) {
+    const branchTransitions = transitionsFromBranchPaths(
+      source,
+      fileName,
+      attr,
+      node,
+      handler.body.statements,
+      setters,
+      resolutionHandlers,
+      component,
+      effectApis,
+      asyncOutcomes,
+      locator,
+      routePlugin,
+      routePatterns,
+      warnings,
+      disabledGuard,
+      contextBindings,
+      handlerContext,
+    );
+    if (branchTransitions.length > 0) return branchTransitions;
+  }
   // Callback-style (non-awaited) effect API calls, e.g. mutate(args, {onError})
   if (
     ts.isBlock(handler.body) &&
@@ -559,6 +637,49 @@ function componentLocalHandlersForNode(
   return localHandlers;
 }
 
+function statementsForHelperFlattening(
+  handler: ExtractableHandler,
+): readonly ts.Statement[] {
+  if (ts.isBlock(handler.body)) return handler.body.statements;
+  return [ts.factory.createExpressionStatement(handler.body)];
+}
+
+function flattenConciseHelper(
+  handler: ExtractableHandler,
+  options: Parameters<typeof flattenHandlerHelpers>[1],
+): ReturnType<typeof flattenHandlerHelpers> | undefined {
+  if (ts.isBlock(handler.body)) return undefined;
+  const call = helperInvocationCall(handler.body);
+  if (!call || call.arguments.length > 0 || !ts.isIdentifier(call.expression))
+    return undefined;
+  const helperName = call.expression.text;
+  const helper = options.handlers.get(helperName);
+  if (!helper || !ts.isBlock(helper.body) || options.setters.has(helperName))
+    return undefined;
+  const nested = flattenHandlerHelpers(helper.body.statements, options);
+  return {
+    statements: nested.statements,
+    inlinedHelpers: [helperName, ...nested.inlinedHelpers],
+  };
+}
+
+function helperInvocationCall(
+  expression: ts.Expression,
+): ts.CallExpression | undefined {
+  if (ts.isCallExpression(expression)) return expression;
+  if (
+    ts.isAwaitExpression(expression) &&
+    ts.isCallExpression(expression.expression)
+  )
+    return expression.expression;
+  if (
+    ts.isVoidExpression(expression) &&
+    ts.isCallExpression(expression.expression)
+  )
+    return expression.expression;
+  return undefined;
+}
+
 function transitionFromFlattenedSetterStatements(
   source: ts.SourceFile,
   fileName: string,
@@ -594,4 +715,219 @@ function transitionFromFlattenedSetterStatements(
     writes: [...new Set(effects.flatMap(effectWriteVars))],
     confidence: confidenceForEffects(effects),
   };
+}
+
+function transitionsFromBranchPaths(
+  source: ts.SourceFile,
+  fileName: string,
+  attr: string,
+  node: ts.JsxAttribute,
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  component: string,
+  effectApis: Set<string>,
+  asyncOutcomes: Record<string, { success: Value; error?: Value }>,
+  locator: Locator | undefined,
+  routePlugin: RoutePlugin | undefined,
+  routePatterns: readonly string[],
+  warnings: ExtractionWarning[],
+  disabledGuard: ParsedGuard | undefined,
+  contextBindings: ContextBindings,
+  handlerContext: HandlerExtractionContext,
+): Transition[] {
+  const enumerated = enumerateGuardedPaths(statements, {
+    setters,
+    initialLocals: mergeLocals(
+      componentScopeLocalsFor(node, setters, contextBindings),
+      handlerContext.initialLocals,
+    ),
+  });
+  if (enumerated.truncated) {
+    const anchor = lineAndColumn(source, node);
+    warnings.push({
+      message: `Unextractable handler ${component}.${attr} [branch-paths-truncated] (${fileName}:${anchor.line}:${anchor.column})`,
+      ...anchor,
+      caveat: unextractableHandlerCaveat(
+        `${component}.${attr}`,
+        "branch-paths-truncated",
+        { file: fileName, ...anchor },
+      ),
+    });
+  }
+
+  const transitions = enumerated.paths.flatMap((path, index) => {
+    const flat = flattenHandlerHelpers(path.statements, { handlers, setters });
+    const asyncTransitions = transitionsFromAsyncStatements(
+      source,
+      fileName,
+      attr,
+      node,
+      flat.statements,
+      setters,
+      component,
+      effectApis,
+      asyncOutcomes,
+      locator,
+      routePlugin,
+      routePatterns,
+      warnings,
+      handlerContext.effectOpAliases ?? new Map(),
+    );
+    const callbackTransitions =
+      asyncTransitions.length > 0
+        ? []
+        : transitionsFromCallbackEffectStatements(
+            source,
+            fileName,
+            attr,
+            node,
+            flat.statements,
+            setters,
+            component,
+            effectApis,
+            asyncOutcomes,
+            locator,
+            warnings,
+            handlerContext.effectOpAliases ?? new Map(),
+          );
+    const pathTransitions =
+      asyncTransitions.length > 0
+        ? asyncTransitions
+        : callbackTransitions.length > 0
+          ? callbackTransitions
+          : transitionArray(
+              transitionFromFlattenedSetterStatements(
+                source,
+                fileName,
+                node,
+                attr,
+                component,
+                flat.statements,
+                setters,
+                locator,
+                handlerContext.semanticName,
+              ),
+            );
+    return applyParsedGuard(
+      pathTransitions.map((transition) =>
+        transition.cls === "user"
+          ? { ...transition, id: `${transition.id}#path${index}` }
+          : transition,
+      ),
+      combineParsedGuards([disabledGuard, path.guard]),
+    );
+  });
+
+  return dedupeTransitions(transitions);
+}
+
+function dedupeTransitions(transitions: readonly Transition[]): Transition[] {
+  const seen = new Set<string>();
+  const deduped: Transition[] = [];
+  for (const transition of transitions) {
+    if (seen.has(transition.id)) continue;
+    seen.add(transition.id);
+    deduped.push(transition);
+  }
+  return deduped;
+}
+
+function transitionArray(
+  transition: Transition | undefined,
+): readonly Transition[] {
+  return transition ? [transition] : [];
+}
+
+function branchEnclosesModeledEffect(
+  statements: readonly ts.Statement[],
+  effectApis: Set<string>,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  fileName: string,
+  effectOpAliases: Parameters<typeof statementHasAwaitedEffect>[3],
+): boolean {
+  for (const statement of statements) {
+    if (
+      ts.isIfStatement(statement) &&
+      ifStatementHasModeledArmEffect(
+        statement,
+        effectApis,
+        setters,
+        handlers,
+        fileName,
+        effectOpAliases,
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
+function ifStatementHasModeledArmEffect(
+  statement: ts.IfStatement,
+  effectApis: Set<string>,
+  setters: Map<string, SetterBinding>,
+  handlers: Map<string, ExtractableHandler>,
+  fileName: string,
+  effectOpAliases: Parameters<typeof statementHasAwaitedEffect>[3],
+): boolean {
+  for (const arm of ifStatementArms(statement)) {
+    const flat = flattenHandlerHelpers(arm, { handlers, setters });
+    if (
+      flat.statements.some(
+        (candidate) =>
+          statementHasAwaitedEffect(
+            candidate,
+            effectApis,
+            fileName,
+            effectOpAliases,
+          ) ||
+          statementHasCallbackEffect(
+            candidate,
+            effectApis,
+            fileName,
+            effectOpAliases,
+          ),
+      )
+    )
+      return true;
+    if (
+      flat.statements.some(
+        (candidate) =>
+          ts.isIfStatement(candidate) &&
+          ifStatementHasModeledArmEffect(
+            candidate,
+            effectApis,
+            setters,
+            handlers,
+            fileName,
+            effectOpAliases,
+          ),
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
+function ifStatementArms(statement: ts.IfStatement): readonly ts.Statement[][] {
+  const arms: ts.Statement[][] = [
+    statementsForBranchArm(statement.thenStatement),
+  ];
+  let elseStatement = statement.elseStatement;
+  while (elseStatement) {
+    if (ts.isIfStatement(elseStatement)) {
+      arms.push(statementsForBranchArm(elseStatement.thenStatement));
+      elseStatement = elseStatement.elseStatement;
+      continue;
+    }
+    arms.push(statementsForBranchArm(elseStatement));
+    break;
+  }
+  return arms;
+}
+
+function statementsForBranchArm(statement: ts.Statement): ts.Statement[] {
+  return ts.isBlock(statement) ? Array.from(statement.statements) : [statement];
 }
