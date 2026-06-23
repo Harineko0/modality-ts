@@ -6,6 +6,7 @@ export interface ZustandStoreMetadata {
   middleware?: string;
   storageKind?: string;
   immer?: boolean;
+  numericSeed?: boolean;
   warning?: string;
 }
 
@@ -19,6 +20,9 @@ export function metadataToRecord(
   if (metadata.middleware) record.middleware = metadata.middleware;
   if (metadata.storageKind) record.storageKind = metadata.storageKind;
   if (metadata.immer !== undefined) record.immer = metadata.immer;
+  if (metadata.numericSeed !== undefined) {
+    record.numericSeed = metadata.numericSeed;
+  }
   if (metadata.warning) record.warning = metadata.warning;
   return record;
 }
@@ -38,6 +42,9 @@ export function metadataFromRecord(
       ? { storageKind: record.storageKind }
       : {}),
     ...(typeof record.immer === "boolean" ? { immer: record.immer } : {}),
+    ...(typeof record.numericSeed === "boolean"
+      ? { numericSeed: record.numericSeed }
+      : {}),
     ...(typeof record.warning === "string" ? { warning: record.warning } : {}),
   };
 }

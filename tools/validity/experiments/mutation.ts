@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { CheckReport } from "modality-ts/core";
-import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
+import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import {
   countMutationCandidates,
   generateMutants,
@@ -77,13 +77,16 @@ export function mutationExperiment(
     async run(ctx) {
       const perBenchmark: ValidityBenchmarkSlice[] = [];
       for (const benchmark of ctx.manifest.benchmarks) {
-        perBenchmark.push(
-          await runBenchmarkMutation(ctx, benchmark, {
-            generate,
-            countCandidates,
-            runOnce,
-            compareBehaviour,
-          }),
+        ctx.log?.(`benchmark ${benchmark.id}: start`);
+        const slice = await runBenchmarkMutation(ctx, benchmark, {
+          generate,
+          countCandidates,
+          runOnce,
+          compareBehaviour,
+        });
+        perBenchmark.push(slice);
+        ctx.log?.(
+          `benchmark ${benchmark.id}: ${slice.status} ${slice.headline}`,
         );
       }
       return summarizeMutation(ctx, perBenchmark);
@@ -105,6 +108,7 @@ async function runBenchmarkMutation(
 
   let baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>;
   try {
+    ctx.log?.(`benchmark ${benchmark.id}: baseline start`);
     baseline = await deps.runOnce({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
@@ -115,6 +119,8 @@ async function runBenchmarkMutation(
       packageJsonPath: resolve(benchmarkRoot, benchmark.packageJsonPath),
       configPath: resolve(benchmarkRoot, "modality.config.ts"),
       harnessPath,
+      log: (message) =>
+        ctx.log?.(`benchmark ${benchmark.id}: baseline ${message}`),
     });
   } catch (error) {
     const message = errorMessage(error);
@@ -148,17 +154,24 @@ async function runBenchmarkMutation(
   let mutants: MutantDescriptor[] = [];
   let candidateCount = 0;
   try {
+    ctx.log?.(`benchmark ${benchmark.id}: mutation candidates start`);
     candidateCount = await deps.countCandidates({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
       mutation: settings,
     });
+    ctx.log?.(
+      `benchmark ${benchmark.id}: mutation generate start candidates=${candidateCount} max=${settings.maxMutants}`,
+    );
     mutants = await deps.generate({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
       workDir: join(outDir, "mutants"),
       mutation: settings,
     });
+    ctx.log?.(
+      `benchmark ${benchmark.id}: mutation generate done mutants=${mutants.length}`,
+    );
   } catch (error) {
     return failedSlice(
       benchmark,
@@ -172,15 +185,18 @@ async function runBenchmarkMutation(
 
   const results: MutantResult[] = [];
   for (const mutant of mutants) {
-    results.push(
-      await classifyMutant({
-        ctx,
-        benchmark,
-        mutant,
-        outDir: join(outDir, "runs", mutant.mutantId),
-        baseline,
-        deps,
-      }),
+    ctx.log?.(`benchmark ${benchmark.id}: mutant ${mutant.mutantId} start`);
+    const result = await classifyMutant({
+      ctx,
+      benchmark,
+      mutant,
+      outDir: join(outDir, "runs", mutant.mutantId),
+      baseline,
+      deps,
+    });
+    results.push(result);
+    ctx.log?.(
+      `benchmark ${benchmark.id}: mutant ${mutant.mutantId} ${result.status}`,
     );
   }
   const metrics = mutationMetrics(
@@ -240,6 +256,10 @@ async function classifyMutant(input: {
       ),
       configPath: resolve(input.mutant.appRoot, "modality.config.ts"),
       harnessPath,
+      log: (message) =>
+        input.ctx.log?.(
+          `benchmark ${input.benchmark.id}: mutant ${input.mutant.mutantId} ${message}`,
+        ),
     });
   } catch (error) {
     return {

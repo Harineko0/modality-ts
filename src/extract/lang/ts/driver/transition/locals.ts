@@ -129,9 +129,9 @@ export function bindConstStatement(
   for (const declaration of statement.declarationList.declarations) {
     if (ts.isObjectBindingPattern(declaration.name)) {
       for (const element of declaration.name.elements) {
-        if (!ts.isIdentifier(element.name)) return false;
+        if (!ts.isIdentifier(element.name)) continue;
         const setter = setters.get(element.name.text);
-        if (!setter) return false;
+        if (!setter || !shouldBindDestructuredReadAlias(setter)) continue;
         locals.set(element.name.text, readBinding(setter.varId));
       }
       continue;
@@ -139,10 +139,6 @@ export function bindConstStatement(
     if (!ts.isIdentifier(declaration.name) || !declaration.initializer)
       return false;
     const directSetter = setters.get(declaration.name.text);
-    if (directSetter) {
-      locals.set(declaration.name.text, readBinding(directSetter.varId));
-      continue;
-    }
     const setterAlias = ts.isIdentifier(declaration.initializer)
       ? (setters.get(declaration.initializer.text) ??
         locals.get(declaration.initializer.text)?.setter)
@@ -157,10 +153,21 @@ export function bindConstStatement(
               locals,
             )
           : booleanExpr(declaration.initializer, setters, locals)));
-    if (!binding) return false;
+    if (!binding) {
+      if (directSetter) {
+        locals.set(declaration.name.text, readBinding(directSetter.varId));
+        continue;
+      }
+      return false;
+    }
     locals.set(declaration.name.text, binding);
   }
   return true;
+}
+
+function shouldBindDestructuredReadAlias(setter: SetterBinding): boolean {
+  if (!setter.varId.startsWith("swr:")) return true;
+  return /^swr:use[A-Z0-9].*:/.test(setter.varId);
 }
 
 export function inlinedHelperCall(

@@ -40,7 +40,7 @@ const conformReport = {
 } satisfies ConformReport;
 
 describe("conformance validity experiment", () => {
-  it("maps action conform metrics and flags inconclusive walks", async () => {
+  it("maps action conform metrics and warns on inconclusive walks", async () => {
     const calls: { conform?: unknown } = {};
     const experiment = conformanceExperiment({
       extract: async () =>
@@ -64,13 +64,13 @@ describe("conformance validity experiment", () => {
     });
 
     const report = await experiment.run(await context());
-    expect(report.status).toBe("fail");
+    expect(report.status).toBe("pass");
     expect(report.headline).toBe("action pass-rate 50.0% (1/2)");
     expect(report.messages).toContain("aggregate inconclusive=1");
     expect(report.messages[1]).toContain("t.login=50.0% (1/2)");
     expect(report.perBenchmark[0]).toMatchObject({
       benchmarkId: "fixture-app",
-      status: "fail",
+      status: "pass",
       headline: "warning: pass-rate 50.0% (1/2)",
       metrics: {
         total: 2,

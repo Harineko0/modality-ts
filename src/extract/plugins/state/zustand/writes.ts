@@ -105,6 +105,7 @@ export function discoverZustandWritesDetailed(
           id: `zustand:${storeName}.${actionName}.action`,
           varId: primaryVar ?? storeVarId(storeName, actionName),
           symbolName: actionName,
+          fixedEffect: effect,
           source: anchor(source, fileName, actionFn),
         });
         if (isResetAction(effect, storeName, storeFieldInitials)) {
@@ -155,6 +156,7 @@ export function discoverZustandWritesDetailed(
               varId:
                 primaryWrittenVar(actionEffect, selectorChannel.storeName) ??
                 selectorChannel.channel.varId,
+              fixedEffect: actionEffect,
             });
           }
         }

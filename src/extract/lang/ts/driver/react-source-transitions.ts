@@ -239,13 +239,18 @@ function extractReactSourceTransitionsImpl(
     ) {
       binding.resettable = true;
     }
-    const fixedEffect = options.setterFixedEffects?.get(channel.symbolName);
+    const fixedEffect =
+      channel.fixedEffect ??
+      options.setterFixedEffects?.get(channel.symbolName);
     if (fixedEffect) binding.fixedEffect = fixedEffect;
     if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
     bindSetter(setters, channel.symbolName, binding);
   }
-  for (const [symbolName, setter] of contextBindings.setters)
+  for (const [symbolName, setter] of contextBindings.setters) {
+    const existing = setters.get(symbolName);
+    if (existing?.fixedEffect && !setter.fixedEffect) continue;
     setters.set(symbolName, setter);
+  }
   const handlers = new Map<string, ExtractableHandler>();
   const renderBoundaries = discoverComponentRenderBoundaries(
     source,

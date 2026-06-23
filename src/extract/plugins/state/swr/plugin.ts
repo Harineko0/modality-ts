@@ -26,7 +26,12 @@ export function swrSource(): StateSourcePlugin {
     },
     writeChannels: (ctx) => {
       const typed = ctx as ChannelCtxWithTypes;
-      return discoverSwrReadChannels(ctx.sourceText, ctx.fileName, typed.types);
+      return discoverSwrReadChannels(
+        ctx.sourceText,
+        ctx.fileName,
+        typed.types,
+        ctx.relatedFragments,
+      );
     },
     decodeBinding: decodeSwrBinding,
     template: (decl) => templateForSwrDecl(decl),

@@ -23,12 +23,16 @@ export function flattenHandlerHelpers(
   const inlinedHelpers: string[] = [];
 
   for (const statement of statements) {
-    const helperName = bareHelperInvocationName(statement, options);
-    if (!helperName || depth >= maxDepth || visited.has(helperName)) {
+    const invocation = helperInvocation(statement, options);
+    if (
+      !invocation ||
+      depth >= maxDepth ||
+      visited.has(invocation.helperName)
+    ) {
       flattened.push(statement);
       continue;
     }
-    const helper = options.handlers.get(helperName);
+    const helper = options.handlers.get(invocation.helperName);
     if (
       !helper ||
       !ts.isBlock(helper.body) ||
@@ -38,10 +42,11 @@ export function flattenHandlerHelpers(
       continue;
     }
     const nextVisited = new Set(visited);
-    nextVisited.add(helperName);
-    const helperStatements = droppableTrailingReturn(helper.body.statements)
-      ? helper.body.statements.slice(0, -1)
-      : helper.body.statements;
+    nextVisited.add(invocation.helperName);
+    const helperStatements = [
+      ...parameterBindingStatements(helper, invocation.call),
+      ...helper.body.statements,
+    ];
     const nested = flattenHandlerHelpers(
       helperStatements,
       options,
@@ -49,24 +54,23 @@ export function flattenHandlerHelpers(
       depth + 1,
     );
     flattened.push(...nested.statements);
-    inlinedHelpers.push(helperName, ...nested.inlinedHelpers);
+    inlinedHelpers.push(invocation.helperName, ...nested.inlinedHelpers);
   }
 
   return { statements: flattened, inlinedHelpers };
 }
 
-function bareHelperInvocationName(
+function helperInvocation(
   statement: ts.Statement,
   options: HelperInlineOptions,
-): string | undefined {
+): { helperName: string; call: ts.CallExpression } | undefined {
   if (!ts.isExpressionStatement(statement)) return undefined;
   const call = helperInvocationCall(statement.expression);
-  if (!call || call.arguments.length > 0 || !ts.isIdentifier(call.expression))
-    return undefined;
+  if (!call || !ts.isIdentifier(call.expression)) return undefined;
   const name = call.expression.text;
   if (options.setters.has(name) || !options.handlers.has(name))
     return undefined;
-  return name;
+  return { helperName: name, call };
 }
 
 function helperInvocationCall(
@@ -87,21 +91,14 @@ function helperInvocationCall(
 }
 
 function helperBodyCanInline(statements: ts.NodeArray<ts.Statement>): boolean {
-  for (let index = 0; index < statements.length; index += 1) {
-    const statement = statements[index];
-    if (!ts.isReturnStatement(statement)) continue;
-    if (index === statements.length - 1 && returnIsDroppable(statement))
-      continue;
-    return false;
+  const visit = (node: ts.Node): boolean => {
+    if (ts.isReturnStatement(node)) return returnIsDroppable(node);
+    return ts.forEachChild(node, visit) ?? true;
+  };
+  for (const statement of statements) {
+    if (!visit(statement)) return false;
   }
   return true;
-}
-
-function droppableTrailingReturn(
-  statements: ts.NodeArray<ts.Statement>,
-): boolean {
-  const last = statements[statements.length - 1];
-  return Boolean(last && ts.isReturnStatement(last) && returnIsDroppable(last));
 }
 
 function returnIsDroppable(statement: ts.ReturnStatement): boolean {
@@ -114,4 +111,35 @@ function returnIsDroppable(statement: ts.ReturnStatement): boolean {
     return true;
   }
   return ts.isCallExpression(expression);
+}
+
+function parameterBindingStatements(
+  helper: ExtractableHandler,
+  call: ts.CallExpression,
+): ts.Statement[] {
+  const statements: ts.Statement[] = [];
+  for (let index = 0; index < call.arguments.length; index += 1) {
+    const parameter = helper.parameters[index];
+    const argument = call.arguments[index];
+    if (!parameter || !argument || !ts.isIdentifier(parameter.name)) {
+      return [];
+    }
+    statements.push(
+      ts.factory.createVariableStatement(
+        undefined,
+        ts.factory.createVariableDeclarationList(
+          [
+            ts.factory.createVariableDeclaration(
+              parameter.name.text,
+              undefined,
+              undefined,
+              argument,
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    );
+  }
+  return statements;
 }

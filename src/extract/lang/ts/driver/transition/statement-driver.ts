@@ -34,6 +34,7 @@ import { createEngineLeafDispatch } from "./engine-leaf-dispatch.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
 import { valueExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
+import { bindConstStatement } from "./locals.js";
 import { summarizeSetterCall } from "./setter-write.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
@@ -121,9 +122,17 @@ function handlerSummaryState(
 function fallbackSummaries(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
 ): EffectSummary[] {
   const summaries: EffectSummary[] = [];
+  const locals = new Map(initialLocals);
   for (const statement of statements) {
+    if (bindConstStatement(statement, setters, locals, true)) continue;
+    const setterSummary = summarizeSetterStatement(statement, setters, locals);
+    if (setterSummary) {
+      summaries.push(setterSummary);
+      continue;
+    }
     for (const setter of escapedSettersInStatement(statement, setters)) {
       summaries.push({
         effect: { kind: "havoc", var: setter.varId },
@@ -246,9 +255,20 @@ function summarizeStatementList(
   state: StatementSummaryState,
 ): StatementSummaryResult {
   const compiled = compileStatementList(statements, setters, state);
-  if (compiled) return compiled;
+  if (compiled) {
+    if (
+      compiled.summaries.length > 0 ||
+      statements.every(
+        (statement) =>
+          settersWrittenIn(statement, setters).length === 0 &&
+          summarizeSetterStatement(statement, setters) === undefined,
+      )
+    ) {
+      return compiled;
+    }
+  }
   return {
-    summaries: fallbackSummaries(statements, setters),
+    summaries: fallbackSummaries(statements, setters, state.locals),
     terminated: false,
   };
 }
@@ -422,7 +442,7 @@ export function summarizeAsyncSegment(
       snapshottedReads,
       ...(initialLocals?.size ? { initialLocals } : {}),
       ...(source ? { source, fileName: source.fileName } : {}),
-    }) ?? fallbackSummaries(statements, setters),
+    }) ?? fallbackSummaries(statements, setters, initialLocals),
   );
 }
 

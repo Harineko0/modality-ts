@@ -188,8 +188,9 @@ function widenDomain(
   const maxNegativeDelta =
     info.negativeDeltas.length > 0 ? Math.max(...info.negativeDeltas) : 0;
 
-  const deltaMin = literalMin - maxNegativeDelta * maxDepth;
-  const deltaMax = literalMax + maxPositiveDelta * maxDepth;
+  const deltaDepth = maxDepth;
+  const deltaMin = literalMin - maxNegativeDelta * deltaDepth;
+  const deltaMax = literalMax + maxPositiveDelta * deltaDepth;
 
   let min = deltaMin;
   let max = deltaMax;
@@ -216,7 +217,10 @@ export function widenNumericDomainsFromTransitions(args: {
   numericSeedVarIds?: ReadonlySet<string>;
 }): StateVarDecl[] {
   return args.vars.map((decl) => {
-    if (!isSingletonNumericSeed(decl.domain, decl.id, args.numericSeedVarIds)) {
+    if (
+      decl.domain.kind !== "boundedInt" ||
+      decl.domain.min !== decl.domain.max
+    ) {
       return decl;
     }
     const info = args.transitions.reduce(
@@ -224,6 +228,14 @@ export function widenNumericDomainsFromTransitions(args: {
         mergeInfo(acc, collectFromEffect(transition.effect, decl.id)),
       emptyInfo(),
     );
+    const hasDeltaEvidence =
+      info.positiveDeltas.length > 0 || info.negativeDeltas.length > 0;
+    if (
+      !hasDeltaEvidence &&
+      !isSingletonNumericSeed(decl.domain, decl.id, args.numericSeedVarIds)
+    ) {
+      return decl;
+    }
     const hasEvidence =
       info.literals.length > 0 ||
       info.positiveDeltas.length > 0 ||

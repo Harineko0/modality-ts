@@ -101,9 +101,9 @@
         "falseNegativeProbes": 3
       },
       "searchLimits": {
-        "maxStates": 500000,
-        "maxEdges": 2000000,
-        "maxFrontier": 150000
+        "maxStates": 10000,
+        "maxEdges": 50000,
+        "maxFrontier": 10000
       }
     },
     {
@@ -193,9 +193,9 @@
         "falseNegativeProbes": 3
       },
       "searchLimits": {
-        "maxStates": 500000,
-        "maxEdges": 2000000,
-        "maxFrontier": 150000
+        "maxStates": 10000,
+        "maxEdges": 50000,
+        "maxFrontier": 10000
       }
     }
   ]

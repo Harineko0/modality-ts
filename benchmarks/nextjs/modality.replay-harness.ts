@@ -1,5 +1,5 @@
 import { Provider as JotaiProvider, createStore } from "jotai";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { ledgerOpsRoutes } from "../shared/app-spec/routes.js";
@@ -78,11 +78,16 @@ function ReplayNextClient({
 function ReplayNextRoot({
   initialRoute,
   onRoute,
+  bindRouteSetter,
 }: {
   initialRoute: string;
   onRoute(route: string): void;
+  bindRouteSetter(setRoute: (route: string) => void): void;
 }) {
   const [route, setRoute] = useState(initialRoute);
+  useEffect(() => {
+    bindRouteSetter(setRoute);
+  }, [bindRouteSetter]);
   return React.createElement(ReplayNextClient, {
     route,
     onNavigate: (nextRoute) => {
@@ -96,6 +101,7 @@ const harness = createBenchmarkReplayHarness({
   initialRoute: "/login",
   mount(context) {
     let currentRoute = context.initialRoute;
+    let setReplayRoute: ((route: string) => void) | undefined;
     const store = createStore();
     const root = createRoot(context.container);
     root.render(
@@ -119,6 +125,9 @@ const harness = createBenchmarkReplayHarness({
             onRoute: (route) => {
               currentRoute = route;
             },
+            bindRouteSetter: (setRoute) => {
+              setReplayRoute = setRoute;
+            },
           }),
         ),
       ),
@@ -127,9 +136,7 @@ const harness = createBenchmarkReplayHarness({
       route: () => currentRoute,
       navigate: async (mode, to) => {
         currentRoute = mode === "back" ? "/login" : (to ?? "/login");
-        context.container
-          .querySelector<HTMLButtonElement>(`button`)
-          ?.dispatchEvent(new Event("click", { bubbles: true }));
+        setReplayRoute?.(currentRoute);
       },
       cleanup: () => root.unmount(),
       observation: {

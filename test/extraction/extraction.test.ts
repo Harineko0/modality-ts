@@ -3281,7 +3281,7 @@ describe("useState inventory", () => {
     expect(
       result.transitions.map((transition) => [transition.id, transition.reads]),
     ).toEqual([
-      ["App.onClick.api.saveTodo.start", []],
+      ["App.onClick.api.saveTodo.start", ["local:App.saveStatus"]],
       [
         "App.onClick.api.saveTodo.success",
         ["local:App.saveStatus", "sys:pending"],

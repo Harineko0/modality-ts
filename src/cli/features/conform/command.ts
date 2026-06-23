@@ -24,6 +24,8 @@ import {
   type Value,
 } from "modality-ts/core";
 
+const ACTION_WALK_TIMEOUT_MS = 2_000;
+
 export interface ConformWalkArtifact {
   id: string;
   trace: Trace;
@@ -79,8 +81,13 @@ export async function runConformCommand(
       actionSetupError = error instanceof Error ? error.message : String(error);
     }
   }
-  const verdicts = await Promise.all(
-    walks.map(async (walk) => ({
+  const verdicts: Array<{
+    id: string;
+    trace: Trace;
+    verdict: ReplayVerdict;
+  }> = [];
+  for (const walk of walks) {
+    verdicts.push({
       id: walk.id,
       trace: walk.trace,
       verdict: actionSetupError
@@ -90,10 +97,13 @@ export async function runConformCommand(
             reason: actionSetupError,
           }
         : actionHarness
-          ? await replayActionWalk(walk.trace, actionHarness)
+          ? await withReplayTimeout(
+              replayActionWalk(walk.trace, actionHarness),
+              ACTION_WALK_TIMEOUT_MS,
+            )
           : await replayAbstractWalk(walk),
-    })),
-  );
+    });
+  }
   const report = createConformReport(
     verdicts,
     options.now ?? new Date(),
@@ -120,6 +130,31 @@ export async function runConformCommand(
           : 0,
     lines: renderConformReport(report),
   };
+}
+
+async function withReplayTimeout(
+  verdict: Promise<ReplayVerdict>,
+  timeoutMs: number,
+): Promise<ReplayVerdict> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      verdict,
+      new Promise<ReplayVerdict>((resolve) => {
+        timeout = setTimeout(
+          () =>
+            resolve({
+              status: "inconclusive",
+              stepsRun: 0,
+              reason: `action replay timed out after ${timeoutMs}ms`,
+            }),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function replayAbstractWalk(

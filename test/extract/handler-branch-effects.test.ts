@@ -128,6 +128,39 @@ describe("handler branch effect extraction", () => {
     expect(JSON.stringify(enqueue[0]?.guard)).toContain("ready");
   });
 
+  it("extracts branch effects from an inlined helper with a literal argument", () => {
+    const result = extractReactSourceTransitions(
+      `
+        import { useState } from "react";
+
+        function App() {
+          const [retryCount, setRetryCount] = useState(0);
+          const runAction = async (action: "retry" | "noop") => {
+            if (action === "retry") {
+              await retryInvoice();
+              setRetryCount(retryCount + 1);
+              return;
+            }
+            if (action === "noop") {
+              setRetryCount(retryCount);
+            }
+          };
+          return <button onClick={() => runAction("retry")} />;
+        }
+      `,
+      {
+        fileName: "BranchArgHelper.tsx",
+        effectApis: ["retryInvoice"],
+        asyncOutcomes: { retryInvoice: { success: true, error: false } },
+      },
+    );
+
+    expect(userEnqueues(result.transitions, "retryInvoice")).toHaveLength(1);
+    expect(resolveTransitions(result.transitions, "retryInvoice")).toHaveLength(
+      2,
+    );
+  });
+
   it("keeps branch-local useState writes on the existing conditional path", () => {
     const result = extractReactSourceTransitions(
       `

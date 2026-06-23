@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
+import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import {
   compareModels,
   type ModelComparison,
@@ -67,13 +67,16 @@ export function metamorphicExperiment(
     async run(ctx) {
       const perBenchmark: ValidityBenchmarkSlice[] = [];
       for (const benchmark of ctx.manifest.benchmarks) {
-        perBenchmark.push(
-          await runBenchmarkMetamorphic(ctx, benchmark, {
-            generate,
-            countCandidates,
-            runOnce,
-            compare,
-          }),
+        ctx.log?.(`benchmark ${benchmark.id}: start`);
+        const slice = await runBenchmarkMetamorphic(ctx, benchmark, {
+          generate,
+          countCandidates,
+          runOnce,
+          compare,
+        });
+        perBenchmark.push(slice);
+        ctx.log?.(
+          `benchmark ${benchmark.id}: ${slice.status} ${slice.headline}`,
         );
       }
       return summarizeMetamorphic(ctx, perBenchmark);
@@ -94,6 +97,7 @@ async function runBenchmarkMetamorphic(
 
   let baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>;
   try {
+    ctx.log?.(`benchmark ${benchmark.id}: baseline start`);
     baseline = await deps.runOnce({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
@@ -104,6 +108,8 @@ async function runBenchmarkMetamorphic(
       packageJsonPath: resolve(benchmarkRoot, benchmark.packageJsonPath),
       configPath: resolve(benchmarkRoot, "modality.config.ts"),
       harnessPath: resolve(benchmarkRoot, "modality.replay-harness.ts"),
+      log: (message) =>
+        ctx.log?.(`benchmark ${benchmark.id}: baseline ${message}`),
     });
   } catch (error) {
     return failedSlice(benchmark, `baseline failed: ${errorMessage(error)}`, {
@@ -115,17 +121,24 @@ async function runBenchmarkMetamorphic(
   let variants: MetamorphicVariantDescriptor[] = [];
   let candidateCount = 0;
   try {
+    ctx.log?.(`benchmark ${benchmark.id}: metamorphic candidates start`);
     candidateCount = await deps.countCandidates({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
       metamorphic: settings,
     });
+    ctx.log?.(
+      `benchmark ${benchmark.id}: metamorphic generate start candidates=${candidateCount} max=${settings.maxVariants}`,
+    );
     variants = await deps.generate({
       appRoot: benchmarkRoot,
       sourcePaths: benchmark.sourcePaths,
       workDir: join(outDir, "variants"),
       metamorphic: settings,
     });
+    ctx.log?.(
+      `benchmark ${benchmark.id}: metamorphic generate done variants=${variants.length}`,
+    );
   } catch (error) {
     return failedSlice(
       benchmark,
@@ -136,14 +149,18 @@ async function runBenchmarkMetamorphic(
 
   const results: VariantResult[] = [];
   for (const variant of variants) {
-    results.push(
-      await classifyVariant({
-        benchmark,
-        variant,
-        outDir: join(outDir, "runs", variant.variantId),
-        baseline,
-        deps,
-      }),
+    ctx.log?.(`benchmark ${benchmark.id}: variant ${variant.variantId} start`);
+    const result = await classifyVariant({
+      ctx,
+      benchmark,
+      variant,
+      outDir: join(outDir, "runs", variant.variantId),
+      baseline,
+      deps,
+    });
+    results.push(result);
+    ctx.log?.(
+      `benchmark ${benchmark.id}: variant ${variant.variantId} ${result.status}`,
     );
   }
 
@@ -175,6 +192,7 @@ async function runBenchmarkMetamorphic(
 }
 
 async function classifyVariant(input: {
+  ctx: ValidityRunContext;
   benchmark: BenchmarkDefinition;
   variant: MetamorphicVariantDescriptor;
   outDir: string;
@@ -196,6 +214,10 @@ async function classifyVariant(input: {
       ),
       configPath: resolve(input.variant.appRoot, "modality.config.ts"),
       harnessPath: resolve(input.variant.appRoot, "modality.replay-harness.ts"),
+      log: (message) =>
+        input.ctx.log?.(
+          `benchmark ${input.benchmark.id}: variant ${input.variant.variantId} ${message}`,
+        ),
     });
   } catch (error) {
     return {

@@ -41,6 +41,8 @@ export interface WriteChannel {
   symbolName: string;
   /** Stable checker symbol identity when semantic extraction is available. */
   symbolKey?: string;
+  /** Precise effect for zero-argument action channels. */
+  fixedEffect?: EffectIR;
   source: SourceAnchor;
 }
 
@@ -76,6 +78,7 @@ export interface ChannelCtx {
   sourceText: string;
   fileName: string;
   typePlugins?: readonly import("./type-plugin.js").TypePlugin[];
+  relatedFragments?: readonly { sourceText: string; fileName: string }[];
 }
 
 export interface ExtractCtx {

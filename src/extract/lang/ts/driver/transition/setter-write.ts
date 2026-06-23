@@ -36,7 +36,14 @@ export function setterCallFrom(
   if (ts.isIdentifier(call.expression) && call.arguments.length === 1) {
     const setter = resolveSetterBinding(setters, call.expression, types);
     const argument = call.arguments[0];
-    return setter && argument ? { setter, argument } : undefined;
+    if (
+      !setter ||
+      !argument ||
+      !setterNameMatchesTarget(call.expression.text, setter)
+    ) {
+      return undefined;
+    }
+    return { setter, argument };
   }
   const name = callName(call.expression);
   const atomArg = call.arguments[0];
@@ -51,6 +58,23 @@ export function setterCallFrom(
     return setter && argument ? { setter, argument } : undefined;
   }
   return undefined;
+}
+
+function setterNameMatchesTarget(
+  setterName: string,
+  setter: SetterBinding,
+): boolean {
+  if (setter.fixedEffect) return true;
+  if (setter.stateName === setterName) return true;
+  if (!setterName.startsWith("set") || setterName.length <= 3) return true;
+  const expected = `${setterName[3]!.toLowerCase()}${setterName.slice(4)}`;
+  const target = setter.stateName.split(/[.:]/u).at(-1) ?? setter.stateName;
+  return (
+    target === expected ||
+    target === `${expected}Atom` ||
+    expected === `${target}Local` ||
+    expected === `${target}State`
+  );
 }
 
 export function summarizeSetterWrite(

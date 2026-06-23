@@ -224,6 +224,7 @@ export function transitionsFromResolvedHandler(
           handlerContext,
         );
         if (flatBranchTransitions.length > 0) return flatBranchTransitions;
+        return [];
       }
       const flatSetterTransition = transitionFromFlattenedSetterStatements(
         source,
@@ -234,6 +235,7 @@ export function transitionsFromResolvedHandler(
         flat.statements,
         setters,
         locator,
+        handlerContext.initialLocals,
         handlerContext.semanticName,
       );
       if (flatSetterTransition)
@@ -650,17 +652,17 @@ function flattenConciseHelper(
 ): ReturnType<typeof flattenHandlerHelpers> | undefined {
   if (ts.isBlock(handler.body)) return undefined;
   const call = helperInvocationCall(handler.body);
-  if (!call || call.arguments.length > 0 || !ts.isIdentifier(call.expression))
-    return undefined;
+  if (!call || !ts.isIdentifier(call.expression)) return undefined;
   const helperName = call.expression.text;
   const helper = options.handlers.get(helperName);
-  if (!helper || !ts.isBlock(helper.body) || options.setters.has(helperName))
+  if (!helper || !ts.isBlock(helper.body) || options.setters.has(helperName)) {
     return undefined;
-  const nested = flattenHandlerHelpers(helper.body.statements, options);
-  return {
-    statements: nested.statements,
-    inlinedHelpers: [helperName, ...nested.inlinedHelpers],
-  };
+  }
+  const nested = flattenHandlerHelpers(
+    [ts.factory.createExpressionStatement(call)],
+    options,
+  );
+  return nested.inlinedHelpers.length > 0 ? nested : undefined;
 }
 
 function helperInvocationCall(
@@ -689,32 +691,47 @@ function transitionFromFlattenedSetterStatements(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
   locator: Locator | undefined,
+  initialLocals: Map<string, BoundExpr> | undefined,
   semanticName: string | undefined,
 ): Transition | undefined {
-  const summaries = summarizeAsyncSegment(statements, setters);
+  const summaries = summarizeAsyncSegment(
+    statements,
+    setters,
+    undefined,
+    initialLocals,
+  );
   const effects = summaries
     .map((summary) => summary.effect)
     .filter(
       (effect) => !(effect.kind === "seq" && effect.effects.length === 0),
     );
   if (effects.length === 0) return undefined;
+  const singleEffect = effects.length === 1 ? effects[0] : undefined;
+  const singleWrite =
+    singleEffect?.kind === "assign"
+      ? stateNameFromVarId(singleEffect.var)
+      : undefined;
   return {
     id: transitionIdFromSemanticName(
       component,
       attr,
-      semanticName,
-      "seq",
-      ".seq",
+      singleWrite ? undefined : semanticName,
+      singleWrite ? `${singleWrite}.seq` : "seq",
+      singleWrite ? "" : ".seq",
     ),
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: { kind: "lit", value: true },
-    effect: { kind: "seq", effects },
+    effect: singleEffect ?? { kind: "seq", effects },
     reads: [...new Set(summaries.flatMap((summary) => summary.reads))],
     writes: [...new Set(effects.flatMap(effectWriteVars))],
     confidence: confidenceForEffects(effects),
   };
+}
+
+function stateNameFromVarId(varId: string): string {
+  return varId.split(/[.:]/u).at(-1) ?? varId;
 }
 
 function transitionsFromBranchPaths(
@@ -806,6 +823,7 @@ function transitionsFromBranchPaths(
                 flat.statements,
                 setters,
                 locator,
+                handlerContext.initialLocals,
                 handlerContext.semanticName,
               ),
             );
