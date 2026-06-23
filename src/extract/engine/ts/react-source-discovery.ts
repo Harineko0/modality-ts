@@ -86,10 +86,9 @@ import {
   suspenseStateVarDecl,
   transitionsFromSuspendingUse,
 } from "./transition/suspense.js";
+import { collectSetterTaintsFromEffectPlugins } from "./effect-ts-bridge.js";
 import {
-  refSetterTaint,
   type TimerRegistration,
-  timerSetterTaints,
   timerStateVarDecl,
 } from "./transition/timers.js";
 import { isEventAttribute } from "./transition/ui.js";
@@ -477,21 +476,13 @@ export function discoverReactSourceTransitions(
     if (formRecognition?.kind === "submit") {
       transitions.push(...tagStableIdKey(formRecognition.transitions, node));
     }
-    const refTaint = refSetterTaint(node, scopedSetters);
-    if (refTaint) {
-      const anchor = lineAndColumn(source, refTaint.node);
-      const caveat = globalTaintCaveat(refTaint.varId, {
-        file: fileName,
-        ...anchor,
-      });
-      if (!globalTaints.has(caveat.id)) {
-        globalTaints.add(caveat.id);
-        warnings.push({ message: caveat.reason, ...anchor, caveat });
-      }
-    }
-    for (const timerTaint of timerSetterTaints(node, scopedSetters)) {
-      const anchor = lineAndColumn(source, timerTaint.node);
-      const caveat = globalTaintCaveat(timerTaint.varId, {
+    for (const taint of collectSetterTaintsFromEffectPlugins(
+      options.effectPlugins ?? [],
+      node,
+      scopedSetters,
+    )) {
+      const anchor = lineAndColumn(source, taint.node);
+      const caveat = globalTaintCaveat(taint.varId, {
         file: fileName,
         ...anchor,
       });
