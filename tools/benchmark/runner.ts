@@ -26,6 +26,7 @@ export interface BenchmarkRunnerOptions {
   benchmarkId?: string;
   reportPath?: string;
   now?: Date;
+  log?: (message: string) => void;
 }
 
 export interface BenchmarkRunnerResult {
@@ -48,6 +49,10 @@ export async function runBenchmarkSuite(
 ): Promise<BenchmarkRunnerResult> {
   const now = options.now ?? new Date();
   const lines: string[] = [];
+  const emit = (message: string) => {
+    lines.push(message);
+    options.log?.(message);
+  };
 
   let manifest: BenchmarkManifest;
   try {
@@ -72,17 +77,22 @@ export async function runBenchmarkSuite(
   const frameworkReports: BenchmarkFrameworkReport[] = [];
 
   try {
+    emit(
+      `benchmarks: start manifest=${manifest.manifestId} selected=${selected.length}`,
+    );
     for (const benchmark of selected) {
+      emit(`benchmark ${benchmark.id}: start framework=${benchmark.framework}`);
       const frameworkReport = await runSingleBenchmark({
         repoRoot: options.repoRoot,
         benchmark,
         artifactRoot,
+        log: (message) => emit(`benchmark ${benchmark.id}: ${message}`),
       });
       frameworkReports.push(frameworkReport);
       for (const message of frameworkReport.messages) {
-        lines.push(`benchmark ${benchmark.id}: ${message}`);
+        emit(`benchmark ${benchmark.id}: ${message}`);
       }
-      lines.push(
+      emit(
         `benchmark ${benchmark.id}: ${frameworkReport.status} routes=${frameworkReport.routeCount} vars=${frameworkReport.varCount} transitions=${frameworkReport.transitionCount}`,
       );
     }
@@ -102,7 +112,7 @@ export async function runBenchmarkSuite(
     return { exitCode, report, reportPath, lines };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    lines.push(`runner failure: ${message}`);
+    emit(`runner failure: ${message}`);
     const report = buildBenchmarkRunReport({
       manifestId: manifest.manifestId,
       generatedAt: now.toISOString(),
@@ -119,6 +129,7 @@ async function runSingleBenchmark(input: {
   repoRoot: string;
   benchmark: BenchmarkDefinition;
   artifactRoot: string;
+  log: (message: string) => void;
 }): Promise<BenchmarkFrameworkReport> {
   const messages: string[] = [];
   const benchmarkRoot = resolve(input.repoRoot, input.benchmark.root);
@@ -136,6 +147,7 @@ async function runSingleBenchmark(input: {
     workDir: artifactDir,
     packageJsonPath,
     configPath: join(benchmarkRoot, "modality.config.ts"),
+    log: input.log,
   });
 
   const libraryCoverage = libraryEvidenceFromExtraction(
@@ -270,7 +282,9 @@ async function invalidManifestResult(
   now: Date,
   lines: string[],
 ): Promise<BenchmarkRunnerResult> {
-  lines.push(`manifest invalid: ${message}`);
+  const line = `manifest invalid: ${message}`;
+  lines.push(line);
+  options.log?.(line);
   const artifactRoot = await mkdtemp(
     join(tmpdir(), "modality-benchmark-invalid-"),
   );

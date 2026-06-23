@@ -36,6 +36,7 @@ export interface ValidityRunContext {
   workDir: string;
   now: Date;
   gating?: boolean;
+  log?: (message: string) => void;
 }
 
 export interface ValidityExperiment {

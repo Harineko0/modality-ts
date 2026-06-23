@@ -26,6 +26,7 @@ export interface ExtractCheckReplayInput {
   packageJsonPath?: string;
   configPath?: string;
   harnessPath?: string;
+  log?: (message: string) => void;
 }
 
 export interface ReplayVerdictEntry {
@@ -50,6 +51,7 @@ export interface ExtractCheckReplayResult {
 export async function extractCheckReplayOnce(
   input: ExtractCheckReplayInput,
 ): Promise<ExtractCheckReplayResult> {
+  const log = input.log ?? (() => undefined);
   await mkdir(input.workDir, { recursive: true });
   const modelPath = join(input.workDir, "model.json");
   const extractReportPath = join(input.workDir, "extract-report.json");
@@ -59,6 +61,7 @@ export async function extractCheckReplayOnce(
     join(input.appRoot, path),
   );
   const propsPaths = input.propsPaths.map((path) => join(input.appRoot, path));
+  log(`extract start sources=${sourcePaths.length} props=${propsPaths.length}`);
   const extracted = await runExtractCommand({
     sourcePaths,
     modelPath,
@@ -72,6 +75,10 @@ export async function extractCheckReplayOnce(
 
   const model = dedupeModelVars(extracted.model);
   await writeFile(modelPath, `${canonicalJson(model)}\n`, "utf8");
+  log(
+    `extract done vars=${model.vars.length} transitions=${model.transitions.length}`,
+  );
+  log("check start");
   const checked = await runCheckCommand({
     modelPath,
     propsPaths,
@@ -79,11 +86,14 @@ export async function extractCheckReplayOnce(
     tracesDir,
     searchLimits: toCheckSearchLimits(input.searchLimits),
   });
+  log(`check done ${formatCheckVerdicts(checked.report)}`);
+  log("replay start");
   const replayVerdicts = await replayViolations({
     tracesDir,
     checkReport: checked.report,
     harnessPath: input.harnessPath,
   });
+  log(`replay done ${formatReplayVerdicts(replayVerdicts)}`);
   return {
     model,
     extractReport: extracted.report,
@@ -96,6 +106,31 @@ export async function extractCheckReplayOnce(
       tracesDir,
     },
   };
+}
+
+function formatCheckVerdicts(checkReport: CheckReport): string {
+  const counts = new Map<string, number>();
+  for (const verdict of checkReport.verdicts) {
+    counts.set(verdict.status, (counts.get(verdict.status) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([status, count]) => `${status}=${count}`)
+    .join(" ");
+}
+
+function formatReplayVerdicts(
+  replayVerdicts: Map<string, ReplayVerdictEntry>,
+): string {
+  if (replayVerdicts.size === 0) return "replays=0";
+  const counts = new Map<string, number>();
+  for (const replay of replayVerdicts.values()) {
+    counts.set(replay.status, (counts.get(replay.status) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([status, count]) => `${status}=${count}`)
+    .join(" ");
 }
 
 function dedupeModelVars(model: Model): Model {

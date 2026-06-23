@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     manifestPath,
     experimentIds: parseExperimentIds(),
     reportPath: readFlag("--report"),
+    log: (message) => console.log(message),
   });
 
   const commentPath = readFlag("--comment");
@@ -60,13 +61,10 @@ async function main(): Promise<void> {
     }`,
   );
   console.log(`report=${result.reportPath}`);
-  for (const line of result.lines) {
-    console.log(line);
-  }
-  process.exit(result.exitCode);
+  process.exitCode = result.exitCode;
 }
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exit(4);
+  process.exitCode = 4;
 });

@@ -1,8 +1,8 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { ConformReport } from "modality-ts/core";
 import { runConformCommand } from "../../../src/cli/conform.js";
 import { runExtractCommand } from "../../../src/cli/extract.js";
-import type { ConformReport } from "modality-ts/core";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
 import type {
   ValidityBenchmarkSlice,
@@ -46,12 +46,15 @@ export function conformanceExperiment(
     async run(ctx) {
       const perBenchmark: ValidityBenchmarkSlice[] = [];
       for (const benchmark of ctx.manifest.benchmarks) {
-        perBenchmark.push(
-          await runBenchmarkConformance(ctx, benchmark, {
-            extract,
-            conform,
-            readReport,
-          }),
+        ctx.log?.(`benchmark ${benchmark.id}: start`);
+        const slice = await runBenchmarkConformance(ctx, benchmark, {
+          extract,
+          conform,
+          readReport,
+        });
+        perBenchmark.push(slice);
+        ctx.log?.(
+          `benchmark ${benchmark.id}: ${slice.status} ${slice.headline}`,
         );
       }
       return summarizeConformance(ctx, perBenchmark);
@@ -75,6 +78,7 @@ async function runBenchmarkConformance(
   };
 
   try {
+    ctx.log?.(`benchmark ${benchmark.id}: extract start`);
     await deps.extract({
       sourcePaths: benchmark.sourcePaths.map((path) =>
         resolve(benchmarkRoot, path),
@@ -89,6 +93,7 @@ async function runBenchmarkConformance(
       sliceManifestPath: join(outDir, "slices.json"),
       now: ctx.now,
     });
+    ctx.log?.(`benchmark ${benchmark.id}: conform start`);
     await deps.conform({
       modelPath,
       mode: "action",
@@ -102,6 +107,9 @@ async function runBenchmarkConformance(
       now: ctx.now,
     });
     const report = await deps.readReport(reportPath);
+    ctx.log?.(
+      `benchmark ${benchmark.id}: conform done reproduced=${report.metrics.reproduced} total=${report.metrics.total} inconclusive=${report.metrics.inconclusive}`,
+    );
     return sliceFromConformReport(ctx, benchmark, report, settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

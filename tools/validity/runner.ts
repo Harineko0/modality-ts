@@ -23,6 +23,7 @@ export interface ValidityRunnerOptions {
   now?: Date;
   gating?: boolean;
   experiments?: Partial<Record<ValidityExperimentId, () => ValidityExperiment>>;
+  log?: (message: string) => void;
 }
 
 export interface ValidityRunnerResult {
@@ -37,6 +38,10 @@ export async function runValiditySuite(
 ): Promise<ValidityRunnerResult> {
   const now = options.now ?? new Date();
   const lines: string[] = [];
+  const emit = (message: string) => {
+    lines.push(message);
+    options.log?.(message);
+  };
   const workDir = await mkdtemp(join(tmpdir(), "modality-validity-"));
   const reportPath =
     options.reportPath ?? join(workDir, "validity-report.json");
@@ -47,7 +52,7 @@ export async function runValiditySuite(
     await validateBenchmarkPaths(options.repoRoot, manifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    lines.push(`manifest invalid: ${message}`);
+    emit(`manifest invalid: ${message}`);
     const report: ValidityReport = {
       schemaVersion: 1,
       kind: "validity-report",
@@ -63,6 +68,9 @@ export async function runValiditySuite(
   const requested = options.experimentIds ?? allExperimentIds();
   const subReports: ValiditySubReport[] = [];
   const registry = { ...validityExperiments, ...options.experiments };
+  emit(
+    `validity: start manifest=${manifest.manifestId} selected=${requested.length}`,
+  );
 
   for (const experimentId of requested) {
     const createExperiment = registry[experimentId];
@@ -70,29 +78,29 @@ export async function runValiditySuite(
       subReports.push(
         errorSubReport(experimentId, "experiment is not registered"),
       );
-      lines.push(
-        `validity ${experimentId}: error experiment is not registered`,
-      );
+      emit(`validity ${experimentId}: error experiment is not registered`);
       continue;
     }
 
     const experiment = createExperiment();
     try {
+      emit(`validity ${experimentId}: start`);
       const subReport = await experiment.run({
         repoRoot: options.repoRoot,
         manifest,
         workDir,
         now,
         gating: options.gating,
+        log: (message) => emit(`validity ${experimentId}: ${message}`),
       });
       subReports.push(subReport);
-      lines.push(
+      emit(
         `validity ${experimentId}: ${subReport.status} ${subReport.headline}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       subReports.push(errorSubReport(experimentId, message));
-      lines.push(`validity ${experimentId}: error ${message}`);
+      emit(`validity ${experimentId}: error ${message}`);
     }
   }
 
