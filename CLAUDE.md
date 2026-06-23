@@ -31,7 +31,9 @@ Never consider backward compatibility as this tool is experimental.
 Use `pnpm install` to install dependencies. Important checks:
 
 - `pnpm typecheck` or `pnpm build`: run `tsc -b`; `build` emits `dist/`.
-- `pnpm test`: run the full Vitest suite.
+- `pnpm test`: fast Vitest tier (excludes e2e: `test/modality`, `test/canaries`, `test/conformance`); target <30s.
+- `pnpm test:e2e`: heavy end-to-end suites (CLI/example-app pipeline).
+- `pnpm test:all`: full suite (everything except `test/benchmarks`); CI runs this.
 - `pnpm fix`: run `biome lint --write . && biome format --write .`.
 - `pnpm architecture`: validate dependency rules with dependency-cruiser.
 - `pnpm ci:examples`: run example-app integration checks.
@@ -45,6 +47,8 @@ Use strict TypeScript with NodeNext ESM imports. Keep modules small and colocate
 ## Testing Guidelines
 
 Vitest is configured for `test/**/*.test.ts` and `src/**/*.test.ts`. Add focused tests next to the affected subsystem under `test/<area>/`. Update or add coverage when changing extraction, checking, replay, reporting, source adapters, or CLI behavior. For architecture-sensitive imports, run `pnpm architecture`; for semantics-sensitive work, also run `pnpm phase7`. Also run `pnpm fix` to lint and format code.
+
+Vitest uses `pool: "forks"` with `isolate: false` (see `vitest.config.ts`): the native checker (`.node` addon) serializes across `worker_threads`, so the default threads pool caps parallelism — don't switch back. When adding heavy CLI/example-app or subprocess-spawning tests, put them under `test/modality|canaries|conformance` so they land in the `test:e2e` tier, not the fast `pnpm test`.
 
 ## Commit & Pull Request Guidelines
 

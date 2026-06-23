@@ -251,7 +251,9 @@
     "phase7": "tsx tools/phase7-differential.ts",
     "perf:check": "tsx tools/check-performance-benchmark.ts",
     "publish:npm": "npm publish --provenance --access public",
-    "test": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\"",
+    "test": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\" --exclude \"test/modality/**\" --exclude \"test/canaries/**\" --exclude \"test/conformance/**\"",
+    "test:e2e": "pnpm build:rust && vitest run test/modality test/canaries test/conformance",
+    "test:all": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\"",
     "typecheck": "tsc -b"
   },
   "dependencies": {

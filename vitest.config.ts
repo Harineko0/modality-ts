@@ -6,11 +6,18 @@ export default defineConfig({
     globals: false,
     testTimeout: 60_000,
     setupFiles: ["./test/setup/framework-default.ts"],
-    pool: "threads",
+    // The native model-checker (`.node` addon) is loaded once per process and
+    // serializes calls across `worker_threads`, capping the threads pool at
+    // ~4x parallelism regardless of core count. Forks give each worker its own
+    // process (own native instance) for true parallelism. `isolate: false`
+    // then reuses each fork across files, so the heavy setup/transform/import
+    // graph is paid once per fork instead of once per file.
+    pool: "forks",
+    isolate: false,
     poolOptions: {
-      threads: {
-        minWorkers: 1,
-        maxWorkers: 4,
+      forks: {
+        minForks: 10,
+        maxForks: 10,
       },
     },
   },
