@@ -11,7 +11,10 @@ import {
 } from "modality-ts/extract/plugins/state/swr";
 import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
-import { observe, setup } from "../../../src/extract/plugins/state/swr/harness.js";
+import {
+  observe,
+  setup,
+} from "../../../src/extract/plugins/state/swr/harness.js";
 import { always, reachable } from "../../helpers/property-builders.js";
 
 const route = { kind: "enum", values: ["/"] } as const;

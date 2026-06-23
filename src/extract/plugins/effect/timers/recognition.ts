@@ -1,6 +1,10 @@
-import type { EffectIR, StateVarDecl, Transition } from "modality-ts/core";
+import type { EffectIR, Transition } from "modality-ts/core";
 import * as ts from "typescript";
-import { callName, isUseRefCall, lineAndColumn } from "../../../engine/ts/ast.js";
+import {
+  callName,
+  isUseRefCall,
+  lineAndColumn,
+} from "../../../engine/ts/ast.js";
 import { handlerExpression } from "../../../engine/ts/components.js";
 import { safeId, uniqueStrings } from "../../../engine/ts/ids.js";
 import type {
@@ -8,7 +12,11 @@ import type {
   ExtractableHandler,
   SetterBinding,
 } from "../../../engine/ts/types.js";
-import { effectWriteVars, settersWrittenIn, uniqueSetters } from "../../../engine/ts/transition/effects.js";
+import {
+  effectWriteVars,
+  settersWrittenIn,
+  uniqueSetters,
+} from "../../../engine/ts/transition/effects.js";
 import { stateNameForVar } from "../../../engine/ts/transition/handlers.js";
 import { summarizeHandlerStatements } from "../../../engine/ts/transition/statement-driver.js";
 import {
@@ -20,7 +28,6 @@ import {
   type TimerRegistration,
   type TimerScheduleResult,
 } from "../../../engine/ts/transition/timers.js";
-import { labelForEvent } from "../../../engine/ts/transition/ui.js";
 
 const SCHEDULE_NAMES = new Set(["setTimeout", "setInterval"]);
 const CLEAR_NAMES = new Set(["clearTimeout", "clearInterval"]);

@@ -5,7 +5,7 @@ import type {
   StateVarDecl,
   Transition,
 } from "modality-ts/core";
-import * as ts from "typescript";
+import type * as ts from "typescript";
 import { lineAndColumn } from "../ast.js";
 import type { EffectSummary } from "../types.js";
 import { labelForEvent } from "./ui.js";

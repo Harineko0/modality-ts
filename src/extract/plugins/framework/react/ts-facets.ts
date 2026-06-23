@@ -20,9 +20,7 @@ export function unwrapCallbackExpr(
 }
 
 export function isMemoValueCall(node: ts.CallExpression): boolean {
-  return (
-    ts.isIdentifier(node.expression) && node.expression.text === "useMemo"
-  );
+  return ts.isIdentifier(node.expression) && node.expression.text === "useMemo";
 }
 
 export function isContextReadCall(node: ts.CallExpression): boolean {

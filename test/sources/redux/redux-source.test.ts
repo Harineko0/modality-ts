@@ -3,7 +3,10 @@ import type * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
-import { observe, setup } from "../../../src/extract/plugins/state/redux/harness.js";
+import {
+  observe,
+  setup,
+} from "../../../src/extract/plugins/state/redux/harness.js";
 import { discoverReduxStoresDetailed } from "../../../src/extract/plugins/state/redux/store.js";
 
 describe("Redux source plugin", () => {

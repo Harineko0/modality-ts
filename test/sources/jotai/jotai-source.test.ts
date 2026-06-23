@@ -4,7 +4,10 @@ import {
 } from "modality-ts/extract/plugins/state/jotai";
 import { describe, expect, it } from "vitest";
 import { createSemanticProjectForTest } from "../../../src/extract/engine/ts/semantic-project.js";
-import { observe, setup } from "../../../src/extract/plugins/state/jotai/harness.js";
+import {
+  observe,
+  setup,
+} from "../../../src/extract/plugins/state/jotai/harness.js";
 
 describe("Jotai source plugin", () => {
   it("exposes a StateSourcePlugin-compatible source slice", () => {

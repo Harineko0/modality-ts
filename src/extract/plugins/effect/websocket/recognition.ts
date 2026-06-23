@@ -234,7 +234,11 @@ export function webSocketCleanupSummaryFromCall(
   );
   if (!varId) return undefined;
   return {
-    effect: { kind: "assign", var: varId, expr: { kind: "lit", value: "closed" } },
+    effect: {
+      kind: "assign",
+      var: varId,
+      expr: { kind: "lit", value: "closed" },
+    },
     reads: [varId],
   };
 }
@@ -252,7 +256,12 @@ export function webSocketSetterTaints(
   );
   if (!assignment) return false;
   if (assignment.event === "message") return false;
-  const summaries = callbackSummaries(assignment.callback, setters, {}, new Map());
+  const summaries = callbackSummaries(
+    assignment.callback,
+    setters,
+    {},
+    new Map(),
+  );
   return !summaries || summaries.length === 0;
 }
 
@@ -264,22 +273,27 @@ function webSocketStateGuard(
   varId: string,
   states: readonly string[],
 ): import("modality-ts/core").ExprIR {
-  const guards = states.map(
-    (state): import("modality-ts/core").ExprIR => ({
-      kind: "eq",
-      args: [{ kind: "read", var: varId }, { kind: "lit", value: state }],
-    }),
-  );
+  const guards = states.map((state): import("modality-ts/core").ExprIR => ({
+    kind: "eq",
+    args: [
+      { kind: "read", var: varId },
+      { kind: "lit", value: state },
+    ],
+  }));
   if (guards.length === 1) return guards[0] ?? { kind: "lit", value: true };
   return { kind: "or", args: guards };
 }
 
 function lifecycleStateForEvent(event: WebSocketLifecycleEvent): string {
   switch (event) {
-    case "open": return "open";
-    case "close": return "closed";
-    case "error": return "error";
-    default: return "open";
+    case "open":
+      return "open";
+    case "close":
+      return "closed";
+    case "error":
+      return "error";
+    default:
+      return "open";
   }
 }
 
@@ -287,10 +301,13 @@ function lifecycleGuardStates(
   event: WebSocketLifecycleEvent,
 ): readonly string[] {
   switch (event) {
-    case "open": return ["connecting", "closed"];
+    case "open":
+      return ["connecting", "closed"];
     case "close":
-    case "error": return ["connecting", "open"];
-    default: return ["open"];
+    case "error":
+      return ["connecting", "open"];
+    default:
+      return ["open"];
   }
 }
 
@@ -301,17 +318,31 @@ function callbackSummaries(
   initialLocals: Map<string, BoundExpr>,
 ): EffectSummary[] | undefined {
   if (ts.isCallExpression(callback.body)) {
-    return summarizeHandlerStatements(callback, setters, { ...options, initialLocals });
+    return summarizeHandlerStatements(callback, setters, {
+      ...options,
+      initialLocals,
+    });
   }
   if (!ts.isBlock(callback.body)) return undefined;
-  return summarizeStatements(callback.body.statements, setters, { ...options, initialLocals });
+  return summarizeStatements(callback.body.statements, setters, {
+    ...options,
+    initialLocals,
+  });
 }
 
-function transitionConfidence(effects: readonly EffectIR[]): Transition["confidence"] {
-  return effects.some((effect) => effect.kind === "havoc") ? "over-approx" : "exact";
+function transitionConfidence(
+  effects: readonly EffectIR[],
+): Transition["confidence"] {
+  return effects.some((effect) => effect.kind === "havoc")
+    ? "over-approx"
+    : "exact";
 }
 
-function sourceAnchor(source: ts.SourceFile, fileName: string, node: ts.Node): SourceAnchor {
+function sourceAnchor(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.Node,
+): SourceAnchor {
   return { file: fileName, ...lineAndColumn(source, node) };
 }
 
@@ -323,38 +354,58 @@ function lifecycleTransition(
   setters: Map<string, SetterBinding>,
   options: StatementSummaryOptions,
 ): Transition | undefined {
-  const summaries = callbackSummaries(assignment.callback, setters, options, new Map());
+  const summaries = callbackSummaries(
+    assignment.callback,
+    setters,
+    options,
+    new Map(),
+  );
   if (!summaries || summaries.length === 0) return undefined;
   const effects = summaries.map((s) => s.effect);
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
   const suffix =
-    writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") || "callback";
+    writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") ||
+    "callback";
   const nextState = lifecycleStateForEvent(assignment.event);
   const callbackEffects: EffectIR =
     effects.length === 1 ? effects[0] : { kind: "seq", effects };
   const fireEffect: EffectIR = {
     kind: "seq",
-    effects: [webSocketStateAssign(assignment.varId, nextState), callbackEffects],
+    effects: [
+      webSocketStateAssign(assignment.varId, nextState),
+      callbackEffects,
+    ],
   };
-  const eventKey = assignment.event === "message" ? "onmessage" : `on${assignment.event}`;
+  const eventKey =
+    assignment.event === "message" ? "onmessage" : `on${assignment.event}`;
   return {
     id: `${component}.websocket.${eventKey}.${suffix}`,
     cls: "env",
     label: { kind: "env", key: `${component}.websocket.${eventKey}` },
     source: [{ file: fileName, ...lineAndColumn(source, assignment.node) }],
-    guard: webSocketStateGuard(assignment.varId, lifecycleGuardStates(assignment.event)),
+    guard: webSocketStateGuard(
+      assignment.varId,
+      lifecycleGuardStates(assignment.event),
+    ),
     effect: fireEffect,
-    reads: uniqueStrings([assignment.varId, ...summaries.flatMap((s) => s.reads)]),
+    reads: uniqueStrings([
+      assignment.varId,
+      ...summaries.flatMap((s) => s.reads),
+    ]),
     writes: uniqueStrings([assignment.varId, ...writes]),
     confidence: transitionConfidence(effects),
   };
 }
 
-function messageRecordForVariant(variant: WebSocketMessageVariant): Record<string, Value> {
+function messageRecordForVariant(
+  variant: WebSocketMessageVariant,
+): Record<string, Value> {
   return { type: variant.type, ...(variant.bind ?? {}) };
 }
 
-function callbackEventParamName(callback: ExtractableHandler): string | undefined {
+function callbackEventParamName(
+  callback: ExtractableHandler,
+): string | undefined {
   const firstParam = callback.parameters[0];
   if (!firstParam || !ts.isIdentifier(firstParam.name)) return undefined;
   return firstParam.name.text;
@@ -370,11 +421,15 @@ function isJsonParseExpression(expression: ts.Expression): boolean {
 }
 
 function unwrapExpression(expression: ts.Expression): ts.Expression {
-  if (ts.isParenthesizedExpression(expression)) return unwrapExpression(expression.expression);
+  if (ts.isParenthesizedExpression(expression))
+    return unwrapExpression(expression.expression);
   return expression;
 }
 
-function isEventDataAccess(expression: ts.Expression, eventParamName: string): boolean {
+function isEventDataAccess(
+  expression: ts.Expression,
+  eventParamName: string,
+): boolean {
   const unwrapped = unwrapExpression(expression);
   if (
     ts.isPropertyAccessExpression(unwrapped) &&
@@ -411,7 +466,10 @@ function isAnyEventDataAccess(expression: ts.Expression): boolean {
   return false;
 }
 
-function bindJsonParseEventData(initializer: ts.Expression, eventParamName: string): boolean {
+function bindJsonParseEventData(
+  initializer: ts.Expression,
+  eventParamName: string,
+): boolean {
   const unwrapped = unwrapExpression(initializer);
   if (!ts.isCallExpression(unwrapped)) return false;
   if (!isJsonParseExpression(unwrapped.expression)) return false;
@@ -439,7 +497,8 @@ function hasUnsupportedJsonParseBinding(callback: ExtractableHandler): boolean {
         if (!declaration.initializer) return false;
         return (
           isJsonParseOfDataAccess(declaration.initializer) &&
-          (!eventParamName || !bindJsonParseEventData(declaration.initializer, eventParamName))
+          (!eventParamName ||
+            !bindJsonParseEventData(declaration.initializer, eventParamName))
         );
       }),
   );
@@ -453,12 +512,16 @@ function bindMessageLocalsForVariant(
   const eventParamName = callbackEventParamName(callback);
   if (!eventParamName) return locals;
   const messageRecord = messageRecordForVariant(variant);
-  const messageBinding: BoundExpr = { expr: { kind: "lit", value: messageRecord }, reads: [] };
+  const messageBinding: BoundExpr = {
+    expr: { kind: "lit", value: messageRecord },
+    reads: [],
+  };
   if (!ts.isBlock(callback.body)) return locals;
   for (const statement of callback.body.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer)
+        continue;
       if (bindJsonParseEventData(declaration.initializer, eventParamName)) {
         locals.set(declaration.name.text, messageBinding);
       }
@@ -476,27 +539,46 @@ function messageVariantTransition(
   setters: Map<string, SetterBinding>,
   options: StatementSummaryOptions,
 ): Transition | undefined {
-  const initialLocals = bindMessageLocalsForVariant(assignment.callback, variant);
-  if (!initialLocals.size && hasUnsupportedJsonParseBinding(assignment.callback)) {
+  const initialLocals = bindMessageLocalsForVariant(
+    assignment.callback,
+    variant,
+  );
+  if (
+    !initialLocals.size &&
+    hasUnsupportedJsonParseBinding(assignment.callback)
+  ) {
     return undefined;
   }
-  const summaries = callbackSummaries(assignment.callback, setters, options, initialLocals);
+  const summaries = callbackSummaries(
+    assignment.callback,
+    setters,
+    options,
+    initialLocals,
+  );
   if (!summaries || summaries.length === 0) return undefined;
   const effects = summaries.map((s) => s.effect);
   const writes = uniqueStrings(effects.flatMap(effectWriteVars));
   const suffix =
-    writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") || variant.type;
+    writes.map((id) => stateNameForVar(id, setters) ?? safeId(id)).join("_") ||
+    variant.type;
   const rawCallbackEffects: EffectIR =
     effects.length === 1 ? effects[0] : { kind: "seq", effects };
   const callbackEffects = simplifyEffect(rawCallbackEffects);
   return {
     id: `${component}.websocket.onmessage.${variant.type}.${suffix}`,
     cls: "env",
-    label: { kind: "env", key: `${component}.websocket.onmessage`, outcome: variant.type },
+    label: {
+      kind: "env",
+      key: `${component}.websocket.onmessage`,
+      outcome: variant.type,
+    },
     source: [{ file: fileName, ...lineAndColumn(source, assignment.node) }],
     guard: webSocketStateGuard(assignment.varId, ["open"]),
     effect: callbackEffects,
-    reads: uniqueStrings([assignment.varId, ...summaries.flatMap((s) => s.reads)]),
+    reads: uniqueStrings([
+      assignment.varId,
+      ...summaries.flatMap((s) => s.reads),
+    ]),
     writes: uniqueStrings(writes),
     confidence: transitionConfidence(effects),
   };
@@ -525,7 +607,12 @@ export function registerWebSocketCallbackAssignment(
       );
     const variants = config?.messages ?? [];
     if (variants.length === 0) {
-      const summaries = callbackSummaries(assignment.callback, setters, options, new Map());
+      const summaries = callbackSummaries(
+        assignment.callback,
+        setters,
+        options,
+        new Map(),
+      );
       const writes = uniqueStrings(
         (summaries ?? []).flatMap((s) => effectWriteVars(s.effect)),
       );
@@ -544,7 +631,15 @@ export function registerWebSocketCallbackAssignment(
     }
     const transitions = variants
       .map((variant) =>
-        messageVariantTransition(source, fileName, component, assignment, variant, setters, options),
+        messageVariantTransition(
+          source,
+          fileName,
+          component,
+          assignment,
+          variant,
+          setters,
+          options,
+        ),
       )
       .filter((t): t is Transition => Boolean(t));
     if (transitions.length === 0 && variants.length > 0) {
@@ -560,7 +655,14 @@ export function registerWebSocketCallbackAssignment(
     }
     return { transitions, warnings };
   }
-  const transition = lifecycleTransition(source, fileName, component, assignment, setters, options);
+  const transition = lifecycleTransition(
+    source,
+    fileName,
+    component,
+    assignment,
+    setters,
+    options,
+  );
   if (!transition) {
     warnings.push({
       message: `Unsupported WebSocket ${assignment.event} callback ${component}`,

@@ -1,9 +1,6 @@
-import type {
-  EffectIR,
-  StateVarDecl,
-} from "modality-ts/core";
-import * as ts from "typescript";
-import type { EnvironmentEventConfig, WebSocketEnvironmentConfig } from "../environment-config.js";
+import type { EffectIR, StateVarDecl } from "modality-ts/core";
+import type * as ts from "typescript";
+import type { WebSocketEnvironmentConfig } from "../environment-config.js";
 import type { EffectSummary, ExtractableHandler } from "../types.js";
 
 const WEBSOCKET_DOMAIN = {
@@ -70,12 +67,13 @@ function webSocketStateGuard(
   varId: string,
   states: readonly string[],
 ): import("modality-ts/core").ExprIR {
-  const guards = states.map(
-    (state): import("modality-ts/core").ExprIR => ({
-      kind: "eq",
-      args: [{ kind: "read", var: varId }, { kind: "lit", value: state }],
-    }),
-  );
+  const guards = states.map((state): import("modality-ts/core").ExprIR => ({
+    kind: "eq",
+    args: [
+      { kind: "read", var: varId },
+      { kind: "lit", value: state },
+    ],
+  }));
   if (guards.length === 1) return guards[0] ?? { kind: "lit", value: true };
   return { kind: "or", args: guards };
 }
@@ -111,7 +109,10 @@ function implicitOpenTransition(
     source: registration.messageCallbackNode
       ? [{ file: fileName, ...lineAndColumn(registration.messageCallbackNode) }]
       : [],
-    guard: webSocketStateGuard(registration.varId, lifecycleGuardStates("open")),
+    guard: webSocketStateGuard(
+      registration.varId,
+      lifecycleGuardStates("open"),
+    ),
     effect: webSocketStateAssign(registration.varId, "open"),
     reads: [registration.varId],
     writes: [registration.varId],
@@ -133,7 +134,12 @@ export function finalizeImplicitWebSocketOpens(
     ) {
       continue;
     }
-    const implicit = implicitOpenTransition(source, fileName, component, registration);
+    const implicit = implicitOpenTransition(
+      source,
+      fileName,
+      component,
+      registration,
+    );
     const messageIndex = envTransitions.findIndex(
       (transition) =>
         transition.cls === "env" &&

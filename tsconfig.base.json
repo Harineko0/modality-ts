@@ -31,7 +31,9 @@
       "modality-ts/extract/plugins/state/jotai/harness": [
         "src/extract/plugins/state/jotai/harness.ts"
       ],
-      "modality-ts/extract/plugins/route/next": ["src/extract/plugins/route/next/index.ts"],
+      "modality-ts/extract/plugins/route/next": [
+        "src/extract/plugins/route/next/index.ts"
+      ],
       "modality-ts/extract/plugins/route/next/harness": [
         "src/extract/plugins/route/next/harness.ts"
       ],
@@ -41,7 +43,9 @@
       "modality-ts/extract/plugins/route/router/harness": [
         "src/extract/plugins/route/router/harness.ts"
       ],
-      "modality-ts/extract/plugins/state/swr": ["src/extract/plugins/state/swr/index.ts"],
+      "modality-ts/extract/plugins/state/swr": [
+        "src/extract/plugins/state/swr/index.ts"
+      ],
       "modality-ts/extract/plugins/state/swr/harness": [
         "src/extract/plugins/state/swr/harness.ts"
       ],

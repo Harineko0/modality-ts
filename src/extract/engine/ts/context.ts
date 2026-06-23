@@ -2,7 +2,12 @@ import type { StateVarDecl, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 import type { StateSourcePlugin, WriteChannel } from "../spi/index.js";
-import { componentNameFor, currentEngineFramework, isExtractableHandler, propertyName } from "./ast.js";
+import {
+  componentNameFor,
+  currentEngineFramework,
+  isExtractableHandler,
+  propertyName,
+} from "./ast.js";
 import { engineFrameworkPlugin } from "./framework-ts-bridge.js";
 import {
   type CustomHookRegistry,
@@ -106,8 +111,7 @@ export function settersForComponent(
   const scoped = new Map(
     [...setters].filter(
       ([key, setter]) =>
-        !setter.isComponentScoped ||
-        !key.startsWith(`${setter.component}:`),
+        !setter.isComponentScoped || !key.startsWith(`${setter.component}:`),
     ),
   );
   for (const [key, setter] of setters) {

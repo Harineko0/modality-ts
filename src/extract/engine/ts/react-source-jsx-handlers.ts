@@ -37,7 +37,7 @@ import {
 } from "./transition/handlers.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
 import { anyEffectPluginHandlesSchedule } from "./effect-ts-bridge.js";
-import { type TimerRegistration } from "./transition/timers.js";
+import type { TimerRegistration } from "./transition/timers.js";
 import type {
   ComponentDecl,
   ContextBindings,
