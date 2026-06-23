@@ -22,6 +22,7 @@ import {
   isExtractableHandler,
   isRecognizedUseStateCall,
   isUseReducerCall,
+  isUseRefCall,
   lineAndColumn,
   recognizeHookFromTs,
   recognizeRenderBoundaryFromTs,
@@ -476,11 +477,13 @@ export function discoverReactSourceTransitions(
     if (formRecognition?.kind === "submit") {
       transitions.push(...tagStableIdKey(formRecognition.transitions, node));
     }
-    for (const taint of collectSetterTaintsFromEffectPlugins(
+    const refTaint = detectRefSetterTaint(node, scopedSetters);
+    const effectTaints = collectSetterTaintsFromEffectPlugins(
       options.effectPlugins ?? [],
       node,
       scopedSetters,
-    )) {
+    );
+    for (const taint of refTaint ? [refTaint, ...effectTaints] : effectTaints) {
       const anchor = lineAndColumn(source, taint.node);
       const caveat = globalTaintCaveat(taint.varId, {
         file: fileName,
@@ -783,4 +786,32 @@ export function discoverReactSourceTransitions(
     transitionBindingCounter,
     suspenseBoundaryCounter,
   };
+}
+
+function detectRefSetterTaint(
+  node: ts.Node,
+  setters: Map<string, SetterBinding>,
+): { varId: string; node: ts.Node } | undefined {
+  if (
+    ts.isVariableDeclaration(node) &&
+    node.initializer &&
+    isUseRefCall(node.initializer)
+  ) {
+    const arg = node.initializer.arguments[0];
+    if (arg && ts.isIdentifier(arg)) {
+      const setter = setters.get(arg.text);
+      if (setter) return { varId: setter.varId, node: arg };
+    }
+  }
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isPropertyAccessExpression(node.left) &&
+    node.left.name.text === "current" &&
+    ts.isIdentifier(node.right)
+  ) {
+    const setter = setters.get(node.right.text);
+    if (setter) return { varId: setter.varId, node: node.right };
+  }
+  return undefined;
 }

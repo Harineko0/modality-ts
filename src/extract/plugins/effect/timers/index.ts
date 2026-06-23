@@ -7,7 +7,10 @@ import type {
 import { createEffectPlugin } from "modality-ts/extract/plugins";
 import * as ts from "typescript";
 import type { EngineEffectPlugin } from "../../../engine/ts/effect-ts-bridge.js";
-import type { ExtractableHandler, SetterBinding } from "../../../engine/ts/types.js";
+import type {
+  ExtractableHandler,
+  SetterBinding,
+} from "../../../engine/ts/types.js";
 import { timerStateVarDecl } from "../../../engine/ts/transition/timers.js";
 import {
   bindTimerHandle,
@@ -15,7 +18,6 @@ import {
   isTimerClearCall,
   isTimerScheduleCall,
   registerTimerFromScheduleCall,
-  refSetterTaint,
   timerClearSummaryFromCall,
   timerSetterTaints,
 } from "./recognition.js";
@@ -93,11 +95,7 @@ function timerGetSetterTaints(
   node: ts.Node,
   setters: Map<string, SetterBinding>,
 ): readonly { varId: string; node: ts.Node }[] {
-  const taints: { varId: string; node: ts.Node }[] = [];
-  const refTaint = refSetterTaint(node, setters);
-  if (refTaint) taints.push(refTaint);
-  taints.push(...timerSetterTaints(node, setters));
-  return taints;
+  return timerSetterTaints(node, setters);
 }
 
 export function timerEffectPlugin(): EffectPlugin {

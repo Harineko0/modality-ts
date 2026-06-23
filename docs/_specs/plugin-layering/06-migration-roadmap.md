@@ -1,6 +1,6 @@
 # Spec 09.06 — Migration Roadmap
 
-Status: draft for review. Part of the `plugin-layering/` series. This is the **canonical phase
+Status: current. Part of the `plugin-layering/` series. This is the **canonical phase
 sequence** for implementing the L0–L5 layering. The guiding constraint is below; the per-phase
 detail follows.
 
@@ -26,24 +26,25 @@ explicit config as source of truth with auto-detect as fallback. Touches
 No engine code; no snapshot risk. **Acceptance:** generated config typechecks; benchmark model
 identical; `pnpm test` + `pnpm architecture` green.
 
-### Phase 1 — `FrameworkPlugin` SPI + `frameworks/react` (the proof)
+### Phase 1 — `FrameworkPlugin` SPI + `plugins/framework/react` (the proof)
 - New: `src/extract/engine/spi/framework.ts` — `FrameworkPlugin`, `HookCall`, `RenderBoundary`.
-- New: `src/extract/plugins/framework/react/{index,hooks,render-boundaries}.ts` — the name tables from
-  `ast.ts:13-157` + `transition/effects.ts:313` (`reactEffectPhase`) + the Suspense domain currently
+- New: `src/extract/plugins/framework/react/{index,hooks,render-boundaries,ts-facets}.ts` — the name
+  tables from `ast.ts` + `transition/effects.ts` (`reactEffectPhase`) + the Suspense domain currently
   built inline in `react-source-transitions.ts`; all import-alias-aware via L1's `importBinding`.
+  React Hook Form wired via `ts-facets.ts` `unwrapReactHookFormHandler` — no separate plugin kind.
 - Modify: `ast.ts` predicates to consult an injected framework; thread `framework` through
   `react-source-transitions.ts` options and `pipeline/index.ts`.
 - Modify: `registry/index.ts` (register/validate/stamp `framework`); `core/ir/types.ts`
-  (`PluginProvenance.kind += "framework"`); `tools/depcruise.config.cjs` (new `frameworks/*`
+  (`PluginProvenance.kind += "framework"`); `tools/depcruise.config.cjs` (new `plugins/*`
   boundary).
 - Identity-preserving; near-zero snapshot churn. **Acceptance:** `pnpm test` + `pnpm phase7` zero
   golden diffs; `pnpm architecture`; `pnpm ci:examples`.
 
-### Phase 2 — useState binding consolidation
-Engine consumes the binding from `StateSourcePlugin` discovery (already flowing via
-`extractionCtx.stateVars`) instead of re-deriving it in `react-source-transitions.ts:454-541` and
-`context.ts:134-160`; add `decodeBinding` (Spec 03 §3) to delete the var-id regex at
-`context.ts:27-44`.
+### Phase 2 — useState binding consolidation *(delivered: 260623-07 Step 4)*
+Engine consumes binding from `StateSourcePlugin` discovery via `decodeBinding` (Spec 03 §3).
+`use-state` plugin sets `isLocalStateSource: true` and implements `isComponentScopedVarId`.
+The `local:` hardcoding in `context.ts` is deleted; `isComponentScoped: true` is carried on
+`DecodedSetterBinding` / `SetterBinding`.
 
 ### Phase 3 — render-boundary ownership
 Move `<Suspense>` / `React.lazy` / `use()` recognition (`ast.ts:101-132`) into `frameworks/react`
@@ -55,12 +56,16 @@ plus phase ordinals (`effects.ts:313`) into the react plugin; summarization stay
 
 ### Phase 5 — router form ownership
 Move the `Form` / `useSubmit` / `useActionData` recognition behind
-`NavigationAdapter.recognizeFormSubmit` (Spec 03 §4); generic location lowering stays in the engine.
+`RoutePlugin.recognizeFormSubmit` (Spec 03 §4); generic location lowering stays in the engine.
 
-### Phase 6 — effect-model ownership
-Move timer / websocket recognition (`timers.ts`, `environment-callbacks.ts`) behind
-`EffectModelProvider` (Spec 03 §5); CPS / enqueue-resolve stays generic in L2. Add `effectModels` to
-config and `PluginProvenance.kind += "effect-model"`.
+### Phase 6 — effect-model ownership *(delivered: 260623-07 Steps 5–6)*
+Timer API names (`setTimeout`/`setInterval`/`clearTimeout`/`clearInterval`) moved to
+`plugins/effect/timers/recognition.ts`; WebSocket API name (`WebSocket`) moved to
+`plugins/effect/websocket/recognition.ts`. Engine modules `timers.ts` and
+`environment-callbacks.ts` are now API-name-free. `EngineEffectPlugin` bridge interface in
+`engine/ts/effect-ts-bridge.ts` connects plugins to the engine without inverting the import
+direction. Architecture guardrail tests in `test/extraction/architecture.test.ts` enforce that
+engine/ts contains no timer or WebSocket string literals.
 
 ### Phase 7 — L1/L2 split + thin-driver inversion (capstone)
 Extract `src/extract/lang/ts` (Surface IR + symbol port, Spec 01) and `src/extract/compile`

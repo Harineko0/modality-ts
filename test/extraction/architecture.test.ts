@@ -806,11 +806,15 @@ function isForbiddenRunnerImport(
 describe("plugin-layering coupling guardrails", () => {
   const repoRoot = resolve(testDir, "../..");
   const engineRoot = resolve(repoRoot, "src/extract/engine/ts");
-  const compileRoot = resolve(repoRoot, "src/extract/compile");
 
   it("engine/ts does not contain timer API string literals", async () => {
     const files = await sourceFiles(engineRoot);
-    const timerApis = ["setTimeout", "setInterval", "clearTimeout", "clearInterval"];
+    const timerApis = [
+      "setTimeout",
+      "setInterval",
+      "clearTimeout",
+      "clearInterval",
+    ];
     const violations: string[] = [];
     for (const file of files) {
       const text = await readFile(file, "utf8");

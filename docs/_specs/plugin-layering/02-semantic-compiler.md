@@ -1,6 +1,6 @@
 # Spec 09.02 — L2: The Universal Semantic Compiler
 
-Status: draft for review. Part of the `plugin-layering/` series. **Series centerpiece.**
+Status: current. Part of the `plugin-layering/` series. **Series centerpiece.**
 Builds on `00-overview.md` and `01-language-frontend.md`.
 
 ## 1. What L2 is
@@ -11,10 +11,10 @@ L2 is the layer that turns **Surface IR** (L1) into **`EffectIR` / `ExprIR`** (L
 that knows how an `if` becomes a guarded effect, how a block becomes a sequence, how `a + 1`
 becomes arithmetic over an abstract domain, and how a loop is over-approximated.
 
-L2 is carved out of today's `src/extract/engine/ts/transition/statement-summary.ts` (1156 lines)
-and the expression compiler it calls. Those files already do this job — they just also reach for
-library strings (timer/websocket/`startTransition`/`flushSync` recognition is inlined). The carve
-removes the strings and replaces them with a single dispatch call to L3.
+L2 is embodied by `src/extract/engine/ts/transition/statement-driver.ts` and the expression
+compiler it calls. These files already do this job — the library-specific string recognition
+(timer/websocket/`startTransition`/`flushSync`) has been extracted into L4 plugins and is
+accessed through the L3 dispatch interfaces.
 
 ## 2. The leaf-dispatch contract (the heart of the design)
 
@@ -52,7 +52,7 @@ These are the rules L2 owns outright. None of them mention a library.
 
 ### 3.1 Numbers and arithmetic
 Numeric literals and `+ - * / %` over values in a numeric abstract domain lower to `ExprIR`
-arithmetic, reusing the existing numeric abstraction (`src/extract/engine/ts/numeric/`). Operations
+arithmetic, reusing the existing numeric abstraction (`src/extract/compile/numeric/`). Operations
 that leave the modeled finite domain widen to the domain's `wide` class with a caveat — the
 existing `applyInputClassToWideInputVars` / `attachNumericReductions` behavior, now invoked from L2.
 
@@ -71,9 +71,9 @@ A `block` lowers to a sequenced `EffectIR` (`seq`), threading the local dataflow
 left-to-right so that a later statement sees the assignments of an earlier one.
 
 ### 3.5 Loops and recursion → over-approximation
-Loops (`isLoopStatement`, `statement-summary.ts:96`) and self-recursive calls are **over-approximated**:
+Loops (`isLoopStatement`) and self-recursive calls are **over-approximated**:
 the loop body is compiled once and its writes are lifted to `havoc`/`choose` over the affected vars,
-with a loud caveat. L2 never unrolls unboundedly. This is the existing policy, relocated.
+with a loud caveat. L2 never unrolls unboundedly. This is the existing policy in `statement-driver.ts`.
 
 ### 3.6 Local dataflow
 `const`/`let` bindings and reassignments are tracked in a per-scope environment mapping symbol →
@@ -119,10 +119,12 @@ their output byte-for-byte in the identity-preserving phases (Spec `06-migration
 L2 owns the *shape* of asynchronous modeling — the continuation-passing / enqueue-resolve lowering
 that turns `await f()` and callback effects into pending vars and resolve transitions (Spec 02). It
 does **not** own *which* calls are async effects: a timer (`setTimeout`), a websocket subscription,
-or a generic promise are recognized by L4 `EffectModelProvider`s (Spec `03-use-case-spis.md §2`),
+or a generic promise are recognized by L4 `EffectPlugin`s (Spec `03-use-case-spis.md §5`),
 which return a `LeafEffect` describing the enqueue and the resolution domain. L2 takes that leaf and
-performs the CPS lowering uniformly. This keeps `timers.ts` / `environment-callbacks.ts` recognition
-out of the compiler while keeping the hard part (CPS) universal.
+performs the CPS lowering uniformly. Timer and WebSocket API names live in
+`plugins/effect/timers/recognition.ts` and `plugins/effect/websocket/recognition.ts` — not in the
+engine — which keeps `timers.ts` / `environment-callbacks.ts` API-name-free while the CPS lowering
+remains universal.
 
 ## 6. Determinism and fragment merge
 
@@ -135,7 +137,7 @@ stability (Spec 06 reporter) is unaffected. L2 itself is pure and order-free giv
 
 ## 7. What L2 must never do
 
-- Import `typescript`, `extract/frameworks/*`, `extract/sources/*`, or any library package.
+- Import `typescript`, `extract/plugins/*`, or any library package.
 - Match a string literal that names a library API.
 - Introduce a new `EffectIR`/`ExprIR` node kind (Spec `04-ir-policy.md`).
 - Inspect `SurfaceExpr.origin` (that is L4's privilege, via the symbol port).
