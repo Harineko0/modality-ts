@@ -46,6 +46,9 @@ export function useStateSource(): StateSourcePlugin {
       );
     },
     decodeBinding: decodeUseStateBinding,
+    isLocalStateSource: true,
+    isComponentScopedVarId: (varId, component) =>
+      varId.startsWith(`local:${component}.`),
     harness,
     conformance: {
       testedVersions: "react>=18",

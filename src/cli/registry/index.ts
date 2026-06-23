@@ -51,6 +51,7 @@ import { zustandSource } from "modality-ts/extract/plugins/state/zustand";
 import { arktypeTypePlugin } from "modality-ts/extract/plugins/type/arktype";
 import { zodTypePlugin } from "modality-ts/extract/plugins/type/zod";
 import { extendFrameworkWithTsUnwrap } from "../../extract/engine/ts/framework-ts-bridge.js";
+import { extendReactFrameworkWithTsFacets } from "../../extract/plugins/framework/react/ts-facets.js";
 import { unwrapReactHookFormHandler } from "../../extract/plugins/framework/react-hook-form/unwrap.js";
 
 export interface RegistryAdaptersBundle {
@@ -255,16 +256,16 @@ function resolveBuiltinFramework(
   if (options.framework !== undefined && options.framework !== false) {
     return options.framework;
   }
-  const framework = reactFramework();
+  const base = extendReactFrameworkWithTsFacets(reactFramework());
   const dependencies = options.dependencies;
   const disabled = new Set(options.disabledPlugins ?? []);
   if (
     disabled.has("react-hook-form") ||
     (dependencies && dependencies["react-hook-form"] === undefined)
   ) {
-    return framework;
+    return base;
   }
-  return extendFrameworkWithTsUnwrap(framework, (node, ctx) =>
+  return extendFrameworkWithTsUnwrap(base, (node, ctx) =>
     unwrapReactHookFormHandler(node, ctx),
   );
 }

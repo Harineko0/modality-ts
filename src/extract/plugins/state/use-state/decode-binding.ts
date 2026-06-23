@@ -12,5 +12,6 @@ export function decodeUseStateBinding(
     stateName: localMatch[2]!,
     domain: decl.domain,
     initial: decl.initial,
+    isComponentScoped: true,
   };
 }

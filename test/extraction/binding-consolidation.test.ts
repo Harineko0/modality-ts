@@ -58,8 +58,10 @@ describe("binding consolidation", () => {
     for (const varId of varIds) {
       const decl = allVars.find((candidate) => candidate.id === varId);
       expect(decl, `missing ${varId}`).toBeDefined();
+      const legacy = legacySetterBindingFromDecl(decl!);
+      const isLocal = /^local:/.test(varId);
       expect(decodeSetterBinding(decl!, statePlugins)).toEqual(
-        legacySetterBindingFromDecl(decl!),
+        isLocal ? { ...legacy, isComponentScoped: true } : legacy,
       );
     }
   });

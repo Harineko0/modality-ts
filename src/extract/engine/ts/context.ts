@@ -2,7 +2,8 @@ import type { StateVarDecl, Value } from "modality-ts/core";
 import * as ts from "typescript";
 import type { SemanticTypeContext } from "../../lang/ts/semantic-type-context.js";
 import type { StateSourcePlugin, WriteChannel } from "../spi/index.js";
-import { componentNameFor, isExtractableHandler, propertyName } from "./ast.js";
+import { componentNameFor, currentEngineFramework, isExtractableHandler, propertyName } from "./ast.js";
+import { engineFrameworkPlugin } from "./framework-ts-bridge.js";
 import {
   type CustomHookRegistry,
   customHookDeclarationName,
@@ -42,6 +43,7 @@ export function decodeSetterBinding(
       decl.id,
     domain: decl.domain,
     initial: decl.initial as Value,
+    ...(localMatch ? { isComponentScoped: true } : {}),
   };
 }
 
@@ -104,7 +106,7 @@ export function settersForComponent(
   const scoped = new Map(
     [...setters].filter(
       ([key, setter]) =>
-        !setter.varId.startsWith("local:") ||
+        !setter.isComponentScoped ||
         !key.startsWith(`${setter.component}:`),
     ),
   );
@@ -254,7 +256,7 @@ function resolveUseStateDiscoveryForFile(
     };
   }
   const useStatePlugin = options.statePlugins?.find(
-    (plugin) => plugin.id === "use-state",
+    (plugin) => plugin.isLocalStateSource === true,
   );
   if (!useStatePlugin) {
     return { stateVars: [], writeChannels: [] };
@@ -286,9 +288,12 @@ function localSettersForComponent(
   statePlugins: readonly StateSourcePlugin[],
 ): Map<string, SetterBinding> {
   const localSetters = new Map<string, SetterBinding>();
-  const prefix = `local:${component}.`;
+  const localPlugin = statePlugins.find((p) => p.isLocalStateSource === true);
+  const isLocal = localPlugin?.isComponentScopedVarId
+    ? (varId: string) => localPlugin.isComponentScopedVarId!(varId, component)
+    : (varId: string) => varId.startsWith(`local:${component}.`);
   for (const channel of discovery.writeChannels) {
-    if (!channel.varId.startsWith(prefix)) continue;
+    if (!isLocal(channel.varId)) continue;
     if (channel.source.file !== fileName) continue;
     const decl = discovery.stateVars.find(
       (candidate) => candidate.id === channel.varId,
@@ -366,12 +371,9 @@ function setterAliasBinding(
 function useCallbackFunction(
   expression: ts.Expression,
 ): ExtractableHandler | undefined {
-  if (
-    !ts.isCallExpression(expression) ||
-    !ts.isIdentifier(expression.expression) ||
-    expression.expression.text !== "useCallback"
-  )
-    return undefined;
+  if (!ts.isCallExpression(expression)) return undefined;
+  const fw = engineFrameworkPlugin(currentEngineFramework().framework);
+  if (fw.unwrapCallbackExpr) return fw.unwrapCallbackExpr(expression);
   const first = expression.arguments[0];
   return first && isExtractableHandler(first) ? first : undefined;
 }
@@ -404,11 +406,12 @@ function providerValueObject(
     !ts.isCallExpression(declaration.initializer)
   )
     return undefined;
-  if (
-    !ts.isIdentifier(declaration.initializer.expression) ||
-    declaration.initializer.expression.text !== "useMemo"
-  )
-    return undefined;
+  const fw = engineFrameworkPlugin(currentEngineFramework().framework);
+  const isMemo = fw.isMemoValueCall
+    ? fw.isMemoValueCall(declaration.initializer)
+    : ts.isIdentifier(declaration.initializer.expression) &&
+      declaration.initializer.expression.text === "useMemo";
+  if (!isMemo) return undefined;
   const callback = declaration.initializer.arguments[0];
   if (!callback || !isExtractableHandler(callback)) return undefined;
   if (ts.isObjectLiteralExpression(callback.body)) return callback.body;
@@ -442,16 +445,19 @@ function variableDeclarationIn(
 }
 
 function hookUsesContext(hook: CustomHookDecl): boolean {
+  const fw = engineFrameworkPlugin(currentEngineFramework().framework);
   let found = false;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "useContext"
-    ) {
-      found = true;
-      return;
+    if (ts.isCallExpression(node)) {
+      const isCtxRead = fw.isContextReadCall
+        ? fw.isContextReadCall(node)
+        : ts.isIdentifier(node.expression) &&
+          node.expression.text === "useContext";
+      if (isCtxRead) {
+        found = true;
+        return;
+      }
     }
     ts.forEachChild(node, visit);
   };

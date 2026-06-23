@@ -18,6 +18,8 @@ export interface SetterBinding {
   initial?: Value;
   resettable?: boolean;
   fixedEffect?: EffectIR;
+  /** True when the binding is scoped to a single component (e.g., useState). */
+  isComponentScoped?: boolean;
 }
 
 export interface SetterCall {
