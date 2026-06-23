@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, type RouteObject } from "react-router-dom";
 import BillingRoute from "../routes/accounts/$accountId/billing/index.js";
 import AccountDetailRoute from "../routes/accounts/$accountId/index.js";
 import InvoiceRoute from "../routes/accounts/$accountId/invoices/$invoiceId/index.js";
@@ -18,7 +18,7 @@ import SettingsRoute from "../routes/settings/index.js";
 import RbacRoute from "../routes/settings/rbac/index.js";
 import { AppShell } from "./shell/AppShell.js";
 
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   {
     path: "/",
     element: <AppShell />,
@@ -51,4 +51,6 @@ export const router = createBrowserRouter([
       { path: "settings/rbac", element: <RbacRoute /> },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(routes);

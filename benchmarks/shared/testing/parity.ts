@@ -2,7 +2,9 @@ import { ledgerOpsPages } from "../app-spec/pages.js";
 import { ledgerOpsEffectApis } from "../app-spec/property-catalog.js";
 import { ledgerOpsRoutes } from "../app-spec/routes.js";
 import { ledgerOpsSeededOutcomes } from "../app-spec/seeded-outcomes.js";
+import { assertObservationMapCoversModel } from "./observation-map.js";
 import { assertRouteParity } from "./route-fixtures.js";
+import type { Model } from "modality-ts/core";
 
 export type FrameworkId = "ledgerops-react-router" | "ledgerops-nextjs";
 
@@ -48,4 +50,8 @@ export function assertSharedSpecParity(): void {
       "seeded outcomes must reference a property or be metadata-only",
     );
   }
+}
+
+export function assertObservationParity(model: Model): void {
+  assertObservationMapCoversModel(model);
 }
