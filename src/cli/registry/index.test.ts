@@ -617,9 +617,9 @@ describe("effect-model provider registration", () => {
     ).toBe(true);
   });
 
-  it("accepts explicit config.effectModels override", () => {
+  it("accepts explicit config.effectPlugins override", () => {
     const custom = fakeEffectModel({ id: "custom-timers" });
-    const registry = createBuiltinModalityRegistry({ effectModels: [custom] });
+    const registry = createBuiltinModalityRegistry({ effectPlugins: [custom] });
     expect(registry.effectPluginIds).toEqual(["custom-timers"]);
     expect(registry.effectPlugins).toEqual([custom]);
   });

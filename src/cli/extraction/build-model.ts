@@ -79,7 +79,7 @@ export interface ModalityConfig {
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
   framework?: FrameworkPlugin;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
   typePlugins?: readonly TypePlugin[];
   routePlugin?: RoutePlugin | false;
 }
@@ -99,7 +99,7 @@ export interface BuildExtractionModelOptions {
   typePlugins?: readonly TypePlugin[];
   routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
   now?: Date;
@@ -164,7 +164,7 @@ export async function buildExtractionModel(
           ],
           routePlugin: options.routePlugin ?? config.routePlugin,
           framework: options.framework ?? config.framework,
-          effectModels: options.effectModels ?? config.effectModels,
+          effectPlugins: options.effectPlugins ?? config.effectPlugins,
         });
         return {
           config,

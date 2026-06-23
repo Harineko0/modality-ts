@@ -86,7 +86,7 @@ export interface BuiltinRegistryOptions {
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
   routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
 }
 
 export interface RegistrySummary {
@@ -272,8 +272,8 @@ function resolveBuiltinFramework(
 function resolveBuiltinEffectModels(
   options: BuiltinRegistryOptions,
 ): readonly EffectPlugin[] {
-  if (options.effectModels !== undefined) {
-    return options.effectModels;
+  if (options.effectPlugins !== undefined) {
+    return options.effectPlugins;
   }
   return [timerEffectPlugin(), websocketEffectPlugin()];
 }
