@@ -61,7 +61,7 @@ exclusive bounds (`gt`/`lt`), sign aliases (`positive`, `nonnegative`,
 
 `createBuiltinModalityRegistry` enables `zod` and `arktype` providers from app
 dependencies. Disable them with `disabledPlugins` in `modality.config.json` (same
-ids as state plugins). Custom providers can be passed via config `domainRefinements`.
+ids as state plugins). Custom providers can be passed via config `typePlugins`.
 
 Model metadata `plugins` includes `kind: "domain-refinement"` entries alongside
 state sources, navigation, module-role, effect-API, cache/storage, and

@@ -29,6 +29,10 @@ The `modality` CLI binary is the default product surface.
 | `modality-ts/extract/engine` | extraction engine APIs |
 | `modality-ts/extract/engine/pipeline` | the P0–P7 pipeline |
 | `modality-ts/extract/engine/spi` | the [`StateSourcePlugin` / `RoutePlugin`](../architecture/state-sources.md) SPI plus `ModuleRoleAdapter`, `EffectApiProvider`, `CacheStorageProvider`, `ObservationProvider`, and `TypePlugin` |
+| `modality-ts/extract/plugins` | plugin factory helpers such as `createStateSourcePlugin`, `createTypePlugin`, `createRoutePlugin`, `createFrameworkPlugin`, and validators for custom extraction plugins |
+
+See [Building extraction plugins](../guides/building-extraction-plugins.md) for the
+user-facing authoring workflow.
 
 ## Type-library adapters
 

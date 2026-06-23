@@ -127,9 +127,10 @@ loud [taint](../soundness/e1-invariant.md), never a false "verified".
 > Schema libraries are used to derive [finite numeric domains](../concepts/state-and-domains.md#finite-numeric-domains)
 > from statically provable integer bounds.
 >
-> Missing a library? Because [plugins contribute IR instances, not new
-> semantics](../architecture/state-sources.md), most state libraries can be added as a
-> single new source slice — see [State sources & the plugin SPI](../architecture/state-sources.md).
+> Missing a library? You can build your own extraction plugin. Because
+> [plugins contribute IR instances, not new semantics](../architecture/state-sources.md),
+> most state libraries can be added as a single source slice, and schema libraries can
+> be added as type adapters. See [Building extraction plugins](../guides/building-extraction-plugins.md).
 
 ## Next steps
 

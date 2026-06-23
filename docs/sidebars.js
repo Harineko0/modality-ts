@@ -19,6 +19,7 @@ const sidebars = {
         "guides/debugging-counterexamples",
         "guides/ci-integration",
         "guides/exporting-to-tla",
+        "guides/building-extraction-plugins",
       ],
     },
     {
