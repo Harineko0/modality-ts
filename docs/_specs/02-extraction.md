@@ -47,6 +47,8 @@ Default extraction models **client UI transitions** plus provider-described rout
 
 **`useState`.** For every component reachable from a route root (call-graph walk over JSX element types, depth-limited with bail-and-report): record `useState` calls; bind the destructured `[x, setX]` names; the *setter symbol* (not name) is what P4/P5 track. Component instances are keyed by route (Spec 01 §2). v1 restriction, detected and enforced: a modeled stateful component must render at most once per route (no stateful list items); violations downgrade that component's vars to `unextractable`.
 
+No-argument `useState<T>()` is modeled as `option(D(T))` with `initial: null`, because React initializes the state value to `undefined` even when `T` itself excludes `undefined`.
+
 **`useSWR`.** Record call sites; classify keys:
 - string literal ⇒ exact key class;
 - template-literal and **tuple/array keys** (`['todos', userId]`) ⇒ key class parameterized by the abstract values of the non-literal elements/interpolations (e.g. ``` `/api/user/${id}` ``` or `['todos', id]` with `id: tokens(2)` ⇒ 2 cache entries); literal elements name the class — this is what makes stale-cache-across-identity bugs expressible;

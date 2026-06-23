@@ -671,6 +671,183 @@ describe("runExtractCommand", () => {
     expect(check.verdicts[0]?.status).toMatch(/^verified/);
   });
 
+  it("models no-argument typed useState as initially absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [serviceToRestart] = useState<'project' | 'database'>();
+        return serviceToRestart;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(
+      result.model.vars.find(
+        (decl) => decl.id === "local:App.serviceToRestart",
+      ),
+    ).toMatchObject({
+      domain: {
+        kind: "option",
+        inner: { kind: "enum", values: ["database", "project"] },
+      },
+      initial: null,
+    });
+    expect(validateModel(result.model).ok).toBe(true);
+  });
+
+  it("lowers undefined guards on optional useState to the absence sentinel", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [serviceToRestart, setServiceToRestart] = useState<'project' | 'database'>();
+        return <>
+          {serviceToRestart !== undefined && (
+            <button onClick={() => setServiceToRestart('database')}>Restart</button>
+          )}
+          {serviceToRestart === undefined ? (
+            <button onClick={() => setServiceToRestart('project')}>Choose</button>
+          ) : null}
+        </>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.Restart",
+        guard: {
+          kind: "neq",
+          args: [
+            { kind: "read", var: "local:App.serviceToRestart" },
+            { kind: "lit", value: null },
+          ],
+        },
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.Choose",
+        guard: {
+          kind: "eq",
+          args: [
+            { kind: "read", var: "local:App.serviceToRestart" },
+            { kind: "lit", value: null },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("assigns null for undefined writes to optional useState", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [serviceToRestart, setServiceToRestart] = useState<'project' | 'database'>();
+        return <>
+          <button onClick={() => setServiceToRestart('database')}>Database</button>
+          <button onClick={() => setServiceToRestart(undefined)}>Clear</button>
+          <button onClick={() => setServiceToRestart(serviceToRestart === undefined ? 'project' : undefined)}>Toggle</button>
+        </>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.Database",
+        effect: {
+          kind: "assign",
+          var: "local:App.serviceToRestart",
+          expr: { kind: "lit", value: "database" },
+        },
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.Clear",
+        effect: {
+          kind: "assign",
+          var: "local:App.serviceToRestart",
+          expr: { kind: "lit", value: null },
+        },
+      }),
+    );
+    expect(result.model.transitions).toContainEqual(
+      expect.objectContaining({
+        id: "App.onClick.Toggle",
+        effect: {
+          kind: "assign",
+          var: "local:App.serviceToRestart",
+          expr: {
+            kind: "cond",
+            args: [
+              {
+                kind: "eq",
+                args: [
+                  { kind: "readPre", var: "local:App.serviceToRestart" },
+                  { kind: "lit", value: null },
+                ],
+              },
+              { kind: "lit", value: "project" },
+              { kind: "lit", value: null },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it("does not nest option for no-argument already-optional useState", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import { useState } from 'react';
+      export function App() {
+        const [serviceToRestart] = useState<'project' | 'database' | undefined>();
+        return serviceToRestart;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    expect(
+      result.model.vars.find(
+        (decl) => decl.id === "local:App.serviceToRestart",
+      ),
+    ).toMatchObject({
+      domain: {
+        kind: "option",
+        inner: { kind: "enum", values: ["database", "project"] },
+      },
+      initial: null,
+    });
+  });
+
   it("includes Jotai atom declarations through the source plugin SPI", async () => {
     const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
     const sourcePath = join(dir, "App.tsx");

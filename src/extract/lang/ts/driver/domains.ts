@@ -120,12 +120,20 @@ export function inferUseStateDomainDetailed(
   const typeArg = call.typeArguments?.[0];
   const initializer = call.arguments[0];
   if (typeArg) {
-    return inferDomainFromTypeNodeDetailed(typeArg, typeAliases, new Set(), {
-      initializer,
-      sourceFile,
-      varId,
-      typePlugins,
-    });
+    const inferred = inferDomainFromTypeNodeDetailed(
+      typeArg,
+      typeAliases,
+      new Set(),
+      {
+        initializer,
+        sourceFile,
+        varId,
+        typePlugins,
+      },
+    );
+    return initializer
+      ? inferred
+      : { ...inferred, domain: withImplicitUndefined(inferred.domain) };
   }
   if (initializer) {
     const schemaResolved = resolveDomainRefinements(
@@ -178,7 +186,12 @@ export function inferUseStateDomainDetailed(
     if (ts.isArrayLiteralExpression(initializer))
       return { domain: { kind: "lengthCat" }, caveats: [] };
   }
-  return { domain: { kind: "tokens", count: 1 }, caveats: [] };
+  return {
+    domain: initializer
+      ? { kind: "tokens", count: 1 }
+      : { kind: "option", inner: { kind: "tokens", count: 1 } },
+    caveats: [],
+  };
 }
 
 export interface UseStateSemanticTypeContext {
@@ -230,15 +243,22 @@ export function inferUseStateDomainSemanticDetailed(
       ts.isTypeReferenceNode(typeArg) &&
       sameEnumValues(semantic.domain, ast.domain)
     ) {
-      return { ...semantic, domain: ast.domain };
+      return {
+        ...semantic,
+        domain: initializer ? ast.domain : withImplicitUndefined(ast.domain),
+      };
     }
     if (semantic.domain.kind !== "tokens" || semantic.caveats.length > 0) {
-      return semantic;
+      return initializer
+        ? semantic
+        : { ...semantic, domain: withImplicitUndefined(semantic.domain) };
     }
     if (ast.domain.kind !== "tokens" || ast.caveats.length > 0) {
       return ast;
     }
-    return semantic;
+    return initializer
+      ? semantic
+      : { ...semantic, domain: withImplicitUndefined(semantic.domain) };
   }
   if (initializer && types?.checker) {
     const schemaResolved = resolveDomainRefinements(
@@ -388,7 +408,12 @@ export function initialValueForUseStateDetailed(
   varId?: string,
 ): InitialValueResult {
   const initial = call.arguments[0];
-  if (!initial) return { value: firstValue(domain), caveats: [] };
+  if (!initial) {
+    if (domain.kind === "option") return { value: null, caveats: [] };
+    // Normal useState inference wraps no-argument calls in option(...); this
+    // fallback only protects direct callers that pass a precomputed domain.
+    return { value: firstValue(domain), caveats: [] };
+  }
   const context: DomainInferenceContext = {
     initializer: initial,
     sourceFile,
@@ -437,6 +462,10 @@ export function firstValue(domain: AbstractDomain): Value {
     case "boundedList":
       return [];
   }
+}
+
+function withImplicitUndefined(domain: AbstractDomain): AbstractDomain {
+  return domain.kind === "option" ? domain : { kind: "option", inner: domain };
 }
 
 export function compilerBackedTypeAliases(
