@@ -248,6 +248,21 @@ export function literalValue(expression: ts.Expression): Value | undefined {
   return undefined;
 }
 
+export function absenceLiteralValue(
+  expression: ts.Expression,
+): Value | undefined {
+  if (expression.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isIdentifier(expression) && expression.text === "undefined")
+    return null;
+  if (
+    ts.isVoidExpression(expression) &&
+    ts.isNumericLiteral(expression.expression) &&
+    Number(expression.expression.text) === 0
+  )
+    return null;
+  return undefined;
+}
+
 export function callName(expression: ts.Expression): string | undefined {
   if (ts.isIdentifier(expression)) return expression.text;
   if (isPropertyAccessLike(expression))

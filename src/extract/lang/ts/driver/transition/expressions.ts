@@ -1,6 +1,11 @@
 import type { AbstractDomain, ExprIR, Value } from "modality-ts/core";
 import * as ts from "typescript";
-import { isPropertyAccessLike, literalValue, propertyName } from "../ast.js";
+import {
+  absenceLiteralValue,
+  isPropertyAccessLike,
+  literalValue,
+  propertyName,
+} from "../ast.js";
 import { firstValue } from "../domains.js";
 import type { BoundExpr, SetterBinding } from "../types.js";
 
@@ -42,6 +47,12 @@ export function setterArgumentExpr(
   snapshotReads = true,
   snapshottedReads?: ReadonlySet<string>,
 ): BoundExpr | undefined {
+  if (
+    setter.domain.kind === "option" &&
+    absenceLiteralValue(argument) !== undefined
+  ) {
+    return { expr: { kind: "lit", value: null }, reads: [] };
+  }
   if (ts.isIdentifier(argument) && resetSymbols.has(argument.text)) {
     if (setter.resettable && setter.initial !== undefined) {
       return { expr: { kind: "lit", value: setter.initial }, reads: [] };
@@ -147,7 +158,7 @@ export function valueExpr(
       snapshotReads,
       snapshottedReads,
     );
-  const value = literalValue(expression);
+  const value = literalOrAbsenceValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression))
     return modeledReadExpr(
@@ -219,6 +230,11 @@ export function valueExpr(
   if (ts.isObjectLiteralExpression(expression))
     return objectSpreadUpdateExpr(expression, setters, locals);
   return undefined;
+}
+
+function literalOrAbsenceValue(expression: ts.Expression): Value | undefined {
+  const absence = absenceLiteralValue(expression);
+  return absence !== undefined ? absence : literalValue(expression);
 }
 
 export function objectSpreadUpdateExpr(

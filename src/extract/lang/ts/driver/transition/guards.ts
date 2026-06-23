@@ -1,6 +1,11 @@
-import type { ExprIR, Transition } from "modality-ts/core";
+import type { ExprIR, Transition, Value } from "modality-ts/core";
 import * as ts from "typescript";
-import { isPropertyAccessLike, lineAndColumn, literalValue } from "../ast.js";
+import {
+  absenceLiteralValue,
+  isPropertyAccessLike,
+  lineAndColumn,
+  literalValue,
+} from "../ast.js";
 import type { BoundExpr, ExtractionWarning, SetterBinding } from "../types.js";
 import { unwrapTsExpression, valueExpr } from "./expressions.js";
 import { stringAttribute } from "./ui.js";
@@ -429,13 +434,18 @@ export function parseGuardOperand(
   const unwrapped = unwrapTsExpression(expression);
   if (unwrapped !== expression)
     return parseGuardOperand(unwrapped, setters, locals, snapshotReads);
-  const value = literalValue(expression);
+  const value = literalOrAbsenceValue(expression);
   if (value !== undefined) return { expr: { kind: "lit", value }, reads: [] };
   if (ts.isIdentifier(expression) || isPropertyAccessLike(expression)) {
     const bound = valueExpr(expression, setters, locals, snapshotReads);
     return bound ? guardExprFromBound(bound, snapshotReads) : undefined;
   }
   return parseGuardExpression(expression, setters, locals, snapshotReads);
+}
+
+function literalOrAbsenceValue(expression: ts.Expression): Value | undefined {
+  const absence = absenceLiteralValue(expression);
+  return absence !== undefined ? absence : literalValue(expression);
 }
 
 export function parseConjunctiveGuardExpression(

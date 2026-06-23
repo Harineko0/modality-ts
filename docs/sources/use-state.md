@@ -17,6 +17,10 @@ component is mounted, holding `⊥` otherwise.
   tracks.
 - The domain via [`D(τ)`](../concepts/state-and-domains.md) from the state's type — a
   `'idle' | 'loading' | 'error'` union is an exact `enum` with no abstraction needed.
+- No-argument `useState<T>()` is initialized to absence, so it is modeled as
+  `option(D(T))` with `initial: null`. This uses the same absent sentinel as
+  `T | undefined`: guards and writes involving `undefined` or `null` collapse to the
+  option's absent value.
 
 ## Route-local lifecycle
 
