@@ -25,6 +25,11 @@ export type BenchmarkDefinition = {
   sourcePaths: readonly string[];
   propsPaths: readonly string[];
   effectApis: readonly string[];
+  conformance?: {
+    walkCount?: number;
+    depth?: number;
+    seed?: number;
+  };
   expected: BenchmarkExpectedCounts;
   searchLimits?: BenchmarkSearchLimits;
 };
@@ -33,7 +38,11 @@ export type BenchmarkManifest = {
   schemaVersion: 1;
   manifestId: string;
   benchmarks: readonly BenchmarkDefinition[];
-  validityThresholds?: unknown;
+  validityThresholds?: {
+    conformance?: {
+      minPassRate?: number;
+    };
+  };
 };
 
 export async function readBenchmarkManifest(

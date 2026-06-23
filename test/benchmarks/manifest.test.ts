@@ -13,6 +13,8 @@ import {
 import { ledgerOpsRoutes } from "../../benchmarks/shared/app-spec/routes.js";
 import { ledgerOpsSeededOutcomes } from "../../benchmarks/shared/app-spec/seeded-outcomes.js";
 import { readBenchmarkManifest } from "../../tools/benchmark/manifest.js";
+import { assertObservationParity } from "../../benchmarks/shared/testing/parity.js";
+import type { Model } from "../../src/core/index.js";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const manifestPath = join(repoRoot, "benchmarks", "manifest.json");
@@ -87,5 +89,41 @@ describe("ledgerops benchmark manifest", () => {
       manifest.benchmarks.flatMap((entry) => entry.effectApis),
     );
     expect(uniqueApis.size).toBe(ledgerOpsEffectApis.length);
+  });
+
+  it("fails fast when property vars are missing observation-map entries", () => {
+    const model = {
+      schemaVersion: 1,
+      id: "observation-fixture",
+      vars: [
+        {
+          id: "sys:route",
+          domain: { kind: "enum", values: ["/login"] },
+          origin: "system",
+          scope: { kind: "global" },
+          initial: "/login",
+        },
+        {
+          id: "atom:sessionAtom",
+          domain: { kind: "option", inner: { kind: "tokens", count: 1 } },
+          origin: "library-template",
+          scope: { kind: "global" },
+          initial: null,
+        },
+        {
+          id: "atom:unmappedLedgerState",
+          domain: { kind: "bool" },
+          origin: "library-template",
+          scope: { kind: "global" },
+          initial: false,
+        },
+      ],
+      transitions: [],
+      bounds: { maxDepth: 1, maxPending: 1, maxInternalSteps: 1 },
+    } satisfies Model;
+
+    expect(() => assertObservationParity(model)).toThrow(
+      /atom:unmappedLedgerState/,
+    );
   });
 });

@@ -1,7 +1,11 @@
 {
   "schemaVersion": 1,
   "manifestId": "ledgerops-benchmarks",
-  "validityThresholds": {},
+  "validityThresholds": {
+    "conformance": {
+      "minPassRate": 0
+    }
+  },
   "benchmarks": [
     {
       "id": "ledgerops-react-router",
@@ -66,6 +70,11 @@
         "api.saveSettings",
         "api.saveRoleAssignment"
       ],
+      "conformance": {
+        "walkCount": 32,
+        "depth": 12,
+        "seed": 26062331
+      },
       "expected": {
         "truePositiveViolations": 7,
         "trueNegativeVerified": 7,
@@ -140,6 +149,11 @@
         "api.saveSettings",
         "api.saveRoleAssignment"
       ],
+      "conformance": {
+        "walkCount": 32,
+        "depth": 12,
+        "seed": 26062332
+      },
       "expected": {
         "truePositiveViolations": 7,
         "trueNegativeVerified": 7,
