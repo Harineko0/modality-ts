@@ -32,7 +32,7 @@ export function createEngineLeafDispatch(
   return createLeafDispatchAdapter({
     framework: currentEngineFramework().framework,
     statePlugins: [],
-    effectModels: state.effectPlugins,
+    effectPlugins: state.effectPlugins,
     setters,
     resolveCallName: calleeNameFromSurfaceCall,
     resolveFrameworkHook(call, _ctx) {

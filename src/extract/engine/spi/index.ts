@@ -174,6 +174,8 @@ export interface DecodedSetterBinding {
   initial?: Value;
   resettable?: boolean;
   fixedEffect?: EffectIR;
+  /** True when the binding is scoped to a single component (e.g., useState). */
+  isComponentScoped?: boolean;
 }
 
 export interface StateSourcePlugin extends ModalityAdapterBase {
@@ -182,6 +184,10 @@ export interface StateSourcePlugin extends ModalityAdapterBase {
   domainHints?(decl: SourceDecl, ctx: TypeCtx): AbstractDomain | undefined;
   /** Owns this source's var-id shape; returns the same fields the engine regex produced. */
   decodeBinding?(decl: StateVarDecl): DecodedSetterBinding | undefined;
+  /** True when this plugin owns component-local (file-scoped) state bindings. */
+  isLocalStateSource?: boolean;
+  /** Returns true when varId belongs to the given component (owner of local scope). */
+  isComponentScopedVarId?(varId: string, component: string): boolean;
   writeChannels(ctx: ChannelCtx): readonly WriteChannel[];
   safetyWarnings?(ctx: ChannelCtx): readonly ExtractionWarning[];
   extract?(ctx: ExtractCtx): SourceExtractionResult;

@@ -1,10 +1,10 @@
-import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
+import { tanstackQuerySource } from "modality-ts/extract/plugins/state/tanstack-query";
 import { describe, expect, it } from "vitest";
 import {
   observe,
   setup,
   type TanstackQueryClientLike,
-} from "../../../src/extract/sources/tanstack-query/harness.js";
+} from "../../../src/extract/plugins/state/tanstack-query/harness.js";
 
 describe("TanStack Query harness", () => {
   it("observes query data/status/fetchStatus from a QueryClient", () => {

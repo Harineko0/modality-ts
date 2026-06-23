@@ -1,9 +1,9 @@
 import {
   createTanstackMutationTemplate,
   tanstackQuerySource,
-} from "modality-ts/extract/sources/tanstack-query";
+} from "modality-ts/extract/plugins/state/tanstack-query";
 import { describe, expect, it } from "vitest";
-import { summarizeTanstackQueryWrite } from "../../../src/extract/sources/tanstack-query/writes.js";
+import { summarizeTanstackQueryWrite } from "../../../src/extract/plugins/state/tanstack-query/writes.js";
 
 describe("TanStack Query mutations", () => {
   it("discovers useMutation and emits mutation template vars", () => {

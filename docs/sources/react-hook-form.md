@@ -83,7 +83,7 @@ the child component is not available.
 ## Entry point
 
 ```ts
-import { reactHookFormSource } from "modality-ts/extract/sources/react-hook-form";
+import { reactHookFormSource } from "modality-ts/extract/plugins/framework/react-hook-form";
 ```
 
 This is a `HandlerWrapperProvider` — it implements the

@@ -13,7 +13,7 @@ import {
 import { buildReactExtractionProjectSummary } from "../../src/extract/engine/ts/react-extraction-project-summary.js";
 import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { inferDomainSemantic } from "../../src/extract/engine/ts/type-domains.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 const defaultSourcePlugins = [useStateSource()];
 

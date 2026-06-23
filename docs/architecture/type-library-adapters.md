@@ -71,7 +71,7 @@ observation providers. See [Adapter capabilities beyond state sources](../archit
 
 | Entry point | Purpose |
 | --- | --- |
-| `modality-ts/extract/type-libraries/zod` | `zodDomainRefinementProvider()` |
-| `modality-ts/extract/type-libraries/arktype` | `arktypeDomainRefinementProvider()` |
+| `modality-ts/extract/plugins/type/zod` | `zodDomainRefinementProvider()` |
+| `modality-ts/extract/plugins/type/arktype` | `arktypeDomainRefinementProvider()` |
 
 There is no `/harness` export for type-library adapters (unlike state sources).

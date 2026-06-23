@@ -23,7 +23,7 @@ export interface LeafDispatchAdapterOptions {
   framework?: FrameworkPlugin;
   statePlugins?: readonly StateSourcePlugin[];
   navigation?: RoutePlugin;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
   setters: Map<string, SetterBinding>;
   resolveCallName: (call: SurfaceCall) => string | undefined;
   resolveSetterWrite: (
@@ -77,7 +77,7 @@ function collectCallClaims(
   );
   push(
     "effect",
-    options.effectModels?.[0]?.id ?? "effect",
+    options.effectPlugins?.[0]?.id ?? "effect",
     options.resolveEffectModel(call, ctx),
   );
   return claims;

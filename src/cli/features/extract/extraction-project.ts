@@ -31,7 +31,7 @@ import type {
   TypePlugin,
 } from "modality-ts/extract/engine/spi";
 import { resolveFrameworkPlugin } from "modality-ts/extract/engine/spi";
-import { parseReactRouterRoutes } from "modality-ts/extract/sources/router";
+import { parseReactRouterRoutes } from "modality-ts/extract/plugins/route/router";
 import {
   bindEngineFrameworkFromPlugin,
   withEngineFramework,

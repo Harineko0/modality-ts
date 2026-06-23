@@ -1,6 +1,6 @@
 import type { SurfaceNode } from "modality-ts/extract/engine/spi";
 import { nodeRefFor } from "modality-ts/extract/lang/ts";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 

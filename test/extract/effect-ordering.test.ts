@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractUseStateSkeleton } from "../../src/extract/sources/use-state/transitions.js";
+import { extractUseStateSkeleton } from "../../src/extract/plugins/state/use-state/transitions.js";
 
 describe("effect ordering", () => {
   it("assigns phase 0 to layout and phase 1 to passive effects", () => {

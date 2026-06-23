@@ -21,37 +21,37 @@ const SOURCE_SCAFFOLD: readonly SourceScaffold[] = [
   {
     id: "use-state",
     factory: "useStateSource",
-    module: "modality-ts/extract/sources/use-state",
+    module: "modality-ts/extract/plugins/state/use-state",
     packageNames: ["react"],
   },
   {
     id: "jotai",
     factory: "jotaiSource",
-    module: "modality-ts/extract/sources/jotai",
+    module: "modality-ts/extract/plugins/state/jotai",
     packageNames: ["jotai"],
   },
   {
     id: "swr",
     factory: "swrSource",
-    module: "modality-ts/extract/sources/swr",
+    module: "modality-ts/extract/plugins/state/swr",
     packageNames: ["swr"],
   },
   {
     id: "zustand",
     factory: "zustandSource",
-    module: "modality-ts/extract/sources/zustand",
+    module: "modality-ts/extract/plugins/state/zustand",
     packageNames: ["zustand"],
   },
   {
     id: "tanstack-query",
     factory: "tanstackQuerySource",
-    module: "modality-ts/extract/sources/tanstack-query",
+    module: "modality-ts/extract/plugins/state/tanstack-query",
     packageNames: ["@tanstack/react-query"],
   },
   {
     id: "redux",
     factory: "reduxSource",
-    module: "modality-ts/extract/sources/redux",
+    module: "modality-ts/extract/plugins/state/redux",
     packageNames: ["@reduxjs/toolkit", "react-redux", "redux"],
   },
 ];

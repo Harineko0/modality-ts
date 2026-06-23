@@ -1,5 +1,5 @@
 import type { StateVarDecl } from "modality-ts/core";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { jotaiSource } from "modality-ts/extract/plugins/state/jotai";
 import { describe, expect, it } from "vitest";
 
 function legacySetterBindingFromDecl(decl: StateVarDecl) {

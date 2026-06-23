@@ -3,8 +3,8 @@ import {
   observationSource,
 } from "modality-ts/cli/harness";
 import type { PluginProvenance } from "modality-ts/core";
-import { timerEffectPlugin } from "modality-ts/extract/effect-models/timers";
-import { websocketEffectPlugin } from "modality-ts/extract/effect-models/websocket";
+import { timerEffectPlugin } from "modality-ts/extract/plugins/effect/timers";
+import { websocketEffectPlugin } from "modality-ts/extract/plugins/effect/websocket";
 import type {
   CacheStorageProvider,
   EffectApiProvider,
@@ -21,37 +21,38 @@ import type {
   TypePlugin,
 } from "modality-ts/extract/engine/spi";
 import { registerEffectPlugins } from "modality-ts/extract/engine/spi";
-import { reactFramework } from "modality-ts/extract/frameworks/react";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
+import { reactFramework } from "modality-ts/extract/plugins/framework/react";
+import { jotaiSource } from "modality-ts/extract/plugins/state/jotai";
 import {
   nextAdapter,
   nextCacheStorageProvider,
   nextEffectApiProvider,
   nextModuleRolePlugin,
   nextRouteExecutionPlugin,
-} from "modality-ts/extract/sources/next";
-import { reduxSource } from "modality-ts/extract/sources/redux";
+} from "modality-ts/extract/plugins/route/next";
+import { reduxSource } from "modality-ts/extract/plugins/state/redux";
 import {
   reactRouterAdapter,
   reactRouterEffectApiProvider,
   reactRouterModuleRolePlugin,
   reactRouterRouteExecutionPlugin,
-} from "modality-ts/extract/sources/router";
-import { swrSource } from "modality-ts/extract/sources/swr";
-import { tanstackQuerySource } from "modality-ts/extract/sources/tanstack-query";
+} from "modality-ts/extract/plugins/route/router";
+import { swrSource } from "modality-ts/extract/plugins/state/swr";
+import { tanstackQuerySource } from "modality-ts/extract/plugins/state/tanstack-query";
 import {
   tanstackRouterAdapter,
   tanstackRouterCacheStorageProvider,
   tanstackRouterEffectApiProvider,
   tanstackRouterModuleRolePlugin,
   tanstackRouterRouteExecutionPlugin,
-} from "modality-ts/extract/sources/tanstack-router";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
-import { zustandSource } from "modality-ts/extract/sources/zustand";
-import { arktypeTypePlugin } from "modality-ts/extract/type-libraries/arktype";
-import { zodTypePlugin } from "modality-ts/extract/type-libraries/zod";
+} from "modality-ts/extract/plugins/route/tanstack-router";
+import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
+import { zustandSource } from "modality-ts/extract/plugins/state/zustand";
+import { arktypeTypePlugin } from "modality-ts/extract/plugins/type/arktype";
+import { zodTypePlugin } from "modality-ts/extract/plugins/type/zod";
 import { extendFrameworkWithTsUnwrap } from "../../extract/engine/ts/framework-ts-bridge.js";
-import { unwrapReactHookFormHandler } from "../../extract/sources/react-hook-form/unwrap.js";
+import { extendReactFrameworkWithTsFacets } from "../../extract/plugins/framework/react/ts-facets.js";
+import { unwrapReactHookFormHandler } from "../../extract/plugins/framework/react-hook-form/unwrap.js";
 
 export interface RegistryAdaptersBundle {
   navigation?: RoutePlugin;
@@ -86,7 +87,7 @@ export interface BuiltinRegistryOptions {
   extraCacheStorageProviders?: readonly CacheStorageProvider[];
   routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
 }
 
 export interface RegistrySummary {
@@ -255,16 +256,16 @@ function resolveBuiltinFramework(
   if (options.framework !== undefined && options.framework !== false) {
     return options.framework;
   }
-  const framework = reactFramework();
+  const base = extendReactFrameworkWithTsFacets(reactFramework());
   const dependencies = options.dependencies;
   const disabled = new Set(options.disabledPlugins ?? []);
   if (
     disabled.has("react-hook-form") ||
     (dependencies && dependencies["react-hook-form"] === undefined)
   ) {
-    return framework;
+    return base;
   }
-  return extendFrameworkWithTsUnwrap(framework, (node, ctx) =>
+  return extendFrameworkWithTsUnwrap(base, (node, ctx) =>
     unwrapReactHookFormHandler(node, ctx),
   );
 }
@@ -272,8 +273,8 @@ function resolveBuiltinFramework(
 function resolveBuiltinEffectModels(
   options: BuiltinRegistryOptions,
 ): readonly EffectPlugin[] {
-  if (options.effectModels !== undefined) {
-    return options.effectModels;
+  if (options.effectPlugins !== undefined) {
+    return options.effectPlugins;
   }
   return [timerEffectPlugin(), websocketEffectPlugin()];
 }

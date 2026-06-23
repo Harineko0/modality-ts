@@ -87,7 +87,7 @@ describe("ledgerops nextjs benchmark", () => {
 
     expect(result.model.metadata?.plugins).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "navigation", id: "next" }),
+        expect.objectContaining({ kind: "route", id: "next" }),
       ]),
     );
 

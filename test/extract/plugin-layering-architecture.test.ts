@@ -126,7 +126,7 @@ describe("plugin layering remediation — legacy driver removal", () => {
       resolve(repoRoot, "src/extract/lang"),
       resolve(repoRoot, "src/extract/frameworks"),
       resolve(repoRoot, "src/extract/plugins"),
-      resolve(repoRoot, "src/extract/effect-models"),
+      resolve(repoRoot, "src/extract/plugins/effect"),
       resolve(repoRoot, "src/extract/sources"),
     ];
     const offenders: string[] = [];

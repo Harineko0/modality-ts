@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractUseStateSkeleton } from "../../src/extract/sources/use-state/transitions.js";
+import { extractUseStateSkeleton } from "../../src/extract/plugins/state/use-state/transitions.js";
 
 describe("concurrent rendering", () => {
   it("extracts useTransition isPending var and deferred commit", () => {

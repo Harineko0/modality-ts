@@ -33,7 +33,7 @@ custom submit/action wrappers so that the inner callback body is extractable.
 
 | Adapter | What is unwrapped | Entry point |
 | --- | --- | --- |
-| [React Hook Form](./react-hook-form.md) | `form.handleSubmit(cb)`, destructured `handleSubmit(cb)` | `modality-ts/extract/sources/react-hook-form` |
+| [React Hook Form](./react-hook-form.md) | `form.handleSubmit(cb)`, destructured `handleSubmit(cb)` | `modality-ts/extract/plugins/framework/react-hook-form` |
 
 ## How a source becomes active
 

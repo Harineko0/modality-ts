@@ -35,8 +35,8 @@ Inspect the current Zod refinement provider:
 
 ```bash
 cd /Users/hari/proj/modality-ts
-rtk read src/extract/type-libraries/zod/domains.ts
-rtk read test/extract/type-libraries/zod-domain-refinement.test.ts
+rtk read src/extract/plugins/type/zod/domains.ts
+rtk read test/extract/plugins/type/zod-domain-refinement.test.ts
 ```
 
 The parser only accepts chain steps named:
@@ -71,11 +71,11 @@ Other numeric methods are not recognized by `parseZodNumberChain(...)`, so the p
 
 ## Possible Fix Directions
 
-- Extend `src/extract/type-libraries/zod/domains.ts` to parse known Zod numeric aliases.
+- Extend `src/extract/plugins/type/zod/domains.ts` to parse known Zod numeric aliases.
 - Track integer-ness, inclusive/exclusive bounds, and optional divisibility in the intermediate parse result.
 - Produce `boundedInt` for dense finite integer ranges and `intSet` for finite modulo-filtered ranges.
 - Emit caveats for dynamic bounds, non-integer finite bounds, or one-sided constraints that cannot produce a finite domain.
-- Add provider tests in `test/extract/type-libraries/zod-domain-refinement.test.ts`.
+- Add provider tests in `test/extract/plugins/type/zod-domain-refinement.test.ts`.
 - Add CLI extraction regression tests in `src/cli/features/extract/command.test.ts` for supported aliases through the registry provider.
 
 ## Resolution
@@ -84,7 +84,7 @@ The Zod domain refinement provider now parses documented static numeric chain me
 
 - **Refined:** `.int()` with static two-sided bounds via inclusive aliases (`min`/`gte`, `max`/`lte`), exclusive bounds (`gt`/`lt`), sign aliases (`positive`, `nonnegative`, `negative`, `nonpositive`), and finite positive-integer `multipleOf`/`step` filters → `boundedInt` when dense, `intSet` when sparse.
 - **Caveated:** dynamic bound or divisibility arguments; one-sided constraints; missing `.int()`; contradictory bounds; invalid divisors (`0`, negative, non-integer).
-- **Tests:** `test/extract/type-libraries/zod-domain-refinement.test.ts` and Zod CLI regressions in `src/cli/features/extract/command.test.ts`.
+- **Tests:** `test/extract/plugins/type/zod-domain-refinement.test.ts` and Zod CLI regressions in `src/cli/features/extract/command.test.ts`.
 - **Docs:** type-library adapter, extraction spec, state-and-domains, and react-features pages updated.
 
 Floating-point numeric domains, decimal `multipleOf`, and one-sided unbounded schemas remain intentionally unsupported; overlays supply finite bounds when needed.
