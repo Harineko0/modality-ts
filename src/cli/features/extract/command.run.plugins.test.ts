@@ -302,7 +302,10 @@ describe("runExtractCommand", () => {
     const click = result.model.transitions.find((transition) =>
       transition.writes.includes("atom:authAtom"),
     );
-    expect(click?.reads).toEqual(["atom:authAtom"]);
+    expect(click?.reads).toEqual([
+      "atom:authAtom",
+      "swr:event_snapshot_userId:data",
+    ]);
   });
 
   it("extracts a React Router v7 app directory with tsconfig imports, fetch flows, Button wrappers, and theme context", async () => {
