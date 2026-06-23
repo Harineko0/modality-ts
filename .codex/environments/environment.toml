@@ -4,6 +4,3 @@ name = "modality-ts"
 
 [setup]
 script = ""
-
-[setup.darwin]
-script = "pnpm install"
