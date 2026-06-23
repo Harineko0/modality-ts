@@ -142,6 +142,21 @@ function historyOverflowAssign(
   };
 }
 
+function compactHistoryAssign(
+  historyVar: string,
+  routeValues: readonly string[],
+): EffectIR {
+  const choices = [
+    litValue([]),
+    ...routeValues.map((route) => litValue([route])),
+  ];
+  return {
+    kind: "choose",
+    var: historyVar,
+    among: choices,
+  };
+}
+
 function canUnrollHistory(
   routeValues: readonly string[] | undefined,
   historyCap: number,
@@ -262,7 +277,7 @@ export function locationEffect(args: {
         )
       : seqEffects([
           { kind: "havoc", var: currentVar },
-          { kind: "havoc", var: historyVar },
+          compactHistoryAssign(historyVar, historyRouteValues),
         ]);
     return {
       effect,
@@ -275,7 +290,8 @@ export function locationEffect(args: {
     throw new Error("locationEffect push requires `to`");
   }
 
-  const pushBody = canUnrollHistory(historyRouteValues, historyCap)
+  const canUnrollPushHistory = canUnrollHistory(historyRouteValues, historyCap);
+  const pushBody = canUnrollPushHistory
     ? seqEffects([
         buildPushHistoryEffect(
           historyVar,
@@ -286,15 +302,17 @@ export function locationEffect(args: {
         assignEffect(currentVar, args.to),
       ])
     : seqEffects([
-        { kind: "havoc", var: historyVar },
+        compactHistoryAssign(historyVar, historyRouteValues),
         assignEffect(currentVar, args.to),
       ]);
 
-  const effect = ifEffect(
-    historyShorterThanCap(historyVar, historyCap),
-    pushBody,
-    historyOverflowAssign(historyVar, historyCap, historyRouteValues),
-  );
+  const effect = canUnrollPushHistory
+    ? ifEffect(
+        historyShorterThanCap(historyVar, historyCap),
+        pushBody,
+        historyOverflowAssign(historyVar, historyCap, historyRouteValues),
+      )
+    : pushBody;
 
   return {
     effect,

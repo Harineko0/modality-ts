@@ -40,6 +40,25 @@ describe("locationEffect", () => {
     );
   });
 
+  it("keeps push compact when history is too large to unroll", () => {
+    const lowered = locationEffect({
+      currentVar: "sys:route",
+      historyVar: "sys:history",
+      mode: "push",
+      to: { kind: "lit", value: "/b" },
+      routeValues: Array.from({ length: 18 }, (_, index) => `/r${index}`),
+      historyCap: 4,
+    });
+    expect(JSON.stringify(lowered.effect).length).toBeLessThan(1500);
+    expect(lowered.effect).toMatchObject({
+      kind: "seq",
+      effects: [
+        { kind: "choose", var: "sys:history" },
+        { kind: "assign", var: "sys:route" },
+      ],
+    });
+  });
+
   it("lowers back to conditional assignments over history", () => {
     const lowered = locationEffect({
       currentVar: "sys:route",

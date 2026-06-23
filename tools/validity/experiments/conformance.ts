@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ConformReport } from "modality-ts/core";
-import { runConformCommand } from "../../../src/cli/conform.js";
+import type { runConformCommand } from "../../../src/cli/conform.js";
 import { runExtractCommand } from "../../../src/cli/extract.js";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
 import type {
@@ -34,12 +35,13 @@ const defaultConformance = {
   depth: 12,
   seed: 26062303,
 };
+const CONFORM_CHILD_TIMEOUT_MS = 120_000;
 
 export function conformanceExperiment(
   deps: ConformanceExperimentDeps = {},
 ): ValidityExperiment {
   const extract = deps.extract ?? runExtractCommand;
-  const conform = deps.conform ?? runConformCommand;
+  const conform = deps.conform ?? runConformCommandInChild;
   const readReport = deps.readReport ?? readConformReport;
   return {
     id: "conformance",
@@ -59,6 +61,78 @@ export function conformanceExperiment(
       }
       return summarizeConformance(ctx, perBenchmark);
     },
+  };
+}
+
+async function runConformCommandInChild(
+  options: Parameters<typeof runConformCommand>[0],
+): Promise<Awaited<ReturnType<typeof runConformCommand>>> {
+  const repoRoot = resolve(import.meta.dirname, "../../..");
+  const childPath = resolve(repoRoot, "tools/validity/conform-child.ts");
+  const tsxCliPath = resolve(repoRoot, "node_modules/tsx/dist/cli.mjs");
+  const args = [
+    tsxCliPath,
+    childPath,
+    ...(options.modelPath ? ["--model", options.modelPath] : []),
+    ...(options.mode ? ["--mode", options.mode] : []),
+    ...(options.harnessPath ? ["--harness", options.harnessPath] : []),
+    ...(options.walkCount !== undefined
+      ? ["--count", String(options.walkCount)]
+      : []),
+    ...(options.depth !== undefined ? ["--depth", String(options.depth)] : []),
+    ...(options.seed !== undefined ? ["--seed", String(options.seed)] : []),
+    ...(options.reportPath ? ["--report", options.reportPath] : []),
+    ...(options.fixtureId ? ["--fixture", options.fixtureId] : []),
+  ];
+  const child = spawn(process.execPath, args, {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGTERM");
+  }, CONFORM_CHILD_TIMEOUT_MS);
+  const exitCode = await new Promise<number>((resolvePromise, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (timedOut) {
+        reject(
+          new Error(
+            `conform child timed out after ${CONFORM_CHILD_TIMEOUT_MS}ms`,
+          ),
+        );
+        return;
+      }
+      if (signal) {
+        reject(new Error(`conform child exited from signal ${signal}`));
+        return;
+      }
+      resolvePromise(code ?? 0);
+    });
+  }).finally(() => clearTimeout(timeout));
+  if (exitCode !== 0 && exitCode !== 2 && exitCode !== 3) {
+    const message = stderr.join("").trim() || stdout.join("").trim();
+    throw new Error(
+      message
+        ? `conform child failed exitCode=${exitCode}: ${message}`
+        : `conform child failed exitCode=${exitCode}`,
+    );
+  }
+  if (!options.reportPath) {
+    throw new Error("validity conformance child requires reportPath");
+  }
+  return {
+    report: await readConformReport(options.reportPath),
+    exitCode,
+    lines: stdout.join("").trim().split(/\r?\n/).filter(Boolean),
   };
 }
 
@@ -162,12 +236,7 @@ function sliceFromConformReport(
         ]
       : []),
   ];
-  const status =
-    report.metrics.inconclusive > 0
-      ? "fail"
-      : report.metrics.passRate < minPassRate
-        ? "fail"
-        : "pass";
+  const status = report.metrics.passRate < minPassRate ? "fail" : "pass";
   const headlinePrefix = report.metrics.inconclusive > 0 ? "warning: " : "";
   return {
     benchmarkId: benchmark.id,

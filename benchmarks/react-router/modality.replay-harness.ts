@@ -30,7 +30,10 @@ import {
   managementFilterAtom,
   managementTabAtom,
 } from "./src/features/management/state/management-atoms.js";
-import { routes } from "./src/app/router.js";
+
+// Some TSX replay imports are evaluated through the CI tsx loader rather than
+// the benchmark app's bundler, so expose React for classic JSX output.
+(globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
 const atomByName = {
   accountDetailTabAtom,
@@ -52,7 +55,8 @@ const atomByName = {
 
 const harness = createBenchmarkReplayHarness({
   initialRoute: "/login",
-  mount(context) {
+  async mount(context) {
+    const { routes } = await import("./src/app/router.js");
     const store = createStore();
     const router = createMemoryRouter(routes, {
       initialEntries: [context.initialRoute],
