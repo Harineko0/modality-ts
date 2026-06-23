@@ -33,6 +33,7 @@ export type BenchmarkManifest = {
   schemaVersion: 1;
   manifestId: string;
   benchmarks: readonly BenchmarkDefinition[];
+  validityThresholds?: unknown;
 };
 
 export async function readBenchmarkManifest(

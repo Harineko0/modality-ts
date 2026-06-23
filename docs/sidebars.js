@@ -57,6 +57,7 @@ const sidebars = {
         "soundness/e1-invariant",
         "soundness/trust-ledger",
         "soundness/checker-correctness",
+        "soundness/validity-experiments",
         "soundness/limitations",
       ],
     },

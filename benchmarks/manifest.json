@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "manifestId": "ledgerops-benchmarks",
+  "validityThresholds": {},
   "benchmarks": [
     {
       "id": "ledgerops-react-router",
