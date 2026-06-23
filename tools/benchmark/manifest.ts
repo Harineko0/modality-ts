@@ -35,6 +35,11 @@ export type BenchmarkDefinition = {
       seed?: number;
     };
   };
+  metamorphic?: {
+    maxVariants?: number;
+    seed?: number;
+    transforms?: readonly string[];
+  };
   conformance?: {
     walkCount?: number;
     depth?: number;
@@ -54,6 +59,9 @@ export type BenchmarkManifest = {
     };
     mutation?: {
       minDetectionRate?: number;
+    };
+    metamorphic?: {
+      minStabilityRate?: number;
     };
   };
 };

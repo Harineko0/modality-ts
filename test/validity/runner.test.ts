@@ -19,6 +19,11 @@ describe("validity runner", () => {
       manifestPath,
       reportPath,
       now: new Date("2026-06-23T00:00:00.000Z"),
+      experiments: {
+        conformance: () => skippedExperiment("conformance"),
+        mutation: () => skippedExperiment("mutation"),
+        metamorphic: () => skippedExperiment("metamorphic"),
+      },
     });
 
     expect(result.exitCode).toBe(0);
@@ -63,7 +68,9 @@ describe("validity runner", () => {
       reportPath: join(dir, "report.json"),
       now: new Date("2026-06-23T00:00:00.000Z"),
       experiments: {
+        conformance: () => skippedExperiment("conformance"),
         mutation: () => throwingExperiment,
+        metamorphic: () => skippedExperiment("metamorphic"),
       },
     });
 
@@ -88,3 +95,26 @@ describe("validity runner", () => {
     );
   });
 });
+
+function skippedExperiment(id: ValidityExperiment["id"]): ValidityExperiment {
+  return {
+    id,
+    async run(ctx) {
+      const headline = `${id} skipped in runner test`;
+      return {
+        experiment: id,
+        status: "skipped",
+        headline,
+        perBenchmark: ctx.manifest.benchmarks.map((benchmark) => ({
+          benchmarkId: benchmark.id,
+          framework: benchmark.framework,
+          status: "skipped",
+          headline,
+          metrics: {},
+          messages: [headline],
+        })),
+        messages: [headline],
+      };
+    },
+  };
+}

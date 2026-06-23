@@ -7,6 +7,9 @@
     },
     "mutation": {
       "minDetectionRate": 0
+    },
+    "metamorphic": {
+      "minStabilityRate": 0
     }
   },
   "benchmarks": [
@@ -86,6 +89,10 @@
           "depth": 8,
           "seed": 26062351
         }
+      },
+      "metamorphic": {
+        "maxVariants": 8,
+        "seed": 26062361
       },
       "expected": {
         "truePositiveViolations": 7,
@@ -174,6 +181,10 @@
           "depth": 8,
           "seed": 26062352
         }
+      },
+      "metamorphic": {
+        "maxVariants": 8,
+        "seed": 26062362
       },
       "expected": {
         "truePositiveViolations": 7,
