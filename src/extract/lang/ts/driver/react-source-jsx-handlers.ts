@@ -19,6 +19,9 @@ import {
 } from "./components.js";
 import { safeId, tagStableIdKey } from "./ids.js";
 import {
+  componentPropAliases,
+  componentPropObjectNames,
+  componentSpreadsPropsToAnyElement,
   componentPropDeferredToChildTrigger,
   forwardsComponentProp,
 } from "./transition/component-props.js";
@@ -246,11 +249,15 @@ export function visitComponentPropJsxAttribute(
     ) &&
     !unextractableHandlerAlreadyReported(ctx.warnings, handlerId)
   ) {
+    const propForwardingIsUnresolved = componentPropForwardingIsUnresolved(
+      localComponent,
+      attrName,
+    );
     // Fallback: if the handler is registered (e.g. via handleSubmit unwrap),
     // extract ctx.transitions directly from the handler body using the prop name
-    // as the event attribute. This handles ctx.handlers passed to external (non-local)
-    // child ctx.components, where the trigger chain cannot be resolved.
-    const fallbackExtracted = localComponent
+    // as the event attribute. This handles ctx.handlers passed to opaque custom
+    // components, where the trigger chain cannot be resolved.
+    const fallbackExtracted = propForwardingIsUnresolved
       ? []
       : transitionsFromJsxAttribute(
           ctx.source,
@@ -271,6 +278,7 @@ export function visitComponentPropJsxAttribute(
           {
             ...componentPropHandlerContext,
             effectOpAliases: ctx.effectOpAliases,
+            types: ctx.types,
           },
         );
     if (fallbackExtracted.length > 0) {
@@ -291,6 +299,36 @@ export function visitComponentPropJsxAttribute(
     }
   }
   return false;
+}
+
+function componentPropForwardingIsUnresolved(
+  component: ComponentDecl | undefined,
+  propName: string,
+): boolean {
+  if (!component) return false;
+  if (componentSpreadsPropsToAnyElement(component)) return true;
+  const aliases = componentPropAliases(component, propName);
+  const propObjects = componentPropObjectNames(component);
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isIdentifier(node) && aliases.has(node.text)) {
+      found = true;
+      return;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === propName &&
+      ts.isIdentifier(node.expression) &&
+      propObjects.has(node.expression.text)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  if (component.body) visit(component.body);
+  return found;
 }
 
 export function visitEventJsxAttribute(

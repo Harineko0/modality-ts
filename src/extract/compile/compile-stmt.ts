@@ -245,15 +245,6 @@ function compileStmt(
       const summaries: { effect: EffectIR; reads: string[] }[] = [];
       const caveats: ExtractionCaveat[] = [];
       for (const binding of stmt.bindings) {
-        if (!binding.init) continue;
-        if (binding.init.kind === "call") {
-          const leaf = compileLeafCall(binding.init, options);
-          if (leaf) {
-            summaries.push({ effect: leaf.effect, reads: leaf.reads });
-            caveats.push(...leaf.caveats);
-            continue;
-          }
-        }
         const stateVar = options.ctx.stateVarIds?.get(binding.name);
         if (stateVar) {
           options.ctx.locals.set(binding.name, {
@@ -264,6 +255,15 @@ function compileStmt(
             reads: [stateVar],
           });
           continue;
+        }
+        if (!binding.init) continue;
+        if (binding.init.kind === "call") {
+          const leaf = compileLeafCall(binding.init, options);
+          if (leaf) {
+            summaries.push({ effect: leaf.effect, reads: leaf.reads });
+            caveats.push(...leaf.caveats);
+            continue;
+          }
         }
         const value = compileExpr(binding.init, options.ctx);
         if (value) {
