@@ -5,13 +5,14 @@ import type {
   ValidityRunContext,
 } from "../types.js";
 import { conformanceExperiment } from "./conformance.js";
+import { mutationExperiment } from "./mutation.js";
 
 export const validityExperiments: Record<
   ValidityExperimentId,
   () => ValidityExperiment
 > = {
   conformance: () => conformanceExperiment(),
-  mutation: () => stubExperiment("mutation"),
+  mutation: () => mutationExperiment(),
   metamorphic: () => stubExperiment("metamorphic"),
 };
 

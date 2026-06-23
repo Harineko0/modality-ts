@@ -1,10 +1,7 @@
-import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { type CheckReport, canonicalJson, type Model } from "modality-ts/core";
-import { runCheckCommand } from "../../src/cli/check.ts";
-import { runExtractCommand } from "../../src/cli/extract.ts";
-import { runReplayCommand } from "../../src/cli/replay.ts";
+import { canonicalJson, type Model } from "modality-ts/core";
 import {
   classifyPropertyVerdicts,
   libraryEvidenceFromExtraction,
@@ -21,6 +18,7 @@ import {
   type BenchmarkRunReport,
   buildBenchmarkRunReport,
 } from "./report.js";
+import { extractCheckReplayOnce, readPackageDependencies } from "./run-once.js";
 
 export interface BenchmarkRunnerOptions {
   repoRoot: string;
@@ -127,40 +125,22 @@ async function runSingleBenchmark(input: {
   const artifactDir = join(input.artifactRoot, input.benchmark.id);
   await mkdir(artifactDir, { recursive: true });
 
-  const modelPath = join(artifactDir, "model.json");
-  const extractReportPath = join(artifactDir, "extract-report.json");
-  const checkReportPath = join(artifactDir, "check-report.json");
-  const tracesDir = join(artifactDir, "traces");
-
-  const sourcePaths = input.benchmark.sourcePaths.map((relativePath) =>
-    join(benchmarkRoot, relativePath),
-  );
-  const propsPaths = input.benchmark.propsPaths.map((relativePath) =>
-    join(benchmarkRoot, relativePath),
-  );
   const packageJsonPath = join(benchmarkRoot, input.benchmark.packageJsonPath);
-  const configPath = join(benchmarkRoot, "modality.config.ts");
-  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
-    dependencies: Record<string, string>;
-  };
-
-  const extracted = await runExtractCommand({
-    sourcePaths,
-    modelPath,
-    reportPath: extractReportPath,
-    packageJsonPath,
-    configPath,
+  const dependencies = await readPackageDependencies(packageJsonPath);
+  const run = await extractCheckReplayOnce({
+    appRoot: benchmarkRoot,
+    sourcePaths: input.benchmark.sourcePaths,
+    propsPaths: input.benchmark.propsPaths,
     effectApis: input.benchmark.effectApis,
-    propsPaths,
+    searchLimits: input.benchmark.searchLimits,
+    workDir: artifactDir,
+    packageJsonPath,
+    configPath: join(benchmarkRoot, "modality.config.ts"),
   });
 
-  const normalizedModel = dedupeModelVars(extracted.model);
-  const { writeFile } = await import("node:fs/promises");
-  await writeFile(modelPath, `${canonicalJson(normalizedModel)}\n`, "utf8");
-
   const libraryCoverage = libraryEvidenceFromExtraction(
-    extracted.report,
-    packageJson.dependencies ?? {},
+    run.extractReport,
+    dependencies,
   );
   for (const library of REQUIRED_LIBRARIES) {
     if (!libraryCoverage[library]) {
@@ -168,36 +148,18 @@ async function runSingleBenchmark(input: {
     }
   }
 
-  const searchLimits = input.benchmark.searchLimits
-    ? {
-        maxStates: input.benchmark.searchLimits.maxStates,
-        maxEdges: input.benchmark.searchLimits.maxEdges,
-        maxFrontier: input.benchmark.searchLimits.maxFrontier,
-        ...(input.benchmark.searchLimits.memoryGuardMb !== undefined
-          ? {
-              memoryGuardBytes:
-                input.benchmark.searchLimits.memoryGuardMb * 1024 * 1024,
-            }
-          : {}),
-      }
-    : undefined;
-
-  const checked = await runCheckCommand({
-    modelPath,
-    propsPaths,
-    reportPath: checkReportPath,
-    tracesDir,
-    searchLimits,
-  });
-
-  const replayByProperty = await replayViolations(tracesDir, checked.report);
   const modelSlackPropertyIds = modelSlackProperties(
-    extracted.report,
-    checked.report,
+    run.extractReport,
+    run.checkReport,
   );
   const classified = classifyPropertyVerdicts({
-    checkReport: checked.report,
-    replayByProperty,
+    checkReport: run.checkReport,
+    replayByProperty: new Map(
+      [...run.replayVerdicts].map(([property, replay]) => [
+        property,
+        replay.status === "reproduced" ? "reproduced" : "not-reproduced",
+      ]),
+    ),
     modelSlackPropertyIds,
   });
 
@@ -232,7 +194,7 @@ async function runSingleBenchmark(input: {
     );
   }
 
-  const routeCount = countRoutesFromModel(normalizedModel);
+  const routeCount = countRoutesFromModel(run.model);
   const status =
     messages.length === 0 &&
     Object.values(libraryCoverage).every(Boolean) &&
@@ -245,16 +207,16 @@ async function runSingleBenchmark(input: {
     framework: input.benchmark.framework,
     status,
     routeCount,
-    varCount: normalizedModel.vars.length,
-    transitionCount: normalizedModel.transitions.length,
+    varCount: run.model.vars.length,
+    transitionCount: run.model.transitions.length,
     libraryCoverage,
     propertyVerdicts: classified.verdicts,
     classification: classified.summary,
     artifactPaths: {
-      model: modelPath,
-      extractReport: extractReportPath,
-      checkReport: checkReportPath,
-      tracesDir,
+      model: run.artifactPaths.model,
+      extractReport: run.artifactPaths.extractReport,
+      checkReport: run.artifactPaths.checkReport,
+      tracesDir: run.artifactPaths.tracesDir,
     },
     messages,
   };
@@ -266,56 +228,6 @@ function countRoutesFromModel(model: Model): number {
     return routeVar.domain.values.length;
   }
   return 0;
-}
-
-function dedupeModelVars(model: Model): Model {
-  const seen = new Set<string>();
-  const vars = model.vars.filter((decl) => {
-    if (seen.has(decl.id)) return false;
-    seen.add(decl.id);
-    return true;
-  });
-  if (vars.length === model.vars.length) return model;
-  return { ...model, vars };
-}
-
-async function replayViolations(
-  tracesDir: string,
-  checkReport: CheckReport,
-): Promise<Map<string, "reproduced" | "not-reproduced">> {
-  const replayByProperty = new Map<string, "reproduced" | "not-reproduced">();
-  const violated = checkReport.verdicts.filter(
-    (entry) => entry.status === "violated",
-  );
-  let traceNames: string[] = [];
-  try {
-    traceNames = (await readdir(tracesDir))
-      .filter((name) => name.endsWith(".violated.trace.json"))
-      .sort();
-  } catch {
-    return replayByProperty;
-  }
-
-  for (const verdict of violated) {
-    const traceName = traceNames.find((name) =>
-      name.includes(sanitizeTraceKey(verdict.property)),
-    );
-    if (!traceName) continue;
-    const replay = await runReplayCommand({
-      tracePath: join(tracesDir, traceName),
-    });
-    replayByProperty.set(
-      verdict.property,
-      replay.report.verdict.status === "reproduced"
-        ? "reproduced"
-        : "not-reproduced",
-    );
-  }
-  return replayByProperty;
-}
-
-function sanitizeTraceKey(property: string): string {
-  return property.replace(/[^a-zA-Z0-9._-]+/g, "_");
 }
 
 function modelSlackProperties(
