@@ -28,7 +28,10 @@ import {
   decodeSetterBinding,
   discoverContextBindings,
 } from "./context.js";
-import type { EffectOpAliases } from "../../../compile/effect-op-aliases.js";
+import {
+  normalizeSourcePath,
+  type EffectOpAliases,
+} from "../../../compile/effect-op-aliases.js";
 import { withStableTransitionIds } from "./ids.js";
 import {
   componentRegistryForPrimary,
@@ -135,9 +138,10 @@ function extractReactSourceTransitionsImpl(
   > = localMutationAliases.size > 0
     ? (() => {
         const merged = new Map(baseEffectOpAliases);
-        const existing = merged.get(fileName);
+        const aliasKey = normalizeSourcePath(fileName);
+        const existing = merged.get(aliasKey);
         merged.set(
-          fileName,
+          aliasKey,
           existing
             ? new Map([...existing, ...localMutationAliases])
             : localMutationAliases,

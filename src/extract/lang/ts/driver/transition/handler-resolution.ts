@@ -6,7 +6,7 @@ import type {
   RouteUseSubmitHandlerCtx,
   StateSourcePlugin,
 } from "../../../../engine/spi/index.js";
-import { lineAndColumn } from "../ast.js";
+import { isExtractableHandler, lineAndColumn } from "../ast.js";
 import { unextractableHandlerCaveat } from "../caveats.js";
 import { inputTransitions } from "../input-transitions.js";
 import type {
@@ -19,16 +19,21 @@ import type {
 import {
   containsAwaitedEffect,
   containsAwaitInLoop,
+  confidenceForEffects,
   transitionsFromAsyncHandler,
+  transitionsFromAsyncStatements,
 } from "./async.js";
 import {
   statementHasCallbackEffect,
   transitionsFromCallbackEffectHandler,
+  transitionsFromCallbackEffectStatements,
 } from "./callback-effects.js";
 import {
   escapedSetters,
+  effectWriteVars,
   havocSetterTransition,
   setterCallFrom,
+  summarizeAsyncSegment,
 } from "./effects.js";
 import { setterArgumentExpr } from "./expressions.js";
 import { applyParsedGuard, type ParsedGuard } from "./guards.js";
@@ -44,11 +49,14 @@ import {
   sequentialTransitionFromHandler,
   singleSetterTransitionFromHandler,
 } from "./handler-sequential.js";
+import { flattenHandlerHelpers } from "./helper-inline.js";
 import type { HandlerExtractionContext } from "./handlers.js";
 import {
   callSummaryFromHandler,
   componentScopeLocalsFor,
+  enclosingFunctionBody,
   inlinedHelperCall,
+  variableDeclarations,
 } from "./locals.js";
 import { navigationTransition } from "./navigation.js";
 import {
@@ -90,11 +98,15 @@ export function transitionsFromResolvedHandler(
   resetSymbols: ReadonlySet<string> = new Set(["RESET"]),
   handlerContext: HandlerExtractionContext = {},
 ): Transition[] {
+  const resolutionHandlers = new Map([
+    ...handlers,
+    ...componentLocalHandlersForNode(node),
+  ]);
   const summaryOptions = handlerSummaryOptions(
     source,
     fileName,
     component,
-    handlers,
+    resolutionHandlers,
     resetSymbols,
     handlerContext,
   );
@@ -126,6 +138,61 @@ export function transitionsFromResolvedHandler(
     );
     if (recognized && recognized.transitions.length > 0)
       return recognized.transitions;
+  }
+  if (ts.isBlock(handler.body)) {
+    const flat = flattenHandlerHelpers(handler.body.statements, {
+      handlers: resolutionHandlers,
+      setters,
+    });
+    if (flat.inlinedHelpers.length > 0) {
+      const flatAsyncTransitions = transitionsFromAsyncStatements(
+        source,
+        fileName,
+        attr,
+        node,
+        flat.statements,
+        setters,
+        component,
+        effectApis,
+        asyncOutcomes,
+        locator,
+        routePlugin,
+        routePatterns,
+        warnings,
+        handlerContext.effectOpAliases ?? new Map(),
+      );
+      if (flatAsyncTransitions.length > 0)
+        return applyParsedGuard(flatAsyncTransitions, disabledGuard);
+      const flatCallbackTransitions = transitionsFromCallbackEffectStatements(
+        source,
+        fileName,
+        attr,
+        node,
+        flat.statements,
+        setters,
+        component,
+        effectApis,
+        asyncOutcomes,
+        locator,
+        warnings,
+        handlerContext.effectOpAliases ?? new Map(),
+      );
+      if (flatCallbackTransitions.length > 0)
+        return applyParsedGuard(flatCallbackTransitions, disabledGuard);
+      const flatSetterTransition = transitionFromFlattenedSetterStatements(
+        source,
+        fileName,
+        node,
+        attr,
+        component,
+        flat.statements,
+        setters,
+        locator,
+        handlerContext.semanticName,
+      );
+      if (flatSetterTransition)
+        return applyParsedGuard([flatSetterTransition], disabledGuard);
+    }
   }
   const asyncTransitions = transitionsFromAsyncHandler(
     source,
@@ -164,6 +231,7 @@ export function transitionsFromResolvedHandler(
       setters,
       component,
       effectApis,
+      asyncOutcomes,
       locator,
       warnings,
       handlerContext.effectOpAliases ?? new Map(),
@@ -204,7 +272,7 @@ export function transitionsFromResolvedHandler(
           attr,
           handler,
           setters,
-          handlers,
+          resolutionHandlers,
           component,
           locator,
           resetSymbols,
@@ -269,7 +337,7 @@ export function transitionsFromResolvedHandler(
     attr,
     handler,
     setters,
-    handlers,
+    resolutionHandlers,
     component,
     locator,
     resetSymbols,
@@ -304,7 +372,7 @@ export function transitionsFromResolvedHandler(
   if (!summary) return [];
   const inlined = inlinedHelperCall(
     summary.call,
-    handlers,
+    resolutionHandlers,
     setters,
     summary.locals,
   );
@@ -467,5 +535,63 @@ function handlerSummaryOptions(
     source,
     types: handlerContext.types,
     effectPlugins: handlerContext.effectPlugins,
+  };
+}
+
+function componentLocalHandlersForNode(
+  node: ts.Node,
+): Map<string, ExtractableHandler> {
+  const body = enclosingFunctionBody(node);
+  if (!body) return new Map();
+  const localHandlers = new Map<string, ExtractableHandler>();
+  for (const statement of body.statements) {
+    if (ts.isReturnStatement(statement)) break;
+    for (const declaration of variableDeclarations(statement)) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer &&
+        isExtractableHandler(declaration.initializer)
+      ) {
+        localHandlers.set(declaration.name.text, declaration.initializer);
+      }
+    }
+  }
+  return localHandlers;
+}
+
+function transitionFromFlattenedSetterStatements(
+  source: ts.SourceFile,
+  fileName: string,
+  node: ts.JsxAttribute,
+  attr: string,
+  component: string,
+  statements: readonly ts.Statement[],
+  setters: Map<string, SetterBinding>,
+  locator: Locator | undefined,
+  semanticName: string | undefined,
+): Transition | undefined {
+  const summaries = summarizeAsyncSegment(statements, setters);
+  const effects = summaries
+    .map((summary) => summary.effect)
+    .filter(
+      (effect) => !(effect.kind === "seq" && effect.effects.length === 0),
+    );
+  if (effects.length === 0) return undefined;
+  return {
+    id: transitionIdFromSemanticName(
+      component,
+      attr,
+      semanticName,
+      "seq",
+      ".seq",
+    ),
+    cls: "user",
+    label: labelForEvent(attr, locator),
+    source: [{ file: fileName, ...lineAndColumn(source, node) }],
+    guard: { kind: "lit", value: true },
+    effect: { kind: "seq", effects },
+    reads: [...new Set(summaries.flatMap((summary) => summary.reads))],
+    writes: [...new Set(effects.flatMap(effectWriteVars))],
+    confidence: confidenceForEffects(effects),
   };
 }
