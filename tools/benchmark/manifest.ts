@@ -25,6 +25,16 @@ export type BenchmarkDefinition = {
   sourcePaths: readonly string[];
   propsPaths: readonly string[];
   effectApis: readonly string[];
+  mutation?: {
+    maxMutants?: number;
+    seed?: number;
+    operators?: readonly string[];
+    conformance?: {
+      walkCount?: number;
+      depth?: number;
+      seed?: number;
+    };
+  };
   conformance?: {
     walkCount?: number;
     depth?: number;
@@ -41,6 +51,9 @@ export type BenchmarkManifest = {
   validityThresholds?: {
     conformance?: {
       minPassRate?: number;
+    };
+    mutation?: {
+      minDetectionRate?: number;
     };
   };
 };

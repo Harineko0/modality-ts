@@ -4,6 +4,9 @@
   "validityThresholds": {
     "conformance": {
       "minPassRate": 0
+    },
+    "mutation": {
+      "minDetectionRate": 0
     }
   },
   "benchmarks": [
@@ -74,6 +77,15 @@
         "walkCount": 32,
         "depth": 12,
         "seed": 26062331
+      },
+      "mutation": {
+        "maxMutants": 8,
+        "seed": 26062341,
+        "conformance": {
+          "walkCount": 16,
+          "depth": 8,
+          "seed": 26062351
+        }
       },
       "expected": {
         "truePositiveViolations": 7,
@@ -153,6 +165,15 @@
         "walkCount": 32,
         "depth": 12,
         "seed": 26062332
+      },
+      "mutation": {
+        "maxMutants": 8,
+        "seed": 26062342,
+        "conformance": {
+          "walkCount": 16,
+          "depth": 8,
+          "seed": 26062352
+        }
       },
       "expected": {
         "truePositiveViolations": 7,
