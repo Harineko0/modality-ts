@@ -802,3 +802,37 @@ function isForbiddenRunnerImport(
   if (specifier.includes("cli/features")) return true;
   return false;
 }
+
+describe("plugin-layering coupling guardrails", () => {
+  const repoRoot = resolve(testDir, "../..");
+  const engineRoot = resolve(repoRoot, "src/extract/engine/ts");
+  const compileRoot = resolve(repoRoot, "src/extract/compile");
+
+  it("engine/ts does not contain timer API string literals", async () => {
+    const files = await sourceFiles(engineRoot);
+    const timerApis = ["setTimeout", "setInterval", "clearTimeout", "clearInterval"];
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const api of timerApis) {
+        const pattern = new RegExp(`["'\`]${api}["'\`]`);
+        if (pattern.test(text)) {
+          violations.push(`${file.slice(repoRoot.length + 1)}: "${api}"`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("engine/ts does not contain WebSocket constructor string literal", async () => {
+    const files = await sourceFiles(engineRoot);
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      if (/["'`]WebSocket["'`]/.test(text)) {
+        violations.push(file.slice(repoRoot.length + 1));
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});
