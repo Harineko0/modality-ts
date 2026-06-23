@@ -308,6 +308,7 @@ export function transitionsFromAsyncStatements(
   const preReads = uniqueStrings([
     ...preSummaries.flatMap((summary) => summary.reads),
     ...opArgs.reads,
+    ...snapshotReads,
     ...(peeled.guard?.reads ?? []),
   ]);
   const snapshotArgs = Object.fromEntries(

@@ -240,7 +240,8 @@ function extractReactSourceTransitionsImpl(
       binding.resettable = true;
     }
     const fixedEffect =
-      channel.fixedEffect ?? options.setterFixedEffects?.get(channel.symbolName);
+      channel.fixedEffect ??
+      options.setterFixedEffects?.get(channel.symbolName);
     if (fixedEffect) binding.fixedEffect = fixedEffect;
     if (channel.symbolKey) binding.symbolKey = channel.symbolKey;
     bindSetter(setters, channel.symbolName, binding);

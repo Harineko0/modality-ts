@@ -65,10 +65,16 @@ function setterNameMatchesTarget(
   setter: SetterBinding,
 ): boolean {
   if (setter.fixedEffect) return true;
+  if (setter.stateName === setterName) return true;
   if (!setterName.startsWith("set") || setterName.length <= 3) return true;
   const expected = `${setterName[3]!.toLowerCase()}${setterName.slice(4)}`;
   const target = setter.stateName.split(/[.:]/u).at(-1) ?? setter.stateName;
-  return target === expected || target === `${expected}Atom`;
+  return (
+    target === expected ||
+    target === `${expected}Atom` ||
+    expected === `${target}Local` ||
+    expected === `${target}State`
+  );
 }
 
 export function summarizeSetterWrite(

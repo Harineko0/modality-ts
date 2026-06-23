@@ -214,7 +214,9 @@ function evaluateOutcome(
   return undefined;
 }
 
-function hasBoundedSearchSlack(verdict: CheckReport["verdicts"][number]): boolean {
+function hasBoundedSearchSlack(
+  verdict: CheckReport["verdicts"][number],
+): boolean {
   return (
     verdict.confidence?.level === "bounded" &&
     (verdict.confidence.reasons ?? []).some((reason) =>

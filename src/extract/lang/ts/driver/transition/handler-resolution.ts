@@ -235,6 +235,7 @@ export function transitionsFromResolvedHandler(
         flat.statements,
         setters,
         locator,
+        handlerContext.initialLocals,
         handlerContext.semanticName,
       );
       if (flatSetterTransition)
@@ -690,32 +691,47 @@ function transitionFromFlattenedSetterStatements(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
   locator: Locator | undefined,
+  initialLocals: Map<string, BoundExpr> | undefined,
   semanticName: string | undefined,
 ): Transition | undefined {
-  const summaries = summarizeAsyncSegment(statements, setters);
+  const summaries = summarizeAsyncSegment(
+    statements,
+    setters,
+    undefined,
+    initialLocals,
+  );
   const effects = summaries
     .map((summary) => summary.effect)
     .filter(
       (effect) => !(effect.kind === "seq" && effect.effects.length === 0),
     );
   if (effects.length === 0) return undefined;
+  const singleEffect = effects.length === 1 ? effects[0] : undefined;
+  const singleWrite =
+    singleEffect?.kind === "assign"
+      ? stateNameFromVarId(singleEffect.var)
+      : undefined;
   return {
     id: transitionIdFromSemanticName(
       component,
       attr,
-      semanticName,
-      "seq",
-      ".seq",
+      singleWrite ? undefined : semanticName,
+      singleWrite ? `${singleWrite}.seq` : "seq",
+      singleWrite ? "" : ".seq",
     ),
     cls: "user",
     label: labelForEvent(attr, locator),
     source: [{ file: fileName, ...lineAndColumn(source, node) }],
     guard: { kind: "lit", value: true },
-    effect: { kind: "seq", effects },
+    effect: singleEffect ?? { kind: "seq", effects },
     reads: [...new Set(summaries.flatMap((summary) => summary.reads))],
     writes: [...new Set(effects.flatMap(effectWriteVars))],
     confidence: confidenceForEffects(effects),
   };
+}
+
+function stateNameFromVarId(varId: string): string {
+  return varId.split(/[.:]/u).at(-1) ?? varId;
 }
 
 function transitionsFromBranchPaths(
@@ -807,6 +823,7 @@ function transitionsFromBranchPaths(
                 flat.statements,
                 setters,
                 locator,
+                handlerContext.initialLocals,
                 handlerContext.semanticName,
               ),
             );

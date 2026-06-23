@@ -34,6 +34,7 @@ import { createEngineLeafDispatch } from "./engine-leaf-dispatch.js";
 import type { WebSocketRegistration } from "./environment-callbacks.js";
 import { valueExpr } from "./expressions.js";
 import { parseGuardExpression } from "./guards.js";
+import { bindConstStatement } from "./locals.js";
 import { summarizeSetterCall } from "./setter-write.js";
 import type { StatementSummaryState } from "./statement-summary-state.js";
 import type { TimerRegistration } from "./timers.js";
@@ -121,10 +122,13 @@ function handlerSummaryState(
 function fallbackSummaries(
   statements: readonly ts.Statement[],
   setters: Map<string, SetterBinding>,
+  initialLocals: Map<string, BoundExpr> = new Map(),
 ): EffectSummary[] {
   const summaries: EffectSummary[] = [];
+  const locals = new Map(initialLocals);
   for (const statement of statements) {
-    const setterSummary = summarizeSetterStatement(statement, setters);
+    if (bindConstStatement(statement, setters, locals, true)) continue;
+    const setterSummary = summarizeSetterStatement(statement, setters, locals);
     if (setterSummary) {
       summaries.push(setterSummary);
       continue;
@@ -264,7 +268,7 @@ function summarizeStatementList(
     }
   }
   return {
-    summaries: fallbackSummaries(statements, setters),
+    summaries: fallbackSummaries(statements, setters, state.locals),
     terminated: false,
   };
 }
@@ -438,7 +442,7 @@ export function summarizeAsyncSegment(
       snapshottedReads,
       ...(initialLocals?.size ? { initialLocals } : {}),
       ...(source ? { source, fileName: source.fileName } : {}),
-    }) ?? fallbackSummaries(statements, setters),
+    }) ?? fallbackSummaries(statements, setters, initialLocals),
   );
 }
 

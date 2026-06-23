@@ -73,7 +73,10 @@ export function enumerateGuardedPaths(
       return;
     }
 
-    for (const arm of ifChainArms(head, { ...options, initialLocals: locals })) {
+    for (const arm of ifChainArms(head, {
+      ...options,
+      initialLocals: locals,
+    })) {
       walk(
         [...arm.statements, ...tail],
         combineCandidateGuards([guard, arm.guard]),
@@ -84,12 +87,7 @@ export function enumerateGuardedPaths(
     }
   };
 
-  walk(
-    statements,
-    { representable: true },
-    [],
-    new Map(options.initialLocals),
-  );
+  walk(statements, { representable: true }, [], new Map(options.initialLocals));
   return { paths, truncated };
 }
 

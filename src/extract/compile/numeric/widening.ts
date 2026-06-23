@@ -217,7 +217,10 @@ export function widenNumericDomainsFromTransitions(args: {
   numericSeedVarIds?: ReadonlySet<string>;
 }): StateVarDecl[] {
   return args.vars.map((decl) => {
-    if (decl.domain.kind !== "boundedInt" || decl.domain.min !== decl.domain.max) {
+    if (
+      decl.domain.kind !== "boundedInt" ||
+      decl.domain.min !== decl.domain.max
+    ) {
       return decl;
     }
     const info = args.transitions.reduce(
