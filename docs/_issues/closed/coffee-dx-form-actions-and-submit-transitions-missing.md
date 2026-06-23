@@ -40,9 +40,9 @@ React Router form submissions and `useSubmit(form)` should be modeled as named a
 
 Implemented in the React Router adapter and TS transition extractor:
 
-- Route `action()` exports discover `ACTION <routePattern>` ops (`src/extract/sources/router/server-effects.ts`).
+- Route `action()` exports discover `ACTION <routePattern>` ops (`src/extract/plugins/route/router/server-effects.ts`).
 - `<Form method="post">` and `useSubmit(...)` synthesize user `submit` starts plus success/error env resolutions.
 - `useActionData()` binds a `router:actionData:*` enum for `useEffect` continuations.
 - Static hidden `intent` (and similar) fields refine `sys:pending.args` when extractable.
 
-Verification: `pnpm test`, `pnpm typecheck`, `pnpm architecture`, and focused tests in `test/extraction/extraction.test.ts`, `src/extract/sources/router/server-effects.test.ts`, and `src/cli/features/extract/command.test.ts`.
+Verification: `pnpm test`, `pnpm typecheck`, `pnpm architecture`, and focused tests in `test/extraction/extraction.test.ts`, `src/extract/plugins/route/router/server-effects.test.ts`, and `src/cli/features/extract/command.test.ts`.

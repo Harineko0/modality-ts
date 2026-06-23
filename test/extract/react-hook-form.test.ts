@@ -2,7 +2,7 @@ import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { callbackEffect } from "../../src/extract/engine/ts/transition/callback-effects.js";
-import { unwrapReactHookFormHandler } from "../../src/extract/sources/react-hook-form/unwrap.js";
+import { unwrapReactHookFormHandler } from "../../src/extract/plugins/framework/react-hook-form/unwrap.js";
 
 // ---------------------------------------------------------------------------
 // Unit: adapter unwrap

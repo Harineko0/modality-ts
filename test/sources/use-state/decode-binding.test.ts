@@ -1,5 +1,5 @@
 import type { StateVarDecl } from "modality-ts/core";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
 import { describe, expect, it } from "vitest";
 
 function legacySetterBindingFromDecl(decl: StateVarDecl) {
@@ -30,9 +30,10 @@ describe("useState decodeBinding", () => {
       domain: { kind: "boundedInt", min: 0, max: 9 },
       initial: 0,
     };
-    expect(plugin.decodeBinding?.(decl)).toEqual(
-      legacySetterBindingFromDecl(decl),
-    );
+    expect(plugin.decodeBinding?.(decl)).toEqual({
+      ...legacySetterBindingFromDecl(decl),
+      isComponentScoped: true,
+    });
   });
 
   it("returns undefined for foreign var ids", () => {

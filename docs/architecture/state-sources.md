@@ -73,7 +73,7 @@ it is enforced by the [dependency rules](./index.md), not convention.
 ## A source package as a vertical slice
 
 ```text
-src/extract/sources/jotai/
+src/extract/plugins/state/jotai/
 ├── imports.ts        # module + alias resolution
 ├── ids.ts            # store/family-qualified var IDs
 ├── discover.ts       # P1: atoms + utility creators + family instances

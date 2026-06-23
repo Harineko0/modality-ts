@@ -1,10 +1,10 @@
-import { tanstackRouterAdapter } from "modality-ts/extract/sources/tanstack-router";
+import { tanstackRouterAdapter } from "modality-ts/extract/plugins/route/tanstack-router";
 import { describe, expect, it } from "vitest";
 import {
   navigate,
   observe,
   setup,
-} from "../../../src/extract/sources/tanstack-router/harness.js";
+} from "../../../src/extract/plugins/route/tanstack-router/harness.js";
 
 describe("tanstack router source plugin", () => {
   it("exposes a RoutePlugin-compatible source slice", () => {

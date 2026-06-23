@@ -15,12 +15,12 @@ import type {
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { routeMountScope } from "../../src/extract/engine/ts/routes.js";
-import { reactRouterAdapter } from "../../src/extract/sources/router/index.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+import { reactRouterAdapter } from "../../src/extract/plugins/route/router/index.js";
+import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 import {
   extractUseStateSkeleton,
   extractUseStateVars,
-} from "../../src/extract/sources/use-state/transitions.js";
+} from "../../src/extract/plugins/state/use-state/transitions.js";
 import { always, reachable } from "../helpers/property-builders.js";
 
 const defaultSourcePlugins = [useStateSource()];

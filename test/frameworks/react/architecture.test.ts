@@ -7,7 +7,7 @@ const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 describe("framework slice boundaries", () => {
   it("react framework slice does not import cli", async () => {
-    const reactDir = resolve(repoRoot, "src/extract/frameworks/react");
+    const reactDir = resolve(repoRoot, "src/extract/plugins/framework/react");
     const files = ["hooks.ts", "render-boundaries.ts", "index.ts"];
     const violations: string[] = [];
     for (const file of files) {

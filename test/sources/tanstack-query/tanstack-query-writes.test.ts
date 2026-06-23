@@ -1,9 +1,9 @@
 import {
   createTanstackQueryTemplate,
   tanstackQuerySource,
-} from "modality-ts/extract/sources/tanstack-query";
+} from "modality-ts/extract/plugins/state/tanstack-query";
 import { describe, expect, it } from "vitest";
-import { summarizeTanstackQueryWrite } from "../../../src/extract/sources/tanstack-query/writes.js";
+import { summarizeTanstackQueryWrite } from "../../../src/extract/plugins/state/tanstack-query/writes.js";
 
 describe("TanStack Query write summarization", () => {
   it("models invalidateQueries as stale + invalidated flags", () => {

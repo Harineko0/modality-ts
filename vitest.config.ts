@@ -42,92 +42,92 @@ export default defineConfig({
         "./src/cli/runtime/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/jotai/harness": new URL(
-        "./src/extract/sources/jotai/harness.ts",
+      "modality-ts/extract/plugins/state/jotai/harness": new URL(
+        "./src/extract/plugins/state/jotai/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/jotai": new URL(
-        "./src/extract/sources/jotai/index.ts",
+      "modality-ts/extract/plugins/state/jotai": new URL(
+        "./src/extract/plugins/state/jotai/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/next/harness": new URL(
-        "./src/extract/sources/next/harness.ts",
+      "modality-ts/extract/plugins/route/next/harness": new URL(
+        "./src/extract/plugins/route/next/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/next": new URL(
-        "./src/extract/sources/next/index.ts",
+      "modality-ts/extract/plugins/route/next": new URL(
+        "./src/extract/plugins/route/next/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/router/harness": new URL(
-        "./src/extract/sources/router/harness.ts",
+      "modality-ts/extract/plugins/route/router/harness": new URL(
+        "./src/extract/plugins/route/router/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/router": new URL(
-        "./src/extract/sources/router/index.ts",
+      "modality-ts/extract/plugins/route/router": new URL(
+        "./src/extract/plugins/route/router/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/tanstack-router/harness": new URL(
-        "./src/extract/sources/tanstack-router/harness.ts",
+      "modality-ts/extract/plugins/route/tanstack-router/harness": new URL(
+        "./src/extract/plugins/route/tanstack-router/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/tanstack-router": new URL(
-        "./src/extract/sources/tanstack-router/index.ts",
+      "modality-ts/extract/plugins/route/tanstack-router": new URL(
+        "./src/extract/plugins/route/tanstack-router/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/swr/harness": new URL(
-        "./src/extract/sources/swr/harness.ts",
+      "modality-ts/extract/plugins/state/swr/harness": new URL(
+        "./src/extract/plugins/state/swr/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/swr": new URL(
-        "./src/extract/sources/swr/index.ts",
+      "modality-ts/extract/plugins/state/swr": new URL(
+        "./src/extract/plugins/state/swr/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/tanstack-query/harness": new URL(
-        "./src/extract/sources/tanstack-query/harness.ts",
+      "modality-ts/extract/plugins/state/tanstack-query/harness": new URL(
+        "./src/extract/plugins/state/tanstack-query/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/tanstack-query": new URL(
-        "./src/extract/sources/tanstack-query/index.ts",
+      "modality-ts/extract/plugins/state/tanstack-query": new URL(
+        "./src/extract/plugins/state/tanstack-query/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/use-state/harness": new URL(
-        "./src/extract/sources/use-state/harness.ts",
+      "modality-ts/extract/plugins/state/use-state/harness": new URL(
+        "./src/extract/plugins/state/use-state/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/use-state": new URL(
-        "./src/extract/sources/use-state/index.ts",
+      "modality-ts/extract/plugins/state/use-state": new URL(
+        "./src/extract/plugins/state/use-state/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/zustand/harness": new URL(
-        "./src/extract/sources/zustand/harness.ts",
+      "modality-ts/extract/plugins/state/zustand/harness": new URL(
+        "./src/extract/plugins/state/zustand/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/zustand": new URL(
-        "./src/extract/sources/zustand/index.ts",
+      "modality-ts/extract/plugins/state/zustand": new URL(
+        "./src/extract/plugins/state/zustand/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/react-hook-form": new URL(
-        "./src/extract/sources/react-hook-form/index.ts",
+      "modality-ts/extract/plugins/framework/react-hook-form/unwrap": new URL(
+        "./src/extract/plugins/framework/react-hook-form/unwrap.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/react-hook-form/unwrap": new URL(
-        "./src/extract/sources/react-hook-form/unwrap.ts",
+      "modality-ts/extract/plugins/framework/react-hook-form": new URL(
+        "./src/extract/plugins/framework/react-hook-form/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/redux/harness": new URL(
-        "./src/extract/sources/redux/harness.ts",
+      "modality-ts/extract/plugins/state/redux/harness": new URL(
+        "./src/extract/plugins/state/redux/harness.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/sources/redux": new URL(
-        "./src/extract/sources/redux/index.ts",
+      "modality-ts/extract/plugins/state/redux": new URL(
+        "./src/extract/plugins/state/redux/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/type-libraries/zod": new URL(
-        "./src/extract/type-libraries/zod/index.ts",
+      "modality-ts/extract/plugins/type/zod": new URL(
+        "./src/extract/plugins/type/zod/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/type-libraries/arktype": new URL(
-        "./src/extract/type-libraries/arktype/index.ts",
+      "modality-ts/extract/plugins/type/arktype": new URL(
+        "./src/extract/plugins/type/arktype/index.ts",
         import.meta.url,
       ).pathname,
       "modality-ts/extract/engine/pipeline": new URL(
@@ -142,28 +142,28 @@ export default defineConfig({
         "./src/extract/lang/ts/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/plugins": new URL(
-        "./src/extract/plugins/index.ts",
-        import.meta.url,
-      ).pathname,
       "modality-ts/extract/compile": new URL(
         "./src/extract/compile/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/frameworks/react": new URL(
-        "./src/extract/frameworks/react/index.ts",
+      "modality-ts/extract/plugins/framework/react": new URL(
+        "./src/extract/plugins/framework/react/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/effect-models/timers": new URL(
-        "./src/extract/effect-models/timers/index.ts",
+      "modality-ts/extract/plugins/effect/timers": new URL(
+        "./src/extract/plugins/effect/timers/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/effect-models/websocket": new URL(
-        "./src/extract/effect-models/websocket/index.ts",
+      "modality-ts/extract/plugins/effect/websocket": new URL(
+        "./src/extract/plugins/effect/websocket/index.ts",
         import.meta.url,
       ).pathname,
-      "modality-ts/extract/effect-models": new URL(
-        "./src/extract/effect-models/index.ts",
+      "modality-ts/extract/plugins/effect": new URL(
+        "./src/extract/plugins/effect/index.ts",
+        import.meta.url,
+      ).pathname,
+      "modality-ts/extract/plugins": new URL(
+        "./src/extract/plugins/index.ts",
         import.meta.url,
       ).pathname,
       "modality-ts/extract/engine": new URL(

@@ -22,6 +22,7 @@ import {
   isExtractableHandler,
   isRecognizedUseStateCall,
   isUseReducerCall,
+  isUseRefCall,
   lineAndColumn,
   recognizeHookFromTs,
   recognizeRenderBoundaryFromTs,
@@ -86,10 +87,9 @@ import {
   suspenseStateVarDecl,
   transitionsFromSuspendingUse,
 } from "./transition/suspense.js";
+import { collectSetterTaintsFromEffectPlugins } from "./effect-ts-bridge.js";
 import {
-  refSetterTaint,
   type TimerRegistration,
-  timerSetterTaints,
   timerStateVarDecl,
 } from "./transition/timers.js";
 import { isEventAttribute } from "./transition/ui.js";
@@ -477,21 +477,15 @@ export function discoverReactSourceTransitions(
     if (formRecognition?.kind === "submit") {
       transitions.push(...tagStableIdKey(formRecognition.transitions, node));
     }
-    const refTaint = refSetterTaint(node, scopedSetters);
-    if (refTaint) {
-      const anchor = lineAndColumn(source, refTaint.node);
-      const caveat = globalTaintCaveat(refTaint.varId, {
-        file: fileName,
-        ...anchor,
-      });
-      if (!globalTaints.has(caveat.id)) {
-        globalTaints.add(caveat.id);
-        warnings.push({ message: caveat.reason, ...anchor, caveat });
-      }
-    }
-    for (const timerTaint of timerSetterTaints(node, scopedSetters)) {
-      const anchor = lineAndColumn(source, timerTaint.node);
-      const caveat = globalTaintCaveat(timerTaint.varId, {
+    const refTaint = detectRefSetterTaint(node, scopedSetters);
+    const effectTaints = collectSetterTaintsFromEffectPlugins(
+      options.effectPlugins ?? [],
+      node,
+      scopedSetters,
+    );
+    for (const taint of refTaint ? [refTaint, ...effectTaints] : effectTaints) {
+      const anchor = lineAndColumn(source, taint.node);
+      const caveat = globalTaintCaveat(taint.varId, {
         file: fileName,
         ...anchor,
       });
@@ -792,4 +786,32 @@ export function discoverReactSourceTransitions(
     transitionBindingCounter,
     suspenseBoundaryCounter,
   };
+}
+
+function detectRefSetterTaint(
+  node: ts.Node,
+  setters: Map<string, SetterBinding>,
+): { varId: string; node: ts.Node } | undefined {
+  if (
+    ts.isVariableDeclaration(node) &&
+    node.initializer &&
+    isUseRefCall(node.initializer)
+  ) {
+    const arg = node.initializer.arguments[0];
+    if (arg && ts.isIdentifier(arg)) {
+      const setter = setters.get(arg.text);
+      if (setter) return { varId: setter.varId, node: arg };
+    }
+  }
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isPropertyAccessExpression(node.left) &&
+    node.left.name.text === "current" &&
+    ts.isIdentifier(node.right)
+  ) {
+    const setter = setters.get(node.right.text);
+    if (setter) return { varId: setter.varId, node: node.right };
+  }
+  return undefined;
 }

@@ -127,109 +127,109 @@
       "types": "./dist/extract/compile/index.d.ts",
       "default": "./dist/extract/compile/index.js"
     },
-    "./extract/frameworks/react": {
-      "types": "./dist/extract/frameworks/react/index.d.ts",
-      "default": "./dist/extract/frameworks/react/index.js"
+    "./extract/plugins/framework/react": {
+      "types": "./dist/extract/plugins/framework/react/index.d.ts",
+      "default": "./dist/extract/plugins/framework/react/index.js"
     },
-    "./extract/effect-models": {
-      "types": "./dist/extract/effect-models/index.d.ts",
-      "default": "./dist/extract/effect-models/index.js"
+    "./extract/plugins/effect": {
+      "types": "./dist/extract/plugins/effect/index.d.ts",
+      "default": "./dist/extract/plugins/effect/index.js"
     },
-    "./extract/effect-models/timers": {
-      "types": "./dist/extract/effect-models/timers/index.d.ts",
-      "default": "./dist/extract/effect-models/timers/index.js"
+    "./extract/plugins/effect/timers": {
+      "types": "./dist/extract/plugins/effect/timers/index.d.ts",
+      "default": "./dist/extract/plugins/effect/timers/index.js"
     },
-    "./extract/effect-models/websocket": {
-      "types": "./dist/extract/effect-models/websocket/index.d.ts",
-      "default": "./dist/extract/effect-models/websocket/index.js"
+    "./extract/plugins/effect/websocket": {
+      "types": "./dist/extract/plugins/effect/websocket/index.d.ts",
+      "default": "./dist/extract/plugins/effect/websocket/index.js"
     },
-    "./extract/sources/jotai": {
-      "types": "./dist/extract/sources/jotai/index.d.ts",
-      "default": "./dist/extract/sources/jotai/index.js"
+    "./extract/plugins/state/jotai": {
+      "types": "./dist/extract/plugins/state/jotai/index.d.ts",
+      "default": "./dist/extract/plugins/state/jotai/index.js"
     },
-    "./extract/sources/jotai/harness": {
-      "types": "./dist/extract/sources/jotai/harness.d.ts",
-      "default": "./dist/extract/sources/jotai/harness.js"
+    "./extract/plugins/state/jotai/harness": {
+      "types": "./dist/extract/plugins/state/jotai/harness.d.ts",
+      "default": "./dist/extract/plugins/state/jotai/harness.js"
     },
-    "./extract/sources/next": {
-      "types": "./dist/extract/sources/next/index.d.ts",
-      "default": "./dist/extract/sources/next/index.js"
+    "./extract/plugins/route/next": {
+      "types": "./dist/extract/plugins/route/next/index.d.ts",
+      "default": "./dist/extract/plugins/route/next/index.js"
     },
-    "./extract/sources/next/harness": {
-      "types": "./dist/extract/sources/next/harness.d.ts",
-      "default": "./dist/extract/sources/next/harness.js"
+    "./extract/plugins/route/next/harness": {
+      "types": "./dist/extract/plugins/route/next/harness.d.ts",
+      "default": "./dist/extract/plugins/route/next/harness.js"
     },
-    "./extract/sources/router": {
-      "types": "./dist/extract/sources/router/index.d.ts",
-      "default": "./dist/extract/sources/router/index.js"
+    "./extract/plugins/route/router": {
+      "types": "./dist/extract/plugins/route/router/index.d.ts",
+      "default": "./dist/extract/plugins/route/router/index.js"
     },
-    "./extract/sources/router/harness": {
-      "types": "./dist/extract/sources/router/harness.d.ts",
-      "default": "./dist/extract/sources/router/harness.js"
+    "./extract/plugins/route/router/harness": {
+      "types": "./dist/extract/plugins/route/router/harness.d.ts",
+      "default": "./dist/extract/plugins/route/router/harness.js"
     },
-    "./extract/sources/tanstack-router": {
-      "types": "./dist/extract/sources/tanstack-router/index.d.ts",
-      "default": "./dist/extract/sources/tanstack-router/index.js"
+    "./extract/plugins/route/tanstack-router": {
+      "types": "./dist/extract/plugins/route/tanstack-router/index.d.ts",
+      "default": "./dist/extract/plugins/route/tanstack-router/index.js"
     },
-    "./extract/sources/tanstack-router/harness": {
-      "types": "./dist/extract/sources/tanstack-router/harness.d.ts",
-      "default": "./dist/extract/sources/tanstack-router/harness.js"
+    "./extract/plugins/route/tanstack-router/harness": {
+      "types": "./dist/extract/plugins/route/tanstack-router/harness.d.ts",
+      "default": "./dist/extract/plugins/route/tanstack-router/harness.js"
     },
-    "./extract/sources/swr": {
-      "types": "./dist/extract/sources/swr/index.d.ts",
-      "default": "./dist/extract/sources/swr/index.js"
+    "./extract/plugins/state/swr": {
+      "types": "./dist/extract/plugins/state/swr/index.d.ts",
+      "default": "./dist/extract/plugins/state/swr/index.js"
     },
-    "./extract/sources/swr/harness": {
-      "types": "./dist/extract/sources/swr/harness.d.ts",
-      "default": "./dist/extract/sources/swr/harness.js"
+    "./extract/plugins/state/swr/harness": {
+      "types": "./dist/extract/plugins/state/swr/harness.d.ts",
+      "default": "./dist/extract/plugins/state/swr/harness.js"
     },
-    "./extract/sources/tanstack-query": {
-      "types": "./dist/extract/sources/tanstack-query/index.d.ts",
-      "default": "./dist/extract/sources/tanstack-query/index.js"
+    "./extract/plugins/state/tanstack-query": {
+      "types": "./dist/extract/plugins/state/tanstack-query/index.d.ts",
+      "default": "./dist/extract/plugins/state/tanstack-query/index.js"
     },
-    "./extract/sources/tanstack-query/harness": {
-      "types": "./dist/extract/sources/tanstack-query/harness.d.ts",
-      "default": "./dist/extract/sources/tanstack-query/harness.js"
+    "./extract/plugins/state/tanstack-query/harness": {
+      "types": "./dist/extract/plugins/state/tanstack-query/harness.d.ts",
+      "default": "./dist/extract/plugins/state/tanstack-query/harness.js"
     },
-    "./extract/sources/use-state": {
-      "types": "./dist/extract/sources/use-state/index.d.ts",
-      "default": "./dist/extract/sources/use-state/index.js"
+    "./extract/plugins/state/use-state": {
+      "types": "./dist/extract/plugins/state/use-state/index.d.ts",
+      "default": "./dist/extract/plugins/state/use-state/index.js"
     },
-    "./extract/sources/use-state/harness": {
-      "types": "./dist/extract/sources/use-state/harness.d.ts",
-      "default": "./dist/extract/sources/use-state/harness.js"
+    "./extract/plugins/state/use-state/harness": {
+      "types": "./dist/extract/plugins/state/use-state/harness.d.ts",
+      "default": "./dist/extract/plugins/state/use-state/harness.js"
     },
-    "./extract/sources/zustand": {
-      "types": "./dist/extract/sources/zustand/index.d.ts",
-      "default": "./dist/extract/sources/zustand/index.js"
+    "./extract/plugins/state/zustand": {
+      "types": "./dist/extract/plugins/state/zustand/index.d.ts",
+      "default": "./dist/extract/plugins/state/zustand/index.js"
     },
-    "./extract/sources/zustand/harness": {
-      "types": "./dist/extract/sources/zustand/harness.d.ts",
-      "default": "./dist/extract/sources/zustand/harness.js"
+    "./extract/plugins/state/zustand/harness": {
+      "types": "./dist/extract/plugins/state/zustand/harness.d.ts",
+      "default": "./dist/extract/plugins/state/zustand/harness.js"
     },
-    "./extract/sources/react-hook-form": {
-      "types": "./dist/extract/sources/react-hook-form/index.d.ts",
-      "default": "./dist/extract/sources/react-hook-form/index.js"
+    "./extract/plugins/framework/react-hook-form": {
+      "types": "./dist/extract/plugins/framework/react-hook-form/index.d.ts",
+      "default": "./dist/extract/plugins/framework/react-hook-form/index.js"
     },
-    "./extract/sources/react-hook-form/unwrap": {
-      "types": "./dist/extract/sources/react-hook-form/unwrap.d.ts",
-      "default": "./dist/extract/sources/react-hook-form/unwrap.js"
+    "./extract/plugins/framework/react-hook-form/unwrap": {
+      "types": "./dist/extract/plugins/framework/react-hook-form/unwrap.d.ts",
+      "default": "./dist/extract/plugins/framework/react-hook-form/unwrap.js"
     },
-    "./extract/sources/redux": {
-      "types": "./dist/extract/sources/redux/index.d.ts",
-      "default": "./dist/extract/sources/redux/index.js"
+    "./extract/plugins/state/redux": {
+      "types": "./dist/extract/plugins/state/redux/index.d.ts",
+      "default": "./dist/extract/plugins/state/redux/index.js"
     },
-    "./extract/sources/redux/harness": {
-      "types": "./dist/extract/sources/redux/harness.d.ts",
-      "default": "./dist/extract/sources/redux/harness.js"
+    "./extract/plugins/state/redux/harness": {
+      "types": "./dist/extract/plugins/state/redux/harness.d.ts",
+      "default": "./dist/extract/plugins/state/redux/harness.js"
     },
-    "./extract/type-libraries/zod": {
-      "types": "./dist/extract/type-libraries/zod/index.d.ts",
-      "default": "./dist/extract/type-libraries/zod/index.js"
+    "./extract/plugins/type/zod": {
+      "types": "./dist/extract/plugins/type/zod/index.d.ts",
+      "default": "./dist/extract/plugins/type/zod/index.js"
     },
-    "./extract/type-libraries/arktype": {
-      "types": "./dist/extract/type-libraries/arktype/index.d.ts",
-      "default": "./dist/extract/type-libraries/arktype/index.js"
+    "./extract/plugins/type/arktype": {
+      "types": "./dist/extract/plugins/type/arktype/index.d.ts",
+      "default": "./dist/extract/plugins/type/arktype/index.js"
     }
   },
   "packageManager": "pnpm@10.12.4",

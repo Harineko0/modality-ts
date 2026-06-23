@@ -30,6 +30,6 @@ discovered reducer cases.
 
 ## Package entry
 
-`modality-ts/extract/sources/redux` with harness at `./harness`. The plugin id is
+`modality-ts/extract/plugins/state/redux` with harness at `./harness`. The plugin id is
 `redux` and activates when `@reduxjs/toolkit`, `react-redux`, or `redux` is a
 dependency.

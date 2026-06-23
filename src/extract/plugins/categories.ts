@@ -32,6 +32,8 @@ const STATE_SOURCE_KEYS = [
   "discover",
   "domainHints",
   "decodeBinding",
+  "isLocalStateSource",
+  "isComponentScopedVarId",
   "writeChannels",
   "safetyWarnings",
   "extract",

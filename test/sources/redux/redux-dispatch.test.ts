@@ -1,10 +1,10 @@
 import {
   extractReduxSkeleton,
   reduxSource,
-} from "modality-ts/extract/sources/redux";
+} from "modality-ts/extract/plugins/state/redux";
 import { describe, expect, it } from "vitest";
-import { discoverReduxStoresDetailed } from "../../../src/extract/sources/redux/store.js";
-import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
+import { discoverReduxStoresDetailed } from "../../../src/extract/plugins/state/redux/store.js";
+import { discoverReduxWritesDetailed } from "../../../src/extract/plugins/state/redux/writes.js";
 
 describe("Redux dispatch writes", () => {
   it("writes expected vars for dispatch(increment())", () => {

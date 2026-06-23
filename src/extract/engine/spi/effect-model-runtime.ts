@@ -14,7 +14,7 @@ export function resolveEffectPlugins(
   if (explicit !== undefined) return explicit;
   if (!registeredEffectPlugins) {
     throw new Error(
-      "No effect-model providers configured. Pass effectModels in extraction options or register providers via registerEffectPlugins.",
+      "No effect-model providers configured. Pass effectPlugins in extraction options or register providers via registerEffectPlugins.",
     );
   }
   return registeredEffectPlugins;

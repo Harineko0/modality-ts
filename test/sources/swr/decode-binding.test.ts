@@ -1,5 +1,5 @@
 import type { StateVarDecl } from "modality-ts/core";
-import { swrSource } from "modality-ts/extract/sources/swr";
+import { swrSource } from "modality-ts/extract/plugins/state/swr";
 import { describe, expect, it } from "vitest";
 
 function legacySetterBindingFromDecl(decl: StateVarDecl) {

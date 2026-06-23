@@ -20,42 +20,46 @@
         "src/extract/engine/pipeline/index.ts"
       ],
       "modality-ts/extract/engine/spi": ["src/extract/engine/spi/index.ts"],
-      "modality-ts/extract/frameworks/react": [
-        "src/extract/frameworks/react/index.ts"
+      "modality-ts/extract/plugins/framework/react": [
+        "src/extract/plugins/framework/react/index.ts"
       ],
       "modality-ts/cli/harness": ["src/cli/harness/index.ts"],
       "modality-ts/cli/runtime": ["src/cli/runtime/index.ts"],
-      "modality-ts/extract/sources/jotai": [
-        "src/extract/sources/jotai/index.ts"
+      "modality-ts/extract/plugins/state/jotai": [
+        "src/extract/plugins/state/jotai/index.ts"
       ],
-      "modality-ts/extract/sources/jotai/harness": [
-        "src/extract/sources/jotai/harness.ts"
+      "modality-ts/extract/plugins/state/jotai/harness": [
+        "src/extract/plugins/state/jotai/harness.ts"
       ],
-      "modality-ts/extract/sources/next": ["src/extract/sources/next/index.ts"],
-      "modality-ts/extract/sources/next/harness": [
-        "src/extract/sources/next/harness.ts"
+      "modality-ts/extract/plugins/route/next": [
+        "src/extract/plugins/route/next/index.ts"
       ],
-      "modality-ts/extract/sources/router": [
-        "src/extract/sources/router/index.ts"
+      "modality-ts/extract/plugins/route/next/harness": [
+        "src/extract/plugins/route/next/harness.ts"
       ],
-      "modality-ts/extract/sources/router/harness": [
-        "src/extract/sources/router/harness.ts"
+      "modality-ts/extract/plugins/route/router": [
+        "src/extract/plugins/route/router/index.ts"
       ],
-      "modality-ts/extract/sources/swr": ["src/extract/sources/swr/index.ts"],
-      "modality-ts/extract/sources/swr/harness": [
-        "src/extract/sources/swr/harness.ts"
+      "modality-ts/extract/plugins/route/router/harness": [
+        "src/extract/plugins/route/router/harness.ts"
       ],
-      "modality-ts/extract/sources/use-state": [
-        "src/extract/sources/use-state/index.ts"
+      "modality-ts/extract/plugins/state/swr": [
+        "src/extract/plugins/state/swr/index.ts"
       ],
-      "modality-ts/extract/sources/use-state/harness": [
-        "src/extract/sources/use-state/harness.ts"
+      "modality-ts/extract/plugins/state/swr/harness": [
+        "src/extract/plugins/state/swr/harness.ts"
       ],
-      "modality-ts/extract/type-libraries/zod": [
-        "src/extract/type-libraries/zod/index.ts"
+      "modality-ts/extract/plugins/state/use-state": [
+        "src/extract/plugins/state/use-state/index.ts"
       ],
-      "modality-ts/extract/type-libraries/arktype": [
-        "src/extract/type-libraries/arktype/index.ts"
+      "modality-ts/extract/plugins/state/use-state/harness": [
+        "src/extract/plugins/state/use-state/harness.ts"
+      ],
+      "modality-ts/extract/plugins/type/zod": [
+        "src/extract/plugins/type/zod/index.ts"
+      ],
+      "modality-ts/extract/plugins/type/arktype": [
+        "src/extract/plugins/type/arktype/index.ts"
       ]
     },
     "skipLibCheck": true,

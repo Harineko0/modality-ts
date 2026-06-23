@@ -13,5 +13,6 @@ export {
   inferUseStateDomainSemanticDetailed,
   initialValueForUseStateDetailed,
   type SemanticDomainInferenceContext,
+  typeAliasDeclarations,
 } from "./ts/domains.js";
 export * from "./ts/type-domains.js";

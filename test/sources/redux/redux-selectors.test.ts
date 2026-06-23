@@ -1,6 +1,6 @@
-import { reduxSource } from "modality-ts/extract/sources/redux";
+import { reduxSource } from "modality-ts/extract/plugins/state/redux";
 import { describe, expect, it } from "vitest";
-import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
+import { discoverReduxWritesDetailed } from "../../../src/extract/plugins/state/redux/writes.js";
 
 describe("Redux selector reads", () => {
   it("maps useSelector inline selectors to read channels", () => {

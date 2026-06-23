@@ -11,10 +11,10 @@ import type {
   RoutePlugin,
   StateVarDecl,
 } from "modality-ts/extract/engine/spi";
-import { reactFramework } from "modality-ts/extract/frameworks/react";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { reactFramework } from "modality-ts/extract/plugins/framework/react";
+import { jotaiSource } from "modality-ts/extract/plugins/state/jotai";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
+import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
 import { describe, expect, it } from "vitest";
 import {
   createBuiltinModalityRegistry,
@@ -617,9 +617,9 @@ describe("effect-model provider registration", () => {
     ).toBe(true);
   });
 
-  it("accepts explicit config.effectModels override", () => {
+  it("accepts explicit config.effectPlugins override", () => {
     const custom = fakeEffectModel({ id: "custom-timers" });
-    const registry = createBuiltinModalityRegistry({ effectModels: [custom] });
+    const registry = createBuiltinModalityRegistry({ effectPlugins: [custom] });
     expect(registry.effectPluginIds).toEqual(["custom-timers"]);
     expect(registry.effectPlugins).toEqual([custom]);
   });

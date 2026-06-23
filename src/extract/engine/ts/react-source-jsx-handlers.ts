@@ -36,10 +36,8 @@ import {
   transitionsFromLiteralListAttribute,
 } from "./transition/handlers.js";
 import { componentGuardLocalsFor } from "./transition/locals.js";
-import {
-  handlerSchedulesModeledTimer,
-  type TimerRegistration,
-} from "./transition/timers.js";
+import { anyEffectPluginHandlesSchedule } from "./effect-ts-bridge.js";
+import type { TimerRegistration } from "./transition/timers.js";
 import type {
   ComponentDecl,
   ContextBindings,
@@ -470,7 +468,12 @@ export function visitEventJsxAttribute(
       ctx.warnings,
       ctx.types,
     ) &&
-    !handlerSchedulesModeledTimer(node, ctx.handlers, scopedSetters) &&
+    !anyEffectPluginHandlesSchedule(
+      ctx.effectPlugins ?? [],
+      node,
+      ctx.handlers,
+      scopedSetters,
+    ) &&
     !ctx.modeledSubmitHandlers.has(handlerId) &&
     !unextractableHandlerAlreadyReported(ctx.warnings, handlerId)
   ) {

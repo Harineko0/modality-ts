@@ -1,10 +1,10 @@
-import { reduxSource } from "modality-ts/extract/sources/redux";
+import { reduxSource } from "modality-ts/extract/plugins/state/redux";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
-import { discoverReduxStoresDetailed } from "../../../src/extract/sources/redux/store.js";
-import { discoverStaticThunks } from "../../../src/extract/sources/redux/thunks.js";
-import { discoverReduxWritesDetailed } from "../../../src/extract/sources/redux/writes.js";
+import { resolveReduxImports } from "../../../src/extract/plugins/state/redux/imports.js";
+import { discoverReduxStoresDetailed } from "../../../src/extract/plugins/state/redux/store.js";
+import { discoverStaticThunks } from "../../../src/extract/plugins/state/redux/thunks.js";
+import { discoverReduxWritesDetailed } from "../../../src/extract/plugins/state/redux/writes.js";
 
 describe("Redux thunks", () => {
   it("lowers static thunk dispatches sequentially", () => {

@@ -1,7 +1,7 @@
 import { checkModel } from "modality-ts/check";
 import { eq, lit, type Model, readVar } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
-import { extractUseStateSkeleton } from "../../src/extract/sources/use-state/transitions.js";
+import { extractUseStateSkeleton } from "../../src/extract/plugins/state/use-state/transitions.js";
 import { reachable } from "../helpers/property-builders.js";
 
 function skeletonModel(

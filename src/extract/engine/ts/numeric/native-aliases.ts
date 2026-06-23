@@ -82,7 +82,7 @@ function nodeRefForTypeArg(
   node: ts.TypeNode,
   ctx: TypeRefinementContext,
 ): import("../../../lang/ts/node-ref.js").NodeRef {
-  const fileName = ctx.fileName ?? node.getSourceFile().fileName;
+  const fileName = node.getSourceFile().fileName || ctx.fileName || "";
   return {
     file: fileName,
     start: node.getStart(),

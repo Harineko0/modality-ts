@@ -24,8 +24,8 @@ import {
   nextConfigExtractionWarnings,
   parseNextConfig,
   synthesizeConfigRedirectTransitions,
-} from "modality-ts/extract/sources/next";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+} from "modality-ts/extract/plugins/route/next";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import type { EnvironmentEventConfig } from "../../extract/engine/ts/environment-config.js";
 import {
@@ -33,7 +33,7 @@ import {
   attachNumericReductions,
 } from "../../extract/engine/ts/numeric/abstraction.js";
 import type { ExtractionWarning } from "../../extract/engine/ts/types.js";
-import { buildRouteExecutionTemplate } from "../../extract/sources/shared/route-execution.js";
+import { buildRouteExecutionTemplate } from "../../extract/plugins/shared/route-execution.js";
 import {
   attachRouteInventory,
   buildClientProjectSurface,
@@ -79,7 +79,7 @@ export interface ModalityConfig {
   disabledPlugins?: readonly string[];
   plugins?: readonly StateSourcePlugin[];
   framework?: FrameworkPlugin;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
   typePlugins?: readonly TypePlugin[];
   routePlugin?: RoutePlugin | false;
 }
@@ -99,7 +99,7 @@ export interface BuildExtractionModelOptions {
   typePlugins?: readonly TypePlugin[];
   routePlugin?: RoutePlugin | false;
   framework?: FrameworkPlugin | false;
-  effectModels?: readonly EffectPlugin[];
+  effectPlugins?: readonly EffectPlugin[];
   bounds?: Partial<Bounds>;
   explainDrift?: boolean;
   now?: Date;
@@ -164,7 +164,7 @@ export async function buildExtractionModel(
           ],
           routePlugin: options.routePlugin ?? config.routePlugin,
           framework: options.framework ?? config.framework,
-          effectModels: options.effectModels ?? config.effectModels,
+          effectPlugins: options.effectPlugins ?? config.effectPlugins,
         });
         return {
           config,

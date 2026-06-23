@@ -1,12 +1,12 @@
 import { inferDomainFromTypeNode } from "modality-ts/extract/engine";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
+import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { routeMountScope } from "../../../src/extract/engine/ts/routes.js";
 import {
   observe,
   setup,
-} from "../../../src/extract/sources/use-state/harness.js";
+} from "../../../src/extract/plugins/state/use-state/harness.js";
 
 function typeNode(source: string): ts.TypeNode {
   const file = ts.createSourceFile(

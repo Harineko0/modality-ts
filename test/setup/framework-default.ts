@@ -1,7 +1,15 @@
-import "modality-ts/extract/frameworks/react";
+import { extendFrameworkWithTsUnwrap } from "../../src/extract/engine/ts/framework-ts-bridge.js";
+import { extendReactFrameworkWithTsFacets } from "../../src/extract/plugins/framework/react/ts-facets.js";
+import { registerFrameworkPlugin } from "modality-ts/extract/engine/spi";
 import "modality-ts/extract/engine/pipeline";
-import { timerEffectPlugin } from "modality-ts/extract/effect-models/timers";
-import { websocketEffectPlugin } from "modality-ts/extract/effect-models/websocket";
+import { timerEffectPlugin } from "modality-ts/extract/plugins/effect/timers";
+import { websocketEffectPlugin } from "modality-ts/extract/plugins/effect/websocket";
 import { registerEffectPlugins } from "modality-ts/extract/engine/spi";
+import { reactFramework } from "modality-ts/extract/plugins/framework/react";
+import { unwrapReactHookFormHandler } from "modality-ts/extract/plugins/framework/react-hook-form/unwrap";
+
+const base = extendReactFrameworkWithTsFacets(reactFramework());
+const framework = extendFrameworkWithTsUnwrap(base, unwrapReactHookFormHandler);
+registerFrameworkPlugin(framework);
 
 registerEffectPlugins([timerEffectPlugin(), websocketEffectPlugin()]);

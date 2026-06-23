@@ -1,12 +1,12 @@
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { storeVarId } from "../../../src/extract/sources/redux/ids.js";
-import { resolveReduxImports } from "../../../src/extract/sources/redux/imports.js";
-import { lowerReducerCase } from "../../../src/extract/sources/redux/reducers.js";
+import { storeVarId } from "../../../src/extract/plugins/state/redux/ids.js";
+import { resolveReduxImports } from "../../../src/extract/plugins/state/redux/imports.js";
+import { lowerReducerCase } from "../../../src/extract/plugins/state/redux/reducers.js";
 import {
   collectSliceDefinitions,
   lowerSliceActionEffects,
-} from "../../../src/extract/sources/redux/slices.js";
+} from "../../../src/extract/plugins/state/redux/slices.js";
 
 function parseArrow(body: string): ts.ArrowFunction {
   const source = ts.createSourceFile(

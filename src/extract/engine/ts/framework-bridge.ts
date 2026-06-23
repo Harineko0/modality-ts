@@ -29,6 +29,16 @@ export function recognizeRenderBoundaryFromTs(
   engineFw: EngineFrameworkContext,
   fileName: string,
 ): RenderBoundary | undefined {
+  // Only lower nodes that can directly be render boundaries: JSX elements and call expressions.
+  // Skipping other node kinds (e.g. ParenthesizedExpression) prevents lowerExpr's unwrapping
+  // from producing false-positive boundary detections on wrapper nodes.
+  if (
+    !ts.isJsxElement(node) &&
+    !ts.isJsxSelfClosingElement(node) &&
+    !ts.isCallExpression(node)
+  ) {
+    return undefined;
+  }
   const surface = lowerExpr(node as ts.Expression, fileName);
   return engineFw.framework.recognizeRenderBoundary(
     surface as SurfaceNode,

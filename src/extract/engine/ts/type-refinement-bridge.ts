@@ -18,21 +18,31 @@ export function typeRefinementContextFromTs(params: {
   varId?: string;
   fileName?: string;
 }): TypeRefinementContext {
-  const fileName = params.fileName ?? params.sourceFile?.fileName ?? "";
+  const contextFile = params.sourceFile;
+  const typeNodeFile = params.typeNode?.getSourceFile();
+  const declarationFile = params.declaration?.getSourceFile();
+  const primaryFile = contextFile ?? typeNodeFile ?? declarationFile;
+  const fileName = params.fileName ?? primaryFile?.fileName ?? "";
+  const knownFiles = [contextFile, typeNodeFile, declarationFile].filter(
+    (f): f is ts.SourceFile => f !== undefined,
+  );
   const originReader = createTsOriginReader({
-    sourceFile: params.sourceFile,
+    sourceFile: primaryFile,
     getSourceFile: (name) =>
-      params.sourceFile && sameFileName(params.sourceFile.fileName, name)
-        ? params.sourceFile
-        : undefined,
+      knownFiles.find((f) => sameFileName(f.fileName, name)),
   });
   const typeAliases = new Map<string, NodeRef>();
   for (const [name, node] of params.typeAliases) {
-    typeAliases.set(name, nodeRefFor(node, fileName));
+    typeAliases.set(name, nodeRefFor(node, node.getSourceFile().fileName));
   }
   return {
     ...(params.typeNode
-      ? { typeAnnotation: nodeRefFor(params.typeNode, fileName) }
+      ? {
+          typeAnnotation: nodeRefFor(
+            params.typeNode,
+            typeNodeFile?.fileName ?? fileName,
+          ),
+        }
       : {}),
     ...(params.initializer
       ? { initializer: lowerExpr(params.initializer, fileName) }

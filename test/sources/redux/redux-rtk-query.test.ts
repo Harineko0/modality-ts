@@ -1,7 +1,7 @@
-import { reduxSource } from "modality-ts/extract/sources/redux";
+import { reduxSource } from "modality-ts/extract/plugins/state/redux";
 import { describe, expect, it } from "vitest";
-import { templateForReduxDecl } from "../../../src/extract/sources/redux/template.js";
-import { queryMetadataToRecord } from "../../../src/extract/sources/redux/types.js";
+import { templateForReduxDecl } from "../../../src/extract/plugins/state/redux/template.js";
+import { queryMetadataToRecord } from "../../../src/extract/plugins/state/redux/types.js";
 
 describe("Redux RTK Query", () => {
   it("discovers createApi query endpoint template decls", () => {
