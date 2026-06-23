@@ -9,16 +9,18 @@ import { findNodeAt } from "modality-ts/extract/lang/ts";
 import { createEffectPlugin } from "modality-ts/extract/plugins";
 import * as ts from "typescript";
 import {
-  bindWebSocketHandle,
   environmentStateVarDecl,
+  type WebSocketRegistration,
+} from "../../../engine/ts/transition/environment-callbacks.js";
+import type { SetterBinding } from "../../../engine/ts/types.js";
+import {
+  bindWebSocketHandle,
   isWebSocketCallbackAssignment,
   isWebSocketConstructor,
   registerWebSocketCallbackAssignment,
   registerWebSocketConstructor,
-  type WebSocketRegistration,
   webSocketCleanupSummaryFromCall,
-} from "../../../engine/ts/transition/environment-callbacks.js";
-import type { SetterBinding } from "../../../engine/ts/types.js";
+} from "./recognition.js";
 
 export function websocketEffectPlugin(): EffectPlugin {
   return createEffectPlugin({
