@@ -6,7 +6,7 @@ import type {
   ExtractableHandler,
   SetterBinding,
 } from "../types.js";
-import { booleanExpr, valueExpr } from "./expressions.js";
+import { booleanExpr, readBinding, valueExpr } from "./expressions.js";
 import { parseConjunctiveGuardExpression } from "./guards.js";
 
 export function componentGuardLocalsFor(
@@ -127,8 +127,22 @@ export function bindConstStatement(
   )
     return false;
   for (const declaration of statement.declarationList.declarations) {
+    if (ts.isObjectBindingPattern(declaration.name)) {
+      for (const element of declaration.name.elements) {
+        if (!ts.isIdentifier(element.name)) return false;
+        const setter = setters.get(element.name.text);
+        if (!setter) return false;
+        locals.set(element.name.text, readBinding(setter.varId));
+      }
+      continue;
+    }
     if (!ts.isIdentifier(declaration.name) || !declaration.initializer)
       return false;
+    const directSetter = setters.get(declaration.name.text);
+    if (directSetter) {
+      locals.set(declaration.name.text, readBinding(directSetter.varId));
+      continue;
+    }
     const setterAlias = ts.isIdentifier(declaration.initializer)
       ? (setters.get(declaration.initializer.text) ??
         locals.get(declaration.initializer.text)?.setter)

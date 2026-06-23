@@ -50,10 +50,6 @@ export function discoverZustandWritesDetailed(
   const resettableVarIds = new Set<string>();
   const storeHandles = new Set<string>(discovery.storeNames);
 
-  if (imports.storeCreators.size === 0 && discovery.decls.length === 0) {
-    return { channels, warnings, setterFixedEffects, resettableVarIds };
-  }
-
   const fieldVarIds = new Map<string, string>();
   const fieldInitials = new Map<string, Value>();
   for (const [storeName, fields] of discovery.storeFields) {
@@ -129,6 +125,13 @@ export function discoverZustandWritesDetailed(
       if (isStoreCreatorCall(node.initializer, imports.storeCreators)) {
         storeHandles.add(node.name.text);
       }
+      if (
+        ts.isCallExpression(node.initializer) &&
+        ts.isIdentifier(node.initializer.expression) &&
+        isStoreHookName(node.initializer.expression.text)
+      ) {
+        storeHandles.add(node.initializer.expression.text);
+      }
       const selectorChannel = selectorReadChannel(
         node,
         storeHandles,
@@ -186,6 +189,10 @@ export function discoverZustandWritesDetailed(
   visit(source);
 
   return { channels, warnings, setterFixedEffects, resettableVarIds };
+}
+
+function isStoreHookName(name: string): boolean {
+  return /^use[A-Z0-9].*Store$/u.test(name);
 }
 
 function actionEffectKey(storeName: string, actionName: string): string {
@@ -299,7 +306,8 @@ function getStateReadChannel(
     !ts.isPropertyAccessExpression(base.expression) ||
     base.expression.name.text !== "getState" ||
     !ts.isIdentifier(base.expression.expression) ||
-    !storeHandles.has(base.expression.expression.text) ||
+    (!storeHandles.has(base.expression.expression.text) &&
+      !isStoreHookName(base.expression.expression.text)) ||
     !ts.isIdentifier(node.name)
   ) {
     return undefined;

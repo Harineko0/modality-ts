@@ -241,15 +241,28 @@ function lowerJsxAttributes(
 function lowerBinding(
   decl: ts.VariableDeclaration,
   fileName: string,
-): SurfaceBinding | undefined {
-  if (!ts.isIdentifier(decl.name)) return undefined;
-  return {
-    name: decl.name.text,
-    ...(decl.initializer
-      ? { init: lowerExpr(decl.initializer, fileName) }
-      : {}),
-    origin: nodeRefFor(decl.name, fileName),
-  };
+): SurfaceBinding[] {
+  if (ts.isObjectBindingPattern(decl.name)) {
+    return decl.name.elements
+      .filter((element) => ts.isIdentifier(element.name))
+      .map((element) => ({
+        name: (element.name as ts.Identifier).text,
+        ...(decl.initializer
+          ? { init: lowerExpr(decl.initializer, fileName) }
+          : {}),
+        origin: nodeRefFor(element.name, fileName),
+      }));
+  }
+  if (!ts.isIdentifier(decl.name)) return [];
+  return [
+    {
+      name: decl.name.text,
+      ...(decl.initializer
+        ? { init: lowerExpr(decl.initializer, fileName) }
+        : {}),
+      origin: nodeRefFor(decl.name, fileName),
+    } satisfies SurfaceBinding,
+  ];
 }
 
 export function lowerStatement(
@@ -303,9 +316,9 @@ export function lowerStatement(
             init: ts.isVariableDeclarationList(statement.initializer)
               ? {
                   kind: "declare" as const,
-                  bindings: statement.initializer.declarations
-                    .map((d) => lowerBinding(d, fileName))
-                    .filter((b): b is SurfaceBinding => Boolean(b)),
+                  bindings: statement.initializer.declarations.flatMap((d) =>
+                    lowerBinding(d, fileName),
+                  ),
                 }
               : {
                   kind: "expr" as const,
@@ -328,9 +341,9 @@ export function lowerStatement(
   }
   if (ts.isForOfStatement(statement) || ts.isForInStatement(statement)) {
     const initBindings = ts.isVariableDeclarationList(statement.initializer)
-      ? statement.initializer.declarations
-          .map((d) => lowerBinding(d, fileName))
-          .filter((b): b is SurfaceBinding => Boolean(b))
+      ? statement.initializer.declarations.flatMap((d) =>
+          lowerBinding(d, fileName),
+        )
       : [];
     return {
       kind: "for",
@@ -368,9 +381,9 @@ export function lowerStatement(
   if (ts.isVariableStatement(statement)) {
     return {
       kind: "declare",
-      bindings: statement.declarationList.declarations
-        .map((d) => lowerBinding(d, fileName))
-        .filter((b): b is SurfaceBinding => Boolean(b)),
+      bindings: statement.declarationList.declarations.flatMap((d) =>
+        lowerBinding(d, fileName),
+      ),
     };
   }
   if (ts.isExpressionStatement(statement)) {
@@ -467,9 +480,9 @@ export function lowerModule(
     if (ts.isVariableStatement(statement)) {
       decls.push({
         kind: "var",
-        bindings: statement.declarationList.declarations
-          .map((d) => lowerBinding(d, fileName))
-          .filter((b): b is SurfaceBinding => Boolean(b)),
+        bindings: statement.declarationList.declarations.flatMap((d) =>
+          lowerBinding(d, fileName),
+        ),
         origin: nodeRefFor(statement, fileName),
       });
     }

@@ -15,6 +15,7 @@ import type {
   LocationLowering,
   RouteInventory,
   RoutePlugin,
+  SourceDecl,
   StateSourcePlugin,
   TypePlugin,
   WriteChannel,
@@ -146,7 +147,7 @@ export function runPluginDiscoveryPhase(
     allDiscoveryFragments.length > 0
       ? allDiscoveryFragments
       : [{ sourceText: options.sourceText, fileName: options.fileName }];
-  const discoveries = discoveryFragments.flatMap((fragment) => {
+  const rawDiscoveries = discoveryFragments.flatMap((fragment) => {
     const types = semanticTypeContextForFile(
       options.semanticProject,
       fragment.fileName,
@@ -163,6 +164,7 @@ export function runPluginDiscoveryPhase(
       }),
     }));
   });
+  const discoveries = dedupeDiscoveries(rawDiscoveries);
   const stateVars = discoveries
     .flatMap((discovery) => discovery.decls)
     .map((decl) => decl.var)
@@ -430,4 +432,22 @@ function validateUniquePlugins(
       throw new Error(`Duplicate extraction source plugin ${plugin.id}`);
     seen.add(plugin.id);
   }
+}
+
+function dedupeDiscoveries(
+  discoveries: readonly {
+    plugin: StateSourcePlugin;
+    decls: readonly SourceDecl[];
+  }[],
+): { plugin: StateSourcePlugin; decls: SourceDecl[] }[] {
+  const seen = new Set<string>();
+  return discoveries.map((discovery) => ({
+    plugin: discovery.plugin,
+    decls: discovery.decls.filter((decl) => {
+      const key = `${discovery.plugin.id}:${decl.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  }));
 }

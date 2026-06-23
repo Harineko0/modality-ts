@@ -7,6 +7,7 @@ import type {
   ExtractionSurfaceDiagnostics,
   NumericReduction,
   StateVarDecl,
+  TemplateFragment,
   Transition,
 } from "modality-ts/core";
 import {
@@ -467,8 +468,8 @@ function mergeExtractionPipelineResults(
       writeChannels.push(channel);
     }
   }
-  const templateFragments = fragmentResults.flatMap(
-    (result) => result.templateFragments,
+  const templateFragments = uniqueTemplateFragments(
+    fragmentResults.flatMap((result) => result.templateFragments),
   );
   const warnings: ExtractionWarning[] = fragmentResults.flatMap((result) => [
     ...result.warnings,
@@ -482,6 +483,23 @@ function mergeExtractionPipelineResults(
     writeChannels,
     plugins: inventoryResult.plugins,
   };
+}
+
+function uniqueTemplateFragments(
+  fragments: readonly TemplateFragment[],
+): TemplateFragment[] {
+  const seen = new Set<string>();
+  return fragments.filter((fragment) => {
+    const key = [
+      ...fragment.vars.map((decl) => `var:${decl.id}`),
+      ...fragment.transitions.map(
+        (transition) => `transition:${transition.id}`,
+      ),
+    ].join("\0");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function loadMultiFileExtractionProject(

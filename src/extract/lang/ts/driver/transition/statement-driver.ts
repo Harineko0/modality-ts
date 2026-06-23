@@ -213,7 +213,10 @@ function compileStatementList(
       statements.flatMap((statement) => settersWrittenIn(statement, setters)),
     ).map((setter) => setter.varId);
     const stateVarIds = new Map(
-      [...setters.values()].map((setter) => [setter.stateName, setter.varId]),
+      [...setters.entries()].flatMap(([symbolName, setter]) => [
+        [setter.stateName, setter.varId],
+        [symbolName, setter.varId],
+      ]),
     );
     const dispatched = dispatchTsStatements(statements, {
       symbols,
