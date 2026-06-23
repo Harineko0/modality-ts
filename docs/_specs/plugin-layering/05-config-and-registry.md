@@ -67,10 +67,10 @@ dependency detection the registry uses) and emits explicit imports + wiring:
 
 ```ts
 import type { ModalityConfig } from "modality-ts/cli/extract";
-import { useStateSource } from "modality-ts/extract/sources/use-state";
-import { jotaiSource } from "modality-ts/extract/sources/jotai";
-import { swrSource } from "modality-ts/extract/sources/swr";
-// import { reactFramework } from "modality-ts/extract/frameworks/react";  // (added in Phase 1)
+import { useStateSource } from "modality-ts/extract/plugins/state/use-state";
+import { jotaiSource } from "modality-ts/extract/plugins/state/jotai";
+import { swrSource } from "modality-ts/extract/plugins/state/swr";
+// import { reactFramework } from "modality-ts/extract/plugins/framework/react";  // (added in Phase 1)
 
 export default {
   // framework: reactFramework(),                 // L4 framework (Phase 1+)

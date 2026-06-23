@@ -2,7 +2,7 @@ import { resolveImportedName } from "modality-ts/extract/engine/spi";
 import {
   reactFramework,
   SUSPENSE_DOMAIN,
-} from "modality-ts/extract/frameworks/react";
+} from "modality-ts/extract/plugins/framework/react";
 import type { SurfaceCall } from "modality-ts/extract/lang/ts";
 import {
   createTsSymbolPort,

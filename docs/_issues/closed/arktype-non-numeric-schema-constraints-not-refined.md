@@ -29,8 +29,8 @@ Inspect the current ArkType refinement provider:
 
 ```bash
 cd /Users/hari/proj/modality-ts
-rtk read src/extract/type-libraries/arktype/domains.ts
-rtk read test/extract/type-libraries/arktype-domain-refinement.test.ts
+rtk read src/extract/plugins/type/arktype/domains.ts
+rtk read test/extract/plugins/type/arktype-domain-refinement.test.ts
 ```
 
 The provider recognizes only:
@@ -61,10 +61,10 @@ Only inclusive bounded integer ArkType strings refine to `boundedInt`. Other Ark
 
 ## Possible Fix Directions
 
-- Extend `src/extract/type-libraries/arktype/domains.ts` with a small, explicit ArkType grammar parser for constraints that can soundly map to existing finite domains.
+- Extend `src/extract/plugins/type/arktype/domains.ts` with a small, explicit ArkType grammar parser for constraints that can soundly map to existing finite domains.
 - Require both divisor and finite range information before producing finite numeric `intSet` domains for modulo constraints.
 - For non-empty arrays, decide whether existing `lengthCat` can represent the constraint without changing transition semantics.
-- Add focused provider tests in `test/extract/type-libraries/arktype-domain-refinement.test.ts`.
+- Add focused provider tests in `test/extract/plugins/type/arktype-domain-refinement.test.ts`.
 - Add CLI extraction regression tests for any supported ArkType grammar that should work through `runExtractCommand`.
 - Document unsupported ArkType constraints in the type-library adapter docs.
 
@@ -74,7 +74,7 @@ The ArkType domain refinement provider now parses a small static subset of ArkTy
 
 - **Refined:** string literal unions → `enum`; inclusive `number.integer` ranges → `boundedInt`; bounded `number.integer % n` intersections → `intSet` or `boundedInt`.
 - **Caveated:** string length, array length, and unbounded divisor grammars (current `lengthCat` cannot encode non-empty-only constraints; overlays/predicates are the documented path).
-- **Tests:** `test/extract/type-libraries/arktype-domain-refinement.test.ts` and ArkType CLI regressions in `src/cli/features/extract/command.test.ts`.
+- **Tests:** `test/extract/plugins/type/arktype-domain-refinement.test.ts` and ArkType CLI regressions in `src/cli/features/extract/command.test.ts`.
 - **Docs:** type-library adapter, state-and-domains, package entry points, refining-domains, and react-features pages updated.
 
 Non-empty string and array constraints remain intentionally caveated until the IR supports restricted length categories or predicate abstractions from schema providers.

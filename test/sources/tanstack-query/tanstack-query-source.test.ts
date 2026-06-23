@@ -5,7 +5,7 @@ import {
   tanstackQuerySource,
   tanstackQueryView,
   templateForTanstackQueryDecl,
-} from "modality-ts/extract/sources/tanstack-query";
+} from "modality-ts/extract/plugins/state/tanstack-query";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { createBuiltinModalityRegistry } from "../../../src/cli/registry/index.js";

@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_TANSTACK_LOADER_CACHE_ROUTES,
   selectTanstackLoaderCacheRoutes,
-} from "../../src/extract/sources/tanstack-router/cache.js";
+} from "../../src/extract/plugins/route/tanstack-router/cache.js";
 import {
   discoverRoutes,
   routeForComponent,
-} from "../../src/extract/sources/tanstack-router/discover.js";
+} from "../../src/extract/plugins/route/tanstack-router/discover.js";
 import {
   classifyTanstackNavigationCall,
   classifyTanstackNavigationJsx,
-} from "../../src/extract/sources/tanstack-router/navigation.js";
+} from "../../src/extract/plugins/route/tanstack-router/navigation.js";
 import {
   discoverTanstackRouteEffectApis,
   tanstackRedirectTargetForFile,
-} from "../../src/extract/sources/tanstack-router/server-effects.js";
+} from "../../src/extract/plugins/route/tanstack-router/server-effects.js";
 
 const routePatterns = ["/", "/posts", "/posts/:postId", "/login"];
 

@@ -12,8 +12,8 @@ import type { RoutePlugin } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { locationEffect } from "../../src/extract/engine/ts/transition/navigation.js";
-import { locationVars } from "../../src/extract/sources/router/routes.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+import { locationVars } from "../../src/extract/plugins/route/router/routes.js";
+import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(testDir, "../../src");
@@ -353,19 +353,29 @@ describe("extraction architecture surface", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(testDir, "../../package.json"), "utf8"),
     );
-    for (const source of [
+    const statePlugins = [
       "use-state",
       "jotai",
       "swr",
       "zustand",
       "tanstack-query",
       "redux",
-      "router",
-      "next",
-    ]) {
-      expect(packageJson.exports[`./extract/sources/${source}`]).toBeTruthy();
+    ];
+    const routePlugins = ["router", "next"];
+    for (const source of statePlugins) {
       expect(
-        packageJson.exports[`./extract/sources/${source}/harness`],
+        packageJson.exports[`./extract/plugins/state/${source}`],
+      ).toBeTruthy();
+      expect(
+        packageJson.exports[`./extract/plugins/state/${source}/harness`],
+      ).toBeTruthy();
+    }
+    for (const source of routePlugins) {
+      expect(
+        packageJson.exports[`./extract/plugins/route/${source}`],
+      ).toBeTruthy();
+      expect(
+        packageJson.exports[`./extract/plugins/route/${source}/harness`],
       ).toBeTruthy();
     }
   });
@@ -376,58 +386,22 @@ describe("extraction architecture surface", () => {
     );
     for (const library of ["zod", "arktype"]) {
       expect(
-        packageJson.exports[`./extract/type-libraries/${library}`],
+        packageJson.exports[`./extract/plugins/type/${library}`],
       ).toBeTruthy();
       expect(
-        packageJson.exports[`./extract/type-libraries/${library}/harness`],
+        packageJson.exports[`./extract/plugins/type/${library}/harness`],
       ).toBeUndefined();
     }
   });
 
-  it("extraction engine does not import built-in source slices", async () => {
+  it("extraction engine does not import built-in plugin slices", async () => {
     const engineDir = resolve(srcDir, "extract/engine");
     const files = await sourceFiles(engineDir);
     const violations: string[] = [];
     for (const file of files) {
       const text = await readFile(file, "utf8");
       for (const specifier of importSpecifiers(text)) {
-        if (
-          specifier.includes("extract/sources") ||
-          specifier.includes("/sources/")
-        ) {
-          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
-        }
-      }
-    }
-    expect(violations).toEqual([]);
-  });
-
-  it("extraction engine does not import framework slices", async () => {
-    const engineDir = resolve(srcDir, "extract/engine");
-    const files = await sourceFiles(engineDir);
-    const violations: string[] = [];
-    for (const file of files) {
-      const text = await readFile(file, "utf8");
-      for (const specifier of importSpecifiers(text)) {
-        if (
-          specifier.includes("extract/frameworks") ||
-          specifier.includes("/frameworks/")
-        ) {
-          violations.push(`${relativeToSrc(file)} imports ${specifier}`);
-        }
-      }
-    }
-    expect(violations).toEqual([]);
-  });
-
-  it("extraction engine does not import type-library adapters", async () => {
-    const engineDir = resolve(srcDir, "extract/engine");
-    const files = await sourceFiles(engineDir);
-    const violations: string[] = [];
-    for (const file of files) {
-      const text = await readFile(file, "utf8");
-      for (const specifier of importSpecifiers(text)) {
-        if (specifier.includes("type-libraries")) {
+        if (specifier.includes("extract/plugins")) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
         }
       }
@@ -440,17 +414,17 @@ describe("extraction architecture surface", () => {
     const files = await sourceFiles(cliExtractDir);
     const violations: string[] = [];
     const allowedPublicPrefixes = [
-      "modality-ts/extract/sources/next",
-      "modality-ts/extract/sources/router",
+      "modality-ts/extract/plugins/route/next",
+      "modality-ts/extract/plugins/route/router",
     ];
     for (const file of files) {
       const text = await readFile(file, "utf8");
       for (const specifier of importSpecifiers(text)) {
         if (
-          specifier.includes("extract/sources/next/") ||
+          specifier.includes("extract/plugins/route/next/") ||
           specifier.endsWith("/next/cache.js") ||
           specifier.endsWith("/next/cache") ||
-          specifier.includes("extract/sources/router/") ||
+          specifier.includes("extract/plugins/route/router/") ||
           specifier.match(/extract\/sources\/next\/[^"']+\.js$/) ||
           specifier.match(/\.\.\/.*\/extract\/sources\/(next|router)\//)
         ) {
@@ -458,8 +432,8 @@ describe("extraction architecture surface", () => {
           continue;
         }
         if (
-          (specifier.startsWith("../../../extract/sources/next") ||
-            specifier.startsWith("../../../extract/sources/router")) &&
+          (specifier.startsWith("../../../extract/plugins/route/next") ||
+            specifier.startsWith("../../../extract/plugins/route/router")) &&
           !allowedPublicPrefixes.some((prefix) => specifier === prefix)
         ) {
           violations.push(`${relativeToSrc(file)} imports ${specifier}`);
@@ -470,7 +444,7 @@ describe("extraction architecture surface", () => {
   });
 
   it("built-in source slices import extraction through the public SPI only", async () => {
-    const sourcesDir = resolve(srcDir, "extract/sources");
+    const sourcesDir = resolve(srcDir, "extract/plugins");
     const files = await sourceFiles(sourcesDir);
     const violations: string[] = [];
 
@@ -809,7 +783,7 @@ function isForbiddenRunnerImport(
     if (!specifier.includes("/src/") && !specifier.includes("src/"))
       return false;
     if (specifier.includes("src/cli/features")) return true;
-    if (specifier.includes("src/extract/sources")) return true;
+    if (specifier.includes("src/extract/plugins")) return true;
     if (
       specifier.includes("src/extract/engine") &&
       !specifier.includes("src/extract/engine/spi")
@@ -818,7 +792,7 @@ function isForbiddenRunnerImport(
     }
     return false;
   }
-  if (specifier.includes("extract/sources")) return true;
+  if (specifier.includes("extract/plugins")) return true;
   if (
     specifier.includes("extract/engine") &&
     !specifier.includes("extract/engine/spi")

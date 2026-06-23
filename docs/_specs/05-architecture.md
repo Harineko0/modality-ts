@@ -44,11 +44,11 @@ modality-ts/
 │   │   │   ├── spi/             #   ★ StateSourcePlugin + NavigationAdapter interfaces (§4)
 │   │   │   └── report/          #   extraction report assembly
 │   │   └── sources/             # ★ vertical slices, axis 1: one module per state library (§5)
-│   │       ├── use-state/       # modality-ts/extract/sources/use-state
-│   │       ├── jotai/           # modality-ts/extract/sources/jotai      (peerDep: jotai)
-│   │       ├── swr/             # modality-ts/extract/sources/swr        (peerDep: swr)
-│   │       ├── zustand/         # modality-ts/extract/sources/zustand    (peerDep: zustand)
-│   │       └── router/          # modality-ts/extract/sources/router     (peerDep: react-router)
+│   │       ├── use-state/       # modality-ts/extract/plugins/state/use-state
+│   │       ├── jotai/           # modality-ts/extract/plugins/state/jotai      (peerDep: jotai)
+│   │       ├── swr/             # modality-ts/extract/plugins/state/swr        (peerDep: swr)
+│   │       ├── zustand/         # modality-ts/extract/plugins/state/zustand    (peerDep: zustand)
+│   │       └── router/          # modality-ts/extract/plugins/route/router     (peerDep: react-router)
 │   │
 │   ├── cli/                     # `modality` product shell and generated-test runtimes (§6)
 │   │   ├── features/            # ★ vertical slices, axis 2: extract/ check/ replay/ conform/
@@ -145,7 +145,7 @@ Design notes on why this shape:
 Each source package owns its concern end-to-end — discovery to replay to conformance — so adding a library never fans out across the repo:
 
 ```
-src/extract/sources/jotai/
+src/extract/plugins/state/jotai/
 ├── imports.ts               # Jotai module + alias resolution
 ├── types.ts                 # internal atom metadata shapes
 ├── ids.ts                   # store/family-qualified var IDs
@@ -161,13 +161,13 @@ src/extract/sources/jotai/
 └── index.ts                 # assembles and exports the plugin object
 ```
 
-The litmus test the architecture must keep passing: **supporting a new library = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Zustand has since been added exactly this way — a new `src/extract/sources/zustand/` slice with no changes to the SPI, pipeline, shared React extractor, or other plugins — which is the contract's first out-of-the-gate confirmation. Projected mapping for the remaining likely sources, as a design check that the contract is sufficient:
+The litmus test the architecture must keep passing: **supporting a new library = writing one new package in `src/extract/sources/`, zero diffs elsewhere.** Zustand has since been added exactly this way — a new `src/extract/plugins/state/zustand/` slice with no changes to the SPI, pipeline, shared React extractor, or other plugins — which is the contract's first out-of-the-gate confirmation. Projected mapping for the remaining likely sources, as a design check that the contract is sufficient:
 
 | Source | discover | writeChannels / summarize | template | harness.observe | Verdict |
 |---|---|---|---|---|---|
 | Zustand | `create()`/`createStore` stores | actions = store methods; `set`/`setState` (incl. immer drafts) | none | store handle, direct | **implemented (built-in)** |
 | `useReducer` | hook calls | `dispatch` symbol; reducer body is *good* M0 material (pure, switch-shaped) | none | DOM projection / probe (like `useState`) | fits cleanly |
-| TanStack Query | `useQuery/useMutation` | `mutate`, cache APIs | yes — mutation lifecycle, retries (bounded) | queryClient handle | **implemented** (`src/extract/sources/tanstack-query/`) |
+| TanStack Query | `useQuery/useMutation` | `mutate`, cache APIs | yes — mutation lifecycle, retries (bounded) | queryClient handle | **implemented** (`src/extract/plugins/state/tanstack-query/`) |
 | XState | explicit machines | n/a — machines *are* transition systems | direct machine→IR import (bypasses M0 entirely — the design.md §8 pivot target drops out of this contract for free) | actor snapshot | fits, easiest of all |
 | React Context as state | — | — | — | — | does not fit (writes unanalyzable); stays a documented taint, not a plugin |
 

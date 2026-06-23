@@ -2,9 +2,9 @@ import type { StateVarDecl } from "modality-ts/core";
 import { describe, expect, it } from "vitest";
 import { runPluginDiscoveryPhase } from "../../src/extract/engine/pipeline/index.js";
 import { decodeSetterBinding } from "../../src/extract/engine/ts/context.js";
-import { jotaiSource } from "../../src/extract/sources/jotai/plugin.js";
-import { swrSource } from "../../src/extract/sources/swr/plugin.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+import { jotaiSource } from "../../src/extract/plugins/state/jotai/plugin.js";
+import { swrSource } from "../../src/extract/plugins/state/swr/plugin.js";
+import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 function legacySetterBindingFromDecl(decl: StateVarDecl) {
   const localMatch = /^local:([^.]+)\.(.+)$/.exec(decl.id);

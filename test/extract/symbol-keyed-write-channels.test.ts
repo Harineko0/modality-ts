@@ -9,7 +9,7 @@ import {
 } from "../../src/extract/engine/ts/context.js";
 import { extractReactSourceTransitions as extractReactSourceTransitionsBase } from "../../src/extract/engine/ts/react-source-transitions.js";
 import { createSemanticProjectForTest } from "../../src/extract/engine/ts/semantic-project.js";
-import { useStateSource } from "../../src/extract/sources/use-state/index.js";
+import { useStateSource } from "../../src/extract/plugins/state/use-state/index.js";
 
 const defaultSourcePlugins = [useStateSource()];
 

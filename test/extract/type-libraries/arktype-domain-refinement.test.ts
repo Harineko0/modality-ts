@@ -1,4 +1,4 @@
-import { arktypeTypePlugin } from "modality-ts/extract/type-libraries/arktype";
+import { arktypeTypePlugin } from "modality-ts/extract/plugins/type/arktype";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { resolveDomainRefinements } from "../../../src/extract/engine/ts/domain-refinements.js";

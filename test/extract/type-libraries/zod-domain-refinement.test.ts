@@ -1,4 +1,4 @@
-import { zodTypePlugin } from "modality-ts/extract/type-libraries/zod";
+import { zodTypePlugin } from "modality-ts/extract/plugins/type/zod";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { resolveDomainRefinements } from "../../../src/extract/engine/ts/domain-refinements.js";

@@ -1,5 +1,5 @@
-import { websocketEffectPlugin } from "modality-ts/extract/effect-models/websocket";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { websocketEffectPlugin } from "modality-ts/extract/plugins/effect/websocket";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";

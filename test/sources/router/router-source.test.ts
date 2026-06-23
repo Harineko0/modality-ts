@@ -1,10 +1,10 @@
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import { describe, expect, it } from "vitest";
 import {
   navigate,
   observe,
   setup,
-} from "../../../src/extract/sources/router/harness.js";
+} from "../../../src/extract/plugins/route/router/harness.js";
 
 describe("router source plugin", () => {
   it("exposes a RoutePlugin-compatible source slice", () => {

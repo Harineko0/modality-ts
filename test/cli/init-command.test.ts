@@ -55,13 +55,13 @@ describe("runInitCommand", () => {
     const content = await readFile(result.configPath, "utf8");
 
     expect(content).toContain(
-      'import { useStateSource } from "modality-ts/extract/sources/use-state";',
+      'import { useStateSource } from "modality-ts/extract/plugins/state/use-state";',
     );
     expect(content).toContain(
-      'import { jotaiSource } from "modality-ts/extract/sources/jotai";',
+      'import { jotaiSource } from "modality-ts/extract/plugins/state/jotai";',
     );
     expect(content).toContain(
-      'import { swrSource } from "modality-ts/extract/sources/swr";',
+      'import { swrSource } from "modality-ts/extract/plugins/state/swr";',
     );
     expect(content).not.toContain("zustandSource");
     expect(content).toContain("plugins: [");

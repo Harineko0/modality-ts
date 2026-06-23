@@ -4,7 +4,7 @@ import { sourceWithReachableImports } from "../../src/cli/features/extract/proje
 import {
   nextEffectApiProvider,
   nextModuleRolePlugin,
-} from "../../src/extract/sources/next/index.js";
+} from "../../src/extract/plugins/route/next/index.js";
 
 describe("sourceWithReachableImports next boundaries", () => {
   const inventory: RouteInventory = {

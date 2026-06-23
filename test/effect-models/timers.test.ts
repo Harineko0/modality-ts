@@ -1,5 +1,5 @@
-import { timerEffectPlugin } from "modality-ts/extract/effect-models/timers";
-import { reactRouterAdapter } from "modality-ts/extract/sources/router";
+import { timerEffectPlugin } from "modality-ts/extract/plugins/effect/timers";
+import { reactRouterAdapter } from "modality-ts/extract/plugins/route/router";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { extractReactSourceTransitions } from "../../src/extract/engine/ts/react-source-transitions.js";

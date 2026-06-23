@@ -28,7 +28,7 @@ identical; `pnpm test` + `pnpm architecture` green.
 
 ### Phase 1 — `FrameworkPlugin` SPI + `frameworks/react` (the proof)
 - New: `src/extract/engine/spi/framework.ts` — `FrameworkPlugin`, `HookCall`, `RenderBoundary`.
-- New: `src/extract/frameworks/react/{index,hooks,render-boundaries}.ts` — the name tables from
+- New: `src/extract/plugins/framework/react/{index,hooks,render-boundaries}.ts` — the name tables from
   `ast.ts:13-157` + `transition/effects.ts:313` (`reactEffectPhase`) + the Suspense domain currently
   built inline in `react-source-transitions.ts`; all import-alias-aware via L1's `importBinding`.
 - Modify: `ast.ts` predicates to consult an injected framework; thread `framework` through
