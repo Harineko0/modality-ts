@@ -244,11 +244,6 @@ export function transitionsFromAsyncStatements(
   const finallyEffects = nonIdentityEffects(
     finallySummaries.map((summary) => summary.effect),
   );
-  const preReads = uniqueStrings([
-    ...preSummaries.flatMap((summary) => summary.reads),
-    ...opArgs.reads,
-    ...(peeled.guard?.reads ?? []),
-  ]);
   const successReads = uniqueStrings([
     ...successSummariesInitial.flatMap((summary) => summary.reads),
     ...finallySummaries.flatMap((summary) => summary.reads),
@@ -310,6 +305,11 @@ export function transitionsFromAsyncStatements(
   }
   const baseId = `${component}.${attr}.${op}`;
   const snapshotReads = uniqueStrings([...successReads, ...catchReads]);
+  const preReads = uniqueStrings([
+    ...preSummaries.flatMap((summary) => summary.reads),
+    ...opArgs.reads,
+    ...(peeled.guard?.reads ?? []),
+  ]);
   const snapshotArgs = Object.fromEntries(
     snapshotReads.map(
       (varId) =>

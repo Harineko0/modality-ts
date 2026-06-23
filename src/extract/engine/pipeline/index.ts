@@ -183,6 +183,7 @@ export function runPluginDiscoveryPhase(
         plugin.writeChannels({
           sourceText: fragment.sourceText,
           fileName: fragment.fileName,
+          relatedFragments,
           ...(types ? { types } : {}),
           ...(typePlugins.length > 0 ? { typePlugins } : {}),
         }),
@@ -213,7 +214,7 @@ export function runPluginDiscoveryPhase(
     ),
   );
   const numericSeedVarIds = new Set(
-    discoveries
+    rawDiscoveries
       .flatMap((discovery) => discovery.decls)
       .filter((decl) => decl.metadata?.numericSeed === true)
       .map((decl) => decl.id),

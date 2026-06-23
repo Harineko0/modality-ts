@@ -124,6 +124,11 @@ function fallbackSummaries(
 ): EffectSummary[] {
   const summaries: EffectSummary[] = [];
   for (const statement of statements) {
+    const setterSummary = summarizeSetterStatement(statement, setters);
+    if (setterSummary) {
+      summaries.push(setterSummary);
+      continue;
+    }
     for (const setter of escapedSettersInStatement(statement, setters)) {
       summaries.push({
         effect: { kind: "havoc", var: setter.varId },
@@ -246,7 +251,18 @@ function summarizeStatementList(
   state: StatementSummaryState,
 ): StatementSummaryResult {
   const compiled = compileStatementList(statements, setters, state);
-  if (compiled) return compiled;
+  if (compiled) {
+    if (
+      compiled.summaries.length > 0 ||
+      statements.every(
+        (statement) =>
+          settersWrittenIn(statement, setters).length === 0 &&
+          summarizeSetterStatement(statement, setters) === undefined,
+      )
+    ) {
+      return compiled;
+    }
+  }
   return {
     summaries: fallbackSummaries(statements, setters),
     terminated: false,

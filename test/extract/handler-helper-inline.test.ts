@@ -42,6 +42,20 @@ function handlerStatements(
   return handler.body.statements;
 }
 
+function printStatements(statements: readonly ts.Statement[]): string[] {
+  const printer = ts.createPrinter({ removeComments: true });
+  const source = ts.createSourceFile(
+    "printed.tsx",
+    "",
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  return statements.map((statement) =>
+    printer.printNode(ts.EmitHint.Unspecified, statement, source),
+  );
+}
+
 describe("flattenHandlerHelpers", () => {
   it("splices a zero-arg helper body in place of await helper()", () => {
     const source = parseSource(`
@@ -86,7 +100,7 @@ describe("flattenHandlerHelpers", () => {
     );
   });
 
-  it("leaves fixed-arg helper calls untouched", () => {
+  it("splices fixed-arg helper calls with const parameter bindings", () => {
     const source = parseSource(`
       const req = (ref: string) => {
         restartProject({ ref });
@@ -101,8 +115,34 @@ describe("flattenHandlerHelpers", () => {
       setters: new Map(),
     });
 
-    expect(flat.inlinedHelpers).toEqual([]);
-    expect(flat.statements[0]?.getText(source)).toBe("req(projectRef);");
+    expect(flat.inlinedHelpers).toEqual(["req"]);
+    expect(printStatements(flat.statements)).toEqual([
+      "const ref = projectRef;",
+      "restartProject({ ref });",
+    ]);
+  });
+
+  it("keeps helper-local early returns for path termination", () => {
+    const source = parseSource(`
+      const req = (kind: "a" | "b") => {
+        if (kind === "a") {
+          restartA();
+          return;
+        }
+        restartB();
+      };
+      const handler = () => {
+        req("a");
+      };
+    `);
+
+    const flat = flattenHandlerHelpers(handlerStatements(source), {
+      handlers: handlersFrom(source),
+      setters: new Map(),
+    });
+
+    expect(flat.inlinedHelpers).toEqual(["req"]);
+    expect(printStatements(flat.statements).join("\n")).toContain("return");
   });
 
   it("breaks recursion on a self-referential helper", () => {

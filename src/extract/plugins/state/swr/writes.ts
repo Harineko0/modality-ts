@@ -7,6 +7,7 @@ import {
   swrInstanceId,
   swrInstanceNamingContext,
   useSwrImportNames,
+  discoverSwrHooks,
 } from "./discover.js";
 import { swrVarId } from "./template.js";
 
@@ -14,6 +15,7 @@ export function discoverSwrReadChannels(
   sourceText: string,
   fileName = "App.tsx",
   types?: SemanticTypeContext,
+  relatedFragments: readonly { sourceText: string; fileName: string }[] = [],
 ): WriteChannel[] {
   const source = semanticSourceFileFor(
     sourceText,
@@ -22,6 +24,10 @@ export function discoverSwrReadChannels(
     ts.ScriptKind.TSX,
   );
   const useSwrNames = useSwrImportNames(source, types);
+  const customSwrHookNames = discoveredCustomSwrHookNames(
+    relatedFragments,
+    types,
+  );
   const swrNamingContext = swrInstanceNamingContext(source, useSwrNames);
   const channels: WriteChannel[] = [];
   const visit = (node: ts.Node): void => {
@@ -32,7 +38,7 @@ export function discoverSwrReadChannels(
       ts.isCallExpression(node.initializer) &&
       ts.isIdentifier(node.initializer.expression) &&
       (useSwrNames.has(node.initializer.expression.text) ||
-        isCustomSwrHookName(node.initializer.expression.text))
+        customSwrHookNames.has(node.initializer.expression.text))
     ) {
       const key = keyFromExpression(node.initializer.arguments[0]);
       const id = useSwrNames.has(node.initializer.expression.text)
@@ -76,8 +82,24 @@ export function discoverSwrReadChannels(
   return channels;
 }
 
-function isCustomSwrHookName(name: string): boolean {
-  return /^use[A-Z0-9]/u.test(name);
+function discoveredCustomSwrHookNames(
+  relatedFragments: readonly { sourceText: string; fileName: string }[],
+  types?: SemanticTypeContext,
+): Set<string> {
+  const names = new Set<string>();
+  for (const fragment of relatedFragments) {
+    for (const decl of discoverSwrHooks(
+      fragment.sourceText,
+      fragment.fileName,
+      types,
+    )) {
+      const id = decl.metadata?.id;
+      if (typeof id === "string" && /^use[A-Z0-9]/u.test(id)) {
+        names.add(id);
+      }
+    }
+  }
+  return names;
 }
 
 function lineAndColumn(

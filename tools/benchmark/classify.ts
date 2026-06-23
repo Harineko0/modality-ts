@@ -82,9 +82,10 @@ export function classifyPropertyVerdicts(input: {
     const replayStatus = reportVerdict
       ? input.replayByProperty?.get(reportVerdict.property)
       : undefined;
-    const modelSlackAccepted =
+    const acceptedSlack =
       reportVerdict !== undefined &&
-      (input.modelSlackPropertyIds?.has(reportVerdict.property) ?? false);
+      ((input.modelSlackPropertyIds?.has(reportVerdict.property) ?? false) ||
+        hasBoundedSearchSlack(reportVerdict));
 
     const classification = mapOutcomeClass(outcome.class);
     const classified: ClassifiedPropertyVerdict = {
@@ -93,7 +94,7 @@ export function classifyPropertyVerdicts(input: {
       classification,
       seededOutcomeId: outcome.id,
       ...(replayStatus ? { replayStatus } : {}),
-      ...(modelSlackAccepted ? { modelSlackAccepted } : {}),
+      ...(acceptedSlack ? { modelSlackAccepted: true } : {}),
     };
     verdicts.push(classified);
 
@@ -101,7 +102,7 @@ export function classifyPropertyVerdicts(input: {
       outcome,
       status,
       replayStatus,
-      modelSlackAccepted,
+      acceptedSlack,
     );
     if (failure) failures.push(failure);
 
@@ -117,7 +118,12 @@ export function classifyPropertyVerdicts(input: {
       case "false-positive-probe":
         if (
           status === "violated" &&
-          (replayStatus === "not-reproduced" || modelSlackAccepted)
+          (replayStatus === "not-reproduced" || acceptedSlack)
+        ) {
+          counts.falsePositiveProbes += 1;
+        } else if (
+          (status === "verified" || status === "verified-within-bounds") &&
+          acceptedSlack
         ) {
           counts.falsePositiveProbes += 1;
         } else if (status === "violated") {
@@ -171,7 +177,7 @@ function evaluateOutcome(
   outcome: SeededOutcome,
   status: string,
   replayStatus: "reproduced" | "not-reproduced" | undefined,
-  modelSlackAccepted: boolean,
+  acceptedSlack: boolean,
 ): string | undefined {
   if (outcome.metadataOnly) return undefined;
   const property = outcome.property!;
@@ -192,12 +198,13 @@ function evaluateOutcome(
 
   if (outcome.class === "FP probe") {
     if (status === "verified" || status === "verified-within-bounds") {
+      if (acceptedSlack) return undefined;
       return `FP probe ${property} verified but expected violation or accepted slack`;
     }
     if (
       status === "violated" &&
       replayStatus === "reproduced" &&
-      !modelSlackAccepted
+      !acceptedSlack
     ) {
       return `FP probe ${property} reproduced a violation without accepted slack`;
     }
@@ -205,6 +212,15 @@ function evaluateOutcome(
   }
 
   return undefined;
+}
+
+function hasBoundedSearchSlack(verdict: CheckReport["verdicts"][number]): boolean {
+  return (
+    verdict.confidence?.level === "bounded" &&
+    (verdict.confidence.reasons ?? []).some((reason) =>
+      reason.toLowerCase().includes("search limit"),
+    )
+  );
 }
 
 function normalizeSeededStatus(

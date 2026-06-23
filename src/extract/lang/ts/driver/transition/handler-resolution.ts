@@ -224,6 +224,7 @@ export function transitionsFromResolvedHandler(
           handlerContext,
         );
         if (flatBranchTransitions.length > 0) return flatBranchTransitions;
+        return [];
       }
       const flatSetterTransition = transitionFromFlattenedSetterStatements(
         source,
@@ -650,17 +651,17 @@ function flattenConciseHelper(
 ): ReturnType<typeof flattenHandlerHelpers> | undefined {
   if (ts.isBlock(handler.body)) return undefined;
   const call = helperInvocationCall(handler.body);
-  if (!call || call.arguments.length > 0 || !ts.isIdentifier(call.expression))
-    return undefined;
+  if (!call || !ts.isIdentifier(call.expression)) return undefined;
   const helperName = call.expression.text;
   const helper = options.handlers.get(helperName);
-  if (!helper || !ts.isBlock(helper.body) || options.setters.has(helperName))
+  if (!helper || !ts.isBlock(helper.body) || options.setters.has(helperName)) {
     return undefined;
-  const nested = flattenHandlerHelpers(helper.body.statements, options);
-  return {
-    statements: nested.statements,
-    inlinedHelpers: [helperName, ...nested.inlinedHelpers],
-  };
+  }
+  const nested = flattenHandlerHelpers(
+    [ts.factory.createExpressionStatement(call)],
+    options,
+  );
+  return nested.inlinedHelpers.length > 0 ? nested : undefined;
 }
 
 function helperInvocationCall(

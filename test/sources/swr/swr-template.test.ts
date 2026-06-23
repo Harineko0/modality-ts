@@ -219,10 +219,19 @@ describe("SWR template", () => {
         return data;
       }
     `;
+    const hookSource = `
+      import useSWR from 'swr';
+      export function useApprovals() {
+        return useSWR("approvals", fetcher);
+      }
+    `;
     expect(
       swrSource().writeChannels({
         sourceText: source,
         fileName: "ApprovalQueue.tsx",
+        relatedFragments: [
+          { sourceText: hookSource, fileName: "subscription-queries.ts" },
+        ],
       }),
     ).toEqual(
       expect.arrayContaining([
@@ -233,6 +242,22 @@ describe("SWR template", () => {
         }),
       ]),
     );
+  });
+
+  it("does not treat arbitrary custom hooks as SWR read channels", () => {
+    const source = `
+      import { useEventSnapshot } from './events';
+      export function App() {
+        const { data } = useEventSnapshot();
+        return data;
+      }
+    `;
+    expect(
+      swrSource().writeChannels({
+        sourceText: source,
+        fileName: "App.tsx",
+      }),
+    ).toEqual([]);
   });
 
   it("keeps key-derived ids for direct component useSWR calls", () => {

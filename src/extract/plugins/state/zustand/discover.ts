@@ -340,7 +340,9 @@ function emitStateFieldsFromObject(
       continue;
     }
     if (isActionFunction(prop.initializer)) continue;
-    const fieldType = typeArg ? lookupFieldType(typeArg, name) : undefined;
+    const fieldType = typeArg
+      ? lookupFieldType(typeArg, name, types)
+      : undefined;
     const varId = storeVarId(storeName, name);
     const fieldDomain = inferFieldDomain(
       prop.initializer,
@@ -378,6 +380,11 @@ function emitStateFieldsFromObject(
           ? { storageKind: creatorCall.storageKind }
           : {}),
         ...(creatorCall.immer ? { immer: true } : {}),
+        ...(fieldDomain.domain.kind === "boundedInt" &&
+        fieldDomain.domain.min === fieldDomain.domain.max &&
+        typeof fieldDomain.initial === "number"
+          ? { numericSeed: true }
+          : {}),
       }),
     });
   }
@@ -591,14 +598,21 @@ function extractStoreTypeArg(
 function lookupFieldType(
   typeNode: ts.TypeNode,
   field: string,
+  types?: SemanticTypeContext,
 ): ts.TypeNode | undefined {
-  if (!ts.isTypeLiteralNode(typeNode)) return undefined;
-  for (const member of typeNode.members) {
-    if (!ts.isPropertySignature(member) || !member.name) continue;
-    const name = propertyNameFromMember(member.name);
-    if (name === field) return member.type;
+  if (ts.isTypeLiteralNode(typeNode)) {
+    for (const member of typeNode.members) {
+      if (!ts.isPropertySignature(member) || !member.name) continue;
+      const name = propertyNameFromMember(member.name);
+      if (name === field) return member.type;
+    }
   }
-  return undefined;
+  if (!types?.checker) return undefined;
+  const storeType = types.checker.getTypeFromTypeNode(typeNode);
+  const property = storeType.getProperty(field);
+  const declaration = property?.valueDeclaration ?? property?.declarations?.[0];
+  if (!declaration || !ts.isPropertySignature(declaration)) return undefined;
+  return declaration.type;
 }
 
 function anchor(

@@ -32,6 +32,7 @@ import {
   applyInputClassToWideInputVars,
   attachNumericReductions,
 } from "../../extract/compile/numeric/abstraction.js";
+import { widenNumericDomainsFromTransitions } from "../../extract/compile/numeric/widening.js";
 import type { ExtractionWarning } from "../../extract/lang/ts/driver/types.js";
 import { buildRouteExecutionTemplate } from "../../extract/plugins/shared/route-execution.js";
 import {
@@ -320,17 +321,21 @@ export async function buildExtractionModel(
         ...routeExecutionFragment.vars,
         ...cacheStorageFragments.vars,
       ];
-      const stateVars = refineAssignedLiteralDomains(
-        [
-          ...applyMountScopesFromRouter(
-            pipeline.stateVars,
-            routerAdapter,
-            project.inventory,
-          ),
-          ...templateVars,
-        ],
+      const stateVars = widenNumericDomainsFromTransitions({
+        vars: refineAssignedLiteralDomains(
+          [
+            ...applyMountScopesFromRouter(
+              pipeline.stateVars,
+              routerAdapter,
+              project.inventory,
+            ),
+            ...templateVars,
+          ],
+          transitions,
+        ),
         transitions,
-      );
+        maxDepth: Math.min(options.bounds?.maxDepth ?? 12, 3),
+      });
       return {
         schemaVersion: 1 as const,
         id: "extracted-model",
