@@ -12,6 +12,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoConformanceSignal } from "../guards.js";
 
 export interface ConformanceExperimentDeps {
   extract?: typeof runExtractCommand;
@@ -241,9 +242,7 @@ function sliceFromConformReport(
       : []),
   ];
   const status = report.metrics.passRate < minPassRate ? "fail" : "pass";
-  const hasOnlyInconclusiveWalks =
-    report.metrics.total > 0 &&
-    report.metrics.reproduced + report.metrics.notReproduced === 0;
+  const hasOnlyInconclusiveWalks = hasNoConformanceSignal(report.metrics);
   const headlinePrefix = report.metrics.inconclusive > 0 ? "warning: " : "";
   return {
     benchmarkId: benchmark.id,
@@ -266,6 +265,7 @@ function summarizeConformance(
     .filter(isConformanceMetrics);
   const total = sum(metrics, (entry) => entry.total);
   const reproduced = sum(metrics, (entry) => entry.reproduced);
+  const notReproduced = sum(metrics, (entry) => entry.notReproduced);
   const inconclusive = sum(metrics, (entry) => entry.inconclusive);
   const passRate = total === 0 ? 1 : reproduced / total;
   const minPassRate =
@@ -283,7 +283,7 @@ function summarizeConformance(
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
     passRate < minPassRate ||
-    (total > 0 && reproduced === 0 && inconclusive === total)
+    hasNoConformanceSignal({ total, reproduced, notReproduced })
       ? "fail"
       : "pass";
   return {

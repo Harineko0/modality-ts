@@ -115,8 +115,10 @@ export async function runValiditySuite(
     reportPath,
   };
   await writeValidityReport(reportPath, report);
+  const hasError = subReports.some((entry) => entry.status === "error");
+  const hasFailure = subReports.some((entry) => entry.status === "fail");
   return {
-    exitCode: subReports.some((entry) => entry.status === "error") ? 4 : 0,
+    exitCode: hasError ? 4 : hasFailure ? 2 : 0,
     report,
     reportPath,
     lines,

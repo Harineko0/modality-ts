@@ -18,6 +18,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoMetamorphicSignal } from "../guards.js";
 
 export interface MetamorphicExperimentDeps {
   generate?: typeof generateMetamorphicVariants;
@@ -173,21 +174,20 @@ async function runBenchmarkMetamorphic(
   const minStabilityRate =
     ctx.manifest.validityThresholds?.metamorphic?.minStabilityRate ?? 0;
   const comparable = metrics.stable + metrics.divergent;
-  const status =
-    comparable === 0 && metrics.variantsTotal > 0
+  const noSignal = hasNoMetamorphicSignal(metrics);
+  const status = noSignal
+    ? "fail"
+    : metrics.stabilityRate < minStabilityRate
       ? "fail"
-      : metrics.stabilityRate < minStabilityRate
-        ? "fail"
-        : "pass";
+      : "pass";
   const divergences = results.filter((result) => result.status === "divergent");
   return {
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
     status,
-    headline:
-      comparable === 0 && metrics.variantsTotal > 0
-        ? `no comparable variants (${metrics.inconclusive}/${metrics.variantsTotal} inconclusive)`
-        : `stability ${formatRate(metrics.stabilityRate)} (${metrics.stable}/${comparable})`,
+    headline: noSignal
+      ? `no comparable variants (${metrics.inconclusive}/${metrics.variantsTotal} inconclusive)`
+      : `stability ${formatRate(metrics.stabilityRate)} (${metrics.stable}/${comparable})`,
     metrics,
     messages: [
       `variants=${metrics.variantsTotal} stable=${metrics.stable} divergent=${metrics.divergent} inconclusive=${metrics.inconclusive}`,
@@ -308,24 +308,29 @@ function summarizeMetamorphic(
   const stable = sum(metrics, (entry) => entry.stable);
   const divergent = sum(metrics, (entry) => entry.divergent);
   const inconclusive = sum(metrics, (entry) => entry.inconclusive);
+  const variantsTotal = sum(metrics, (entry) => entry.variantsTotal);
   const stabilityRate =
     stable + divergent === 0 ? 1 : stable / (stable + divergent);
   const minStabilityRate =
     ctx.manifest.validityThresholds?.metamorphic?.minStabilityRate ?? 0;
+  const noSignal = hasNoMetamorphicSignal({
+    variantsTotal,
+    stable,
+    divergent,
+  });
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
     stabilityRate < minStabilityRate ||
-    (stable + divergent === 0 && inconclusive > 0)
+    noSignal
       ? "fail"
       : "pass";
   const divergentTransforms = divergentTransformIds(metrics);
   return {
     experiment: "metamorphic",
     status,
-    headline:
-      stable + divergent === 0 && inconclusive > 0
-        ? `no comparable variants (${inconclusive} inconclusive)`
-        : `stability ${formatRate(stabilityRate)} (${stable}/${stable + divergent})`,
+    headline: noSignal
+      ? `no comparable variants (${inconclusive} inconclusive)`
+      : `stability ${formatRate(stabilityRate)} (${stable}/${stable + divergent})`,
     perBenchmark: [...perBenchmark],
     messages: [
       `aggregate inconclusive=${inconclusive}`,

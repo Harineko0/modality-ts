@@ -15,6 +15,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoMutationSignal } from "../guards.js";
 
 export interface MutationExperimentDeps {
   generate?: typeof generateMutants;
@@ -211,7 +212,9 @@ async function runBenchmarkMutation(
   );
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
-  const status = metrics.detectionRate < minDetectionRate ? "fail" : "pass";
+  const noSignal = hasNoMutationSignal(metrics);
+  const status =
+    noSignal || metrics.detectionRate < minDetectionRate ? "fail" : "pass";
   const falsePositiveTransitions = [
     ...new Set(results.flatMap((result) => result.falsePositiveTransitions)),
   ].sort();
@@ -219,9 +222,16 @@ async function runBenchmarkMutation(
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
     status,
-    headline: `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
+    headline: noSignal
+      ? "blocked: no mutants killed or preserved (oracle produced no signal)"
+      : `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
     metrics,
     messages: [
+      ...(noSignal
+        ? [
+            "blocked: no mutants killed or preserved (oracle produced no signal)",
+          ]
+        : []),
       `mutants=${metrics.mutantsTotal} killed=${metrics.killed} survived=${metrics.survived} preserved=${metrics.preserved} error=${metrics.error}`,
       `false-positive-rate=${formatRate(metrics.falsePositiveRate)} (${metrics.falsePositives}/${metrics.preserved})`,
       ...(falsePositiveTransitions.length > 0
@@ -527,12 +537,15 @@ function summarizeMutation(
   const preserved = sum(metrics, (entry) => entry.preserved);
   const falsePositives = sum(metrics, (entry) => entry.falsePositives);
   const errors = sum(metrics, (entry) => entry.error);
+  const mutantsTotal = sum(metrics, (entry) => entry.mutantsTotal);
   const detectionRate =
     killed + survived === 0 ? 1 : killed / (killed + survived);
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
+  const noSignal = hasNoMutationSignal({ mutantsTotal, killed, preserved });
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
+    noSignal ||
     detectionRate < minDetectionRate
       ? "fail"
       : "pass";
@@ -540,9 +553,16 @@ function summarizeMutation(
   return {
     experiment: "mutation",
     status,
-    headline: `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
+    headline: noSignal
+      ? "blocked: no mutants killed or preserved (oracle produced no signal)"
+      : `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
     perBenchmark: [...perBenchmark],
     messages: [
+      ...(noSignal
+        ? [
+            "blocked: no mutants killed or preserved (oracle produced no signal)",
+          ]
+        : []),
       `aggregate preserved=${preserved} falsePositives=${falsePositives} errors=${errors}`,
       ...(worst
         ? [
