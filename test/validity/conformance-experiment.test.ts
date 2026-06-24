@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -43,8 +43,13 @@ describe("conformance validity experiment", () => {
   it("maps action conform metrics and warns on inconclusive walks", async () => {
     const calls: { conform?: unknown } = {};
     const experiment = conformanceExperiment({
-      extract: async () =>
-        ({
+      extract: async (options) => {
+        await writeFile(
+          options.modelPath,
+          JSON.stringify({ vars: [], transitions: [], bounds: {} }),
+          "utf8",
+        );
+        return {
           model: { vars: [], transitions: [], bounds: {} },
           report: {},
           lines: [],
@@ -55,7 +60,8 @@ describe("conformance validity experiment", () => {
           pluginLabels: [],
           artifacts: [],
           propsErrors: [],
-        }) as never,
+        } as never;
+      },
       conform: async (options) => {
         calls.conform = options;
         return { report: conformReport, exitCode: 3, lines: [] };

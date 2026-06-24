@@ -1,4 +1,10 @@
-import type { EffectIR, Model, StateVarDecl } from "modality-ts/core";
+import {
+  mergeArgDomains,
+  mergeAssignedDomain,
+  type EffectIR,
+  type Model,
+  type StateVarDecl,
+} from "modality-ts/core";
 import type {
   RouteInventory,
   RoutePlugin,
@@ -60,18 +66,6 @@ export function attachFieldPruning(model: Model): Model {
   };
 }
 
-function mergeAssignedDomain(
-  left: StateVarDecl["domain"],
-  right: StateVarDecl["domain"],
-): StateVarDecl["domain"] {
-  if (left.kind === "enum" && right.kind === "enum")
-    return mergeArgDomains(left, right);
-  if (left.kind === "boundedInt" && right.kind === "boundedInt")
-    return mergeArgDomains(left, right);
-  if (left.kind === "tokens") return right;
-  return left;
-}
-
 function assignedLiteralDomains(
   effect: EffectIR,
 ): Array<[string, StateVarDecl["domain"]]> {
@@ -102,25 +96,5 @@ function domainForLiteral(value: unknown): StateVarDecl["domain"] {
   if (typeof value === "string") return { kind: "enum", values: [value] };
   if (value === null)
     return { kind: "option", inner: { kind: "tokens", count: 1 } };
-  return { kind: "tokens", count: 1 };
-}
-
-function mergeArgDomains(
-  left: StateVarDecl["domain"] | undefined,
-  right: StateVarDecl["domain"],
-): StateVarDecl["domain"] {
-  if (!left) return right;
-  if (left.kind === "enum" && right.kind === "enum")
-    return {
-      kind: "enum",
-      values: [...new Set([...left.values, ...right.values])].sort(),
-    };
-  if (left.kind === "boundedInt" && right.kind === "boundedInt")
-    return {
-      kind: "boundedInt",
-      min: Math.min(left.min, right.min),
-      max: Math.max(left.max, right.max),
-    };
-  if (left.kind === right.kind) return left;
   return { kind: "tokens", count: 1 };
 }

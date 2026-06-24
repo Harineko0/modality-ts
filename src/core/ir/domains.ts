@@ -163,7 +163,10 @@ export function validateValue(domain: AbstractDomain, value: Value): boolean {
       );
     }
     case "tokens":
-      return typeof value === "string" && tokenNames(domain).includes(value);
+      return (
+        typeof value === "string" &&
+        (domain.names === undefined || tokenNames(domain).includes(value))
+      );
     case "lengthCat":
       return value === "0" || value === "1" || value === "many";
     case "boundedList":

@@ -37,12 +37,33 @@ export interface ModelComparison {
 }
 
 export function compareModels(input: ModelComparisonInput): ModelComparison {
-  const baselineStates = reachableStateSet(input.baseline, input.searchLimits);
-  const variantStates = reachableStateSet(input.variant, input.searchLimits);
   const verdictDelta = compareVerdicts(
     input.baselineReport,
     input.variantReport,
   );
+
+  // Metamorphic transforms are semantics-preserving, so an IR-preserving
+  // transform yields a model whose vars/transitions are byte-identical to the
+  // baseline (only provenance metadata such as source hashes differs). Identical
+  // transition systems are bisimilar by construction, so we can decide stability
+  // exactly and cheaply via a semantic fingerprint — and crucially avoid the
+  // reachable-state enumeration below, which does not scale to realistic models
+  // (their state space dwarfs any practical maxStates bound, producing spurious
+  // `boundHit` inconclusives even for trivially-equivalent variants).
+  if (
+    semanticModelFingerprint(input.baseline) ===
+    semanticModelFingerprint(input.variant)
+  ) {
+    return {
+      bisimilar: verdictDelta.length === 0,
+      ...(verdictDelta.length > 0 ? { verdictDelta } : {}),
+      baselineStates: 0,
+      variantStates: 0,
+    };
+  }
+
+  const baselineStates = reachableStateSet(input.baseline, input.searchLimits);
+  const variantStates = reachableStateSet(input.variant, input.searchLimits);
   const stateSetDelta = diffSets(baselineStates.states, variantStates.states);
   const boundHit = baselineStates.boundHit || variantStates.boundHit;
   const hasStateDelta =
@@ -57,6 +78,22 @@ export function compareModels(input: ModelComparisonInput): ModelComparison {
     baselineStates: baselineStates.states.size,
     variantStates: variantStates.states.size,
   };
+}
+
+/**
+ * Canonical fingerprint of a model's transition system (bounds + vars +
+ * transitions), independent of declaration order and excluding provenance
+ * metadata (id, source hashes, plugin list) that varies between a baseline and
+ * a copied-app variant without changing behavior.
+ */
+function semanticModelFingerprint(model: Model): string {
+  const vars = [...model.vars].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  const transitions = [...model.transitions].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+  return canonicalJson({ bounds: model.bounds, vars, transitions });
 }
 
 function reachableStateSet(

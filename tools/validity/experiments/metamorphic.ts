@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Model } from "modality-ts/core";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
 import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import {
@@ -17,6 +18,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoMetamorphicSignal } from "../guards.js";
 
 export interface MetamorphicExperimentDeps {
   generate?: typeof generateMetamorphicVariants;
@@ -171,13 +173,21 @@ async function runBenchmarkMetamorphic(
   );
   const minStabilityRate =
     ctx.manifest.validityThresholds?.metamorphic?.minStabilityRate ?? 0;
-  const status = metrics.stabilityRate < minStabilityRate ? "fail" : "pass";
+  const comparable = metrics.stable + metrics.divergent;
+  const noSignal = hasNoMetamorphicSignal(metrics);
+  const status = noSignal
+    ? "fail"
+    : metrics.stabilityRate < minStabilityRate
+      ? "fail"
+      : "pass";
   const divergences = results.filter((result) => result.status === "divergent");
   return {
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
     status,
-    headline: `stability ${formatRate(metrics.stabilityRate)} (${metrics.stable}/${metrics.stable + metrics.divergent})`,
+    headline: noSignal
+      ? `no comparable variants (${metrics.inconclusive}/${metrics.variantsTotal} inconclusive)`
+      : `stability ${formatRate(metrics.stabilityRate)} (${metrics.stable}/${comparable})`,
     metrics,
     messages: [
       `variants=${metrics.variantsTotal} stable=${metrics.stable} divergent=${metrics.divergent} inconclusive=${metrics.inconclusive}`,
@@ -228,8 +238,11 @@ async function classifyVariant(input: {
   }
 
   const comparison = input.deps.compare({
-    baseline: input.baseline.model,
-    variant: run.model,
+    baseline: normalizeModelRoot(
+      input.baseline.model,
+      resolve(input.ctx.repoRoot, input.benchmark.root),
+    ),
+    variant: normalizeModelRoot(run.model, input.variant.appRoot),
     baselineReport: input.baseline.checkReport,
     variantReport: run.checkReport,
     searchLimits: input.benchmark.searchLimits,
@@ -295,20 +308,29 @@ function summarizeMetamorphic(
   const stable = sum(metrics, (entry) => entry.stable);
   const divergent = sum(metrics, (entry) => entry.divergent);
   const inconclusive = sum(metrics, (entry) => entry.inconclusive);
+  const variantsTotal = sum(metrics, (entry) => entry.variantsTotal);
   const stabilityRate =
     stable + divergent === 0 ? 1 : stable / (stable + divergent);
   const minStabilityRate =
     ctx.manifest.validityThresholds?.metamorphic?.minStabilityRate ?? 0;
+  const noSignal = hasNoMetamorphicSignal({
+    variantsTotal,
+    stable,
+    divergent,
+  });
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
-    stabilityRate < minStabilityRate
+    stabilityRate < minStabilityRate ||
+    noSignal
       ? "fail"
       : "pass";
   const divergentTransforms = divergentTransformIds(metrics);
   return {
     experiment: "metamorphic",
     status,
-    headline: `stability ${formatRate(stabilityRate)} (${stable}/${stable + divergent})`,
+    headline: noSignal
+      ? `no comparable variants (${inconclusive} inconclusive)`
+      : `stability ${formatRate(stabilityRate)} (${stable}/${stable + divergent})`,
     perBenchmark: [...perBenchmark],
     messages: [
       `aggregate inconclusive=${inconclusive}`,
@@ -363,6 +385,43 @@ function failedSlice(
     headline,
     metrics,
     messages: [headline],
+  };
+}
+
+function normalizeModelRoot(model: unknown, appRoot: string): Model {
+  const normalizedRoot = appRoot.replaceAll("\\", "/");
+  const normalized = JSON.parse(
+    JSON.stringify(model).replaceAll(normalizedRoot, "<app>"),
+  ) as Model;
+  return sanitizeDanglingVars(normalized);
+}
+
+function sanitizeDanglingVars(model: Model): Model {
+  const declared = new Set(model.vars.map((decl) => decl.id));
+  const sanitize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sanitize);
+    if (typeof value !== "object" || value === null) return value;
+    const record = value as Record<string, unknown>;
+    if (
+      record.kind === "read" &&
+      typeof record.var === "string" &&
+      !declared.has(record.var)
+    ) {
+      return { kind: "lit", value: false };
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([key, entry]) => [key, sanitize(entry)]),
+    );
+  };
+  return {
+    ...model,
+    transitions: model.transitions.map((transition) => ({
+      ...transition,
+      reads: transition.reads?.filter((varId) => declared.has(varId)),
+      writes: transition.writes?.filter((varId) => declared.has(varId)),
+      guard: sanitize(transition.guard) as typeof transition.guard,
+      effect: sanitize(transition.effect) as typeof transition.effect,
+    })),
   };
 }
 

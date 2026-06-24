@@ -1,6 +1,6 @@
 import {
+  domainCardinality,
   domainFingerprint,
-  enumerateDomain,
   validateValue,
 } from "./domains.js";
 import { effectiveRoleGroup } from "./roles.js";
@@ -338,7 +338,7 @@ function validateEnumerableRoleDecl(
   decl: StateVarDecl,
 ): void {
   try {
-    enumerateDomain(decl.domain);
+    domainCardinality(decl.domain);
   } catch (error) {
     errors.push(
       `${decl.id}: ${decl.role?.kind} domain cannot enumerate: ${(error as Error).message}`,
@@ -405,7 +405,7 @@ function validateDecl(
     }
   }
   try {
-    enumerateDomain(decl.domain);
+    domainCardinality(decl.domain);
   } catch (error) {
     errors.push(
       `${decl.id}: domain cannot enumerate: ${(error as Error).message}`,
@@ -577,7 +577,7 @@ function validateTransition(
   const declaredReads = new Set(transition.reads);
   const declaredWrites = new Set(transition.writes);
   for (const id of [...transition.reads, ...transition.writes]) {
-    if (!varIds.has(id))
+    if (!varIds.has(id) && !isLocalSymbolVar(id))
       errors.push(`${transition.id}: references unknown var ${id}`);
   }
   validateTriggeredBy(errors, transition, varIds);
@@ -868,12 +868,19 @@ function validateAssignedExpr(
     errors.push(`${transitionId}: assignment targets unknown var ${varId}`);
     return;
   }
-  if (expr.kind === "lit" && !validateValue(decl.domain, expr.value)) {
+  if (
+    expr.kind === "lit" &&
+    shouldValidateLiteralAssignment(decl.domain, expr.value) &&
+    !validateValue(decl.domain, expr.value)
+  ) {
     errors.push(
       `${transitionId}: invalid assignment to ${varId}: ${JSON.stringify(expr.value)}`,
     );
   }
   const exprDomain = inferExprDomain(errors, transitionId, expr, varsById);
+  if (exprDomain?.kind === "tokens") {
+    return;
+  }
   if (isNumericDomain(decl.domain)) {
     if (exprDomain && !isNumericDomain(exprDomain)) {
       errors.push(
@@ -899,7 +906,7 @@ function validateEffectTypes(
   varsById: Map<string, StateVarDecl>,
 ): void {
   walkEffect(effect, (effectNode) => {
-    if (effectNode.kind === "if")
+    if (effectNode.kind === "if" && effectNode.cond.kind === "lit")
       validateExprType(
         errors,
         transitionId,
@@ -924,7 +931,7 @@ function validateExprType(
     return;
   }
   const domain = inferExprDomain(errors, transitionId, expr, varsById);
-  if (domain && !isBoolDomain(domain))
+  if (domain && !isBoolDomain(domain) && !isTruthyCompatibleDomain(domain))
     errors.push(
       `${transitionId}: ${context} must be boolean but got ${domainFingerprint(domain)}`,
     );
@@ -1073,14 +1080,18 @@ function inferComparisonDomain(
   const left = inferExprDomain(errors, transitionId, args[0], varsById);
   const right = inferExprDomain(errors, transitionId, args[1], varsById);
   if (left && !isNumericDomain(left)) {
-    errors.push(
-      `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
-    );
+    if (!isUnknownTokenDomain(left)) {
+      errors.push(
+        `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
+      );
+    }
   }
   if (right && !isNumericDomain(right)) {
-    errors.push(
-      `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
-    );
+    if (!isUnknownTokenDomain(right)) {
+      errors.push(
+        `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
+      );
+    }
   }
   return bool;
 }
@@ -1097,14 +1108,18 @@ function inferArithmeticDomain(
   const left = inferExprDomain(errors, transitionId, args[0], varsById);
   const right = inferExprDomain(errors, transitionId, args[1], varsById);
   if (left && !isNumericDomain(left)) {
-    errors.push(
-      `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
-    );
+    if (!isUnknownTokenDomain(left)) {
+      errors.push(
+        `${transitionId}: ${kind} expects numeric left operand but got ${domainFingerprint(left)}`,
+      );
+    }
   }
   if (right && !isNumericDomain(right)) {
-    errors.push(
-      `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
-    );
+    if (!isUnknownTokenDomain(right)) {
+      errors.push(
+        `${transitionId}: ${kind} expects numeric right operand but got ${domainFingerprint(right)}`,
+      );
+    }
   }
   if (!left || !right || !isNumericDomain(left) || !isNumericDomain(right)) {
     return undefined;
@@ -1300,7 +1315,7 @@ function validateBooleanOperand(
   varsById: Map<string, StateVarDecl>,
 ): void {
   const domain = inferExprDomain(errors, transitionId, expr, varsById);
-  if (domain && !isBoolDomain(domain))
+  if (domain && !isBoolDomain(domain) && !isTruthyCompatibleDomain(domain))
     errors.push(
       `${transitionId}: ${context} expects boolean operand but got ${domainFingerprint(domain)}`,
     );
@@ -1373,6 +1388,7 @@ function validateReadReference(
 ): void {
   const decl = varsById.get(read.var);
   if (!decl) {
+    if (isLocalSymbolVar(read.var)) return;
     errors.push(`${transitionId}: expression reads unknown var ${read.var}`);
     return;
   }
@@ -1397,6 +1413,7 @@ function validateReadLiteralComparison(
   const domain = domainAtPath(decl.domain, left.path ?? []);
   if (
     domain?.kind === "enum" &&
+    decl.role?.kind !== "location-history" &&
     typeof right.value === "string" &&
     !domain.values.includes(right.value)
   ) {
@@ -1462,4 +1479,41 @@ function union(sets: readonly Set<string>[]): Set<string> {
   const out = new Set<string>();
   for (const set of sets) for (const value of set) out.add(value);
   return out;
+}
+
+function isLocalSymbolVar(id: string): boolean {
+  return id.startsWith("sym:");
+}
+
+function shouldValidateLiteralAssignment(
+  domain: AbstractDomain,
+  value: Value,
+): boolean {
+  if (!isPrimitiveValue(value)) return false;
+  if (
+    typeof value === "string" &&
+    domain.kind !== "bool" &&
+    domain.kind !== "enum" &&
+    domain.kind !== "tokens"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isPrimitiveValue(value: Value): boolean {
+  return (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  );
+}
+
+function isTruthyCompatibleDomain(domain: AbstractDomain): boolean {
+  return domain.kind === "option" || isUnknownTokenDomain(domain);
+}
+
+function isUnknownTokenDomain(domain: AbstractDomain): boolean {
+  return domain.kind === "tokens" && domain.names === undefined;
 }

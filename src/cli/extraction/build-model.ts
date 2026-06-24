@@ -10,6 +10,7 @@ import type {
   Model,
   OverlaySpec,
 } from "modality-ts/core";
+import { dedupeVarsById } from "modality-ts/core";
 import type {
   EffectPlugin,
   FrameworkPlugin,
@@ -344,7 +345,7 @@ export async function buildExtractionModel(
           sourceHashes: sourceHashes(project.sources),
           plugins: pluginProvenance(registry),
         },
-        vars: [
+        vars: dedupeVarsById([
           ...routeVars,
           ...synthesizeSystemVars(
             transitions,
@@ -354,7 +355,7 @@ export async function buildExtractionModel(
             bounds.maxPending,
           ),
           ...stateVars,
-        ],
+        ]),
         transitions,
       };
     },
@@ -472,10 +473,7 @@ export async function buildExtractionModel(
     if (!coverage || coverage.configured === 0) return undefined;
     return formatRouteCoverageLine(coverage);
   })();
-  const varCount =
-    pipeline.stateVars.length +
-    pipeline.templateFragments.flatMap((fragment) => fragment.vars).length +
-    cacheStorageFragments.vars.length;
+  const varCount = model.vars.length;
   const transitionCount = model.transitions.length;
   const pluginLabels = registry.plugins.map(
     (plugin) => `${plugin.kind}:${plugin.id}@${plugin.version}`,

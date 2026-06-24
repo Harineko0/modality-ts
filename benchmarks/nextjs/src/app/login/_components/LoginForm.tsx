@@ -93,6 +93,15 @@ export function LoginForm() {
       {loginStatus === "error" ? <div>login error banner</div> : null}
       <p>return-path notice: {returnTo}</p>
       <output>{session?.role ?? "guest"}</output>
+      <span hidden data-modality-var="local:LoginForm.role">
+        {JSON.stringify(role)}
+      </span>
+      <span hidden data-modality-var="local:LoginForm.email">
+        {JSON.stringify(email)}
+      </span>
+      <span hidden data-modality-var="local:LoginForm.password">
+        {JSON.stringify(password)}
+      </span>
     </section>
   );
 }

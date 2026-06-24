@@ -13,9 +13,19 @@ permissions:
 
 jobs:
   validity:
-    name: Extract validity
+    name: Extract validity (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: conformance
+            name: Conformance
+          - id: mutation
+            name: Mutation
+          - id: metamorphic
+            name: Metamorphic
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,6 +47,35 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Validity
+        run: pnpm validity -- --id ${{ matrix.id }}
+
+  validity-report:
+    name: Extract validity report
+    runs-on: ubuntu-latest
+    needs: validity
+    if: always()
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build native checker
+        run: pnpm build:rust
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Validity report
         run: pnpm validity -- --report .modality/validity/report.json --comment .modality/validity/comment.md
       - name: Get comment ID
         if: github.event_name == 'pull_request'

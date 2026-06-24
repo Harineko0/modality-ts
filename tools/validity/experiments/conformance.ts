@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ConformReport } from "modality-ts/core";
+import type { ConformReport, Model } from "modality-ts/core";
+import { assertObservationMapCoversModel } from "../../../benchmarks/shared/testing/observation-map.js";
 import type { runConformCommand } from "../../../src/cli/conform.js";
 import { runExtractCommand } from "../../../src/cli/extract.js";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
@@ -11,6 +12,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoConformanceSignal } from "../guards.js";
 
 export interface ConformanceExperimentDeps {
   extract?: typeof runExtractCommand;
@@ -167,6 +169,9 @@ async function runBenchmarkConformance(
       sliceManifestPath: join(outDir, "slices.json"),
       now: ctx.now,
     });
+    assertObservationMapCoversModel(
+      JSON.parse(await readFile(modelPath, "utf8")) as Model,
+    );
     ctx.log?.(`benchmark ${benchmark.id}: conform start`);
     await deps.conform({
       modelPath,
@@ -237,11 +242,12 @@ function sliceFromConformReport(
       : []),
   ];
   const status = report.metrics.passRate < minPassRate ? "fail" : "pass";
+  const hasOnlyInconclusiveWalks = hasNoConformanceSignal(report.metrics);
   const headlinePrefix = report.metrics.inconclusive > 0 ? "warning: " : "";
   return {
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
-    status,
+    status: hasOnlyInconclusiveWalks ? "fail" : status,
     headline: `${headlinePrefix}pass-rate ${formatRate(
       report.metrics.passRate,
     )} (${report.metrics.reproduced}/${report.metrics.total})`,
@@ -259,6 +265,7 @@ function summarizeConformance(
     .filter(isConformanceMetrics);
   const total = sum(metrics, (entry) => entry.total);
   const reproduced = sum(metrics, (entry) => entry.reproduced);
+  const notReproduced = sum(metrics, (entry) => entry.notReproduced);
   const inconclusive = sum(metrics, (entry) => entry.inconclusive);
   const passRate = total === 0 ? 1 : reproduced / total;
   const minPassRate =
@@ -275,7 +282,8 @@ function summarizeConformance(
     .slice(0, 5);
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
-    passRate < minPassRate
+    passRate < minPassRate ||
+    hasNoConformanceSignal({ total, reproduced, notReproduced })
       ? "fail"
       : "pass";
   return {
