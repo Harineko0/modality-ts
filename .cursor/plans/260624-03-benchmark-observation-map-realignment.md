@@ -20,7 +20,7 @@ removes the entire class of "catalog out of sync with extractor" drift.
 
 - Do NOT change the extractor's var-id scheme. The extractor is the source of
   truth; the observation layer adapts to it, never vice-versa.
-- Do NOT change model assembly (`260624-01`) or reporting (`260624-03`).
+- Do NOT change model assembly (`260624-02`) or reporting (`260624-04`).
 - Do NOT add per-app special cases. The resolver must be driven by var-id prefix
   semantics common to all benchmarks, with runtime handles supplied by each app's
   harness.

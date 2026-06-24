@@ -15,8 +15,8 @@ an experiment that cannot exercise its oracle at all must be `fail`/blocked, not
 
 ## Non-goals
 
-- Do NOT fix the underlying observation/replay breakage (that is `260624-02`) or
-  model dedup (`260624-01`). This plan only hardens *reporting/classification* so
+- Do NOT fix the underlying observation/replay breakage (that is `260624-03`) or
+  model dedup (`260624-02`). This plan only hardens *reporting/classification* so
   breakage is never silently green.
 - Do NOT raise the configured thresholds in `benchmarks/manifest.json`. The guard
   must be independent of the numeric threshold (a `0` threshold is a legitimate

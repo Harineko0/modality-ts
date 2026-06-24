@@ -1,5 +1,6 @@
 export * from "./artifacts/index.js";
 export * from "./ir/canonical.js";
+export * from "./ir/dedupe-vars.js";
 export * from "./ir/domains.js";
 export * from "./ir/eval.js";
 export * from "./ir/field-pruning.js";

@@ -36,7 +36,7 @@ describe("runExtractCommand", () => {
     const model = JSON.parse(await readFile(modelPath, "utf8")) as Model;
     const appModel = await readFile(appModelPath, "utf8");
     const report = JSON.parse(await readFile(reportPath, "utf8"));
-    expect(result.lines[0]).toBe("extracted vars=1 transitions=1");
+    expect(result.lines[0]).toBe("extracted vars=4 transitions=1");
     expect(result.lines.some((l) => l.startsWith("state-space≈"))).toBe(true);
     expect(result.lines).toContain(`appModel=${appModelPath}`);
     expect(
@@ -562,7 +562,7 @@ describe("runExtractCommand", () => {
     );
 
     const result = await runExtractCommand({ sourcePath, modelPath });
-    expect(result.lines[0]).toBe("extracted vars=1 transitions=1");
+    expect(result.lines[0]).toBe("extracted vars=4 transitions=1");
     expect(
       result.lines.some((line) => line.startsWith("routes configured=")),
     ).toBe(false);

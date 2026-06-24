@@ -16,8 +16,8 @@ dimension, so exploration blows past search limits immediately.
 
 ## Non-goals
 
-- Do NOT change the observation/replay path (that is plan `260624-02`).
-- Do NOT change validity reporting/threshold semantics (that is `260624-03`).
+- Do NOT change the observation/replay path (that is plan `260624-03`).
+- Do NOT change validity reporting/threshold semantics (that is `260624-04`).
 - Do NOT attempt to dedupe transitions — they are already unique (93/93) and are
   correctly deduped in `mergeExtractionPipelineResults`.
 - Do NOT preserve backward compatibility of emitted model JSON; regenerating
