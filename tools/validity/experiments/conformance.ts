@@ -237,11 +237,14 @@ function sliceFromConformReport(
       : []),
   ];
   const status = report.metrics.passRate < minPassRate ? "fail" : "pass";
+  const hasOnlyInconclusiveWalks =
+    report.metrics.total > 0 &&
+    report.metrics.reproduced + report.metrics.notReproduced === 0;
   const headlinePrefix = report.metrics.inconclusive > 0 ? "warning: " : "";
   return {
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
-    status,
+    status: hasOnlyInconclusiveWalks ? "fail" : status,
     headline: `${headlinePrefix}pass-rate ${formatRate(
       report.metrics.passRate,
     )} (${report.metrics.reproduced}/${report.metrics.total})`,
@@ -275,7 +278,8 @@ function summarizeConformance(
     .slice(0, 5);
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
-    passRate < minPassRate
+    passRate < minPassRate ||
+    (total > 0 && reproduced === 0 && inconclusive === total)
       ? "fail"
       : "pass";
   return {

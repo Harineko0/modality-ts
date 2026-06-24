@@ -1,4 +1,11 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { canonicalJson } from "modality-ts/core";
 import {
@@ -52,9 +59,11 @@ export async function generateMutants(
     )}`;
     const mutantRoot = join(input.workDir, mutantId, "app");
     await cp(input.appRoot, mutantRoot, {
+      dereference: true,
       recursive: true,
-      filter: (source) => !ignoredTreeEntry(source),
+      filter: (source) => !isIgnoredTreeEntry(source),
     });
+    await linkDependencyTree(input.appRoot, mutantRoot);
     const mutantFile = join(mutantRoot, candidate.file);
     const originalText = await readFile(candidate.absoluteFile, "utf8");
     const mutation = applyMutation(
@@ -182,10 +191,24 @@ function sourceDiff(file: string, before: string, after: string): string {
   return lines.join("\n");
 }
 
-function ignoredTreeEntry(path: string): boolean {
+function isIgnoredTreeEntry(path: string): boolean {
   const normalized = path.split(/[/\\]/g);
   const name = normalized[normalized.length - 1];
-  return !["node_modules", ".next", "dist", "coverage"].includes(name ?? "");
+  return ["node_modules", ".next", "dist", "coverage"].includes(name ?? "");
+}
+
+async function linkDependencyTree(
+  sourceRoot: string,
+  copiedRoot: string,
+): Promise<void> {
+  const sourceNodeModules = join(sourceRoot, "node_modules");
+  try {
+    const stats = await lstat(sourceNodeModules);
+    if (!stats.isDirectory() && !stats.isSymbolicLink()) return;
+  } catch {
+    return;
+  }
+  await symlink(sourceNodeModules, join(copiedRoot, "node_modules"), "dir");
 }
 
 function safeId(value: string): string {

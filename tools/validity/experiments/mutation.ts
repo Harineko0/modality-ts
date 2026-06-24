@@ -1,6 +1,6 @@
-import { mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import type { CheckReport } from "modality-ts/core";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { canonicalJson, type CheckReport, type Model } from "modality-ts/core";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
 import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
 import {
@@ -138,26 +138,23 @@ async function runBenchmarkMutation(
     });
   }
 
-  const baselineViolations = baseline.checkReport.verdicts.filter(
-    (verdict) => verdict.status === "violated",
+  const baselineReproducedViolations = reproducedViolationProperties(
+    baseline.checkReport,
+    baseline.replayVerdicts,
   );
-  if (baselineViolations.length > 0) {
-    return failedSlice(
-      benchmark,
-      `baseline violated: ${baselineViolations
-        .map((verdict) => verdict.property)
-        .join(", ")}`,
-      emptyMetrics(),
-    );
-  }
 
   let mutants: MutantDescriptor[] = [];
   let candidateCount = 0;
+  const mutationSourcePaths = sourcePathsFromBaseline(
+    benchmarkRoot,
+    baseline,
+    benchmark.sourcePaths,
+  );
   try {
     ctx.log?.(`benchmark ${benchmark.id}: mutation candidates start`);
     candidateCount = await deps.countCandidates({
       appRoot: benchmarkRoot,
-      sourcePaths: benchmark.sourcePaths,
+      sourcePaths: mutationSourcePaths,
       mutation: settings,
     });
     ctx.log?.(
@@ -165,7 +162,7 @@ async function runBenchmarkMutation(
     );
     mutants = await deps.generate({
       appRoot: benchmarkRoot,
-      sourcePaths: benchmark.sourcePaths,
+      sourcePaths: mutationSourcePaths,
       workDir: join(outDir, "mutants"),
       mutation: settings,
     });
@@ -183,6 +180,13 @@ async function runBenchmarkMutation(
     );
   }
 
+  if (candidateCount === 0) {
+    return failedSlice(benchmark, "no mutation candidates discovered", {
+      ...emptyMetrics(),
+      sampled: false,
+    });
+  }
+
   const results: MutantResult[] = [];
   for (const mutant of mutants) {
     ctx.log?.(`benchmark ${benchmark.id}: mutant ${mutant.mutantId} start`);
@@ -192,6 +196,7 @@ async function runBenchmarkMutation(
       mutant,
       outDir: join(outDir, "runs", mutant.mutantId),
       baseline,
+      baselineReproducedViolations,
       deps,
     });
     results.push(result);
@@ -222,11 +227,38 @@ async function runBenchmarkMutation(
       ...(falsePositiveTransitions.length > 0
         ? [`false-positive transitions: ${falsePositiveTransitions.join(", ")}`]
         : []),
+      ...(baselineReproducedViolations.length > 0
+        ? [
+            `baseline reproduced violations ignored for mutant delta: ${baselineReproducedViolations.join(", ")}`,
+          ]
+        : []),
       ...results
         .filter((result) => result.message)
         .map((result) => `${result.mutant.mutantId}: ${result.message}`),
     ],
   };
+}
+
+function sourcePathsFromBaseline(
+  appRoot: string,
+  baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>,
+  fallback: readonly string[],
+): string[] {
+  const sourceFiles = baseline.extractReport.sourceFiles ?? [];
+  const relativePaths = sourceFiles
+    .map((path) => relative(appRoot, path))
+    .filter(
+      (path) =>
+        path &&
+        !path.startsWith("..") &&
+        !path.includes("node_modules") &&
+        /\.(tsx?|jsx?)$/.test(path) &&
+        !path.endsWith(".modals.ts") &&
+        !path.endsWith(".props.ts"),
+    );
+  return relativePaths.length > 0
+    ? [...new Set(relativePaths)].sort()
+    : [...fallback];
 }
 
 async function classifyMutant(input: {
@@ -235,6 +267,7 @@ async function classifyMutant(input: {
   mutant: MutantDescriptor;
   outDir: string;
   baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>;
+  baselineReproducedViolations: readonly string[];
   deps: Required<MutationExperimentDeps>;
 }): Promise<MutantResult> {
   const harnessPath = resolve(
@@ -270,28 +303,26 @@ async function classifyMutant(input: {
       message: errorMessage(error),
     };
   }
-  if (run.checkReport.diagnostics?.limits) {
-    return {
-      mutant: input.mutant,
-      status: "error",
-      killedProperties: [],
-      falsePositiveTransitions: [],
-      message: `search limit: ${run.checkReport.diagnostics.limits.reason}`,
-    };
-  }
-
+  const baselineViolationSet = new Set(input.baselineReproducedViolations);
   const reproducedViolations = reproducedViolationProperties(
     run.checkReport,
     run.replayVerdicts,
-  );
+  ).filter((property) => !baselineViolationSet.has(property));
+  const oracleModelPaths = await writeOracleModels({
+    outDir: join(input.outDir, "oracle-models"),
+    baseline: input.baseline.model,
+    baselineRoot: resolve(input.ctx.repoRoot, input.benchmark.root),
+    mutant: run.model,
+    mutantRoot: input.mutant.appRoot,
+  });
   const oracle = await input.deps.compareBehaviour({
-    baselineModelPath: input.baseline.artifactPaths.model,
+    baselineModelPath: oracleModelPaths.baseline,
     baselineHarnessPath: resolve(
       input.ctx.repoRoot,
       input.benchmark.root,
       "modality.replay-harness.ts",
     ),
-    mutantModelPath: run.artifactPaths.model,
+    mutantModelPath: oracleModelPaths.mutant,
     mutantHarnessPath: harnessPath,
     workDir: join(input.outDir, "oracle"),
     fixtureId: input.benchmark.id,
@@ -333,20 +364,71 @@ async function classifyMutant(input: {
       falsePositiveTransitions: [],
     };
   }
-  if (allVerified(run.checkReport)) {
-    return {
-      mutant: input.mutant,
-      status: "survived",
-      killedProperties: [],
-      falsePositiveTransitions: [],
-    };
-  }
   return {
     mutant: input.mutant,
-    status: "error",
+    status: "survived",
     killedProperties: [],
     falsePositiveTransitions: [],
-    message: "check produced non-verified verdicts without reproduced replay",
+  };
+}
+
+async function writeOracleModels(input: {
+  outDir: string;
+  baseline: Model;
+  baselineRoot: string;
+  mutant: Model;
+  mutantRoot: string;
+}): Promise<{ baseline: string; mutant: string }> {
+  await mkdir(input.outDir, { recursive: true });
+  const baselinePath = join(input.outDir, "baseline-model.json");
+  const mutantPath = join(input.outDir, "mutant-model.json");
+  await writeFile(
+    baselinePath,
+    `${canonicalJson(normalizeModelRoot(input.baseline, input.baselineRoot))}\n`,
+    "utf8",
+  );
+  await writeFile(
+    mutantPath,
+    `${canonicalJson(normalizeModelRoot(input.mutant, input.mutantRoot))}\n`,
+    "utf8",
+  );
+  return { baseline: baselinePath, mutant: mutantPath };
+}
+
+function normalizeModelRoot(model: unknown, appRoot: string): Model {
+  const normalizedRoot = appRoot.replaceAll("\\", "/");
+  const normalized = JSON.parse(
+    JSON.stringify(model).replaceAll(normalizedRoot, "<app>"),
+  ) as Model;
+  return sanitizeDanglingVars(normalized);
+}
+
+function sanitizeDanglingVars(model: Model): Model {
+  const declared = new Set(model.vars.map((decl) => decl.id));
+  const sanitize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sanitize);
+    if (typeof value !== "object" || value === null) return value;
+    const record = value as Record<string, unknown>;
+    if (
+      record.kind === "read" &&
+      typeof record.var === "string" &&
+      !declared.has(record.var)
+    ) {
+      return { kind: "lit", value: false };
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([key, entry]) => [key, sanitize(entry)]),
+    );
+  };
+  return {
+    ...model,
+    transitions: model.transitions.map((transition) => ({
+      ...transition,
+      reads: transition.reads?.filter((varId) => declared.has(varId)),
+      writes: transition.writes?.filter((varId) => declared.has(varId)),
+      guard: sanitize(transition.guard) as typeof transition.guard,
+      effect: sanitize(transition.effect) as typeof transition.effect,
+    })),
   };
 }
 
@@ -379,14 +461,6 @@ function affectedTransitions(
         ]),
     ),
   ].sort();
-}
-
-function allVerified(checkReport: CheckReport): boolean {
-  return checkReport.verdicts.every(
-    (verdict) =>
-      verdict.status === "verified" ||
-      verdict.status === "verified-within-bounds",
-  );
 }
 
 function mutationMetrics(

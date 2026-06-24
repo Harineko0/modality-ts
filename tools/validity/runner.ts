@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { canonicalJson } from "modality-ts/core";
 import {
   type BenchmarkManifest,
@@ -50,6 +51,7 @@ export async function runValiditySuite(
   try {
     manifest = await readBenchmarkManifest(options.manifestPath);
     await validateBenchmarkPaths(options.repoRoot, manifest);
+    await ensureBenchmarkDependencies(options.repoRoot, manifest, emit);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     emit(`manifest invalid: ${message}`);
@@ -119,6 +121,60 @@ export async function runValiditySuite(
     reportPath,
     lines,
   };
+}
+
+async function ensureBenchmarkDependencies(
+  repoRoot: string,
+  manifest: BenchmarkManifest,
+  emit: (message: string) => void,
+): Promise<void> {
+  for (const benchmark of manifest.benchmarks) {
+    const benchmarkRoot = resolve(repoRoot, benchmark.root);
+    const lockfilePath = join(benchmarkRoot, "pnpm-lock.yaml");
+    const nodeModulesPath = join(benchmarkRoot, "node_modules");
+    if (
+      !(await pathExists(lockfilePath)) ||
+      (await pathExists(nodeModulesPath))
+    ) {
+      continue;
+    }
+    emit(`benchmark ${benchmark.id}: install dependencies`);
+    await runPnpmInstall(benchmarkRoot);
+  }
+}
+
+async function runPnpmInstall(cwd: string): Promise<void> {
+  const child = spawn("pnpm", ["install", "--frozen-lockfile"], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  const exitCode = await new Promise<number>((resolvePromise, reject) => {
+    child.on("error", reject);
+    child.on("close", (code) => resolvePromise(code ?? 0));
+  });
+  if (exitCode !== 0) {
+    const message = stderr.join("").trim() || stdout.join("").trim();
+    throw new Error(
+      message
+        ? `benchmark dependency install failed: ${message}`
+        : "benchmark dependency install failed",
+    );
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function allExperimentIds(): ValidityExperimentId[] {

@@ -31,17 +31,24 @@ describe("mutationExperiment", () => {
         runCount += 1;
         const isAffecting = input.appRoot.includes("mutant-affecting");
         const isMutant = input.appRoot.includes("mutant-");
+        const verdicts: CheckReport["verdicts"] = [
+          { property: "existing", status: "violated" },
+          {
+            property: "breaks",
+            status: isAffecting ? "violated" : "verified",
+          },
+        ];
+        const replayVerdicts = new Map([
+          ["existing", { property: "existing", status: "reproduced" }],
+          ...(isAffecting
+            ? [["breaks", { property: "breaks", status: "reproduced" }]]
+            : []),
+        ]);
         return {
           model: { vars: [], transitions: [], bounds: {}, id: "model" },
           extractReport: {},
-          checkReport: isAffecting
-            ? checkReport([{ property: "breaks", status: "violated" }])
-            : checkReport([{ property: "breaks", status: "verified" }]),
-          replayVerdicts: isAffecting
-            ? new Map([
-                ["breaks", { property: "breaks", status: "reproduced" }],
-              ])
-            : new Map(),
+          checkReport: checkReport(verdicts),
+          replayVerdicts,
           artifactPaths: {
             model: isMutant
               ? `${input.appRoot}/model.json`
