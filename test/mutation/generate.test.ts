@@ -107,4 +107,42 @@ describe("generateMutants", () => {
       readFile(join(mutant!.appRoot, "src", "shared", "logic.ts"), "utf8"),
     ).resolves.toContain("count <= 2");
   });
+
+  it("links sibling workspace directories so the harness's ../shared import resolves", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "modality-mut-ws-"));
+    const appRoot = join(workspace, "app");
+    const sharedRoot = join(workspace, "shared");
+    const work = await mkdtemp(join(tmpdir(), "modality-mut-ws-work-"));
+    await mkdir(join(appRoot, "node_modules"), { recursive: true });
+    await mkdir(sharedRoot, { recursive: true });
+    await writeFile(join(appRoot, "package.json"), "{}\n", "utf8");
+    await writeFile(join(sharedRoot, "marker.ts"), "export const shared = 1\n");
+    await writeFile(
+      join(appRoot, "App.tsx"),
+      [
+        "export function App({ count }: { count: number }) {",
+        "  return count < 2 ? 'low' : 'ok';",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const [mutant] = await generateMutants({
+      appRoot,
+      sourcePaths: ["App.tsx"],
+      workDir: work,
+      mutation: { maxMutants: 1, seed: 1, operators: ["conditional-boundary"] },
+    });
+
+    expect(mutant).toBeDefined();
+    // The snapshot lives at <work>/<id>/app, so the harness's `../shared`
+    // resolves to <work>/<id>/shared, which must link to the real shared dir.
+    const linkedShared = join(mutant!.appRoot, "..", "shared");
+    const stats = await lstat(linkedShared);
+    expect(stats.isSymbolicLink()).toBe(true);
+    await expect(
+      readFile(join(linkedShared, "marker.ts"), "utf8"),
+    ).resolves.toContain("export const shared");
+  });
 });

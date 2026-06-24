@@ -1,13 +1,7 @@
-import {
-  cp,
-  lstat,
-  mkdir,
-  readFile,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { canonicalJson } from "modality-ts/core";
+import { materializeAppSnapshot } from "../sandbox/app-snapshot.js";
 import {
   applyMetamorphicTransform,
   enumerateMetamorphicSites,
@@ -58,12 +52,7 @@ export async function generateMetamorphicVariants(
       candidate.site.transformId,
     )}`;
     const variantRoot = join(input.workDir, variantId, "app");
-    await cp(input.appRoot, variantRoot, {
-      dereference: true,
-      recursive: true,
-      filter: (source) => !isIgnoredTreeEntry(source),
-    });
-    await linkDependencyTree(input.appRoot, variantRoot);
+    await materializeAppSnapshot(input.appRoot, variantRoot);
     const variantFile = join(variantRoot, candidate.file);
     const originalText = await readFile(candidate.absoluteFile, "utf8");
     const transformed = applyMetamorphicTransform(
@@ -181,26 +170,6 @@ function sourceDiff(file: string, before: string, after: string): string {
     }
   }
   return lines.join("\n");
-}
-
-function isIgnoredTreeEntry(path: string): boolean {
-  const normalized = path.split(/[/\\]/g);
-  const name = normalized[normalized.length - 1];
-  return ["node_modules", ".next", "dist", "coverage"].includes(name ?? "");
-}
-
-async function linkDependencyTree(
-  sourceRoot: string,
-  copiedRoot: string,
-): Promise<void> {
-  const sourceNodeModules = join(sourceRoot, "node_modules");
-  try {
-    const stats = await lstat(sourceNodeModules);
-    if (!stats.isDirectory() && !stats.isSymbolicLink()) return;
-  } catch {
-    return;
-  }
-  await symlink(sourceNodeModules, join(copiedRoot, "node_modules"), "dir");
 }
 
 function safeId(value: string): string {
