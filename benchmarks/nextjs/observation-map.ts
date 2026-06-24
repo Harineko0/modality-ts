@@ -1,4 +1,1 @@
-export {
-  assertObservationMapCoversModel,
-  ledgerOpsObservationMap,
-} from "../shared/testing/observation-map.js";
+export { assertObservationMapCoversModel } from "../shared/testing/observation-map.js";

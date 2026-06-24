@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ConformReport } from "modality-ts/core";
+import type { ConformReport, Model } from "modality-ts/core";
+import { assertObservationMapCoversModel } from "../../../benchmarks/shared/testing/observation-map.js";
 import type { runConformCommand } from "../../../src/cli/conform.js";
 import { runExtractCommand } from "../../../src/cli/extract.js";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
@@ -167,6 +168,9 @@ async function runBenchmarkConformance(
       sliceManifestPath: join(outDir, "slices.json"),
       now: ctx.now,
     });
+    assertObservationMapCoversModel(
+      JSON.parse(await readFile(modelPath, "utf8")) as Model,
+    );
     ctx.log?.(`benchmark ${benchmark.id}: conform start`);
     await deps.conform({
       modelPath,
