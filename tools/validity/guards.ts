@@ -10,6 +10,12 @@ export interface MutationSignalCounts {
   preserved: number;
 }
 
+export interface MutationDiscriminationCounts {
+  mutantsTotal: number;
+  killed: number;
+  survived: number;
+}
+
 export interface MetamorphicSignalCounts {
   variantsTotal: number;
   stable: number;
@@ -27,6 +33,14 @@ export function hasNoConformanceSignal(
 export function hasNoMutationSignal(counts: MutationSignalCounts): boolean {
   return (
     counts.mutantsTotal > 0 && counts.killed === 0 && counts.preserved === 0
+  );
+}
+
+export function hasNoDiscriminatingMutants(
+  counts: MutationDiscriminationCounts,
+): boolean {
+  return (
+    counts.mutantsTotal > 0 && counts.killed === 0 && counts.survived === 0
   );
 }
 

@@ -6,6 +6,12 @@ import type {
   TraceStep,
   Value,
 } from "modality-ts/core";
+import { abstractObservedState } from "./abstract-observed.js";
+
+export {
+  abstractObservedState,
+  abstractObservedValue,
+} from "./abstract-observed.js";
 
 export type ReplayVerdict =
   | { status: "reproduced"; stepsRun: number }
@@ -253,13 +259,26 @@ export class ActionReplayDriver implements ReplayDriver {
 
 export class ObservableActionReplayDriver implements ReplayDriver {
   private stepIndex = 0;
+  private readonly domainsById: ReadonlyMap<string, AbstractDomain>;
+  private readonly options: ActionReplayDriverOptions;
 
   constructor(
     private readonly actor: ReplayActor,
     private readonly varIds: readonly string[],
     private readonly sources: readonly ObservationSource[],
-    private readonly options: ActionReplayDriverOptions = {},
-  ) {}
+    domainsOrOptions:
+      | ReadonlyMap<string, AbstractDomain>
+      | ActionReplayDriverOptions = new Map(),
+    options: ActionReplayDriverOptions = {},
+  ) {
+    if (isDomainMap(domainsOrOptions)) {
+      this.domainsById = domainsOrOptions;
+      this.options = options;
+    } else {
+      this.domainsById = new Map();
+      this.options = domainsOrOptions;
+    }
+  }
 
   currentState(): ModelState {
     const observed = observeModelState(this.varIds, this.sources);
@@ -274,7 +293,7 @@ export class ObservableActionReplayDriver implements ReplayDriver {
           : `Unobservable model vars: ${observed.unobservable.join(", ")}`,
       );
     }
-    return observed.state;
+    return abstractObservedState(this.domainsById, observed.state);
   }
 
   async apply(step: TraceStep): Promise<void> {
@@ -288,6 +307,17 @@ export class ObservableActionReplayDriver implements ReplayDriver {
   async assertViolation(): Promise<boolean> {
     return this.options.assertViolation ? this.options.assertViolation() : true;
   }
+}
+
+function isDomainMap(
+  value: ReadonlyMap<string, AbstractDomain> | ActionReplayDriverOptions,
+): value is ReadonlyMap<string, AbstractDomain> {
+  return (
+    typeof (value as Partial<ReadonlyMap<string, AbstractDomain>>).get ===
+      "function" &&
+    typeof (value as Partial<ReadonlyMap<string, AbstractDomain>>).has ===
+      "function"
+  );
 }
 
 export class TraceBackedActionReplayDriver implements ReplayDriver {

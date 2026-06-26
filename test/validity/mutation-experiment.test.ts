@@ -139,6 +139,59 @@ describe("mutationExperiment", () => {
       },
     });
   });
+
+  it("blocks all-preserved mutation runs instead of reporting vacuous full detection", async () => {
+    const mutants = [
+      {
+        mutantId: "mutant-preserved",
+        appRoot: "/tmp/mutant-preserved",
+        file: "App.tsx",
+        operatorId: "numeric-off-by-one",
+        siteId: "numeric-off-by-one:1:1-2",
+        sourceDiff: "diff",
+      },
+    ];
+    const experiment = mutationExperiment({
+      countCandidates: async () => 1,
+      generate: async () => mutants,
+      runOnce: async (input) =>
+        ({
+          model: { vars: [], transitions: [], bounds: {}, id: "model" },
+          extractReport: {},
+          checkReport: checkReport([{ property: "p", status: "verified" }]),
+          replayVerdicts: new Map(),
+          artifactPaths: {
+            model: `${input.appRoot}/model.json`,
+            extractReport: "/tmp/extract.json",
+            checkReport: "/tmp/check.json",
+            tracesDir: "/tmp/traces",
+          },
+        }) as never,
+      compareBehaviour: async () => ({
+        preserved: true,
+        baselineReport: conformReport(),
+        mutantReport: conformReport(),
+        differences: [],
+      }),
+    });
+
+    const report = await experiment.run(context());
+
+    expect(report.status).toBe("fail");
+    expect(report.headline).toBe("blocked: no discriminating mutants");
+    expect(report.messages).toContain("blocked: no discriminating mutants");
+    expect(report.perBenchmark[0]).toMatchObject({
+      status: "fail",
+      headline: "blocked: no discriminating mutants",
+      metrics: {
+        mutantsTotal: 1,
+        killed: 0,
+        survived: 0,
+        preserved: 1,
+        detectionRate: 0,
+      },
+    });
+  });
 });
 
 function context(): ValidityRunContext {

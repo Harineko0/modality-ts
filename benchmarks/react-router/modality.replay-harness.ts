@@ -1,5 +1,6 @@
 import { createStore, Provider as JotaiProvider } from "jotai";
 import React from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { SWRConfig } from "swr";
@@ -72,26 +73,28 @@ const harness = createBenchmarkReplayHarness({
     });
     const historyStack: string[] = [];
     const root = createRoot(context.container);
-    root.render(
-      React.createElement(
-        JotaiProvider,
-        { store },
+    flushSync(() => {
+      root.render(
         React.createElement(
-          SWRConfig,
-          {
-            value: {
-              dedupingInterval: 0,
-              provider: () => context.swrCache,
-              fetcher: async (key: string | readonly unknown[]) =>
-                Array.isArray(key)
-                  ? { bucket: key[0], value: "some" }
-                  : { bucket: key, value: "some" },
+          JotaiProvider,
+          { store },
+          React.createElement(
+            SWRConfig,
+            {
+              value: {
+                dedupingInterval: 0,
+                provider: () => context.swrCache,
+                fetcher: async (key: string | readonly unknown[]) =>
+                  Array.isArray(key)
+                    ? { bucket: key[0], value: "some" }
+                    : { bucket: key, value: "some" },
+              },
             },
-          },
-          React.createElement(RouterProvider, { router }),
+            React.createElement(RouterProvider, { router }),
+          ),
         ),
-      ),
-    );
+      );
+    });
     return {
       route: () => router.state.location.pathname,
       navigate: async (mode, to) => {

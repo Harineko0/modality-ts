@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasNoDiscriminatingMutants,
   hasNoConformanceSignal,
   hasNoMetamorphicSignal,
   hasNoMutationSignal,
@@ -50,6 +51,30 @@ describe("validity no-signal guards", () => {
         mutantsTotal: 0,
         killed: 0,
         preserved: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("detects mutation runs where every classified mutant is preserved", () => {
+    expect(
+      hasNoDiscriminatingMutants({
+        mutantsTotal: 4,
+        killed: 0,
+        survived: 0,
+      }),
+    ).toBe(true);
+    expect(
+      hasNoDiscriminatingMutants({
+        mutantsTotal: 4,
+        killed: 0,
+        survived: 1,
+      }),
+    ).toBe(false);
+    expect(
+      hasNoDiscriminatingMutants({
+        mutantsTotal: 0,
+        killed: 0,
+        survived: 0,
       }),
     ).toBe(false);
   });

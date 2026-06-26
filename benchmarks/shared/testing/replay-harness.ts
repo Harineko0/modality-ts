@@ -59,7 +59,7 @@ export function createBenchmarkReplayHarness(
 } {
   let currentObservation: BenchmarkObservationHandles | undefined;
   return {
-    async renderModalityReplay() {
+    async renderModalityReplay(trace) {
       ensureDom();
       const doc = globalThis.document;
       doc.body.innerHTML = "";
@@ -70,7 +70,8 @@ export function createBenchmarkReplayHarness(
       const context: BenchmarkReplayContext = {
         container,
         document: doc,
-        initialRoute: options.initialRoute ?? "/login",
+        initialRoute:
+          initialRouteFromTrace(trace) ?? options.initialRoute ?? "/login",
         swrCache: new Map(),
         swrKeys: new Map(),
         localStateDefaults: new Map(),
@@ -157,6 +158,11 @@ export function createBenchmarkReplayHarness(
       return createBenchmarkObservationSource(currentObservation);
     },
   };
+}
+
+function initialRouteFromTrace(trace: Trace): string | undefined {
+  const value = trace.steps[0]?.pre["sys:route"];
+  return typeof value === "string" ? value : undefined;
 }
 
 async function stabilize(

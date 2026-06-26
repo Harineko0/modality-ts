@@ -15,7 +15,7 @@ import type {
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
-import { hasNoMutationSignal } from "../guards.js";
+import { hasNoDiscriminatingMutants, hasNoMutationSignal } from "../guards.js";
 
 export interface MutationExperimentDeps {
   generate?: typeof generateMutants;
@@ -213,8 +213,13 @@ async function runBenchmarkMutation(
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
   const noSignal = hasNoMutationSignal(metrics);
+  const noDiscriminatingMutants = hasNoDiscriminatingMutants(metrics);
   const status =
-    noSignal || metrics.detectionRate < minDetectionRate ? "fail" : "pass";
+    noSignal ||
+    noDiscriminatingMutants ||
+    metrics.detectionRate < minDetectionRate
+      ? "fail"
+      : "pass";
   const falsePositiveTransitions = [
     ...new Set(results.flatMap((result) => result.falsePositiveTransitions)),
   ].sort();
@@ -224,13 +229,18 @@ async function runBenchmarkMutation(
     status,
     headline: noSignal
       ? "blocked: no mutants killed or preserved (oracle produced no signal)"
-      : `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
+      : noDiscriminatingMutants
+        ? "blocked: no discriminating mutants"
+        : `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
     metrics,
     messages: [
       ...(noSignal
         ? [
             "blocked: no mutants killed or preserved (oracle produced no signal)",
           ]
+        : []),
+      ...(noDiscriminatingMutants
+        ? ["blocked: no discriminating mutants"]
         : []),
       `mutants=${metrics.mutantsTotal} killed=${metrics.killed} survived=${metrics.survived} preserved=${metrics.preserved} error=${metrics.error}`,
       `false-positive-rate=${formatRate(metrics.falsePositiveRate)} (${metrics.falsePositives}/${metrics.preserved})`,
@@ -518,7 +528,7 @@ function mutationMetrics(
     preserved,
     falsePositives,
     error,
-    detectionRate: killed + survived === 0 ? 1 : killed / (killed + survived),
+    detectionRate: killed + survived === 0 ? 0 : killed / (killed + survived),
     falsePositiveRate: preserved === 0 ? 0 : falsePositives / preserved,
     sampled,
     perOperator,
@@ -539,13 +549,19 @@ function summarizeMutation(
   const errors = sum(metrics, (entry) => entry.error);
   const mutantsTotal = sum(metrics, (entry) => entry.mutantsTotal);
   const detectionRate =
-    killed + survived === 0 ? 1 : killed / (killed + survived);
+    killed + survived === 0 ? 0 : killed / (killed + survived);
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
   const noSignal = hasNoMutationSignal({ mutantsTotal, killed, preserved });
+  const noDiscriminatingMutants = hasNoDiscriminatingMutants({
+    mutantsTotal,
+    killed,
+    survived,
+  });
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
     noSignal ||
+    noDiscriminatingMutants ||
     detectionRate < minDetectionRate
       ? "fail"
       : "pass";
@@ -555,13 +571,18 @@ function summarizeMutation(
     status,
     headline: noSignal
       ? "blocked: no mutants killed or preserved (oracle produced no signal)"
-      : `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
+      : noDiscriminatingMutants
+        ? "blocked: no discriminating mutants"
+        : `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
     perBenchmark: [...perBenchmark],
     messages: [
       ...(noSignal
         ? [
             "blocked: no mutants killed or preserved (oracle produced no signal)",
           ]
+        : []),
+      ...(noDiscriminatingMutants
+        ? ["blocked: no discriminating mutants"]
         : []),
       `aggregate preserved=${preserved} falsePositives=${falsePositives} errors=${errors}`,
       ...(worst

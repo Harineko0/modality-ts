@@ -1,5 +1,6 @@
 import { createStore, Provider as JotaiProvider } from "jotai";
 import React, { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { ledgerOpsRoutes } from "../shared/app-spec/routes.js";
@@ -117,34 +118,36 @@ const harness = createBenchmarkReplayHarness({
     let setReplayRoute: ((route: string) => void) | undefined;
     const store = createStore();
     const root = createRoot(context.container);
-    root.render(
-      React.createElement(
-        JotaiProvider,
-        { store },
+    flushSync(() => {
+      root.render(
         React.createElement(
-          SWRConfig,
-          {
-            value: {
-              dedupingInterval: 0,
-              provider: () => context.swrCache,
-              fetcher: async (key: string | readonly unknown[]) =>
-                Array.isArray(key)
-                  ? { bucket: key[0], value: "some" }
-                  : { bucket: key, value: "some" },
+          JotaiProvider,
+          { store },
+          React.createElement(
+            SWRConfig,
+            {
+              value: {
+                dedupingInterval: 0,
+                provider: () => context.swrCache,
+                fetcher: async (key: string | readonly unknown[]) =>
+                  Array.isArray(key)
+                    ? { bucket: key[0], value: "some" }
+                    : { bucket: key, value: "some" },
+              },
             },
-          },
-          React.createElement(ReplayNextRoot, {
-            initialRoute: context.initialRoute,
-            onRoute: (route) => {
-              currentRoute = route;
-            },
-            bindRouteSetter: (setRoute) => {
-              setReplayRoute = setRoute;
-            },
-          }),
+            React.createElement(ReplayNextRoot, {
+              initialRoute: context.initialRoute,
+              onRoute: (route) => {
+                currentRoute = route;
+              },
+              bindRouteSetter: (setRoute) => {
+                setReplayRoute = setRoute;
+              },
+            }),
+          ),
         ),
-      ),
-    );
+      );
+    });
     return {
       route: () => currentRoute,
       navigate: async (mode, to) => {
