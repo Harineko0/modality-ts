@@ -40,6 +40,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build
+        run: pnpm build
+
       - name: Cache Stryker incremental report
         uses: actions/cache@v4
         with:

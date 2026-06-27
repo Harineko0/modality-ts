@@ -6,7 +6,6 @@ export default mergeConfig(
   defineConfig({
     test: {
       exclude: [
-        "src/cli/features/extract/command.run.test.ts",
         "test/benchmarks/**",
         "test/modality/**",
         "test/canaries/**",

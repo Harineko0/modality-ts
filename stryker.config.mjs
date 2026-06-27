@@ -15,7 +15,6 @@ export default {
   ignorePatterns: [
     "/.modality",
     "/benchmarks",
-    "/dist",
     "/docs/.docusaurus",
     "/docs/build",
     "/target",
