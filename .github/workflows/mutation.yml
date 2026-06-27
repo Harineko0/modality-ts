@@ -1,0 +1,62 @@
+name: Mutation Testing
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  mutation:
+    name: Mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Fetch Rust dependencies
+        run: cargo fetch --locked --manifest-path crates/checker/Cargo.toml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Cache Stryker incremental report
+        uses: actions/cache@v4
+        with:
+          path: .modality/mutation/stryker-incremental.json
+          key: mutation-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'src/**/*.ts', 'test/**/*.ts') }}
+          restore-keys: |
+            mutation-${{ runner.os }}-
+
+      - name: Mutation testing
+        run: pnpm mutation:ci
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: .modality/mutation/
