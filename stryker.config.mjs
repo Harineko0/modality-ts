@@ -6,7 +6,7 @@ export default {
   ],
   testRunner: "vitest",
   checkers: ["typescript"],
-  coverageAnalysis: "perTest",
+  coverageAnalysis: "all",
   ignoreStatic: true,
   incremental: true,
   incrementalFile: ".modality/mutation/stryker-incremental.json",
