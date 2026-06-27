@@ -255,6 +255,8 @@
     "phase7": "tsx tools/phase7-differential.ts",
     "perf:check": "tsx tools/check-performance-benchmark.ts",
     "publish:npm": "npm publish --provenance --access public",
+    "mutation": "pnpm build:rust && stryker run",
+    "mutation:ci": "pnpm build:rust && stryker run --reporters clear-text --reporters json --reporters html",
     "test": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\" --exclude \"test/modality/**\" --exclude \"test/canaries/**\" --exclude \"test/conformance/**\" --exclude \"test/validity/**\"",
     "test:e2e": "pnpm build:rust && vitest run test/modality test/canaries test/conformance",
     "test:all": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\"",
@@ -273,6 +275,9 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
     "@napi-rs/cli": "^2.18.4",
+    "@stryker-mutator/core": "9.6.1",
+    "@stryker-mutator/typescript-checker": "9.6.1",
+    "@stryker-mutator/vitest-runner": "9.6.1",
     "@types/node": "^24.10.1",
     "arktype": "^2.2.1",
     "dependency-cruiser": "^17.4.3",
