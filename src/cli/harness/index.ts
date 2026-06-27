@@ -13,7 +13,7 @@ export {
   abstractObservedValue,
 } from "./abstract-observed.js";
 
-export type ReplayVerdict =
+export type ReplayVerdict = (
   | { status: "reproduced"; stepsRun: number }
   | {
       status: "not-reproduced";
@@ -21,7 +21,17 @@ export type ReplayVerdict =
       divergenceStep: number;
       reason: string;
     }
-  | { status: "inconclusive"; stepsRun: number; reason: string };
+  | { status: "inconclusive"; stepsRun: number; reason: string }
+) & {
+  /**
+   * Set when the live app threw during render at some point in the walk (e.g.
+   * a route component crash caught by an error boundary). The crash is invisible
+   * to plain state observation — the boundary preserves the surrounding state —
+   * so it is reported as a side channel rather than a status. Used by mutation
+   * testing to treat a newly-introduced crash as a killed mutant.
+   */
+  crashReason?: string;
+};
 
 export interface ReplayDriver {
   currentState(): ModelState;
@@ -73,6 +83,11 @@ export interface ModalityReplayHarness extends DomReplayActorOptions {
   beforeStep?(context: ReplayStepHookContext): Promise<void> | void;
   afterStep?(context: ReplayStepHookContext): Promise<void> | void;
   assertViolation?: () => Promise<boolean> | boolean;
+  /**
+   * Returns a description of a render crash observed during the walk, or
+   * undefined if the app never threw. See {@link ReplayVerdict.crashReason}.
+   */
+  crash?: () => string | undefined;
 }
 
 export interface ActionReplayDriverOptions {

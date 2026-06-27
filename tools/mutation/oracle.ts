@@ -97,6 +97,32 @@ function compareReports(
     if ((baselineWalk.reason ?? "") !== (mutantWalk.reason ?? "")) {
       differences.push(`${baselineWalk.id} reason changed`);
     }
+    if ((baselineWalk.crashReason ?? "") !== (mutantWalk.crashReason ?? "")) {
+      differences.push(`${baselineWalk.id} crash changed`);
+    }
   }
   return differences;
+}
+
+/**
+ * Walk ids where the mutant app crashed during render but the baseline did not.
+ * A newly-introduced render crash is a behavioural divergence the model cannot
+ * see (an error boundary preserves the surrounding observable state), so it is
+ * surfaced here for the kill decision.
+ */
+export function newCrashWalks(
+  baseline: ConformReport,
+  mutant: ConformReport,
+): string[] {
+  const baselineCrashed = new Set(
+    baseline.walks
+      .filter((walk) => walk.crashReason !== undefined)
+      .map((walk) => walk.id),
+  );
+  return mutant.walks
+    .filter(
+      (walk) => walk.crashReason !== undefined && !baselineCrashed.has(walk.id),
+    )
+    .map((walk) => walk.id)
+    .sort();
 }

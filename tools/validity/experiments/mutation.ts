@@ -2,13 +2,23 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { canonicalJson, type CheckReport, type Model } from "modality-ts/core";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
-import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
+import {
+  extractCheckReplayOnce,
+  type ReplayVerdictEntry,
+} from "../../benchmark/run-once.js";
 import {
   countMutationCandidates,
   generateMutants,
   type MutantDescriptor,
 } from "../../mutation/generate.js";
-import { compareSeededBehaviour } from "../../mutation/oracle.js";
+import {
+  compareSeededBehaviour,
+  newCrashWalks,
+} from "../../mutation/oracle.js";
+import {
+  detectRouteRenderCrashes,
+  newRouteRenderCrashes,
+} from "../../mutation/render-crash.js";
 import type {
   ValidityBenchmarkSlice,
   ValidityExperiment,
@@ -143,6 +153,10 @@ async function runBenchmarkMutation(
     baseline.checkReport,
     baseline.replayVerdicts,
   );
+  const baselineRouteCrashes = await detectRouteRenderCrashes({
+    modelPath: baseline.artifactPaths.model,
+    harnessPath,
+  });
 
   let mutants: MutantDescriptor[] = [];
   let candidateCount = 0;
@@ -198,6 +212,7 @@ async function runBenchmarkMutation(
       outDir: join(outDir, "runs", mutant.mutantId),
       baseline,
       baselineReproducedViolations,
+      baselineRouteCrashes,
       deps,
     });
     results.push(result);
@@ -288,6 +303,7 @@ async function classifyMutant(input: {
   outDir: string;
   baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>;
   baselineReproducedViolations: readonly string[];
+  baselineRouteCrashes: ReadonlyMap<string, string>;
   deps: Required<MutationExperimentDeps>;
 }): Promise<MutantResult> {
   const harnessPath = resolve(
@@ -354,6 +370,51 @@ async function classifyMutant(input: {
     },
     now: input.ctx.now,
   });
+
+  // A mutant that makes the live app throw during render where the baseline did
+  // not is detected: the crash is a behavioural divergence the abstract model
+  // cannot represent (an error boundary preserves the surrounding observable
+  // state), so the model checker alone would miss it. Only NEW crashes count — a
+  // crash already present in the baseline is pre-existing.
+  //
+  // Three crash signals are combined. The route render smoke test mounts every
+  // route directly and is the primary, deterministic signal: it always exercises
+  // each route's initial render, whereas the replay (counterexample traces) and
+  // seeded-walk oracle only reach a broken route when a walk happens to navigate
+  // there. The latter two stay as cheap secondary signals for crashes that only
+  // appear after interaction.
+  const mutantRouteCrashes = await detectRouteRenderCrashes({
+    modelPath: run.artifactPaths.model,
+    harnessPath,
+  });
+  const routeCrashes = newRouteRenderCrashes(
+    input.baselineRouteCrashes,
+    mutantRouteCrashes,
+  );
+  const replayCrashProperties = newReplayCrashProperties(
+    input.baseline.replayVerdicts,
+    run.replayVerdicts,
+  );
+  const crashWalks = newCrashWalks(oracle.baselineReport, oracle.mutantReport);
+  if (
+    routeCrashes.length > 0 ||
+    replayCrashProperties.length > 0 ||
+    crashWalks.length > 0
+  ) {
+    const where =
+      routeCrashes.length > 0
+        ? `route ${routeCrashes.map((entry) => entry.route).join(", ")}`
+        : replayCrashProperties.length > 0
+          ? `replay of ${replayCrashProperties.join(", ")}`
+          : `seeded walk ${crashWalks.join(", ")}`;
+    return {
+      mutant: input.mutant,
+      status: "killed",
+      killedProperties: ["render-crash"],
+      falsePositiveTransitions: [],
+      message: `render crash introduced in ${where}`,
+    };
+  }
 
   if (oracle.preserved) {
     if (reproducedViolations.length > 0) {
@@ -450,6 +511,31 @@ function sanitizeDanglingVars(model: Model): Model {
       effect: sanitize(transition.effect) as typeof transition.effect,
     })),
   };
+}
+
+/**
+ * Properties whose counterexample replay surfaced a render crash in the mutant
+ * but not in the baseline. The replay path drives the live harness along the
+ * checker's counterexample traces, reaching deep routes the shallow seeded
+ * walks miss, so it is the primary place a newly-introduced crash appears.
+ */
+function newReplayCrashProperties(
+  baseline: Map<string, ReplayVerdictEntry>,
+  mutant: Map<string, ReplayVerdictEntry>,
+): string[] {
+  const baselineCrashed = new Set(
+    [...baseline.values()]
+      .filter((entry) => entry.report?.verdict.crashReason !== undefined)
+      .map((entry) => entry.property),
+  );
+  return [...mutant.values()]
+    .filter(
+      (entry) =>
+        entry.report?.verdict.crashReason !== undefined &&
+        !baselineCrashed.has(entry.property),
+    )
+    .map((entry) => entry.property)
+    .sort();
 }
 
 function reproducedViolationProperties(

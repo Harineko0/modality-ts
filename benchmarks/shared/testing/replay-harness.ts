@@ -36,6 +36,13 @@ export interface BenchmarkReplayMountResult {
   navigate?: ModalityReplayHarness["navigate"];
   cleanup?: () => Promise<void> | void;
   observation?: Partial<BenchmarkObservationHandles>;
+  /**
+   * Returns a description of a render crash currently surfaced by the app (e.g.
+   * a router error boundary), or undefined. Called after each stabilize so a
+   * transient crash anywhere in the walk is latched. See
+   * {@link ModalityReplayHarness.crash}.
+   */
+  crash?: () => string | undefined;
 }
 
 export interface BenchmarkReplayHarnessOptions {
@@ -100,6 +107,16 @@ export function createBenchmarkReplayHarness(
         },
       };
       const mounted = await options.mount(context);
+      let latchedCrash: string | undefined;
+      const checkCrash = (): void => {
+        if (latchedCrash !== undefined) return;
+        const crash = mounted.crash?.();
+        if (crash) latchedCrash = crash;
+      };
+      const stabilizeAndCheck = async (): Promise<void> => {
+        await stabilize(context, options.stabilize);
+        checkCrash();
+      };
       currentObservation = {
         route: mounted.route,
         pending: () =>
@@ -121,29 +138,27 @@ export function createBenchmarkReplayHarness(
         ...options.observe?.(context),
         ...mounted.observation,
       };
-      await stabilize(context, options.stabilize);
+      await stabilizeAndCheck();
       return {
         document: doc,
         navigate: mounted.navigate,
         resolve: async (op, outcome) => {
           await context.releaseEffect(op, outcome);
         },
-        focusRevalidate: async () => {
-          await stabilize(context, options.stabilize);
-        },
-        timer: async () => {
-          await stabilize(context, options.stabilize);
-        },
-        stabilize: async () => {
-          await stabilize(context, options.stabilize);
-        },
+        focusRevalidate: stabilizeAndCheck,
+        timer: stabilizeAndCheck,
+        stabilize: stabilizeAndCheck,
         replayAsync,
         sources: [createBenchmarkObservationSource(currentObservation)],
-        afterStep: async () => {
-          await stabilize(context, options.stabilize);
-        },
-        beforeStep: async () => {
-          await stabilize(context, options.stabilize);
+        afterStep: stabilizeAndCheck,
+        beforeStep: stabilizeAndCheck,
+        // Latch on every stabilize so a crash that is later navigated away from
+        // is still reported, but also probe live on query: the conform driver
+        // does not wire afterStep, so without a final check a crash on the last
+        // step would otherwise go unlatched.
+        crash: () => {
+          checkCrash();
+          return latchedCrash;
         },
         assertViolation: async () => {
           await mounted.cleanup?.();

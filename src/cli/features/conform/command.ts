@@ -208,7 +208,7 @@ async function replayActionWalk(
         ]),
       ),
     ].sort();
-    return replayTrace(
+    const verdict = await replayTrace(
       trace,
       new ObservableActionReplayDriver(
         actor,
@@ -217,6 +217,8 @@ async function replayActionWalk(
         domainsById,
       ),
     );
+    const crashReason = replayHarness.crash?.();
+    return crashReason ? { ...verdict, crashReason } : verdict;
   } catch (error) {
     return {
       status: "inconclusive",

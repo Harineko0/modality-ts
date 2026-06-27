@@ -108,6 +108,12 @@ const harness = createBenchmarkReplayHarness({
         }
       },
       cleanup: () => root.unmount(),
+      // React Router surfaces *loader/action* errors on `router.state.errors`,
+      // but a component that throws during *render* is caught by the route's
+      // error boundary instead and never reaches that map. The default boundary
+      // renders a recognizable "Unexpected Application Error!" panel, so detect
+      // a render crash by inspecting the mounted DOM.
+      crash: () => detectRenderCrash(context.container),
       observation: {
         history: () => [...historyStack],
         jotai: (stateName) => {
@@ -124,6 +130,19 @@ const harness = createBenchmarkReplayHarness({
 
 export const renderModalityReplay = harness.renderModalityReplay;
 export const observeModalityReplay = harness.observeModalityReplay;
+
+// The React Router default error boundary renders an "Unexpected Application
+// Error!" heading followed by the thrown error's message. Match it so a render
+// crash anywhere in the subtree is reported as a behavioural divergence.
+function detectRenderCrash(container: HTMLElement): string | undefined {
+  for (const heading of container.querySelectorAll("h2")) {
+    if (heading.textContent?.trim() === "Unexpected Application Error!") {
+      const message = heading.nextElementSibling?.textContent?.trim();
+      return message ? `render crash: ${message}` : "render crash";
+    }
+  }
+  return undefined;
+}
 
 function registerLedgerOpsRuntimeStores(context: BenchmarkReplayContext): void {
   registerLedgerOpsSwrKeys(context);
