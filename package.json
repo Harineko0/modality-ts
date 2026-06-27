@@ -257,6 +257,7 @@
     "publish:npm": "npm publish --provenance --access public",
     "mutation": "pnpm build:rust && stryker run",
     "mutation:ci": "pnpm build:rust && stryker run --reporters clear-text --reporters json --reporters html",
+    "modality:ci": "pnpm mutation:ci",
     "test": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\" --exclude \"test/modality/**\" --exclude \"test/canaries/**\" --exclude \"test/conformance/**\" --exclude \"test/validity/**\"",
     "test:e2e": "pnpm build:rust && vitest run test/modality test/canaries test/conformance",
     "test:all": "pnpm build:rust && vitest run --exclude \"test/benchmarks/**\"",

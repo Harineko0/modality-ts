@@ -37,19 +37,9 @@ export default {
     "!src/**/*.test.ts",
     "!src/**/*.d.ts",
   ],
-  testFiles: [
-    "src/**/*.test.ts",
-    "!src/cli/features/extract/command.run.test.ts",
-    "test/**/*.test.ts",
-    "!test/benchmarks/**",
-    "!test/modality/**",
-    "!test/canaries/**",
-    "!test/conformance/**",
-    "!test/validity/**",
-  ],
   vitest: {
-    configFile: "vitest.config.ts",
-    related: true,
+    configFile: "vitest.mutation.config.ts",
+    related: false,
   },
   typescriptChecker: {
     prioritizePerformanceOverAccuracy: true,
