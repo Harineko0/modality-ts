@@ -1,7 +1,10 @@
 import {
+  effectReads,
+  effectWrites,
+  type EffectIR,
+  exprReads,
   mergeArgDomains,
   mergeAssignedDomain,
-  type EffectIR,
   type Model,
   type StateVarDecl,
 } from "modality-ts/core";
@@ -47,6 +50,47 @@ export function refineAssignedLiteralDomains(
       ? { ...decl, domain: mergeAssignedDomain(decl.domain, refinement) }
       : decl;
   });
+}
+
+/**
+ * Drop store-scoped atom duplicates that no transition reads or writes.
+ *
+ * A store-less Jotai `<Provider>` (or a `useAtom(atom, { store })` with a store
+ * the model cannot distinguish from the default) makes extraction emit a
+ * provider-scoped twin `atom:NAME@store:SCOPE` alongside the canonical
+ * `atom:NAME`. When every read/write resolves to the unscoped twin — the common
+ * case once route components live in separate files from the provider — the
+ * scoped twin is inert: it stays at its initial value forever. The conformance
+ * observation map strips the `@store:` suffix and observes the *same* live atom
+ * for both ids, so the inert twin always diverges from the real value. Removing
+ * a variable no transition reads or writes is semantics-preserving for the model
+ * (its value can never change a guard or effect), and only the redundant twin —
+ * never a uniquely-named scoped store — is eligible, since the unscoped twin
+ * must also be present.
+ */
+export function pruneRedundantStoreScopedAtoms(model: Model): Model {
+  const declaredIds = new Set(model.vars.map((decl) => decl.id));
+  const referenced = new Set<string>();
+  for (const transition of model.transitions) {
+    for (const read of transition.reads) referenced.add(read);
+    for (const write of transition.writes) referenced.add(write);
+    for (const read of exprReads(transition.guard)) referenced.add(read);
+    for (const read of effectReads(transition.effect)) referenced.add(read);
+    for (const write of effectWrites(transition.effect)) referenced.add(write);
+  }
+  const prunable = (id: string): boolean => {
+    const match = /^(atom:[^@]+)@store:.+$/.exec(id);
+    return (
+      match !== null &&
+      declaredIds.has(match[1] as string) &&
+      !referenced.has(id)
+    );
+  };
+  if (!model.vars.some((decl) => prunable(decl.id))) return model;
+  return {
+    ...model,
+    vars: model.vars.filter((decl) => !prunable(decl.id)),
+  };
 }
 
 export function attachFieldPruning(model: Model): Model {

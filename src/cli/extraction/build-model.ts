@@ -50,6 +50,7 @@ import {
 import {
   applyMountScopesFromRouter,
   attachFieldPruning,
+  pruneRedundantStoreScopedAtoms,
   refineAssignedLiteralDomains,
 } from "../features/extract/model-postprocess.js";
 import {
@@ -403,13 +404,14 @@ export async function buildExtractionModel(
   const withInputClasses = applyInputClassToWideInputVars(
     overlay.overlay.model,
   );
+  const prunedModel = pruneRedundantStoreScopedAtoms(withInputClasses.model);
   const model: Model = attachFieldPruning(
     attachNumericReductions(
       {
-        ...withInputClasses.model,
+        ...prunedModel,
         metadata: {
-          ...withInputClasses.model.metadata,
-          varAnchors: buildVarAnchorsFromVars(withInputClasses.model.vars),
+          ...prunedModel.metadata,
+          varAnchors: buildVarAnchorsFromVars(prunedModel.vars),
           extractionCaveats: mergeExtractionCaveats(
             extractionCaveats,
             cacheStorageFragments.caveats,
