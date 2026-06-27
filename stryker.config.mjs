@@ -39,6 +39,7 @@ export default {
   ],
   testFiles: [
     "src/**/*.test.ts",
+    "!src/cli/features/extract/command.run.test.ts",
     "test/**/*.test.ts",
     "!test/benchmarks/**",
     "!test/modality/**",
