@@ -151,11 +151,11 @@ describe("navigation adapter interface fit", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "Settings.Link.navigate._",
-          effect: expect.objectContaining({ kind: "if" }),
+          effect: expect.objectContaining({ kind: "seq" }),
         }),
         expect.objectContaining({
           id: "Settings.onClick.navigate._settings",
-          effect: expect.objectContaining({ kind: "if" }),
+          effect: expect.objectContaining({ kind: "seq" }),
         }),
       ]),
     );
@@ -189,7 +189,7 @@ describe("navigation adapter interface fit", () => {
       pipeline.transitions.some(
         (transition) =>
           transition.cls === "nav" &&
-          transition.effect.kind === "if" &&
+          transition.effect.kind === "seq" &&
           JSON.stringify(transition.effect).includes('"/"'),
       ),
     ).toBe(true);

@@ -290,29 +290,28 @@ export function locationEffect(args: {
     throw new Error("locationEffect push requires `to`");
   }
 
+  // The route assignment is unconditional: a `push` navigation always lands on
+  // `to`. Only the history bookkeeping depends on whether the bounded back-stack
+  // has room (push) or is already at capacity (overflow). Keeping the route
+  // assignment inside the capacity branch would (a) wrongly freeze the route
+  // when history is full and (b) make `sys:route` appear to depend on
+  // `sys:history`, which prevents slicing from eliminating an otherwise
+  // write-only history variable and explodes the state space.
   const canUnrollPushHistory = canUnrollHistory(historyRouteValues, historyCap);
-  const pushBody = canUnrollPushHistory
-    ? seqEffects([
+  const historyUpdate = canUnrollPushHistory
+    ? ifEffect(
+        historyShorterThanCap(historyVar, historyCap),
         buildPushHistoryEffect(
           historyVar,
           currentVar,
           historyRouteValues,
           historyCap,
         ),
-        assignEffect(currentVar, args.to),
-      ])
-    : seqEffects([
-        compactHistoryAssign(historyVar, historyRouteValues),
-        assignEffect(currentVar, args.to),
-      ]);
-
-  const effect = canUnrollPushHistory
-    ? ifEffect(
-        historyShorterThanCap(historyVar, historyCap),
-        pushBody,
         historyOverflowAssign(historyVar, historyCap, historyRouteValues),
       )
-    : pushBody;
+    : compactHistoryAssign(historyVar, historyRouteValues);
+
+  const effect = seqEffects([historyUpdate, assignEffect(currentVar, args.to)]);
 
   return {
     effect,

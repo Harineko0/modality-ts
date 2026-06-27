@@ -318,7 +318,9 @@ describe("extraction architecture surface", () => {
         effect: expect.objectContaining({
           kind: "seq",
           effects: expect.arrayContaining([
-            expect.objectContaining({ kind: "if" }),
+            // The location effect is itself a seq (history bookkeeping then the
+            // unconditional route assignment); the adapter appends slot writes.
+            expect.objectContaining({ kind: "seq" }),
             {
               kind: "assign",
               var: "sys:next:slot:children",

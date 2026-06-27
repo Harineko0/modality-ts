@@ -107,7 +107,7 @@ describe("runExtractCommand", () => {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            expect.objectContaining({ kind: "if" }),
+            expect.objectContaining({ kind: "seq" }),
           ],
         },
         writes: expect.arrayContaining([
@@ -585,7 +585,7 @@ describe("runExtractCommand", () => {
     ).toMatchObject({
       kind: "seq",
       effects: expect.arrayContaining([
-        expect.objectContaining({ kind: "if" }),
+        expect.objectContaining({ kind: "seq" }),
       ]),
     });
   });

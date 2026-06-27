@@ -225,7 +225,13 @@ export function lowerNextNavigation(
       : undefined,
     routeValues,
   });
-  const effects: EffectIR[] = [location.effect];
+  // Flatten the location effect's sequence into the parent so the navigation
+  // transition stays a single flat sequence (history bookkeeping, then the
+  // unconditional route assignment, then slot/phase assignments).
+  const effects: EffectIR[] =
+    location.effect.kind === "seq"
+      ? [...location.effect.effects]
+      : [location.effect];
 
   if (intent.mode === "back" || !intent.to) {
     return {

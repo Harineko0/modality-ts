@@ -22,7 +22,7 @@ describe("locationEffect", () => {
     expect(lowered.writes).toEqual(["sys:route"]);
   });
 
-  it("lowers push to seq/assign effects over route and history", () => {
+  it("lowers push with an unconditional route assignment and conditional history update", () => {
     const lowered = locationEffect({
       currentVar: "sys:route",
       historyVar: "sys:history",
@@ -31,7 +31,18 @@ describe("locationEffect", () => {
       routeValues: routes,
       historyCap: 2,
     });
-    expect(lowered.effect.kind).toBe("if");
+    // A push always lands on `to`; only the bounded back-stack bookkeeping is
+    // conditional on whether history has room. The route assignment must be
+    // hoisted out of the capacity branch so it always runs.
+    expect(lowered.effect.kind).toBe("seq");
+    if (lowered.effect.kind !== "seq") throw new Error("expected seq");
+    const [historyUpdate, routeAssign] = lowered.effect.effects;
+    expect(historyUpdate?.kind).toBe("if");
+    expect(routeAssign).toEqual({
+      kind: "assign",
+      var: "sys:route",
+      expr: { kind: "lit", value: "/b" },
+    });
     expect(lowered.reads).toEqual(
       expect.arrayContaining(["sys:route", "sys:history"]),
     );

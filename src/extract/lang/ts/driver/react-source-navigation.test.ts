@@ -105,7 +105,7 @@ describe("framework-blind navigation extraction", () => {
       },
       reads: expect.arrayContaining(["sys:history", "sys:route"]),
       effect: expect.objectContaining({
-        kind: "if",
+        kind: "seq",
       }),
       writes: expect.arrayContaining(["sys:route", "sys:history"]),
     });
@@ -130,7 +130,7 @@ describe("framework-blind navigation extraction", () => {
       id: "App.onClick.navigate._checkout",
       cls: "nav",
       effect: expect.objectContaining({
-        kind: "if",
+        kind: "seq",
       }),
       writes: expect.arrayContaining(["sys:route", "sys:history"]),
     });
