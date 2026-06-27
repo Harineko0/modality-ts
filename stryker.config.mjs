@@ -32,7 +32,8 @@ export default {
     break: 80,
   },
   mutate: [
-    "src/**/*.ts",
+    "src/core/**/*.ts",
+    "src/extract/**/*.ts",
     "!src/**/*.test.ts",
     "!src/**/*.d.ts",
   ],
