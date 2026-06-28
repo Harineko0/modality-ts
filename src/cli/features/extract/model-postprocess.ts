@@ -1,8 +1,10 @@
+import { dirname } from "node:path";
 import {
   effectReads,
   effectWrites,
   type EffectIR,
   exprReads,
+  type GuardIR,
   mergeArgDomains,
   mergeAssignedDomain,
   type Model,
@@ -91,6 +93,120 @@ export function pruneRedundantStoreScopedAtoms(model: Model): Model {
     ...model,
     vars: model.vars.filter((decl) => !prunable(decl.id)),
   };
+}
+
+/**
+ * Gate user-interaction transitions to the route where their component mounts.
+ *
+ * A button click or form change extracted from a component can only happen while
+ * that component is rendered, i.e. while the app is on the component's route. The
+ * extracted interaction transitions carry no such guard, so in action-mode
+ * conformance a walk fires e.g. a risk-page button from `/login`, where the live
+ * harness cannot find the element. Adding `sys:route == R` removes those
+ * impossible firings — a fidelity improvement that also shrinks the state space.
+ *
+ * Resolution is deliberately conservative so it can only add a correct guard or
+ * skip, never mis-gate: a transition is gated only when every one of its source
+ * files sits under the directory of a single LEAF route (a route with no child
+ * routes) whose pattern is a value of the `sys:route` domain. Shared layout or
+ * app-shell components — which live above any leaf route directory, or under a
+ * non-leaf route visible across its children — match nothing and stay ungated.
+ */
+export function applyLeafRouteInteractionGuards(
+  model: Model,
+  inventory: RouteInventory,
+): Model {
+  const routeValues = routeEnumValues(model);
+  if (routeValues.size === 0) return model;
+  const routeNodes = inventory.routes.filter(
+    (node): node is (typeof inventory.routes)[number] & { file: string } =>
+      typeof node.file === "string" &&
+      (node.kind === "page" || node.kind === "index"),
+  );
+  const patterns = routeNodes.map((node) => node.pattern);
+  const isLeaf = (pattern: string): boolean =>
+    !patterns.some(
+      (other) => other !== pattern && other.startsWith(`${pattern}/`),
+    );
+  const leafDirs = routeNodes
+    .filter((node) => routeValues.has(node.pattern) && isLeaf(node.pattern))
+    .map((node) => ({ key: routeDirKey(node.file), pattern: node.pattern }))
+    .filter((entry) => entry.key.length > 0)
+    .sort((left, right) => right.key.length - left.key.length);
+  if (leafDirs.length === 0) return model;
+
+  let changed = false;
+  const transitions = model.transitions.map((transition) => {
+    if (transition.cls !== "user") return transition;
+    const route = resolveLeafRouteForSources(transition.source, leafDirs);
+    if (!route) return transition;
+    changed = true;
+    return {
+      ...transition,
+      guard: andRouteGuard(transition.guard, route),
+      reads: transition.reads.includes("sys:route")
+        ? transition.reads
+        : [...transition.reads, "sys:route"],
+    };
+  });
+  return changed ? { ...model, transitions } : model;
+}
+
+function resolveLeafRouteForSources(
+  source: Model["transitions"][number]["source"],
+  leafDirs: readonly { key: string; pattern: string }[],
+): string | undefined {
+  const files = [...new Set(source.map((anchor) => anchor.file))];
+  if (files.length === 0) return undefined;
+  let resolved: string | undefined;
+  for (const file of files) {
+    // Inventory route files are relative to the source tree while transition
+    // anchors are absolute, so match by path segments (boundary-delimited)
+    // rather than resolving against the process cwd. leafDirs is ordered by key
+    // length, so the first hit is the most specific (deepest) route.
+    const haystack = `/${dirname(file).split("\\").join("/")}/`;
+    const match = leafDirs.find((leaf) => haystack.includes(`/${leaf.key}/`));
+    // A source outside every leaf-route directory (shared layout, app shell)
+    // means the component is not confined to one route — leave it ungated.
+    if (!match) return undefined;
+    if (resolved !== undefined && resolved !== match.pattern) return undefined;
+    resolved = match.pattern;
+  }
+  return resolved;
+}
+
+function andRouteGuard(guard: GuardIR, route: string): GuardIR {
+  const onRoute: GuardIR = {
+    kind: "eq",
+    args: [
+      { kind: "read", var: "sys:route" },
+      { kind: "lit", value: route },
+    ],
+  };
+  if (guard.kind === "lit" && guard.value === true) return onRoute;
+  return { kind: "and", args: [guard, onRoute] };
+}
+
+function routeEnumValues(model: Model): Set<string> {
+  const route = model.vars.find((decl) => decl.id === "sys:route");
+  if (route?.domain.kind === "enum") {
+    return new Set(
+      route.domain.values.filter(
+        (value): value is string => typeof value === "string",
+      ),
+    );
+  }
+  return new Set();
+}
+
+/**
+ * The route file's directory as a base-independent path key: forward-slashed and
+ * stripped of leading `./`/`../` segments, e.g. `../routes/x/index.tsx` ->
+ * `routes/x`. Matched as a delimited segment against transition source paths.
+ */
+function routeDirKey(file: string): string {
+  const dir = dirname(file).split("\\").join("/");
+  return dir.replace(/^(?:\.\.?\/)+/, "");
 }
 
 export function attachFieldPruning(model: Model): Model {

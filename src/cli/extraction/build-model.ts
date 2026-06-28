@@ -48,6 +48,7 @@ import {
   uniqueStrings,
 } from "../features/extract/extraction-project.js";
 import {
+  applyLeafRouteInteractionGuards,
   applyMountScopesFromRouter,
   attachFieldPruning,
   pruneRedundantStoreScopedAtoms,
@@ -404,7 +405,10 @@ export async function buildExtractionModel(
   const withInputClasses = applyInputClassToWideInputVars(
     overlay.overlay.model,
   );
-  const prunedModel = pruneRedundantStoreScopedAtoms(withInputClasses.model);
+  const prunedModel = applyLeafRouteInteractionGuards(
+    pruneRedundantStoreScopedAtoms(withInputClasses.model),
+    project.inventory,
+  );
   const model: Model = attachFieldPruning(
     attachNumericReductions(
       {

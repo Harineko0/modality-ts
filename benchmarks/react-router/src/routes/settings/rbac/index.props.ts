@@ -6,6 +6,7 @@ import {
   eq,
   group,
   not,
+  or,
   property,
   reachableFrom,
   stepAny,
@@ -49,9 +50,14 @@ group("rbac", () => {
     ctl.afterEveryStep(ctl.holds(eq(sessionRole, permissionRole))),
   );
 
+  // The save control only renders on the RBAC route, so its enablement
+  // guarantee holds there rather than globally.
   always(
     "rbac.saveRoleAssignmentGuard",
-    enabled("RoleAssignmentForm.onClick.save role assignment button"),
+    or(
+      not(eq(route, "/settings/rbac")),
+      enabled("RoleAssignmentForm.onClick.save role assignment button"),
+    ),
   );
 
   stepAny();
