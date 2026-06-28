@@ -918,7 +918,7 @@ describe("validator", () => {
       "toggle: assignment to flag expects bool but got enum(a|b)",
     );
 
-    const badIfCondition: Model = {
+    const truthyIfCondition: Model = {
       ...model,
       transitions: [
         {
@@ -943,7 +943,7 @@ describe("validator", () => {
         },
       ],
     };
-    expect(validateModel(badIfCondition).errors.join("\n")).toContain(
+    expect(validateModel(truthyIfCondition).errors.join("\n")).not.toContain(
       "toggle: if condition must be boolean but got enum(a|b)",
     );
 

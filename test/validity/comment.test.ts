@@ -30,6 +30,43 @@ describe("validity comment renderer", () => {
     expect(markdown).toContain("Details truncated");
     expect(markdown).toContain("uploaded validity artifact");
   });
+
+  it("labels blocked failures distinctly", () => {
+    const report = sampleReport();
+    report.subReports = [
+      {
+        experiment: "mutation",
+        status: "fail",
+        headline:
+          "blocked: no mutants killed or preserved (oracle produced no signal)",
+        perBenchmark: [
+          {
+            benchmarkId: "ledgerops-react-router",
+            framework: "react-router",
+            status: "fail",
+            headline:
+              "blocked: no mutants killed or preserved (oracle produced no signal)",
+            metrics: {},
+            messages: [
+              "blocked: no mutants killed or preserved (oracle produced no signal)",
+            ],
+          },
+        ],
+        messages: [
+          "blocked: no mutants killed or preserved (oracle produced no signal)",
+        ],
+      },
+    ];
+
+    const markdown = renderValidityComment(report);
+
+    expect(markdown).toContain("| mutation | fail (blocked) |");
+    expect(markdown).toContain(
+      "fail (blocked): blocked: no mutants killed or preserved",
+    );
+    expect(markdown).toContain("<summary>mutation: fail (blocked)</summary>");
+    expect(markdown).toContain("- Status: fail (blocked)");
+  });
 });
 
 function sampleReport(): ValidityReport {

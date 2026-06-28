@@ -42,17 +42,63 @@ describe("compareModels", () => {
     ]);
   });
 
-  it("classifies bound-hit exploration as inconclusive", () => {
+  it("classifies bound-hit exploration of differing models as inconclusive", () => {
     const result = compareModels({
       baseline: boolModel({ withTransition: true }),
-      variant: boolModel({ withTransition: true }),
+      variant: twoFlagModel(),
       searchLimits: { maxStates: 1, maxEdges: 100, maxFrontier: 100 },
     });
 
     expect(result.bisimilar).toBe(false);
     expect(result.boundHit).toBe(true);
   });
+
+  it("treats semantically identical models as bisimilar without enumeration", () => {
+    const result = compareModels({
+      baseline: boolModel({ withTransition: true }),
+      variant: boolModel({ withTransition: true }),
+      // A bound that the bool model's reachable set would exceed if enumerated;
+      // the semantic short-circuit must decide bisimilarity without exploring.
+      searchLimits: { maxStates: 1, maxEdges: 1, maxFrontier: 1 },
+    });
+
+    expect(result.bisimilar).toBe(true);
+    expect(result.boundHit).toBeUndefined();
+    expect(result.baselineStates).toBe(0);
+    expect(result.variantStates).toBe(0);
+  });
+
+  it("flags verdict deltas even for semantically identical models", () => {
+    const result = compareModels({
+      baseline: boolModel({ withTransition: true }),
+      variant: boolModel({ withTransition: true }),
+      baselineReport: checkReport("verified"),
+      variantReport: checkReport("violated"),
+    });
+
+    expect(result.bisimilar).toBe(false);
+    expect(result.verdictDelta).toEqual([
+      expect.objectContaining({ property: "p" }),
+    ]);
+  });
 });
+
+function twoFlagModel(): Model {
+  const base = boolModel({ withTransition: true });
+  return {
+    ...base,
+    vars: [
+      ...base.vars,
+      {
+        id: "flag2",
+        domain: { kind: "bool" },
+        origin: "system",
+        scope: { kind: "global" },
+        initial: false,
+      },
+    ],
+  };
+}
 
 function boolModel(options: { withTransition: boolean }): Model {
   return {

@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { modelInitialStates, modelSuccessors } from "modality-ts/check";
 import {
+  abstractObservedState,
   createDomReplayActor,
   type ModalityReplayHarness,
   ObservableActionReplayDriver,
@@ -16,6 +17,7 @@ import {
 import {
   type ConformReport,
   canonicalJson,
+  type AbstractDomain,
   type Model,
   type ModelState,
   parseModelArtifact,
@@ -67,7 +69,8 @@ export interface ConformCommandResult {
 export async function runConformCommand(
   options: ConformCommandOptions,
 ): Promise<ConformCommandResult> {
-  const walks = await loadOrGenerateWalks(options);
+  const loaded = await loadOrGenerateWalks(options);
+  const walks = loaded.walks;
   const mode = options.mode ?? (options.harnessPath ? "action" : "abstract");
   let actionHarness: ReplayHarnessModule | undefined;
   let actionSetupError =
@@ -98,10 +101,10 @@ export async function runConformCommand(
           }
         : actionHarness
           ? await withReplayTimeout(
-              replayActionWalk(walk.trace, actionHarness),
+              replayActionWalk(walk.trace, actionHarness, loaded.domainsById),
               ACTION_WALK_TIMEOUT_MS,
             )
-          : await replayAbstractWalk(walk),
+          : await replayAbstractWalk(walk, loaded.domainsById),
     });
   }
   const report = createConformReport(
@@ -159,6 +162,7 @@ async function withReplayTimeout(
 
 async function replayAbstractWalk(
   walk: ConformWalkArtifact,
+  domainsById: ReadonlyMap<string, AbstractDomain>,
 ): Promise<ReplayVerdict> {
   return replayTrace(
     walk.trace,
@@ -166,7 +170,10 @@ async function replayAbstractWalk(
       walk.observedStates ?? walk.states ?? statesFromTrace(walk.trace),
     ),
     {
-      compareState: walk.observedStates ? compareObservedState : undefined,
+      compareState: walk.observedStates
+        ? (expected, observed) =>
+            compareObservedState(expected, observed, domainsById)
+        : undefined,
     },
   );
 }
@@ -174,6 +181,7 @@ async function replayAbstractWalk(
 async function replayActionWalk(
   trace: Trace,
   harnessModule: ReplayHarnessModule,
+  domainsById: ReadonlyMap<string, AbstractDomain>,
 ): Promise<ReplayVerdict> {
   try {
     await ensureDocument();
@@ -200,10 +208,17 @@ async function replayActionWalk(
         ]),
       ),
     ].sort();
-    return replayTrace(
+    const verdict = await replayTrace(
       trace,
-      new ObservableActionReplayDriver(actor, observedVars, sources),
+      new ObservableActionReplayDriver(
+        actor,
+        observedVars,
+        sources,
+        domainsById,
+      ),
     );
+    const crashReason = replayHarness.crash?.();
+    return crashReason ? { ...verdict, crashReason } : verdict;
   } catch (error) {
     return {
       status: "inconclusive",
@@ -311,21 +326,37 @@ export function generateConformWalks(
   return walks;
 }
 
+interface LoadedConformWalks {
+  walks: ConformWalkArtifact[];
+  domainsById: ReadonlyMap<string, AbstractDomain>;
+}
+
 async function loadOrGenerateWalks(
   options: ConformCommandOptions,
-): Promise<ConformWalkArtifact[]> {
-  if (options.walksPath)
-    return parseConformWalksArtifact(
-      await readFile(options.walksPath, "utf8"),
-    ).walks.slice();
+): Promise<LoadedConformWalks> {
+  const model = options.modelPath
+    ? parseModelArtifact(await readFile(options.modelPath, "utf8"))
+    : undefined;
+  const domainsById = modelDomainsById(model);
+  if (options.walksPath) {
+    return {
+      walks: parseConformWalksArtifact(
+        await readFile(options.walksPath, "utf8"),
+      ).walks.slice(),
+      domainsById,
+    };
+  }
   if (!options.modelPath)
     throw new Error("runConformCommand requires walksPath or modelPath");
-  const model = parseModelArtifact(await readFile(options.modelPath, "utf8"));
-  return generateConformWalks(model, {
-    count: options.walkCount,
-    depth: options.depth,
-    seed: options.seed,
-  });
+  if (!model) throw new Error("runConformCommand could not load model");
+  return {
+    walks: generateConformWalks(model, {
+      count: options.walkCount,
+      depth: options.depth,
+      seed: options.seed,
+    }),
+    domainsById,
+  };
 }
 
 export function conformWalksArtifact(
@@ -458,13 +489,21 @@ function transitionMetrics(
 function compareObservedState(
   expected: ModelState,
   observed: ModelState,
+  domainsById: ReadonlyMap<string, AbstractDomain>,
 ): string | undefined {
-  for (const key of Object.keys(observed).sort()) {
-    if (JSON.stringify(expected[key]) !== JSON.stringify(observed[key])) {
-      return `${key}: expected ${JSON.stringify(expected[key])}, got ${JSON.stringify(observed[key])}`;
+  const abstracted = abstractObservedState(domainsById, observed);
+  for (const key of Object.keys(abstracted).sort()) {
+    if (JSON.stringify(expected[key]) !== JSON.stringify(abstracted[key])) {
+      return `${key}: expected ${JSON.stringify(expected[key])}, got ${JSON.stringify(abstracted[key])}`;
     }
   }
   return undefined;
+}
+
+function modelDomainsById(
+  model: Model | undefined,
+): ReadonlyMap<string, AbstractDomain> {
+  return new Map(model?.vars.map((decl) => [decl.id, decl.domain]) ?? []);
 }
 
 function renderConformReport(report: ConformReport): string[] {

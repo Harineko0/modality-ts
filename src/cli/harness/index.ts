@@ -6,8 +6,14 @@ import type {
   TraceStep,
   Value,
 } from "modality-ts/core";
+import { abstractObservedState } from "./abstract-observed.js";
 
-export type ReplayVerdict =
+export {
+  abstractObservedState,
+  abstractObservedValue,
+} from "./abstract-observed.js";
+
+export type ReplayVerdict = (
   | { status: "reproduced"; stepsRun: number }
   | {
       status: "not-reproduced";
@@ -15,7 +21,17 @@ export type ReplayVerdict =
       divergenceStep: number;
       reason: string;
     }
-  | { status: "inconclusive"; stepsRun: number; reason: string };
+  | { status: "inconclusive"; stepsRun: number; reason: string }
+) & {
+  /**
+   * Set when the live app threw during render at some point in the walk (e.g.
+   * a route component crash caught by an error boundary). The crash is invisible
+   * to plain state observation — the boundary preserves the surrounding state —
+   * so it is reported as a side channel rather than a status. Used by mutation
+   * testing to treat a newly-introduced crash as a killed mutant.
+   */
+  crashReason?: string;
+};
 
 export interface ReplayDriver {
   currentState(): ModelState;
@@ -67,6 +83,11 @@ export interface ModalityReplayHarness extends DomReplayActorOptions {
   beforeStep?(context: ReplayStepHookContext): Promise<void> | void;
   afterStep?(context: ReplayStepHookContext): Promise<void> | void;
   assertViolation?: () => Promise<boolean> | boolean;
+  /**
+   * Returns a description of a render crash observed during the walk, or
+   * undefined if the app never threw. See {@link ReplayVerdict.crashReason}.
+   */
+  crash?: () => string | undefined;
 }
 
 export interface ActionReplayDriverOptions {
@@ -253,13 +274,26 @@ export class ActionReplayDriver implements ReplayDriver {
 
 export class ObservableActionReplayDriver implements ReplayDriver {
   private stepIndex = 0;
+  private readonly domainsById: ReadonlyMap<string, AbstractDomain>;
+  private readonly options: ActionReplayDriverOptions;
 
   constructor(
     private readonly actor: ReplayActor,
     private readonly varIds: readonly string[],
     private readonly sources: readonly ObservationSource[],
-    private readonly options: ActionReplayDriverOptions = {},
-  ) {}
+    domainsOrOptions:
+      | ReadonlyMap<string, AbstractDomain>
+      | ActionReplayDriverOptions = new Map(),
+    options: ActionReplayDriverOptions = {},
+  ) {
+    if (isDomainMap(domainsOrOptions)) {
+      this.domainsById = domainsOrOptions;
+      this.options = options;
+    } else {
+      this.domainsById = new Map();
+      this.options = domainsOrOptions;
+    }
+  }
 
   currentState(): ModelState {
     const observed = observeModelState(this.varIds, this.sources);
@@ -274,7 +308,7 @@ export class ObservableActionReplayDriver implements ReplayDriver {
           : `Unobservable model vars: ${observed.unobservable.join(", ")}`,
       );
     }
-    return observed.state;
+    return abstractObservedState(this.domainsById, observed.state);
   }
 
   async apply(step: TraceStep): Promise<void> {
@@ -288,6 +322,17 @@ export class ObservableActionReplayDriver implements ReplayDriver {
   async assertViolation(): Promise<boolean> {
     return this.options.assertViolation ? this.options.assertViolation() : true;
   }
+}
+
+function isDomainMap(
+  value: ReadonlyMap<string, AbstractDomain> | ActionReplayDriverOptions,
+): value is ReadonlyMap<string, AbstractDomain> {
+  return (
+    typeof (value as Partial<ReadonlyMap<string, AbstractDomain>>).get ===
+      "function" &&
+    typeof (value as Partial<ReadonlyMap<string, AbstractDomain>>).has ===
+      "function"
+  );
 }
 
 export class TraceBackedActionReplayDriver implements ReplayDriver {

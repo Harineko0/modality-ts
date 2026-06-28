@@ -664,9 +664,11 @@ pub fn validate_value(domain: &AbstractDomain, value: &Value) -> bool {
                 false
             }
         }
-        AbstractDomain::Tokens { count, names } => {
+        AbstractDomain::Tokens { count: _, names } => {
             if let Some(s) = value.as_str() {
-                token_names(*count, names.as_deref()).contains(&s.to_string())
+                names
+                    .as_deref()
+                    .is_none_or(|names| names.contains(&s.to_string()))
             } else {
                 false
             }

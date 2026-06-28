@@ -412,10 +412,18 @@ impl<'a> ExpansionBudget<'a> {
             return;
         }
         let generated = self.generated_edges.fetch_add(1, Ordering::Relaxed) + 1;
+        // The generation budget bounds generation *work* (edges/frontier), not
+        // distinct states. `maxStates` counts distinct reachable states and is
+        // enforced post-merge against `visited.len()` (frontier / edge-recording
+        // / candidate-merge phases). Counting pre-merge candidates toward
+        // `maxStates` here would trip the limit on intra-frontier duplicates that
+        // dedup away — a wide fan-out can generate >maxStates candidates that
+        // collapse to far fewer distinct states. We pass `starting_state_count`
+        // (the distinct count entering this depth, already < maxStates) so only
+        // maxEdges/maxFrontier can stop generation.
         if check_search_limits(
             self.options,
-            self.starting_state_count
-                + self.generated_new_states.load(Ordering::Relaxed),
+            self.starting_state_count,
             self.starting_edge_count + generated,
             0,
             "generation",
@@ -427,15 +435,14 @@ impl<'a> ExpansionBudget<'a> {
     }
 
     fn note_new_state_candidate(&self) {
+        // Track candidate count for diagnostics only. Do NOT stop generation on
+        // `maxStates` here: candidates are pre-merge and include duplicates that
+        // dedup away. Distinct-state budgeting happens post-merge against
+        // `visited.len()`. See `note_generated_edge`.
         if self.should_stop() {
             return;
         }
-        let generated = self.generated_new_states.fetch_add(1, Ordering::Relaxed) + 1;
-        if let Some(max) = self.options.max_states {
-            if self.starting_state_count + generated >= max {
-                self.stop.store(true, Ordering::Relaxed);
-            }
-        }
+        self.generated_new_states.fetch_add(1, Ordering::Relaxed);
     }
 
     fn limit_hit(&self) -> Option<Value> {
@@ -443,27 +450,16 @@ impl<'a> ExpansionBudget<'a> {
             return None;
         }
         let generated_edges = self.generated_edges.load(Ordering::Relaxed);
-        let generated_states = self.generated_new_states.load(Ordering::Relaxed);
+        // Only generation-work limits (maxEdges/maxFrontier) can have stopped
+        // generation; maxStates is reported by the post-merge distinct-state
+        // checks, not here.
         check_search_limits(
             self.options,
-            self.starting_state_count + generated_states,
+            self.starting_state_count,
             self.starting_edge_count + generated_edges,
             0,
             "generation",
         )
-        .or_else(|| {
-            self.options.max_states.and_then(|max| {
-                if self.starting_state_count + generated_states >= max {
-                    Some(json!({
-                        "reason": format!("search limit exceeded: maxStates={max}"),
-                        "maxStates": max,
-                        "phase": "generation",
-                    }))
-                } else {
-                    None
-                }
-            })
-        })
     }
 }
 

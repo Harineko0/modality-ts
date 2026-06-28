@@ -6,6 +6,8 @@ import { useBillingAccount } from "../../../../../features/billing/infra/billing
 import { useBillingStore } from "../../../../../features/billing/state/billing-store.js";
 import { paymentIntentSchema } from "../../../../../shared/features/billing/domain/billing.schema.js";
 
+type InvoiceId = "inv-100" | "inv-200" | "inv-300";
+
 export function BillingWorkbench() {
   const { accountId = "acct-alpha" } = useParams();
   const paymentIntentStatus = useBillingStore((s) => s.paymentIntentStatus);
@@ -17,9 +19,8 @@ export function BillingWorkbench() {
   );
   const markCaptureSucceeded = useBillingStore((s) => s.markCaptureSucceeded);
   const markRetryFailed = useBillingStore((s) => s.markRetryFailed);
-  const [enqueuedInvoiceId, setEnqueuedInvoiceId] = useState<
-    "inv-100" | "inv-200" | "inv-300"
-  >("inv-100");
+  const [enqueuedInvoiceId, setEnqueuedInvoiceId] =
+    useState<InvoiceId>("inv-100");
   useBillingAccount(accountId);
 
   return (
@@ -28,11 +29,12 @@ export function BillingWorkbench() {
         invoice bucket
         <select
           value={selectedInvoiceId}
-          onChange={(event) =>
+          onChange={(event) => {
+            const nextInvoiceId = invoiceIdFromValue(event.target.value);
             useBillingStore.setState({
-              selectedInvoiceId: event.target.value as typeof selectedInvoiceId,
-            })
-          }
+              selectedInvoiceId: nextInvoiceId,
+            });
+          }}
         >
           <option value="inv-100">inv-100</option>
           <option value="inv-200">inv-200</option>
@@ -69,6 +71,15 @@ export function BillingWorkbench() {
       <button type="button" onClick={markRetryFailed}>
         retry invoice button
       </button>
+      <span hidden data-modality-var="local:BillingWorkbench.enqueuedInvoiceId">
+        {JSON.stringify(enqueuedInvoiceId)}
+      </span>
     </section>
   );
+}
+
+function invoiceIdFromValue(value: string): InvoiceId {
+  if (value === "inv-200") return "inv-200";
+  if (value === "inv-300") return "inv-300";
+  return "inv-100";
 }

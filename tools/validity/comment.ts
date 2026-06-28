@@ -36,7 +36,7 @@ function renderSummaryTable(report: ValidityReport): string {
   const separator = header.map(() => "---");
   const rows = report.subReports.map((subReport) => [
     subReport.experiment,
-    subReport.status,
+    renderStatus(subReport),
     subReport.headline,
     ...benchmarkColumns.map((benchmarkId) =>
       renderBenchmarkSummary(subReport, benchmarkId),
@@ -53,14 +53,14 @@ function renderBenchmarkSummary(
     (entry) => entry.benchmarkId === benchmarkId,
   );
   if (!slice) return "n/a";
-  return `${slice.status}: ${slice.headline}`;
+  return `${renderStatus(slice)}: ${slice.headline}`;
 }
 
 function renderExperimentDetails(subReport: ValiditySubReport): string {
   const lines = [
     "<details>",
     `<summary>${escapeHtml(subReport.experiment)}: ${escapeHtml(
-      subReport.status,
+      renderStatus(subReport),
     )}</summary>`,
     "",
     subReport.headline,
@@ -78,12 +78,34 @@ function renderBenchmarkDetails(slice: ValidityBenchmarkSlice): string[] {
     `### ${slice.benchmarkId}`,
     "",
     `- Framework: ${slice.framework}`,
-    `- Status: ${slice.status}`,
+    `- Status: ${renderStatus(slice)}`,
     `- Headline: ${slice.headline}`,
     `- Metrics: \`${canonicalJson(slice.metrics)}\``,
     ...renderMessages(slice.messages),
     "",
   ];
+}
+
+function renderStatus(
+  report: Pick<
+    ValidityBenchmarkSlice | ValiditySubReport,
+    "status" | "headline" | "messages"
+  >,
+): string {
+  if (report.status === "fail" && isBlocked(report)) return "fail (blocked)";
+  return report.status;
+}
+
+function isBlocked(
+  report: Pick<
+    ValidityBenchmarkSlice | ValiditySubReport,
+    "headline" | "messages"
+  >,
+): boolean {
+  return (
+    report.headline.startsWith("blocked:") ||
+    report.messages.some((message) => message.startsWith("blocked:"))
+  );
 }
 
 function renderMessages(messages: readonly string[]): string[] {

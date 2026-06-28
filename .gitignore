@@ -11,3 +11,4 @@ target/
 **/.modality/
 src/cli/.tmp-generated-*/
 .rtk
+logs/

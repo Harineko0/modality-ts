@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "modality-ts/core";
+import type { StateSourcePlugin } from "modality-ts/extract/engine/spi";
 import { describe, expect, it } from "vitest";
 import { routeMountScope } from "../../../extract/lang/ts/driver/routes.js";
 import { runExtractCommand } from "./index.js";
@@ -106,7 +107,7 @@ describe("runExtractCommand", () => {
           kind: "seq",
           effects: [
             { kind: "dequeue", index: 0 },
-            expect.objectContaining({ kind: "if" }),
+            expect.objectContaining({ kind: "seq" }),
           ],
         },
         writes: expect.arrayContaining([
@@ -199,7 +200,7 @@ describe("runExtractCommand", () => {
     );
 
     const result = await runExtractCommand({ sourcePath, modelPath });
-    expect(result.lines[0]).toBe("extracted vars=3 transitions=6");
+    expect(result.lines[0]).toBe("extracted vars=6 transitions=6");
     expect(result.model.vars.map((decl) => decl.id)).toContain(
       "swr:api_todos:data",
     );
@@ -229,6 +230,75 @@ describe("runExtractCommand", () => {
         },
       },
     });
+  });
+
+  it("deduplicates shared SWR template vars across repeated call sites", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      `
+      import useSWR from 'swr';
+      export function App() {
+        const first = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        const second = useSWR<'empty' | 'full'>('/api/todos', fetcher);
+        return <>{first.data}{second.data}</>;
+      }
+      `,
+      "utf8",
+    );
+
+    const result = await runExtractCommand({ sourcePath, modelPath });
+    const ids = result.model.vars.map((decl) => decl.id);
+    expect(ids).toHaveLength(new Set(ids).size);
+    expect(ids.filter((id) => id === "swr:api_todos:data")).toHaveLength(1);
+    expect(result.varCount).toBe(result.model.vars.length);
+  });
+
+  it("fails extraction when the assembled model is structurally invalid", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-extract-"));
+    const sourcePath = join(dir, "App.tsx");
+    const modelPath = join(dir, "model.json");
+    await writeFile(
+      sourcePath,
+      "export function App() { return <button>Broken</button>; }",
+      "utf8",
+    );
+    const invalidPlugin: StateSourcePlugin = {
+      kind: "state-source",
+      id: "invalid-transition",
+      packageNames: [],
+      discover: () => [],
+      writeChannels: () => [],
+      extract: () => ({
+        transitions: [
+          {
+            id: "broken",
+            cls: "user",
+            label: { kind: "click", text: "Broken" },
+            source: [],
+            guard: { kind: "lit", value: true },
+            effect: { kind: "havoc", var: "missing" },
+            reads: [],
+            writes: ["missing"],
+            confidence: "exact",
+          },
+        ],
+      }),
+      harness: {
+        setup: () => ({}),
+        observe: () => "unobservable",
+      },
+    };
+
+    await expect(
+      runExtractCommand({
+        sourcePath,
+        modelPath,
+        statePlugins: [invalidPlugin],
+      }),
+    ).rejects.toThrow("Extracted model failed validation");
   });
 
   it("loads local imports for Jotai atoms and SWR payload domains", async () => {
@@ -515,7 +585,7 @@ describe("runExtractCommand", () => {
     ).toMatchObject({
       kind: "seq",
       effects: expect.arrayContaining([
-        expect.objectContaining({ kind: "if" }),
+        expect.objectContaining({ kind: "seq" }),
       ]),
     });
   });

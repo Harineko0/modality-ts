@@ -181,6 +181,7 @@ export interface ReplayReport {
     stepsRun: number;
     divergenceStep?: number;
     reason?: string;
+    crashReason?: string;
   };
 }
 
@@ -490,6 +491,7 @@ export interface ConformReport {
     stepsRun: number;
     divergenceStep?: number;
     reason?: string;
+    crashReason?: string;
   }[];
   metrics: {
     total: number;

@@ -55,7 +55,9 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `validity: selected=${result.report.subReports.length} errors=${
+    `validity: selected=${result.report.subReports.length} failures=${
+      result.report.subReports.filter((entry) => entry.status === "fail").length
+    } errors=${
       result.report.subReports.filter((entry) => entry.status === "error")
         .length
     }`,

@@ -14,6 +14,7 @@ import {
   type PropertySliceManifestEntry,
   parseModelArtifact,
   sliceContributorFieldPaths,
+  validateModel,
 } from "modality-ts/core";
 import type {
   RoutePlugin,
@@ -90,6 +91,12 @@ export async function runExtractCommand(
 ): Promise<ExtractCommandResult> {
   const diagnosticsClock = createExtractDiagnosticsClock();
   const build = await buildExtractionModel(options, diagnosticsClock);
+  const validation = validateModel(build.model);
+  if (!validation.ok) {
+    throw new Error(
+      `Extracted model failed validation:\n${validation.errors.join("\n")}`,
+    );
+  }
   const {
     model,
     report,

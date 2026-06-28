@@ -372,7 +372,7 @@ describe("runExtractCommand", () => {
     ).toEqual({ kind: "enum", values: ["/", "/checkout"] });
     expect(result.model.transitions[0]).toMatchObject({
       id: "App.onClick.navigate._checkout",
-      effect: expect.objectContaining({ kind: "if" }),
+      effect: expect.objectContaining({ kind: "seq" }),
     });
 
     const check = checkModel(result.model, [
@@ -865,7 +865,7 @@ describe("runExtractCommand", () => {
     );
 
     const result = await runExtractCommand({ sourcePath, modelPath });
-    expect(result.lines[0]).toBe("extracted vars=1 transitions=0");
+    expect(result.lines[0]).toBe("extracted vars=4 transitions=0");
     expect(
       result.model.vars.find((decl) => decl.id === "atom:authAtom"),
     ).toEqual({

@@ -491,7 +491,7 @@ describe("useState inventory", () => {
       result.transitions
         .filter((transition) => transition.cls === "nav")
         .map((transition) => transition.effect.kind),
-    ).toEqual(expect.arrayContaining(["if", "if", "if"]));
+    ).toEqual(expect.arrayContaining(["seq", "seq", "seq"]));
   });
 
   it("normalizes query-string Link targets to route patterns", () => {
@@ -515,7 +515,7 @@ describe("useState inventory", () => {
       ),
     ).toMatchObject({
       cls: "nav",
-      effect: expect.objectContaining({ kind: "if" }),
+      effect: expect.objectContaining({ kind: "seq" }),
     });
   });
 
@@ -571,7 +571,7 @@ describe("useState inventory", () => {
       (transition) => transition.cls === "nav",
     );
     expect(nav.map((transition) => transition.effect.kind)).toEqual(
-      expect.arrayContaining(["if", "if"]),
+      expect.arrayContaining(["seq", "seq"]),
     );
     expect(
       nav.every((transition) => transition.confidence === "over-approx"),
@@ -599,7 +599,7 @@ describe("useState inventory", () => {
       ),
     ).toMatchObject({
       cls: "nav",
-      effect: expect.objectContaining({ kind: "if" }),
+      effect: expect.objectContaining({ kind: "seq" }),
     });
     expect(
       result.transitions.some(
@@ -672,7 +672,7 @@ describe("useState inventory", () => {
       (transition) => transition.cls === "nav",
     );
     expect(nav.map((transition) => transition.effect.kind)).toEqual(
-      expect.arrayContaining(["if", "if", "if"]),
+      expect.arrayContaining(["seq", "seq", "seq"]),
     );
     expect(
       nav.every((transition) => transition.confidence === "over-approx"),
@@ -2099,7 +2099,7 @@ describe("useState inventory", () => {
       id: "App.onClick.navigate._checkout",
       cls: "nav",
       label: { kind: "navigate", mode: "push", to: "/checkout" },
-      effect: expect.objectContaining({ kind: "if" }),
+      effect: expect.objectContaining({ kind: "seq" }),
       reads: ["sys:route", "sys:history"],
       writes: ["sys:route", "sys:history"],
       confidence: "exact",

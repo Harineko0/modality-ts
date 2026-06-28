@@ -31,17 +31,24 @@ describe("mutationExperiment", () => {
         runCount += 1;
         const isAffecting = input.appRoot.includes("mutant-affecting");
         const isMutant = input.appRoot.includes("mutant-");
+        const verdicts: CheckReport["verdicts"] = [
+          { property: "existing", status: "violated" },
+          {
+            property: "breaks",
+            status: isAffecting ? "violated" : "verified",
+          },
+        ];
+        const replayVerdicts = new Map([
+          ["existing", { property: "existing", status: "reproduced" }],
+          ...(isAffecting
+            ? [["breaks", { property: "breaks", status: "reproduced" }]]
+            : []),
+        ]);
         return {
           model: { vars: [], transitions: [], bounds: {}, id: "model" },
           extractReport: {},
-          checkReport: isAffecting
-            ? checkReport([{ property: "breaks", status: "violated" }])
-            : checkReport([{ property: "breaks", status: "verified" }]),
-          replayVerdicts: isAffecting
-            ? new Map([
-                ["breaks", { property: "breaks", status: "reproduced" }],
-              ])
-            : new Map(),
+          checkReport: checkReport(verdicts),
+          replayVerdicts,
           artifactPaths: {
             model: isMutant
               ? `${input.appRoot}/model.json`
@@ -72,6 +79,117 @@ describe("mutationExperiment", () => {
       survived: 0,
       preserved: 1,
       detectionRate: 1,
+    });
+  });
+
+  it("fails all-survived mutation runs even when the detection threshold is zero", async () => {
+    const mutants = [
+      {
+        mutantId: "mutant-survived",
+        appRoot: "/tmp/mutant-survived",
+        file: "App.tsx",
+        operatorId: "conditional-boundary",
+        siteId: "conditional-boundary:1:1-2",
+        sourceDiff: "diff",
+      },
+    ];
+    const experiment = mutationExperiment({
+      countCandidates: async () => 1,
+      generate: async () => mutants,
+      runOnce: async (input) =>
+        ({
+          model: { vars: [], transitions: [], bounds: {}, id: "model" },
+          extractReport: {},
+          checkReport: checkReport([{ property: "p", status: "verified" }]),
+          replayVerdicts: new Map(),
+          artifactPaths: {
+            model: `${input.appRoot}/model.json`,
+            extractReport: "/tmp/extract.json",
+            checkReport: "/tmp/check.json",
+            tracesDir: "/tmp/traces",
+          },
+        }) as never,
+      compareBehaviour: async () => ({
+        preserved: false,
+        baselineReport: conformReport(),
+        mutantReport: conformReport(),
+        differences: [],
+      }),
+    });
+
+    const report = await experiment.run(context());
+
+    expect(report.status).toBe("fail");
+    expect(report.headline).toBe(
+      "blocked: no mutants killed or preserved (oracle produced no signal)",
+    );
+    expect(report.messages).toContain(
+      "blocked: no mutants killed or preserved (oracle produced no signal)",
+    );
+    expect(report.perBenchmark[0]).toMatchObject({
+      status: "fail",
+      headline:
+        "blocked: no mutants killed or preserved (oracle produced no signal)",
+      metrics: {
+        mutantsTotal: 1,
+        killed: 0,
+        survived: 1,
+        preserved: 0,
+        detectionRate: 0,
+      },
+    });
+  });
+
+  it("blocks all-preserved mutation runs instead of reporting vacuous full detection", async () => {
+    const mutants = [
+      {
+        mutantId: "mutant-preserved",
+        appRoot: "/tmp/mutant-preserved",
+        file: "App.tsx",
+        operatorId: "numeric-off-by-one",
+        siteId: "numeric-off-by-one:1:1-2",
+        sourceDiff: "diff",
+      },
+    ];
+    const experiment = mutationExperiment({
+      countCandidates: async () => 1,
+      generate: async () => mutants,
+      runOnce: async (input) =>
+        ({
+          model: { vars: [], transitions: [], bounds: {}, id: "model" },
+          extractReport: {},
+          checkReport: checkReport([{ property: "p", status: "verified" }]),
+          replayVerdicts: new Map(),
+          artifactPaths: {
+            model: `${input.appRoot}/model.json`,
+            extractReport: "/tmp/extract.json",
+            checkReport: "/tmp/check.json",
+            tracesDir: "/tmp/traces",
+          },
+        }) as never,
+      compareBehaviour: async () => ({
+        preserved: true,
+        baselineReport: conformReport(),
+        mutantReport: conformReport(),
+        differences: [],
+      }),
+    });
+
+    const report = await experiment.run(context());
+
+    expect(report.status).toBe("fail");
+    expect(report.headline).toBe("blocked: no discriminating mutants");
+    expect(report.messages).toContain("blocked: no discriminating mutants");
+    expect(report.perBenchmark[0]).toMatchObject({
+      status: "fail",
+      headline: "blocked: no discriminating mutants",
+      metrics: {
+        mutantsTotal: 1,
+        killed: 0,
+        survived: 0,
+        preserved: 1,
+        detectionRate: 0,
+      },
     });
   });
 });

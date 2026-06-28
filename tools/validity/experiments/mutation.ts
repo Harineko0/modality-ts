@@ -1,20 +1,31 @@
-import { mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import type { CheckReport } from "modality-ts/core";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { canonicalJson, type CheckReport, type Model } from "modality-ts/core";
 import type { BenchmarkDefinition } from "../../benchmark/manifest.js";
-import { extractCheckReplayOnce } from "../../benchmark/run-once.js";
+import {
+  extractCheckReplayOnce,
+  type ReplayVerdictEntry,
+} from "../../benchmark/run-once.js";
 import {
   countMutationCandidates,
   generateMutants,
   type MutantDescriptor,
 } from "../../mutation/generate.js";
-import { compareSeededBehaviour } from "../../mutation/oracle.js";
+import {
+  compareSeededBehaviour,
+  newCrashWalks,
+} from "../../mutation/oracle.js";
+import {
+  detectRouteRenderCrashes,
+  newRouteRenderCrashes,
+} from "../../mutation/render-crash.js";
 import type {
   ValidityBenchmarkSlice,
   ValidityExperiment,
   ValidityRunContext,
   ValiditySubReport,
 } from "../types.js";
+import { hasNoDiscriminatingMutants, hasNoMutationSignal } from "../guards.js";
 
 export interface MutationExperimentDeps {
   generate?: typeof generateMutants;
@@ -138,26 +149,27 @@ async function runBenchmarkMutation(
     });
   }
 
-  const baselineViolations = baseline.checkReport.verdicts.filter(
-    (verdict) => verdict.status === "violated",
+  const baselineReproducedViolations = reproducedViolationProperties(
+    baseline.checkReport,
+    baseline.replayVerdicts,
   );
-  if (baselineViolations.length > 0) {
-    return failedSlice(
-      benchmark,
-      `baseline violated: ${baselineViolations
-        .map((verdict) => verdict.property)
-        .join(", ")}`,
-      emptyMetrics(),
-    );
-  }
+  const baselineRouteCrashes = await detectRouteRenderCrashes({
+    modelPath: baseline.artifactPaths.model,
+    harnessPath,
+  });
 
   let mutants: MutantDescriptor[] = [];
   let candidateCount = 0;
+  const mutationSourcePaths = sourcePathsFromBaseline(
+    benchmarkRoot,
+    baseline,
+    benchmark.sourcePaths,
+  );
   try {
     ctx.log?.(`benchmark ${benchmark.id}: mutation candidates start`);
     candidateCount = await deps.countCandidates({
       appRoot: benchmarkRoot,
-      sourcePaths: benchmark.sourcePaths,
+      sourcePaths: mutationSourcePaths,
       mutation: settings,
     });
     ctx.log?.(
@@ -165,7 +177,7 @@ async function runBenchmarkMutation(
     );
     mutants = await deps.generate({
       appRoot: benchmarkRoot,
-      sourcePaths: benchmark.sourcePaths,
+      sourcePaths: mutationSourcePaths,
       workDir: join(outDir, "mutants"),
       mutation: settings,
     });
@@ -183,6 +195,13 @@ async function runBenchmarkMutation(
     );
   }
 
+  if (candidateCount === 0) {
+    return failedSlice(benchmark, "no mutation candidates discovered", {
+      ...emptyMetrics(),
+      sampled: false,
+    });
+  }
+
   const results: MutantResult[] = [];
   for (const mutant of mutants) {
     ctx.log?.(`benchmark ${benchmark.id}: mutant ${mutant.mutantId} start`);
@@ -192,6 +211,8 @@ async function runBenchmarkMutation(
       mutant,
       outDir: join(outDir, "runs", mutant.mutantId),
       baseline,
+      baselineReproducedViolations,
+      baselineRouteCrashes,
       deps,
     });
     results.push(result);
@@ -206,7 +227,14 @@ async function runBenchmarkMutation(
   );
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
-  const status = metrics.detectionRate < minDetectionRate ? "fail" : "pass";
+  const noSignal = hasNoMutationSignal(metrics);
+  const noDiscriminatingMutants = hasNoDiscriminatingMutants(metrics);
+  const status =
+    noSignal ||
+    noDiscriminatingMutants ||
+    metrics.detectionRate < minDetectionRate
+      ? "fail"
+      : "pass";
   const falsePositiveTransitions = [
     ...new Set(results.flatMap((result) => result.falsePositiveTransitions)),
   ].sort();
@@ -214,13 +242,30 @@ async function runBenchmarkMutation(
     benchmarkId: benchmark.id,
     framework: benchmark.framework,
     status,
-    headline: `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
+    headline: noSignal
+      ? "blocked: no mutants killed or preserved (oracle produced no signal)"
+      : noDiscriminatingMutants
+        ? "blocked: no discriminating mutants"
+        : `detection ${formatRate(metrics.detectionRate)} (${metrics.killed}/${metrics.killed + metrics.survived})`,
     metrics,
     messages: [
+      ...(noSignal
+        ? [
+            "blocked: no mutants killed or preserved (oracle produced no signal)",
+          ]
+        : []),
+      ...(noDiscriminatingMutants
+        ? ["blocked: no discriminating mutants"]
+        : []),
       `mutants=${metrics.mutantsTotal} killed=${metrics.killed} survived=${metrics.survived} preserved=${metrics.preserved} error=${metrics.error}`,
       `false-positive-rate=${formatRate(metrics.falsePositiveRate)} (${metrics.falsePositives}/${metrics.preserved})`,
       ...(falsePositiveTransitions.length > 0
         ? [`false-positive transitions: ${falsePositiveTransitions.join(", ")}`]
+        : []),
+      ...(baselineReproducedViolations.length > 0
+        ? [
+            `baseline reproduced violations ignored for mutant delta: ${baselineReproducedViolations.join(", ")}`,
+          ]
         : []),
       ...results
         .filter((result) => result.message)
@@ -229,12 +274,36 @@ async function runBenchmarkMutation(
   };
 }
 
+function sourcePathsFromBaseline(
+  appRoot: string,
+  baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>,
+  fallback: readonly string[],
+): string[] {
+  const sourceFiles = baseline.extractReport.sourceFiles ?? [];
+  const relativePaths = sourceFiles
+    .map((path) => relative(appRoot, path))
+    .filter(
+      (path) =>
+        path &&
+        !path.startsWith("..") &&
+        !path.includes("node_modules") &&
+        /\.(tsx?|jsx?)$/.test(path) &&
+        !path.endsWith(".modals.ts") &&
+        !path.endsWith(".props.ts"),
+    );
+  return relativePaths.length > 0
+    ? [...new Set(relativePaths)].sort()
+    : [...fallback];
+}
+
 async function classifyMutant(input: {
   ctx: ValidityRunContext;
   benchmark: BenchmarkDefinition;
   mutant: MutantDescriptor;
   outDir: string;
   baseline: Awaited<ReturnType<typeof extractCheckReplayOnce>>;
+  baselineReproducedViolations: readonly string[];
+  baselineRouteCrashes: ReadonlyMap<string, string>;
   deps: Required<MutationExperimentDeps>;
 }): Promise<MutantResult> {
   const harnessPath = resolve(
@@ -270,28 +339,26 @@ async function classifyMutant(input: {
       message: errorMessage(error),
     };
   }
-  if (run.checkReport.diagnostics?.limits) {
-    return {
-      mutant: input.mutant,
-      status: "error",
-      killedProperties: [],
-      falsePositiveTransitions: [],
-      message: `search limit: ${run.checkReport.diagnostics.limits.reason}`,
-    };
-  }
-
+  const baselineViolationSet = new Set(input.baselineReproducedViolations);
   const reproducedViolations = reproducedViolationProperties(
     run.checkReport,
     run.replayVerdicts,
-  );
+  ).filter((property) => !baselineViolationSet.has(property));
+  const oracleModelPaths = await writeOracleModels({
+    outDir: join(input.outDir, "oracle-models"),
+    baseline: input.baseline.model,
+    baselineRoot: resolve(input.ctx.repoRoot, input.benchmark.root),
+    mutant: run.model,
+    mutantRoot: input.mutant.appRoot,
+  });
   const oracle = await input.deps.compareBehaviour({
-    baselineModelPath: input.baseline.artifactPaths.model,
+    baselineModelPath: oracleModelPaths.baseline,
     baselineHarnessPath: resolve(
       input.ctx.repoRoot,
       input.benchmark.root,
       "modality.replay-harness.ts",
     ),
-    mutantModelPath: run.artifactPaths.model,
+    mutantModelPath: oracleModelPaths.mutant,
     mutantHarnessPath: harnessPath,
     workDir: join(input.outDir, "oracle"),
     fixtureId: input.benchmark.id,
@@ -303,6 +370,51 @@ async function classifyMutant(input: {
     },
     now: input.ctx.now,
   });
+
+  // A mutant that makes the live app throw during render where the baseline did
+  // not is detected: the crash is a behavioural divergence the abstract model
+  // cannot represent (an error boundary preserves the surrounding observable
+  // state), so the model checker alone would miss it. Only NEW crashes count — a
+  // crash already present in the baseline is pre-existing.
+  //
+  // Three crash signals are combined. The route render smoke test mounts every
+  // route directly and is the primary, deterministic signal: it always exercises
+  // each route's initial render, whereas the replay (counterexample traces) and
+  // seeded-walk oracle only reach a broken route when a walk happens to navigate
+  // there. The latter two stay as cheap secondary signals for crashes that only
+  // appear after interaction.
+  const mutantRouteCrashes = await detectRouteRenderCrashes({
+    modelPath: run.artifactPaths.model,
+    harnessPath,
+  });
+  const routeCrashes = newRouteRenderCrashes(
+    input.baselineRouteCrashes,
+    mutantRouteCrashes,
+  );
+  const replayCrashProperties = newReplayCrashProperties(
+    input.baseline.replayVerdicts,
+    run.replayVerdicts,
+  );
+  const crashWalks = newCrashWalks(oracle.baselineReport, oracle.mutantReport);
+  if (
+    routeCrashes.length > 0 ||
+    replayCrashProperties.length > 0 ||
+    crashWalks.length > 0
+  ) {
+    const where =
+      routeCrashes.length > 0
+        ? `route ${routeCrashes.map((entry) => entry.route).join(", ")}`
+        : replayCrashProperties.length > 0
+          ? `replay of ${replayCrashProperties.join(", ")}`
+          : `seeded walk ${crashWalks.join(", ")}`;
+    return {
+      mutant: input.mutant,
+      status: "killed",
+      killedProperties: ["render-crash"],
+      falsePositiveTransitions: [],
+      message: `render crash introduced in ${where}`,
+    };
+  }
 
   if (oracle.preserved) {
     if (reproducedViolations.length > 0) {
@@ -333,21 +445,97 @@ async function classifyMutant(input: {
       falsePositiveTransitions: [],
     };
   }
-  if (allVerified(run.checkReport)) {
-    return {
-      mutant: input.mutant,
-      status: "survived",
-      killedProperties: [],
-      falsePositiveTransitions: [],
-    };
-  }
   return {
     mutant: input.mutant,
-    status: "error",
+    status: "survived",
     killedProperties: [],
     falsePositiveTransitions: [],
-    message: "check produced non-verified verdicts without reproduced replay",
   };
+}
+
+async function writeOracleModels(input: {
+  outDir: string;
+  baseline: Model;
+  baselineRoot: string;
+  mutant: Model;
+  mutantRoot: string;
+}): Promise<{ baseline: string; mutant: string }> {
+  await mkdir(input.outDir, { recursive: true });
+  const baselinePath = join(input.outDir, "baseline-model.json");
+  const mutantPath = join(input.outDir, "mutant-model.json");
+  await writeFile(
+    baselinePath,
+    `${canonicalJson(normalizeModelRoot(input.baseline, input.baselineRoot))}\n`,
+    "utf8",
+  );
+  await writeFile(
+    mutantPath,
+    `${canonicalJson(normalizeModelRoot(input.mutant, input.mutantRoot))}\n`,
+    "utf8",
+  );
+  return { baseline: baselinePath, mutant: mutantPath };
+}
+
+function normalizeModelRoot(model: unknown, appRoot: string): Model {
+  const normalizedRoot = appRoot.replaceAll("\\", "/");
+  const normalized = JSON.parse(
+    JSON.stringify(model).replaceAll(normalizedRoot, "<app>"),
+  ) as Model;
+  return sanitizeDanglingVars(normalized);
+}
+
+function sanitizeDanglingVars(model: Model): Model {
+  const declared = new Set(model.vars.map((decl) => decl.id));
+  const sanitize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sanitize);
+    if (typeof value !== "object" || value === null) return value;
+    const record = value as Record<string, unknown>;
+    if (
+      record.kind === "read" &&
+      typeof record.var === "string" &&
+      !declared.has(record.var)
+    ) {
+      return { kind: "lit", value: false };
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([key, entry]) => [key, sanitize(entry)]),
+    );
+  };
+  return {
+    ...model,
+    transitions: model.transitions.map((transition) => ({
+      ...transition,
+      reads: transition.reads?.filter((varId) => declared.has(varId)),
+      writes: transition.writes?.filter((varId) => declared.has(varId)),
+      guard: sanitize(transition.guard) as typeof transition.guard,
+      effect: sanitize(transition.effect) as typeof transition.effect,
+    })),
+  };
+}
+
+/**
+ * Properties whose counterexample replay surfaced a render crash in the mutant
+ * but not in the baseline. The replay path drives the live harness along the
+ * checker's counterexample traces, reaching deep routes the shallow seeded
+ * walks miss, so it is the primary place a newly-introduced crash appears.
+ */
+function newReplayCrashProperties(
+  baseline: Map<string, ReplayVerdictEntry>,
+  mutant: Map<string, ReplayVerdictEntry>,
+): string[] {
+  const baselineCrashed = new Set(
+    [...baseline.values()]
+      .filter((entry) => entry.report?.verdict.crashReason !== undefined)
+      .map((entry) => entry.property),
+  );
+  return [...mutant.values()]
+    .filter(
+      (entry) =>
+        entry.report?.verdict.crashReason !== undefined &&
+        !baselineCrashed.has(entry.property),
+    )
+    .map((entry) => entry.property)
+    .sort();
 }
 
 function reproducedViolationProperties(
@@ -379,14 +567,6 @@ function affectedTransitions(
         ]),
     ),
   ].sort();
-}
-
-function allVerified(checkReport: CheckReport): boolean {
-  return checkReport.verdicts.every(
-    (verdict) =>
-      verdict.status === "verified" ||
-      verdict.status === "verified-within-bounds",
-  );
 }
 
 function mutationMetrics(
@@ -434,7 +614,7 @@ function mutationMetrics(
     preserved,
     falsePositives,
     error,
-    detectionRate: killed + survived === 0 ? 1 : killed / (killed + survived),
+    detectionRate: killed + survived === 0 ? 0 : killed / (killed + survived),
     falsePositiveRate: preserved === 0 ? 0 : falsePositives / preserved,
     sampled,
     perOperator,
@@ -453,12 +633,21 @@ function summarizeMutation(
   const preserved = sum(metrics, (entry) => entry.preserved);
   const falsePositives = sum(metrics, (entry) => entry.falsePositives);
   const errors = sum(metrics, (entry) => entry.error);
+  const mutantsTotal = sum(metrics, (entry) => entry.mutantsTotal);
   const detectionRate =
-    killed + survived === 0 ? 1 : killed / (killed + survived);
+    killed + survived === 0 ? 0 : killed / (killed + survived);
   const minDetectionRate =
     ctx.manifest.validityThresholds?.mutation?.minDetectionRate ?? 0;
+  const noSignal = hasNoMutationSignal({ mutantsTotal, killed, preserved });
+  const noDiscriminatingMutants = hasNoDiscriminatingMutants({
+    mutantsTotal,
+    killed,
+    survived,
+  });
   const status =
     perBenchmark.some((slice) => slice.status === "fail") ||
+    noSignal ||
+    noDiscriminatingMutants ||
     detectionRate < minDetectionRate
       ? "fail"
       : "pass";
@@ -466,9 +655,21 @@ function summarizeMutation(
   return {
     experiment: "mutation",
     status,
-    headline: `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
+    headline: noSignal
+      ? "blocked: no mutants killed or preserved (oracle produced no signal)"
+      : noDiscriminatingMutants
+        ? "blocked: no discriminating mutants"
+        : `detection ${formatRate(detectionRate)} (${killed}/${killed + survived})`,
     perBenchmark: [...perBenchmark],
     messages: [
+      ...(noSignal
+        ? [
+            "blocked: no mutants killed or preserved (oracle produced no signal)",
+          ]
+        : []),
+      ...(noDiscriminatingMutants
+        ? ["blocked: no discriminating mutants"]
+        : []),
       `aggregate preserved=${preserved} falsePositives=${falsePositives} errors=${errors}`,
       ...(worst
         ? [

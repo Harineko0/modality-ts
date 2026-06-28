@@ -2471,8 +2471,12 @@ describe("checker", () => {
         reads: ["sys:route"],
       }),
     ]);
+    // With a zero-capacity history the push cannot retain a back-stack entry,
+    // but the route assignment is unconditional, so "/b" is no longer rendered
+    // vacuously unreachable — it is simply not reached within these degenerate
+    // bounds.
     expect(result.verdicts[0]).toMatchObject({
-      status: "vacuous-warning",
+      status: "verified-within-bounds",
       property: "pushedB",
     });
   });
@@ -4147,9 +4151,14 @@ describe("checker", () => {
     expect(sliced.transitions.map((transition) => transition.id)).toContain(
       "navigateAway",
     );
+    // The slice retains the navigation transition (it resets the route-local
+    // var) and `sys:route` (its mount guard), but NOT `sys:history`: the route
+    // assignment is unconditional, so the property no longer depends on the
+    // back-stack contents.
     expect(sliced.vars.map((decl) => decl.id)).toEqual(
-      expect.arrayContaining(["local:/a.panel", "sys:route", "sys:history"]),
+      expect.arrayContaining(["local:/a.panel", "sys:route"]),
     );
+    expect(sliced.vars.map((decl) => decl.id)).not.toContain("sys:history");
   });
 
   it("keeps sliced route-local verdicts sound when navigation unmounts state", () => {

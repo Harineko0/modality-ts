@@ -1,14 +1,17 @@
-import { and, ctl, eq, group, neq, property } from "modality-ts/properties";
+import { and, eq, group, neq, reachableFrom } from "modality-ts/properties";
+import { route } from "modality-ts/vars";
 import { useManagementStore } from "../../../features/management/state/management-store.modals";
 
 const assignmentStatus = useManagementStore.assignmentStatus;
 const opsQueue = useManagementStore.opsQueue;
 
 group("management", () => {
-  property(
+  // The operations action is taken from the operations route, so the
+  // reachability is scoped to that route: once there, an admin can drive the
+  // queue to a successful, non-empty state.
+  reachableFrom(
     "management.adminCanTakeOperationsAction",
-    ctl.afterSomeStep(
-      ctl.holds(and(eq(assignmentStatus, "success"), neq(opsQueue, "empty"))),
-    ),
+    eq(route, "/management/operations"),
+    and(eq(assignmentStatus, "success"), neq(opsQueue, "empty")),
   );
 });

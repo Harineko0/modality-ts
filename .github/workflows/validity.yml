@@ -13,9 +13,19 @@ permissions:
 
 jobs:
   validity:
-    name: Extract validity
+    name: Extract validity (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: conformance
+            name: Conformance
+          - id: mutation
+            name: Mutation
+          - id: metamorphic
+            name: Metamorphic
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +47,67 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Validity
-        run: pnpm validity -- --report .modality/validity/report.json --comment .modality/validity/comment.md
+        run: |
+          mkdir -p .modality/validity/${{ matrix.id }}
+          set +e
+          pnpm validity -- --id ${{ matrix.id }} --report .modality/validity/${{ matrix.id }}/report.json
+          echo "$?" > .modality/validity/${{ matrix.id }}/exit-code
+      - name: Save validity report
+        uses: actions/cache/save@v4
+        with:
+          path: .modality/validity/${{ matrix.id }}
+          key: validity-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}
+      - name: Enforce validity result
+        run: exit "$(cat .modality/validity/${{ matrix.id }}/exit-code)"
+
+  validity-report:
+    name: Extract validity report
+    runs-on: ubuntu-latest
+    needs: validity
+    if: always()
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Restore conformance report
+        uses: actions/cache/restore@v4
+        with:
+          path: .modality/validity/conformance
+          key: validity-${{ github.run_id }}-${{ github.run_attempt }}-conformance
+          fail-on-cache-miss: true
+      - name: Restore mutation report
+        uses: actions/cache/restore@v4
+        with:
+          path: .modality/validity/mutation
+          key: validity-${{ github.run_id }}-${{ github.run_attempt }}-mutation
+          fail-on-cache-miss: true
+      - name: Restore metamorphic report
+        uses: actions/cache/restore@v4
+        with:
+          path: .modality/validity/metamorphic
+          key: validity-${{ github.run_id }}-${{ github.run_attempt }}-metamorphic
+          fail-on-cache-miss: true
+      - name: Merge validity report
+        run: |
+          set +e
+          pnpm exec tsx tools/validity-merge-ci.ts \
+            --input .modality/validity/conformance/report.json \
+            --input .modality/validity/mutation/report.json \
+            --input .modality/validity/metamorphic/report.json \
+            --report .modality/validity/report.json \
+            --comment .modality/validity/comment.md
+          echo "$?" > .modality/validity/exit-code
       - name: Get comment ID
         if: github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v2
@@ -59,3 +129,6 @@ jobs:
         with:
           name: extract-validity-report
           path: .modality/validity/
+      - name: Enforce merged validity result
+        if: always()
+        run: exit "$(cat .modality/validity/exit-code)"

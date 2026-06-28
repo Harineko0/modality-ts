@@ -1,6 +1,7 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { canonicalJson } from "modality-ts/core";
+import { materializeAppSnapshot } from "../sandbox/app-snapshot.js";
 import {
   applyMutation,
   enumerateMutationSites,
@@ -51,10 +52,7 @@ export async function generateMutants(
       candidate.site.operatorId,
     )}`;
     const mutantRoot = join(input.workDir, mutantId, "app");
-    await cp(input.appRoot, mutantRoot, {
-      recursive: true,
-      filter: (source) => !ignoredTreeEntry(source),
-    });
+    await materializeAppSnapshot(input.appRoot, mutantRoot);
     const mutantFile = join(mutantRoot, candidate.file);
     const originalText = await readFile(candidate.absoluteFile, "utf8");
     const mutation = applyMutation(
@@ -180,12 +178,6 @@ function sourceDiff(file: string, before: string, after: string): string {
     }
   }
   return lines.join("\n");
-}
-
-function ignoredTreeEntry(path: string): boolean {
-  const normalized = path.split(/[/\\]/g);
-  const name = normalized[normalized.length - 1];
-  return !["node_modules", ".next", "dist", "coverage"].includes(name ?? "");
 }
 
 function safeId(value: string): string {

@@ -19,6 +19,7 @@ import {
   enabledTransitionSeedVars,
 } from "./dependency-graph.js";
 import { isEmptyEffect, projectEffectToVars } from "./effect-projection.js";
+import { projectPendingQueueForSlice } from "./pending-projection.js";
 
 export type PropertySliceMode = "state" | "targetedStep" | "full";
 
@@ -77,6 +78,7 @@ export function sliceModelForCheckProperty(
       const sliced = sliceModelForProperty(model, dependencySliceInput(deps), {
         directionalPredicate: deps.directionalPredicate,
         recordProjectionProperty: property,
+        pendingOpIds: pendingOpIdsFromDeps(deps),
       });
       return {
         model: sliced.model,
@@ -117,6 +119,7 @@ export function sliceModelForProperty(
   options: {
     directionalPredicate?: ExprIR;
     recordProjectionProperty?: Property;
+    pendingOpIds?: readonly string[];
   } = {},
 ): { model: Model; diagnostics?: SliceDiagnostics } {
   const graph = buildModelDependencyGraph(model);
@@ -141,13 +144,16 @@ export function sliceModelForProperty(
     observationOnlyTransitions,
   );
   const baseModel = { ...model, vars, transitions };
-  const sliced = options.recordProjectionProperty
+  const recordProjected = options.recordProjectionProperty
     ? applySliceRecordDomainProjection(
         model,
         options.recordProjectionProperty,
         baseModel,
       )
     : baseModel;
+  const sliced = projectPendingQueueForSlice(recordProjected, {
+    propertyOpIds: options.pendingOpIds,
+  });
   return {
     model: sliced,
     diagnostics: mergeSliceDiagnostics(
@@ -170,6 +176,7 @@ export function sliceModelForTargetedStepProperty(
     | "preconditionReads"
     | "postconditionReads"
     | "postMentionedVars"
+    | "pendingQueueDependencies"
   > = collectPropertyDependencyRequest(model, property),
 ): { model: Model; diagnostics?: SliceDiagnostics } {
   const graph = buildModelDependencyGraph(model);
@@ -209,7 +216,14 @@ export function sliceModelForTargetedStepProperty(
     observationOnlyTransitions,
   );
   const baseModel = { ...model, vars, transitions };
-  const sliced = applySliceRecordDomainProjection(model, property, baseModel);
+  const recordProjected = applySliceRecordDomainProjection(
+    model,
+    property,
+    baseModel,
+  );
+  const sliced = projectPendingQueueForSlice(recordProjected, {
+    propertyOpIds: pendingOpIdsFromDeps(deps),
+  });
   return {
     model: sliced,
     diagnostics:
@@ -217,6 +231,14 @@ export function sliceModelForTargetedStepProperty(
         ? { mountScopeDependencies }
         : undefined,
   };
+}
+
+function pendingOpIdsFromDeps(deps: {
+  pendingQueueDependencies?: readonly PendingQueueDependency[];
+}): readonly string[] {
+  return (deps.pendingQueueDependencies ?? []).flatMap(
+    (dependency) => dependency.opIds ?? [],
+  );
 }
 
 function collectPropertyDependencyRequest(

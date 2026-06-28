@@ -17,6 +17,15 @@ export function synthesizeRedirectTransitions(
   for (const node of inventory.routes) {
     const target = node.redirectTo;
     if (!target || !modeledPatterns.has(target)) continue;
+    const effect = locationEffect({
+      currentVar: "sys:route",
+      historyVar: "sys:history",
+      mode: "replace",
+      to: { kind: "lit", value: target },
+      routeValues: inventory.routes
+        .filter((route) => route.kind === "page" || route.kind === "index")
+        .map((route) => route.pattern),
+    });
 
     transitions.push({
       id: `route:${node.pattern}.redirect.${safeId(target)}`,
@@ -24,15 +33,8 @@ export function synthesizeRedirectTransitions(
       label: { kind: "navigate", mode: "push", to: target },
       source: [],
       guard: routeMountGuard(node.pattern),
-      ...locationEffect({
-        currentVar: "sys:route",
-        historyVar: "sys:history",
-        mode: "replace",
-        to: { kind: "lit", value: target },
-        routeValues: inventory.routes
-          .filter((route) => route.kind === "page" || route.kind === "index")
-          .map((route) => route.pattern),
-      }),
+      ...effect,
+      reads: [...new Set(["sys:route", ...effect.reads])],
       confidence: "exact",
     });
   }

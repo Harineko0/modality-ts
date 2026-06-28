@@ -14,6 +14,7 @@ import {
   property,
   readOpArg,
   stepResolved,
+  variable,
 } from "modality-ts/properties";
 import { permissionCacheAtom } from "../../../features/auth/state/session-atoms.modals";
 import { useManagementStore } from "../../../features/management/state/management-store.modals";
@@ -40,10 +41,18 @@ group("management", () => {
     ctl.holds(greaterThanOrEqual(mod(add(riskFilter, riskFilter), 3), 0)),
   );
 
+  // The bulk action controls only render on the risk route, so the enablement
+  // guarantee is scoped to that route — off-route the RiskBulkPanel transitions
+  // are unmounted by construction.
   property(
     "management.bulkActionEnabledWhenIdle",
     ctl.implies(
-      ctl.holds(eq(bulkStatus, "idle")),
+      ctl.holds(
+        and(
+          eq(bulkStatus, "idle"),
+          eq(variable("sys:route"), "/management/risk"),
+        ),
+      ),
       ctl.holds(enabledTransitionPrefix("RiskBulkPanel.onClick")),
     ),
   );

@@ -94,6 +94,32 @@ describe("validity runner", () => {
       ]),
     );
   });
+
+  it("returns a failing exit code when any experiment fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "modality-validity-fail-"));
+    const result = await runValiditySuite({
+      repoRoot,
+      manifestPath,
+      reportPath: join(dir, "report.json"),
+      now: new Date("2026-06-23T00:00:00.000Z"),
+      experiments: {
+        conformance: () => skippedExperiment("conformance"),
+        mutation: () => failedExperiment("mutation"),
+        metamorphic: () => skippedExperiment("metamorphic"),
+      },
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.report.subReports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          experiment: "mutation",
+          status: "fail",
+          headline: "blocked: synthetic failure",
+        }),
+      ]),
+    );
+  });
 });
 
 function skippedExperiment(id: ValidityExperiment["id"]): ValidityExperiment {
@@ -114,6 +140,28 @@ function skippedExperiment(id: ValidityExperiment["id"]): ValidityExperiment {
           messages: [headline],
         })),
         messages: [headline],
+      };
+    },
+  };
+}
+
+function failedExperiment(id: ValidityExperiment["id"]): ValidityExperiment {
+  return {
+    id,
+    async run(ctx) {
+      return {
+        experiment: id,
+        status: "fail",
+        headline: "blocked: synthetic failure",
+        perBenchmark: ctx.manifest.benchmarks.map((benchmark) => ({
+          benchmarkId: benchmark.id,
+          framework: benchmark.framework,
+          status: "fail",
+          headline: "blocked: synthetic failure",
+          metrics: {},
+          messages: ["blocked: synthetic failure"],
+        })),
+        messages: ["blocked: synthetic failure"],
       };
     },
   };
